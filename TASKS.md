@@ -6,9 +6,9 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Project bootstrap: established Composer autoload/bootstrap with Env loader, PDO helper, and basic health endpoint; next step is Docker dev stack and CI lint/tests.
 - [x] Core domain models & migrations: scaffolded PHP model classes and initial MySQL migration covering users/roles, CRM, vehicle master/customer vehicles, service types, inventory, estimates/invoices/payments, inspections, appointments, warranty claims, reminders, credit, time entries, and financial ledgers; remaining work includes schema refinement and seeding.
 - [x] Global settings storage: shop profile, tax/pricing defaults, integration keys (Stripe/Square/PayPal/Twilio/SMTP/recaptcha), terms & conditions blocks.
-- [ ] File storage setup for uploads (logos, attachments, signatures, receipts) with access control. (Filesystem config, local driver, and path generation scaffolded.)
-- [ ] Notification infrastructure: mail/SMS drivers, templating with variables, logging/audit hooks. (Template renderer and log drivers scaffolded.)
-- [ ] Audit logging framework for entity events and settings changes. (Audit table and logger added; integrate per-entity triggers next.)
+- [x] File storage setup for uploads (logos, attachments, signatures, receipts) with access control. (Filesystem config, local driver, path generation, category-level visibility, and signed download helper in place.)
+- [x] Notification infrastructure: mail/SMS drivers, templating with variables, logging/audit hooks. (Template renderer, log/Twilio/Smtp drivers, dispatch auditing, and detailed log persistence implemented.)
+- [x] Audit logging framework for entity events and settings changes. (Audit table/logger wired with settings mutation tracking and notification audit events.)
 
 ## 1. User & Access Management
 - [ ] Roles/permissions seed data for Admin, Manager, Technician, Customer; guard routes/controllers accordingly.

@@ -17,6 +17,7 @@ class NotificationLogRepository
     public function log(NotificationLogEntry $entry): void
     {
         $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO notification_logs (channel, recipient, template, payload, status, meta, error_message, created_at) VALUES (:channel, :recipient, :template, :payload, :status, :meta, :error_message, NOW())'
             'INSERT INTO notification_logs (channel, recipient, template, payload, status, created_at) VALUES (:channel, :recipient, :template, :payload, :status, NOW())'
         );
 
@@ -26,6 +27,8 @@ class NotificationLogRepository
             'template' => $entry->template,
             'payload' => json_encode($entry->payload, JSON_THROW_ON_ERROR),
             'status' => $entry->status,
+            'meta' => $entry->meta ? json_encode($entry->meta, JSON_THROW_ON_ERROR) : null,
+            'error_message' => $entry->error,
         ]);
     }
 

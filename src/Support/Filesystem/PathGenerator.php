@@ -15,6 +15,8 @@ class PathGenerator
 
     public function forCategory(string $category, string $originalName): string
     {
+        $definition = $this->definition($category);
+        $folder = $definition['folder'];
         $folder = $this->categories[$category] ?? null;
         if ($folder === null) {
             throw new RuntimeException("Unknown upload category: {$category}");
@@ -24,6 +26,24 @@ class PathGenerator
         $timestamp = date('YmdHis');
 
         return trim($folder, '/') . '/' . $timestamp . '_' . $safeName;
+    }
+
+    public function definition(string $category): array
+    {
+        $definition = $this->categories[$category] ?? null;
+        if ($definition === null) {
+            throw new RuntimeException("Unknown upload category: {$category}");
+        }
+
+        if (is_string($definition)) {
+            $definition = ['folder' => $definition];
+        }
+
+        return [
+            'folder' => $definition['folder'] ?? $definition['path'] ?? $category,
+            'disk' => $definition['disk'] ?? null,
+            'visibility' => $definition['visibility'] ?? 'public',
+        ];
     }
 
     private function sanitizeFilename(string $filename): string

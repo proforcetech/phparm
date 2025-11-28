@@ -2,6 +2,8 @@
 
 return [
     'default' => env('FILESYSTEM_DISK', 'public'),
+    'secure_url' => env('APP_URL', 'http://localhost') . '/download',
+    'signing_key' => env('APP_KEY', 'dev-key-change-me'),
 
     'disks' => [
         'public' => [
@@ -23,6 +25,26 @@ return [
     ],
 
     'upload_categories' => [
+        'logos' => [
+            'folder' => 'logos',
+            'disk' => 'public',
+            'visibility' => 'public',
+        ],
+        'attachments' => [
+            'folder' => 'attachments',
+            'disk' => 'private',
+            'visibility' => 'private',
+        ],
+        'signatures' => [
+            'folder' => 'signatures',
+            'disk' => 'private',
+            'visibility' => 'private',
+        ],
+        'receipts' => [
+            'folder' => 'receipts',
+            'disk' => 'public',
+            'visibility' => 'public',
+        ],
         'logos' => 'logos',
         'attachments' => 'attachments',
         'signatures' => 'signatures',

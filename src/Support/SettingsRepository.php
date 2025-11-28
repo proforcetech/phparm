@@ -4,12 +4,20 @@ namespace App\Support;
 
 use App\Database\Connection;
 use App\Models\Setting;
+use App\Support\Audit\AuditEntry;
+use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
 use PDO;
 
 class SettingsRepository
 {
     private Connection $connection;
+    private ?AuditLogger $audit;
+
+    public function __construct(Connection $connection, ?AuditLogger $audit = null)
+    {
+        $this->connection = $connection;
+        $this->audit = $audit;
 
     public function __construct(Connection $connection)
     {
@@ -62,6 +70,7 @@ class SettingsRepository
      */
     public function set(string $key, $value, ?string $type = null, string $group = 'general', ?string $description = null): void
     {
+        $existing = $this->find($key);
         $type ??= $this->inferTypeFromValue($value);
         $encodedValue = $this->encodeValue($value, $type);
 
@@ -79,10 +88,20 @@ class SettingsRepository
             'value' => $encodedValue,
             'description' => $description,
         ]);
+
+        $this->auditChange($existing === null ? 'setting.created' : 'setting.updated', $key, $existing?->value, $value, $group);
     }
 
     public function delete(string $key): void
     {
+        $existing = $this->find($key);
+
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM settings WHERE `key` = :key');
+        $stmt->execute(['key' => $key]);
+
+        if ($existing !== null) {
+            $this->auditChange('setting.deleted', $key, $existing->value, null, $existing->group);
+        }
         $stmt = $this->connection->pdo()->prepare('DELETE FROM settings WHERE `key` = :key');
         $stmt->execute(['key' => $key]);
     }
@@ -142,5 +161,37 @@ class SettingsRepository
             'string' => $value,
             default => throw new InvalidArgumentException("Unknown settings type: {$type}"),
         };
+    }
+
+    private function find(string $key): ?Setting
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM settings WHERE `key` = :key LIMIT 1');
+        $stmt->execute(['key' => $key]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $setting = new Setting($row);
+        $setting->value = $this->decodeValue($setting->value, $setting->type);
+
+        return $setting;
+    }
+
+    private function auditChange(string $event, string $key, $oldValue, $newValue, ?string $group): void
+    {
+        if ($this->audit === null) {
+            return;
+        }
+
+        $context = [
+            'key' => $key,
+            'group' => $group,
+            'old' => $oldValue,
+            'new' => $newValue,
+        ];
+
+        $this->audit->log(new AuditEntry($event, 'setting', $key, null, $context));
     }
 }
