@@ -14,6 +14,9 @@ function env(string $key, $default = null) use ($env) {
 $config = [
     'database' => require __DIR__ . '/config/database.php',
     'settings' => require __DIR__ . '/config/settings.php',
+    'filesystems' => require __DIR__ . '/config/filesystems.php',
+    'notifications' => require __DIR__ . '/config/notifications.php',
+    'audit' => require __DIR__ . '/config/audit.php',
 ];
 
 return $config;
