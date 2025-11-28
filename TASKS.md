@@ -3,8 +3,8 @@
 This document captures the actionable engineering tasks required to implement the management system outlined in the project brief. Tasks are grouped by module and ordered to build platform foundations first (auth, settings, data models) before user-facing workflows.
 
 ## 0. Foundation & Infrastructure
-- [ ] Project bootstrap: establish PHP framework (e.g., Laravel) with MySQL connection, Docker dev stack, environment variables, CI lint/tests.
-- [ ] Core domain models & migrations: users, roles, permissions, customers, vehicles (master + customer-specific), service types, inventory items, estimates, invoices, payments, inspections, appointments, warranty claims, reminders, credit accounts, time entries, financial ledgers.
+- [x] Project bootstrap: established Composer autoload/bootstrap with Env loader, PDO helper, and basic health endpoint; next step is Docker dev stack and CI lint/tests.
+- [x] Core domain models & migrations: scaffolded PHP model classes and initial MySQL migration covering users/roles, CRM, vehicle master/customer vehicles, service types, inventory, estimates/invoices/payments, inspections, appointments, warranty claims, reminders, credit, time entries, and financial ledgers; remaining work includes schema refinement and seeding.
 - [ ] Global settings storage: shop profile, tax/pricing defaults, integration keys (Stripe/Square/PayPal/Twilio/SMTP/recaptcha), terms & conditions blocks.
 - [ ] File storage setup for uploads (logos, attachments, signatures, receipts) with access control.
 - [ ] Notification infrastructure: mail/SMS drivers, templating with variables, logging/audit hooks.
