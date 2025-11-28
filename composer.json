@@ -1,0 +1,13 @@
+{
+    "name": "phparm/shop-management",
+    "description": "Automotive repair shop management system bootstrap",
+    "type": "project",
+    "require": {
+        "php": "^8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    }
+}
