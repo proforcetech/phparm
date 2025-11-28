@@ -11,10 +11,10 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Audit logging framework for entity events and settings changes. (Audit table/logger wired with settings mutation tracking and notification audit events.)
 
 ## 1. User & Access Management
-- [ ] Roles/permissions seed data for Admin, Manager, Technician, Customer; guard routes/controllers accordingly.
-- [ ] Authentication flows: registration/import for staff, customer portal login, password reset, optional email verification.
-- [ ] Customer-user linkage (auto-link by email on import); profile management; MFA optional later.
-- [ ] Access-control middleware & policy tests for each module.
+- [x] Roles/permissions seed data for Admin, Manager, Technician, Customer; guard routes/controllers accordingly.
+- [x] Authentication flows: registration/import for staff, customer portal login, password reset, optional email verification.
+- [x] Customer-user linkage (auto-link by email on import); profile management; MFA optional later.
+- [x] Access-control middleware & policy tests for each module.
 
 ## 2. Dashboard & Reporting
 - [ ] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
