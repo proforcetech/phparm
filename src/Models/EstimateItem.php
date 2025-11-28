@@ -1,0 +1,15 @@
+<?php
+
+namespace App\Models;
+
+class EstimateItem extends BaseModel
+{
+    public int $id;
+    public int $estimate_job_id;
+    public string $type;
+    public string $description;
+    public float $quantity;
+    public float $unit_price;
+    public bool $taxable = true;
+    public float $line_total = 0.0;
+}

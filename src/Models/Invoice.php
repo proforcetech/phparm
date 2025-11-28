@@ -1,0 +1,22 @@
+<?php
+
+namespace App\Models;
+
+class Invoice extends BaseModel
+{
+    public int $id;
+    public string $number;
+    public int $customer_id;
+    public ?int $vehicle_id = null;
+    public ?int $estimate_id = null;
+    public string $status;
+    public string $issue_date;
+    public ?string $due_date = null;
+    public float $subtotal = 0.0;
+    public float $tax = 0.0;
+    public float $total = 0.0;
+    public float $amount_paid = 0.0;
+    public float $balance_due = 0.0;
+    public ?string $created_at = null;
+    public ?string $updated_at = null;
+}
