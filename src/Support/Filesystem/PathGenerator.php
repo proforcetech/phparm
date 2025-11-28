@@ -17,6 +17,10 @@ class PathGenerator
     {
         $definition = $this->definition($category);
         $folder = $definition['folder'];
+        $folder = $this->categories[$category] ?? null;
+        if ($folder === null) {
+            throw new RuntimeException("Unknown upload category: {$category}");
+        }
 
         $safeName = $this->sanitizeFilename($originalName);
         $timestamp = date('YmdHis');

@@ -6,6 +6,7 @@ use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
 use Throwable;
+use InvalidArgumentException;
 
 class NotificationDispatcher
 {
@@ -15,6 +16,8 @@ class NotificationDispatcher
     private ?AuditLogger $audits;
 
     public function __construct(array $config, TemplateEngine $templates, NotificationLogRepository $logs, ?AuditLogger $audits = null)
+
+    public function __construct(array $config, TemplateEngine $templates, NotificationLogRepository $logs)
     {
         $this->config = $config;
         $this->templates = $templates;
@@ -45,6 +48,7 @@ class NotificationDispatcher
 
             throw $exception;
         }
+        $driver->send($to, $subject, $body, $this->config['mail']['from_name'] ?? null, $this->config['mail']['from_address'] ?? null);
     }
 
     public function sendSms(string $templateKey, string $to, array $data): void
@@ -66,6 +70,8 @@ class NotificationDispatcher
 
             throw $exception;
         }
+
+        $driver->send($to, $message, $this->config['sms']['from_number'] ?? null);
     }
 
     private function renderTemplate(string $key, array $data): string
@@ -86,6 +92,10 @@ class NotificationDispatcher
         return match ($driverName) {
             'log' => new LogMailDriver(),
             'smtp' => new SmtpMailDriver($driverConfig),
+        $driverName = $this->config['mail']['default'] ?? 'log';
+
+        return match ($driverName) {
+            'log' => new LogMailDriver($this->logs),
             default => throw new InvalidArgumentException("Unsupported mail driver: {$driverName}"),
         };
     }
@@ -131,5 +141,12 @@ class NotificationDispatcher
         }
 
         $this->audits->log(new AuditEntry('notification.' . $status, 'notification', $template . ':' . $recipient, null, $context));
+    }
+        $driverName = $this->config['sms']['default'] ?? 'log';
+
+        return match ($driverName) {
+            'log' => new LogSmsDriver($this->logs),
+            default => throw new InvalidArgumentException("Unsupported SMS driver: {$driverName}"),
+        };
     }
 }

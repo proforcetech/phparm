@@ -15,6 +15,11 @@ class FileStorage
         $this->pathGenerator = $pathGenerator;
         $this->signedUrls = $signedUrls;
         $this->secureBaseUrl = $secureBaseUrl;
+
+    public function __construct(FilesystemManager $manager, PathGenerator $pathGenerator)
+    {
+        $this->manager = $manager;
+        $this->pathGenerator = $pathGenerator;
     }
 
     public function store(string $category, string $filename, string $contents, ?string $disk = null): array
@@ -71,5 +76,17 @@ class FileStorage
         $resolvedDisk = $disk ?? $this->manager->defaultDisk();
 
         return $this->signedUrls->generate($this->secureBaseUrl, $path, $resolvedDisk, $ttlSeconds);
+    }
+        $path = $this->pathGenerator->forCategory($category, $filename);
+        $resolvedDisk = $disk ?? $this->manager->defaultDisk();
+        $driver = $this->manager->disk($resolvedDisk);
+
+        $storedPath = $driver->put($path, $contents);
+
+        return [
+            'path' => $storedPath,
+            'url' => $driver->url($storedPath),
+            'disk' => $resolvedDisk,
+        ];
     }
 }

@@ -45,5 +45,9 @@ return [
             'disk' => 'public',
             'visibility' => 'public',
         ],
+        'logos' => 'logos',
+        'attachments' => 'attachments',
+        'signatures' => 'signatures',
+        'receipts' => 'receipts',
     ],
 ];
