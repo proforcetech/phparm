@@ -13,6 +13,7 @@ function env(string $key, $default = null) use ($env) {
 
 $config = [
     'database' => require __DIR__ . '/config/database.php',
+    'settings' => require __DIR__ . '/config/settings.php',
 ];
 
 return $config;
