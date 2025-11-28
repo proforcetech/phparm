@@ -5,16 +5,16 @@ This document captures the actionable engineering tasks required to implement th
 ## 0. Foundation & Infrastructure
 - [x] Project bootstrap: established Composer autoload/bootstrap with Env loader, PDO helper, and basic health endpoint; next step is Docker dev stack and CI lint/tests.
 - [x] Core domain models & migrations: scaffolded PHP model classes and initial MySQL migration covering users/roles, CRM, vehicle master/customer vehicles, service types, inventory, estimates/invoices/payments, inspections, appointments, warranty claims, reminders, credit, time entries, and financial ledgers; remaining work includes schema refinement and seeding.
-- [ ] Global settings storage: shop profile, tax/pricing defaults, integration keys (Stripe/Square/PayPal/Twilio/SMTP/recaptcha), terms & conditions blocks.
-- [ ] File storage setup for uploads (logos, attachments, signatures, receipts) with access control.
-- [ ] Notification infrastructure: mail/SMS drivers, templating with variables, logging/audit hooks.
-- [ ] Audit logging framework for entity events and settings changes.
+- [x] Global settings storage: shop profile, tax/pricing defaults, integration keys (Stripe/Square/PayPal/Twilio/SMTP/recaptcha), terms & conditions blocks.
+- [x] File storage setup for uploads (logos, attachments, signatures, receipts) with access control. (Filesystem config, local driver, path generation, category-level visibility, and signed download helper in place.)
+- [x] Notification infrastructure: mail/SMS drivers, templating with variables, logging/audit hooks. (Template renderer, log/Twilio/Smtp drivers, dispatch auditing, and detailed log persistence implemented.)
+- [x] Audit logging framework for entity events and settings changes. (Audit table/logger wired with settings mutation tracking and notification audit events.)
 
 ## 1. User & Access Management
-- [ ] Roles/permissions seed data for Admin, Manager, Technician, Customer; guard routes/controllers accordingly.
-- [ ] Authentication flows: registration/import for staff, customer portal login, password reset, optional email verification.
-- [ ] Customer-user linkage (auto-link by email on import); profile management; MFA optional later.
-- [ ] Access-control middleware & policy tests for each module.
+- [x] Roles/permissions seed data for Admin, Manager, Technician, Customer; guard routes/controllers accordingly.
+- [x] Authentication flows: registration/import for staff, customer portal login, password reset, optional email verification.
+- [x] Customer-user linkage (auto-link by email on import); profile management; MFA optional later.
+- [x] Access-control middleware & policy tests for each module.
 
 ## 2. Dashboard & Reporting
 - [ ] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
