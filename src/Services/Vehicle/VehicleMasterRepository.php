@@ -147,6 +147,11 @@ class VehicleMasterRepository
             }
         }
 
+        if (isset($filters['term']) && $filters['term'] !== '') {
+            $clauses[] = '(make LIKE :term OR model LIKE :term OR engine LIKE :term OR transmission LIKE :term)';
+            $bindings['term'] = $filters['term'] . '%';
+        }
+
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
 
         $sql = 'SELECT * FROM vehicle_master ' . $where . ' ORDER BY year DESC, make ASC, model ASC LIMIT :limit OFFSET :offset';
@@ -169,6 +174,17 @@ class VehicleMasterRepository
         $this->searchCache[$cacheKey] = $results;
 
         return $results;
+    }
+
+    public function delete(int $id): bool
+    {
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM vehicle_master WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+
+        unset($this->cache[$id]);
+        $this->searchCache = [];
+
+        return $stmt->rowCount() > 0;
     }
 
     /**

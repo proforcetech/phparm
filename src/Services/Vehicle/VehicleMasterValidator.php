@@ -25,14 +25,37 @@ class VehicleMasterValidator
             throw new InvalidArgumentException('Year must be between 1950 and next calendar year.');
         }
 
-        $data['year'] = $year;
-        $data['make'] = trim((string) $data['make']);
-        $data['model'] = trim((string) $data['model']);
-        $data['engine'] = trim((string) $data['engine']);
-        $data['transmission'] = trim((string) $data['transmission']);
-        $data['drive'] = trim((string) $data['drive']);
-        $data['trim'] = isset($data['trim']) && $data['trim'] !== '' ? trim((string) $data['trim']) : null;
+        $normalized = [
+            'year' => $year,
+            'make' => $this->sanitize((string) $data['make'], 'make'),
+            'model' => $this->sanitize((string) $data['model'], 'model'),
+            'engine' => $this->sanitize((string) $data['engine'], 'engine'),
+            'transmission' => $this->sanitize((string) $data['transmission'], 'transmission'),
+            'drive' => $this->sanitize((string) $data['drive'], 'drive'),
+            'trim' => isset($data['trim']) && $data['trim'] !== ''
+                ? $this->sanitize((string) $data['trim'], 'trim', true)
+                : null,
+        ];
 
-        return $data;
+        return $normalized;
+    }
+
+    private function sanitize(string $value, string $field, bool $allowNull = false): string
+    {
+        $value = trim($value);
+
+        if ($value === '' && !$allowNull) {
+            throw new InvalidArgumentException("{$field} is required for vehicle master records.");
+        }
+
+        if (strlen($value) > 120) {
+            throw new InvalidArgumentException("{$field} must be 120 characters or fewer.");
+        }
+
+        if (!preg_match('/^[A-Za-z0-9 .\\-]+$/', $value)) {
+            throw new InvalidArgumentException("{$field} contains invalid characters. Use letters, numbers, spaces, dots, or hyphens.");
+        }
+
+        return $value;
     }
 }
