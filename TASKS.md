@@ -46,7 +46,7 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] API endpoints and policy tests for listing/filtering active service types for public/portal use.
 - [ ] Drag-and-drop reordering with persisted display order and audit trail for changes.
 - [x] Base data model and migration for service_types table created.
-- [ ] Repository/service layer with validation for unique name/alias, active toggles, and ordering updates.
+- [x] Repository/service layer with validation for unique name/alias, active toggles, and ordering updates.
 - [ ] Event hooks/audit logging on service type lifecycle changes and integration points for estimates/invoices.
 
 ## 5. Customer & Vehicle Management
