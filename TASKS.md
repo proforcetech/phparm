@@ -22,15 +22,26 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
 - [ ] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
 - [ ] Export endpoints (CSV/PNG) for chart data and dashboard tiles; smoke tests to validate query results and permissions.
+- [ ] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
+- [ ] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
+- [ ] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
 
 ## 3. Vehicle Data Management (Master Vehicle Table)
 - [ ] CRUD UI + filters for Year/Make/Model/Engine/Transmission/Drive/Trim.
+- [ ] HTTP controllers + routes for vehicle master CRUD with pagination/sort/filter query contracts and request validation.
+- [ ] Request/response DTOs and JSON schema tests for vehicle master endpoints; ensure consistent casing and optional field handling.
 - [ ] CSV import with mapping/preview, duplicate detection, and summary of created/updated/failed rows.
+- [ ] Import service + background job to handle large CSV batches with resumable state, per-row validation, and audit trail.
 - [ ] Progressive dropdown components for Year→Trim selection for estimate forms and customer vehicles; caching for performance.
 - [ ] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
+- [ ] Data normalization helpers (uppercasing make/model, trimming whitespace), dedupe rules, and conflict resolution strategy for near-duplicates.
 - [ ] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.
 - [ ] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
+- [ ] Cache invalidation hooks for vehicle master changes (create/update/delete, merge) to refresh dropdown/search caches across modules.
 - [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
+- [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
+- [ ] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers; integration tests for repository queries.
+- [ ] Policy tests and middleware wiring to protect vehicle master endpoints (manager/admin only); ensure portal/customer scopes cannot access master CRUD.
 
 ## 4. Service Types
 - [ ] CRUD UI with ordering and active/inactive flag.
@@ -39,6 +50,9 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] Seed data for common automotive services and migration to backfill existing estimates/invoices with service type IDs.
 - [ ] API endpoints and policy tests for listing/filtering active service types for public/portal use.
 - [ ] Drag-and-drop reordering with persisted display order and audit trail for changes.
+- [x] Base data model and migration for service_types table created.
+- [ ] Repository/service layer with validation for unique name/alias, active toggles, and ordering updates.
+- [ ] Event hooks/audit logging on service type lifecycle changes and integration points for estimates/invoices.
 
 ## 5. Customer & Vehicle Management
 - [ ] Customer CRUD with search, filters (commercial/tax-exempt/open invoices), import/export CSV.
