@@ -10,6 +10,13 @@ class VehicleMasterController
 {
     private VehicleMasterRepository $repository;
     private AccessGate $gate;
+    private VehicleMasterImporter $importer;
+
+    public function __construct(VehicleMasterRepository $repository, AccessGate $gate, ?VehicleMasterImporter $importer = null)
+    {
+        $this->repository = $repository;
+        $this->gate = $gate;
+        $this->importer = $importer ?? new VehicleMasterImporter($repository);
 
     public function __construct(VehicleMasterRepository $repository, AccessGate $gate)
     {
@@ -97,6 +104,28 @@ class VehicleMasterController
         $this->gate->assert($user, 'vehicles.delete');
 
         return $this->repository->delete($id);
+    }
+
+    /**
+     * @param array<string, int|string> $mapping
+     * @return array<string, mixed>
+     */
+    public function importPreview(User $user, string $csv, array $mapping, int $limit = 20): array
+    {
+        $this->assertManageAccess($user);
+
+        return $this->importer->preview($csv, $mapping, $limit);
+    }
+
+    /**
+     * @param array<string, int|string> $mapping
+     * @return array<string, mixed>
+     */
+    public function import(User $user, string $csv, array $mapping, bool $updateDuplicates = false): array
+    {
+        $this->assertManageAccess($user);
+
+        return $this->importer->import($csv, $mapping, $updateDuplicates);
     }
 
     /**

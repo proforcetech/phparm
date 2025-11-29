@@ -28,7 +28,7 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 3. Vehicle Data Management (Master Vehicle Table)
 - [ ] CRUD UI + filters for Year/Make/Model/Engine/Transmission/Drive/Trim.
-- [ ] CSV import with mapping/preview, duplicate detection, and summary of created/updated/failed rows.
+- [x] CSV import with mapping/preview, duplicate detection, and summary of created/updated/failed rows.
 - [ ] Progressive dropdown components for Year→Trim selection for estimate forms and customer vehicles; caching for performance.
 - [x] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
 - [ ] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.

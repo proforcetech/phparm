@@ -188,6 +188,38 @@ class VehicleMasterRepository
     }
 
     /**
+     * Locate an existing record matching the unique vehicle attributes.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function findByAttributes(array $payload): ?VehicleMaster
+    {
+        $sql = 'SELECT * FROM vehicle_master WHERE year = :year AND make = :make AND model = :model ' .
+            'AND engine = :engine AND transmission = :transmission AND drive = :drive AND trim <=> :trim LIMIT 1';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute([
+            'year' => $payload['year'],
+            'make' => $payload['make'],
+            'model' => $payload['model'],
+            'engine' => $payload['engine'],
+            'transmission' => $payload['transmission'],
+            'drive' => $payload['drive'],
+            'trim' => $payload['trim'] ?? null,
+        ]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $vehicle = new VehicleMaster($row);
+        $this->cache[$vehicle->id] = $vehicle;
+
+        return $vehicle;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     private function assertUnique(array $payload, ?int $ignoreId = null): void
