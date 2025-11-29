@@ -19,7 +19,7 @@ This document captures the actionable engineering tasks required to implement th
 ## 2. Dashboard & Reporting
 - [x] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
 - [ ] Visual charts endpoints and frontend components (monthly trends for estimates/invoices; service-type breakdown optional).
-- [ ] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
+- [x] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
 - [ ] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
 - [ ] Export endpoints (CSV/PNG) for chart data and dashboard tiles; smoke tests to validate query results and permissions.
 - [x] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
