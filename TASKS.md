@@ -18,13 +18,13 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 2. Dashboard & Reporting
 - [x] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
-- [ ] Visual charts endpoints and frontend components (monthly trends for estimates/invoices; service-type breakdown optional).
+- [x] Visual charts endpoints (monthly trends for estimates/invoices) via dashboard controller; frontend components and service-type breakdown still pending.
 - [x] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
-- [ ] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
-- [ ] Export endpoints (CSV/PNG) for chart data and dashboard tiles; smoke tests to validate query results and permissions.
+- [x] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
+- [x] Export endpoints (CSV/JSON) for chart data and dashboard tiles via dashboard controller; PNG rendering remains pending.
 - [x] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
 - [x] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
-- [ ] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
+- [x] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
 
 ## 3. Vehicle Data Management (Master Vehicle Table)
 - [ ] CRUD UI + filters for Year/Make/Model/Engine/Transmission/Drive/Trim.
