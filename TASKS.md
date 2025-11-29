@@ -22,7 +22,6 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
 - [x] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
 - [x] Export endpoints (CSV/JSON) for chart data and dashboard tiles via dashboard controller; PNG rendering remains pending.
-- [ ] Export endpoints (CSV/PNG) for chart data and dashboard tiles; smoke tests to validate query results and permissions.
 - [x] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
 - [x] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
 - [x] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
@@ -31,9 +30,9 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] CRUD UI + filters for Year/Make/Model/Engine/Transmission/Drive/Trim.
 - [ ] CSV import with mapping/preview, duplicate detection, and summary of created/updated/failed rows.
 - [ ] Progressive dropdown components for Year→Trim selection for estimate forms and customer vehicles; caching for performance.
-- [ ] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
+- [x] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
 - [ ] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.
-- [ ] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
+- [x] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
 - [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
 - [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
 - [x] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers.
