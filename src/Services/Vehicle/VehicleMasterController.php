@@ -24,6 +24,7 @@ class VehicleMasterController
     public function index(User $user, array $params = []): array
     {
         $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
 
         $filters = $this->extractFilters($params);
         $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 25;
@@ -39,6 +40,7 @@ class VehicleMasterController
     public function autocomplete(User $user, array $params = []): array
     {
         $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
 
         $term = isset($params['term']) ? trim((string) $params['term']) : '';
         if ($term === '') {
@@ -68,6 +70,7 @@ class VehicleMasterController
     public function store(User $user, array $data): array
     {
         $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.create');
 
         $vehicle = $this->repository->create($data);
 
@@ -81,6 +84,7 @@ class VehicleMasterController
     public function update(User $user, int $id, array $data): ?array
     {
         $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.update');
 
         $vehicle = $this->repository->update($id, $data);
 
@@ -90,6 +94,7 @@ class VehicleMasterController
     public function destroy(User $user, int $id): bool
     {
         $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.delete');
 
         return $this->repository->delete($id);
     }
