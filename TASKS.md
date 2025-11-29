@@ -22,6 +22,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
 - [x] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
 - [x] Export endpoints (CSV/JSON) for chart data and dashboard tiles via dashboard controller; PNG rendering remains pending.
+- [ ] Export endpoints (CSV/PNG) for chart data and dashboard tiles; smoke tests to validate query results and permissions.
 - [x] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
 - [x] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
 - [x] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
