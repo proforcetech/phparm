@@ -18,10 +18,6 @@ class SettingsRepository
     {
         $this->connection = $connection;
         $this->audit = $audit;
-
-    public function __construct(Connection $connection)
-    {
-        $this->connection = $connection;
     }
 
     /**
@@ -102,8 +98,6 @@ class SettingsRepository
         if ($existing !== null) {
             $this->auditChange('setting.deleted', $key, $existing->value, null, $existing->group);
         }
-        $stmt = $this->connection->pdo()->prepare('DELETE FROM settings WHERE `key` = :key');
-        $stmt->execute(['key' => $key]);
     }
 
     /**
