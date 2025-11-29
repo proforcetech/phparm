@@ -5,36 +5,45 @@ namespace App\Services\Dashboard;
 use App\DTO\Dashboard\ChartSeries;
 use App\DTO\Dashboard\KpiResponse;
 use App\Database\Connection;
+use App\Support\SettingsRepository;
 use DateInterval;
 use DatePeriod;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
+use InvalidArgumentException;
 use PDO;
 
 class DashboardService
 {
     private Connection $connection;
     private DateRangePresetResolver $presetResolver;
+    private ?SettingsRepository $settings;
 
     /**
      * @var array<string, array{expires_at: int, value: mixed}>
      */
     private array $cache = [];
 
-    public function __construct(Connection $connection, ?DateRangePresetResolver $presetResolver = null)
-    {
+    public function __construct(
+        Connection $connection,
+        ?DateRangePresetResolver $presetResolver = null,
+        ?SettingsRepository $settings = null
+    ) {
         $this->connection = $connection;
         $this->presetResolver = $presetResolver ?? new DateRangePresetResolver();
+        $this->settings = $settings;
     }
 
     public function kpis(DateTimeInterface $start, DateTimeInterface $end, array $options = []): KpiResponse
     {
         $timezone = $options['timezone'] ?? 'UTC';
         $cacheTtl = (int) ($options['cache_ttl'] ?? 300);
+        $role = $this->normalizeRole($options['role'] ?? 'admin');
+        $this->enforceRoleScope($role, $options);
         $cacheKey = $this->makeCacheKey('kpis', $start, $end, $options);
 
-        return $this->remember($cacheKey, $cacheTtl, function () use ($start, $end, $options, $timezone) {
+        $response = $this->remember($cacheKey, $cacheTtl, function () use ($start, $end, $options, $timezone) {
             [$startUtc, $endUtc] = $this->normalizeRange($start, $end, $timezone);
 
             $pdo = $this->connection->pdo();
@@ -118,6 +127,8 @@ class DashboardService
 
             return $response;
         });
+
+        return $this->applyTileVisibility($response, $role);
     }
 
     /**
@@ -129,6 +140,13 @@ class DashboardService
     {
         $timezone = $options['timezone'] ?? 'UTC';
         $cacheTtl = (int) ($options['cache_ttl'] ?? 300);
+        $role = $this->normalizeRole($options['role'] ?? 'admin');
+        $this->enforceRoleScope($role, $options);
+        $tileSettings = $this->loadTileSettings();
+        if (!$this->isTileEnabled('charts', $role, $tileSettings)) {
+            return [];
+        }
+
         $cacheKey = $this->makeCacheKey('monthly_trends', $start, $end, $options);
 
         return $this->remember($cacheKey, $cacheTtl, function () use ($start, $end, $options, $timezone) {
@@ -211,6 +229,27 @@ class DashboardService
         return $this->presetResolver->resolve($preset, $timezone, $now);
     }
 
+    public function invalidateForEvent(string $event, array $context = []): void
+    {
+        $event = strtolower($event);
+        $cachePrefixes = match (true) {
+            str_starts_with($event, 'estimate.'),
+            str_starts_with($event, 'invoice.') => ['kpis', 'monthly_trends'],
+            str_starts_with($event, 'payment.') => ['kpis', 'monthly_trends'],
+            str_starts_with($event, 'inventory.') => ['kpis'],
+            str_starts_with($event, 'appointment.') => ['kpis'],
+            default => ['kpis', 'monthly_trends'],
+        };
+
+        if (isset($context['customer_id'])) {
+            $this->clearCacheForCustomer((int) $context['customer_id']);
+        }
+
+        foreach ($cachePrefixes as $prefix) {
+            $this->clearCache($prefix);
+        }
+    }
+
     /**
      * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}
      */
@@ -231,6 +270,98 @@ class DashboardService
         ];
     }
 
+    private function normalizeRole(string $role): string
+    {
+        return strtolower(trim($role));
+    }
+
+    private function enforceRoleScope(string $role, array $options): void
+    {
+        if ($role === 'customer' && !isset($options['customer_id'])) {
+            throw new InvalidArgumentException('Customer scoped dashboard requests require customer_id.');
+        }
+    }
+
+    private function applyTileVisibility(KpiResponse $response, string $role): KpiResponse
+    {
+        $tileSettings = $this->loadTileSettings();
+
+        if (!$this->isTileEnabled('estimates', $role, $tileSettings)) {
+            $response->estimateStatusCounts = [];
+        }
+
+        if (!$this->isTileEnabled('invoices', $role, $tileSettings)) {
+            $response->invoiceTotals = [];
+        }
+
+        if (!$this->isTileEnabled('tax', $role, $tileSettings)) {
+            $response->taxTotals = [];
+        }
+
+        if (!$this->isTileEnabled('warranty', $role, $tileSettings)) {
+            $response->warrantyCounts = [];
+        }
+
+        if (!$this->isTileEnabled('appointments', $role, $tileSettings)) {
+            $response->appointmentCounts = [];
+        }
+
+        if (!$this->isTileEnabled('inventory', $role, $tileSettings)) {
+            $response->inventoryAlerts = [];
+        }
+
+        return $response;
+    }
+
+    private function loadTileSettings(): array
+    {
+        $defaults = [
+            'estimates' => true,
+            'invoices' => true,
+            'tax' => true,
+            'warranty' => true,
+            'appointments' => true,
+            'inventory' => true,
+            'charts' => true,
+        ];
+
+        if ($this->settings === null) {
+            return $defaults;
+        }
+
+        $configured = $this->settings->get('dashboard.tiles', []);
+        if (!is_array($configured)) {
+            return $defaults;
+        }
+
+        foreach ($configured as $tile => $enabled) {
+            if (isset($defaults[$tile])) {
+                $defaults[$tile] = (bool) $enabled;
+            }
+        }
+
+        return $defaults;
+    }
+
+    private function isTileEnabled(string $tile, string $role, array $tileSettings): bool
+    {
+        $roleAllowedTiles = $this->tilesForRole($role);
+
+        return in_array($tile, $roleAllowedTiles, true) && ($tileSettings[$tile] ?? true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function tilesForRole(string $role): array
+    {
+        return match ($role) {
+            'customer' => ['estimates', 'invoices', 'appointments', 'warranty', 'charts'],
+            'technician' => ['appointments', 'estimates', 'warranty', 'charts'],
+            default => ['estimates', 'invoices', 'tax', 'warranty', 'appointments', 'inventory', 'charts'],
+        };
+    }
+
     private function makeCacheKey(string $prefix, DateTimeInterface $start, DateTimeInterface $end, array $options): string
     {
         unset($options['cache_ttl']);
@@ -240,6 +371,24 @@ class DashboardService
             'end' => $end->format(DateTimeInterface::ATOM),
             'options' => $options,
         ]));
+    }
+
+    private function clearCache(?string $prefix = null): void
+    {
+        foreach (array_keys($this->cache) as $key) {
+            if ($prefix === null || str_starts_with($key, $prefix . ':')) {
+                unset($this->cache[$key]);
+            }
+        }
+    }
+
+    private function clearCacheForCustomer(int $customerId): void
+    {
+        foreach (array_keys($this->cache) as $key) {
+            if (str_contains($key, '"customer_id":' . $customerId)) {
+                unset($this->cache[$key]);
+            }
+        }
     }
 
     private function remember(string $key, int $ttl, callable $callback)
