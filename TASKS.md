@@ -36,7 +36,7 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
 - [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
 - [x] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers.
-- [ ] Policy tests and middleware wiring to protect vehicle master endpoints (manager/admin only).
+- [x] Policy tests and middleware wiring to protect vehicle master endpoints (manager/admin only).
 
 ## 4. Service Types
 - [ ] CRUD UI with ordering and active/inactive flag.

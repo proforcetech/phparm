@@ -23,6 +23,7 @@ class VehicleMasterController
      */
     public function index(User $user, array $params = []): array
     {
+        $this->assertManageAccess($user);
         $this->gate->assert($user, 'vehicles.view');
 
         $filters = $this->extractFilters($params);
@@ -38,6 +39,7 @@ class VehicleMasterController
      */
     public function autocomplete(User $user, array $params = []): array
     {
+        $this->assertManageAccess($user);
         $this->gate->assert($user, 'vehicles.view');
 
         $term = isset($params['term']) ? trim((string) $params['term']) : '';
@@ -67,6 +69,7 @@ class VehicleMasterController
      */
     public function store(User $user, array $data): array
     {
+        $this->assertManageAccess($user);
         $this->gate->assert($user, 'vehicles.create');
 
         $vehicle = $this->repository->create($data);
@@ -80,6 +83,7 @@ class VehicleMasterController
      */
     public function update(User $user, int $id, array $data): ?array
     {
+        $this->assertManageAccess($user);
         $this->gate->assert($user, 'vehicles.update');
 
         $vehicle = $this->repository->update($id, $data);
@@ -89,6 +93,7 @@ class VehicleMasterController
 
     public function destroy(User $user, int $id): bool
     {
+        $this->assertManageAccess($user);
         $this->gate->assert($user, 'vehicles.delete');
 
         return $this->repository->delete($id);
@@ -108,5 +113,11 @@ class VehicleMasterController
         }
 
         return $filters;
+    }
+
+    private function assertManageAccess(User $user): void
+    {
+        // Vehicle master data governs downstream dropdowns and normalization; restrict to manager/admin roles.
+        $this->gate->assert($user, 'vehicles.*');
     }
 }
