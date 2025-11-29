@@ -17,13 +17,13 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Access-control middleware & policy tests for each module.
 
 ## 2. Dashboard & Reporting
-- [ ] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
+- [x] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
 - [ ] Visual charts endpoints and frontend components (monthly trends for estimates/invoices; service-type breakdown optional).
 - [ ] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
 - [ ] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
 - [ ] Export endpoints (CSV/PNG) for chart data and dashboard tiles; smoke tests to validate query results and permissions.
-- [ ] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
-- [ ] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
+- [x] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
+- [x] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
 - [ ] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
 
 ## 3. Vehicle Data Management (Master Vehicle Table)
@@ -35,7 +35,7 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
 - [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
 - [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
-- [ ] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers.
+- [x] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers.
 - [ ] Policy tests and middleware wiring to protect vehicle master endpoints (manager/admin only).
 
 ## 4. Service Types
