@@ -58,13 +58,13 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Backend list with filters, status actions (approve/reject/expire), email/send link, convert to invoice.
 - [x] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
 - [x] Per-job approval status; expiration; notes (internal/customer); audit logging.
-- [x] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
-- [x] Email templates and send flow with secure links.
+- [ ] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
+- [ ] Email templates and send flow with secure links.
 
 ## 7. Inspections
 - [x] Inspection template builder (sections/items, types, status).
-- [x] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
-- [x] Customer portal list/view of inspections.
+- [ ] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
+- [ ] Customer portal list/view of inspections.
 
 ## 8. Inventory Management
 - [x] Inventory CRUD with filters; low-stock computation and alerting.
