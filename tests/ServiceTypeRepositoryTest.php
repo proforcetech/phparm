@@ -4,6 +4,7 @@ require __DIR__ . '/test_bootstrap.php';
 
 use App\Database\Connection;
 use App\Services\ServiceType\ServiceTypeRepository;
+use App\Support\Audit\AuditLogger;
 
 class FakeConnection extends Connection
 {
@@ -29,6 +30,8 @@ function setUpInMemoryDatabase(): PDO
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name VARCHAR(120) NOT NULL,
         alias VARCHAR(120) NULL,
+        color VARCHAR(7) NULL,
+        icon VARCHAR(120) NULL,
         description TEXT NULL,
         active TINYINT(1) DEFAULT 1,
         display_order INT DEFAULT 0
@@ -44,11 +47,22 @@ function setUpInMemoryDatabase(): PDO
         service_type_id INT NULL
     )');
 
+    $pdo->exec('CREATE TABLE audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event VARCHAR(120) NOT NULL,
+        entity_type VARCHAR(120) NOT NULL,
+        entity_id INT NULL,
+        actor_id INT NULL,
+        context TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )');
+
     return $pdo;
 }
 
 $pdo = setUpInMemoryDatabase();
-$repository = new ServiceTypeRepository(new FakeConnection($pdo));
+$audit = new AuditLogger(new FakeConnection($pdo), ['table' => 'audit_logs']);
+$repository = new ServiceTypeRepository(new FakeConnection($pdo), null, $audit);
 
 $serviceType = $repository->create([
     'name' => 'Brake Service',
@@ -98,6 +112,9 @@ $removable = $repository->create([
 ]);
 
 $results[] = ['scenario' => 'deletion succeeds when unused', 'passed' => $repository->delete($removable->id) === true];
+
+$auditCount = (int) $pdo->query('SELECT COUNT(*) FROM audit_logs')->fetchColumn();
+$results[] = ['scenario' => 'audit logs recorded for lifecycle changes', 'passed' => $auditCount >= 5];
 
 $failures = array_filter($results, static fn (array $row) => $row['passed'] === false);
 if ($failures) {

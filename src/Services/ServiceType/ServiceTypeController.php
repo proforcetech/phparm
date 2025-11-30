@@ -49,7 +49,7 @@ class ServiceTypeController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'service_types.create');
 
-        $serviceType = $this->repository->create($data);
+        $serviceType = $this->repository->create($data, $user->id);
 
         return $serviceType->toArray();
     }
@@ -63,7 +63,7 @@ class ServiceTypeController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'service_types.update');
 
-        $serviceType = $this->repository->update($id, $data);
+        $serviceType = $this->repository->update($id, $data, $user->id);
 
         return $serviceType?->toArray();
     }
@@ -73,7 +73,7 @@ class ServiceTypeController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'service_types.delete');
 
-        return $this->repository->delete($id);
+        return $this->repository->delete($id, $user->id);
     }
 
     public function setActive(User $user, int $id, bool $active): ?array
@@ -81,7 +81,7 @@ class ServiceTypeController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'service_types.update');
 
-        $serviceType = $this->repository->setActive($id, $active);
+        $serviceType = $this->repository->setActive($id, $active, $user->id);
 
         return $serviceType?->toArray();
     }
@@ -94,7 +94,7 @@ class ServiceTypeController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'service_types.update');
 
-        $this->repository->updateDisplayOrder($orderedIds);
+        $this->repository->updateDisplayOrder($orderedIds, $user->id);
     }
 
     private function assertManageAccess(User $user): void

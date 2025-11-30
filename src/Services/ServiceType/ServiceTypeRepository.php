@@ -4,6 +4,8 @@ namespace App\Services\ServiceType;
 
 use App\Database\Connection;
 use App\Models\ServiceType;
+use App\Support\Audit\AuditEntry;
+use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
 use PDO;
 use Throwable;
@@ -12,6 +14,7 @@ class ServiceTypeRepository
 {
     private Connection $connection;
     private ServiceTypeValidator $validator;
+    private ?AuditLogger $audit;
 
     /**
      * @var array<int, ServiceType>
@@ -23,10 +26,11 @@ class ServiceTypeRepository
      */
     private array $listCache = [];
 
-    public function __construct(Connection $connection, ?ServiceTypeValidator $validator = null)
+    public function __construct(Connection $connection, ?ServiceTypeValidator $validator = null, ?AuditLogger $audit = null)
     {
         $this->connection = $connection;
         $this->validator = $validator ?? new ServiceTypeValidator();
+        $this->audit = $audit;
     }
 
     public function find(int $id): ?ServiceType
@@ -52,7 +56,7 @@ class ServiceTypeRepository
     /**
      * @param array<string, mixed> $data
      */
-    public function create(array $data): ServiceType
+    public function create(array $data, ?int $actorId = null): ServiceType
     {
         $payload = $this->validator->validate($data);
         $this->assertUnique($payload);
@@ -76,19 +80,22 @@ class ServiceTypeRepository
         $this->cache[$id] = $serviceType;
         $this->listCache = [];
 
+        $this->log($actorId, 'service_type.created', $id, ['attributes' => $serviceType->toArray()]);
+
         return $serviceType;
     }
 
     /**
      * @param array<string, mixed> $data
      */
-    public function update(int $id, array $data): ?ServiceType
+    public function update(int $id, array $data, ?int $actorId = null): ?ServiceType
     {
         $existing = $this->find($id);
         if ($existing === null) {
             return null;
         }
 
+        $before = $existing->toArray();
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
         $this->assertUnique($payload, $id);
 
@@ -110,6 +117,11 @@ class ServiceTypeRepository
         $serviceType = new ServiceType(array_merge($payload, ['id' => $id]));
         $this->cache[$id] = $serviceType;
         $this->listCache = [];
+
+        $this->log($actorId, 'service_type.updated', $id, [
+            'before' => $before,
+            'after' => $serviceType->toArray(),
+        ]);
 
         return $serviceType;
     }
@@ -162,7 +174,7 @@ class ServiceTypeRepository
         return $results;
     }
 
-    public function setActive(int $id, bool $active): ?ServiceType
+    public function setActive(int $id, bool $active, ?int $actorId = null): ?ServiceType
     {
         $serviceType = $this->find($id);
         if ($serviceType === null) {
@@ -183,12 +195,18 @@ class ServiceTypeRepository
         $this->cache[$id] = $serviceType;
         $this->listCache = [];
 
+        $this->log($actorId, 'service_type.status_changed', $id, [
+            'active' => $active,
+        ]);
+
         return $serviceType;
     }
 
-    public function delete(int $id): bool
+    public function delete(int $id, ?int $actorId = null): bool
     {
         $this->assertNotReferenced($id);
+
+        $existing = $this->find($id);
 
         $stmt = $this->connection->pdo()->prepare('DELETE FROM service_types WHERE id = :id');
         $stmt->execute(['id' => $id]);
@@ -196,13 +214,17 @@ class ServiceTypeRepository
         unset($this->cache[$id]);
         $this->listCache = [];
 
+        if ($existing !== null) {
+            $this->log($actorId, 'service_type.deleted', $id, ['attributes' => $existing->toArray()]);
+        }
+
         return $stmt->rowCount() > 0;
     }
 
     /**
      * @param array<int, int> $orderedIds
      */
-    public function updateDisplayOrder(array $orderedIds): void
+    public function updateDisplayOrder(array $orderedIds, ?int $actorId = null): void
     {
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
@@ -219,6 +241,7 @@ class ServiceTypeRepository
 
             $pdo->commit();
             $this->listCache = [];
+            $this->log($actorId, 'service_type.reordered', null, ['order' => array_values($orderedIds)]);
         } catch (Throwable $e) {
             $pdo->rollBack();
             throw $e;
@@ -282,6 +305,15 @@ class ServiceTypeRepository
                 );
             }
         }
+    }
+
+    private function log(?int $actorId, string $event, $entityId, array $context = []): void
+    {
+        if ($this->audit === null) {
+            return;
+        }
+
+        $this->audit->log(new AuditEntry($event, 'service_type', $entityId, $actorId, $context));
     }
 
     /**

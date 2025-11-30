@@ -35,7 +35,7 @@ class AuditLogger
         $payload = $this->redactContext($entry->context);
 
         $stmt = $this->connection->pdo()->prepare(
-            "INSERT INTO {$table} (event, entity_type, entity_id, actor_id, context, created_at) VALUES (:event, :entity_type, :entity_id, :actor_id, :context, NOW())"
+            "INSERT INTO {$table} (event, entity_type, entity_id, actor_id, context, created_at) VALUES (:event, :entity_type, :entity_id, :actor_id, :context, :created_at)"
         );
 
         $stmt->execute([
@@ -44,6 +44,7 @@ class AuditLogger
             'entity_id' => $entry->entityId,
             'actor_id' => $entry->actorId,
             'context' => json_encode($payload, JSON_THROW_ON_ERROR),
+            'created_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
         ]);
     }
 
