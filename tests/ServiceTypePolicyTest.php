@@ -65,7 +65,7 @@ class InMemoryServiceTypeRepository extends ServiceTypeRepository
     /**
      * @param array<string, mixed> $data
      */
-    public function create(array $data): ServiceType
+    public function create(array $data, ?int $actorId = null): ServiceType
     {
         $nextId = count($this->items) + 1;
         $serviceType = new ServiceType(array_merge([
@@ -84,7 +84,7 @@ class InMemoryServiceTypeRepository extends ServiceTypeRepository
     /**
      * @param array<string, mixed> $data
      */
-    public function update(int $id, array $data): ?ServiceType
+    public function update(int $id, array $data, ?int $actorId = null): ?ServiceType
     {
         if (!isset($this->items[$id])) {
             return null;
@@ -96,7 +96,7 @@ class InMemoryServiceTypeRepository extends ServiceTypeRepository
         return $this->items[$id];
     }
 
-    public function delete(int $id): bool
+    public function delete(int $id, ?int $actorId = null): bool
     {
         if (!isset($this->items[$id])) {
             return false;
@@ -107,7 +107,7 @@ class InMemoryServiceTypeRepository extends ServiceTypeRepository
         return true;
     }
 
-    public function setActive(int $id, bool $active): ?ServiceType
+    public function setActive(int $id, bool $active, ?int $actorId = null): ?ServiceType
     {
         if (!isset($this->items[$id])) {
             return null;
@@ -121,7 +121,7 @@ class InMemoryServiceTypeRepository extends ServiceTypeRepository
     /**
      * @param array<int, int> $orderedIds
      */
-    public function updateDisplayOrder(array $orderedIds): void
+    public function updateDisplayOrder(array $orderedIds, ?int $actorId = null): void
     {
         foreach (array_values($orderedIds) as $index => $id) {
             if (isset($this->items[$id])) {
