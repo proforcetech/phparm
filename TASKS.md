@@ -120,10 +120,10 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Event triggers wired to notifications (estimate sent/approved/rejected, invoice created/paid, appointment events, warranty updates, payment reminders).
 
 ## 19. Import/Export & Audit
-- [ ] CSV export endpoints for key datasets; import flows for customers, vehicle master data, inventory with validation and reporting.
-- [ ] Audit log viewer with filters; track entity actions and settings changes with metadata snapshots.
+- [x] CSV export endpoints for key datasets; import flows for customers, vehicle master data, inventory with validation and reporting.
+- [x] Audit log viewer with filters; track entity actions and settings changes with metadata snapshots.
 
 ## 20. QA & Observability
-- [ ] Automated tests per module (unit + feature + permissions); seed/factory data for fixtures.
-- [ ] API request/response logging, error tracking setup, performance profiling hooks.
-- [ ] Admin health/status page for queues, schedulers, and integration connectivity checks.
+- [x] Automated tests per module (unit + feature + permissions); seed/factory data for fixtures.
+- [x] API request/response logging, error tracking setup, performance profiling hooks.
+- [x] Admin health/status page for queues, schedulers, and integration connectivity checks.
