@@ -23,6 +23,11 @@ class VehicleMasterRepository
      */
     private array $searchCache = [];
 
+    /**
+     * @var array<string, array<int, string|int|null>>
+     */
+    private array $distinctCache = [];
+
     public function __construct(Connection $connection, ?VehicleMasterValidator $validator = null)
     {
         $this->connection = $connection;
@@ -174,6 +179,65 @@ class VehicleMasterRepository
         $this->searchCache[$cacheKey] = $results;
 
         return $results;
+    }
+
+    /**
+     * Fetch distinct values for the provided column, honoring the progressive filters for dropdown chains.
+     *
+     * @param array<string, mixed> $filters
+     * @return array<int, string|int|null>
+     */
+    public function distinctValues(string $column, array $filters = []): array
+    {
+        $allowedColumns = ['year', 'make', 'model', 'engine', 'transmission', 'drive', 'trim'];
+        if (!in_array($column, $allowedColumns, true)) {
+            throw new InvalidArgumentException('Unsupported distinct column: ' . $column);
+        }
+
+        $cacheKey = md5(json_encode([$column, $filters]));
+        if (isset($this->distinctCache[$cacheKey])) {
+            return $this->distinctCache[$cacheKey];
+        }
+
+        $clauses = [];
+        $bindings = [];
+        foreach ($allowedColumns as $field) {
+            if (!isset($filters[$field]) || $filters[$field] === '') {
+                continue;
+            }
+
+            if ($field === 'year') {
+                $clauses[] = 'year = :year';
+                $bindings['year'] = (int) $filters['year'];
+            } else {
+                $clauses[] = "$field = :$field";
+                $bindings[$field] = $filters[$field];
+            }
+        }
+
+        $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
+        $order = $column === 'year' ? 'DESC' : 'ASC';
+
+        $sql = sprintf('SELECT DISTINCT %s FROM vehicle_master %s ORDER BY %s %s', $column, $where, $column, $order);
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($bindings as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->execute();
+
+        $values = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $value) {
+            if ($value === null) {
+                $values[] = null;
+                continue;
+            }
+
+            $values[] = $column === 'year' ? (int) $value : (string) $value;
+        }
+
+        $this->distinctCache[$cacheKey] = $values;
+
+        return $values;
     }
 
     public function delete(int $id): bool
