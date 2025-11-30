@@ -68,7 +68,7 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 8. Inventory Management
 - [x] Inventory CRUD with filters; low-stock computation and alerting.
-- [ ] CSV import/export; markup calculation; location notes.
+- [x] CSV import/export; markup calculation; location notes.
 - [ ] Dashboard tile for low stock and dedicated low-stock page; optional email alerts.
 
 ## 9. Warranty Claims

@@ -10,11 +10,17 @@ class InventoryItemController
 {
     private InventoryItemRepository $repository;
     private AccessGate $gate;
+    private InventoryCsvService $csvService;
 
-    public function __construct(InventoryItemRepository $repository, AccessGate $gate)
+    public function __construct(
+        InventoryItemRepository $repository,
+        AccessGate $gate,
+        ?InventoryCsvService $csvService = null
+    )
     {
         $this->repository = $repository;
         $this->gate = $gate;
+        $this->csvService = $csvService ?? new InventoryCsvService($repository);
     }
 
     /**
@@ -86,6 +92,24 @@ class InventoryItemController
         $this->gate->assert($user, 'inventory.delete');
 
         return $this->repository->delete($id);
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    public function export(User $user, array $filters = []): string
+    {
+        $this->assertViewAccess($user);
+
+        return $this->csvService->export($filters);
+    }
+
+    public function import(User $user, string $csv, bool $updateExisting = false): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'inventory.import');
+
+        return $this->csvService->import($csv, $updateExisting);
     }
 
     private function assertManageAccess(User $user): void

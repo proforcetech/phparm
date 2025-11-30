@@ -47,6 +47,60 @@ class InventoryItemRepository
         return $item;
     }
 
+    public function findBySku(string $sku): ?InventoryItem
+    {
+        foreach ($this->cache as $item) {
+            if ($item->sku === $sku) {
+                return $item;
+            }
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM inventory_items WHERE sku = :sku LIMIT 1');
+        $stmt->execute(['sku' => $sku]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $item = $this->mapRow($row);
+        $this->cache[$item->id] = $item;
+
+        return $item;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function findDuplicate(array $payload): ?InventoryItem
+    {
+        if (!empty($payload['sku'])) {
+            $existing = $this->findBySku((string) $payload['sku']);
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM inventory_items WHERE name = :name AND (category = :category OR (:category IS NULL AND category IS NULL)) LIMIT 1'
+        );
+
+        $stmt->execute([
+            'name' => $payload['name'],
+            'category' => $payload['category'] ?? null,
+        ]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $item = $this->mapRow($row);
+        $this->cache[$item->id] = $item;
+
+        return $item;
+    }
+
     /**
      * @param array<string, mixed> $data
      */
