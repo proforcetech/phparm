@@ -40,7 +40,7 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 4. Service Types
 - [ ] CRUD UI with ordering and active/inactive flag.
-- [ ] Integrate into estimate creation and reporting filters.
+- [x] Integrate into estimate creation and reporting filters.
 - [x] Validation around unique names/aliases, color/icon metadata for UI, and deactivation safeguards when linked to active jobs.
 - [x] Seed data for common automotive services and migration to backfill existing estimates/invoices with service type IDs.
 - [x] API endpoints and policy tests for listing/filtering active service types for public/portal use.
