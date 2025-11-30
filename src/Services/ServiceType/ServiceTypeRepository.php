@@ -57,13 +57,15 @@ class ServiceTypeRepository
         $payload = $this->validator->validate($data);
         $this->assertUnique($payload);
 
-        $sql = 'INSERT INTO service_types (name, alias, description, active, display_order) '
-            . 'VALUES (:name, :alias, :description, :active, :display_order)';
+        $sql = 'INSERT INTO service_types (name, alias, color, icon, description, active, display_order) '
+            . 'VALUES (:name, :alias, :color, :icon, :description, :active, :display_order)';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute([
             'name' => $payload['name'],
             'alias' => $payload['alias'],
+            'color' => $payload['color'],
+            'icon' => $payload['icon'],
             'description' => $payload['description'],
             'active' => $payload['active'] ? 1 : 0,
             'display_order' => $payload['display_order'],
@@ -90,13 +92,15 @@ class ServiceTypeRepository
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
         $this->assertUnique($payload, $id);
 
-        $sql = 'UPDATE service_types SET name = :name, alias = :alias, description = :description, '
+        $sql = 'UPDATE service_types SET name = :name, alias = :alias, color = :color, icon = :icon, description = :description, '
             . 'active = :active, display_order = :display_order WHERE id = :id';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute([
             'name' => $payload['name'],
             'alias' => $payload['alias'],
+            'color' => $payload['color'],
+            'icon' => $payload['icon'],
             'description' => $payload['description'],
             'active' => $payload['active'] ? 1 : 0,
             'display_order' => $payload['display_order'],
@@ -255,6 +259,11 @@ class ServiceTypeRepository
     {
         $row['active'] = (bool) $row['active'];
         $row['display_order'] = (int) $row['display_order'];
+
+        $row['alias'] = $row['alias'] ?? null;
+        $row['color'] = $row['color'] ?? null;
+        $row['icon'] = $row['icon'] ?? null;
+        $row['description'] = $row['description'] ?? null;
 
         return new ServiceType($row);
     }
