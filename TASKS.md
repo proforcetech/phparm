@@ -55,7 +55,7 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] Commercial account toggles and tax-exempt handling.
 
 ## 6. Estimates Module
-- [ ] Backend list with filters, status actions (approve/reject/expire), email/send link, convert to invoice.
+- [x] Backend list with filters, status actions (approve/reject/expire), email/send link, convert to invoice.
 - [ ] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
 - [ ] Per-job approval status; expiration; notes (internal/customer); audit logging.
 - [ ] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
