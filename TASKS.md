@@ -56,13 +56,13 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 6. Estimates Module
 - [x] Backend list with filters, status actions (approve/reject/expire), email/send link, convert to invoice.
-- [ ] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
-- [ ] Per-job approval status; expiration; notes (internal/customer); audit logging.
+- [x] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
+- [x] Per-job approval status; expiration; notes (internal/customer); audit logging.
 - [ ] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
 - [ ] Email templates and send flow with secure links.
 
 ## 7. Inspections
-- [ ] Inspection template builder (sections/items, types, status).
+- [x] Inspection template builder (sections/items, types, status).
 - [ ] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
 - [ ] Customer portal list/view of inspections.
 
@@ -72,7 +72,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Dashboard tile for low stock and dedicated low-stock page; optional email alerts.
 
 ## 9. Warranty Claims
-- [ ] Customer portal/public submission with invoice verification; attachments upload; status display.
+- [x] Customer portal/public submission with invoice verification; attachments upload; status display.
 - [ ] Staff list/detail with timeline, internal notes, status transitions, and messaging (email/SMS) to customer.
 - [ ] Dashboard counters for open/resolved claims.
 
