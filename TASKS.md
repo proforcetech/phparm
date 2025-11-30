@@ -33,7 +33,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
 - [x] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.
 - [x] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
-- [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
+- [x] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
 - [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
 - [x] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers.
 - [x] Policy tests and middleware wiring to protect vehicle master endpoints (manager/admin only).
@@ -69,7 +69,7 @@ This document captures the actionable engineering tasks required to implement th
 ## 8. Inventory Management
 - [x] Inventory CRUD with filters; low-stock computation and alerting.
 - [x] CSV import/export; markup calculation; location notes.
-- [ ] Dashboard tile for low stock and dedicated low-stock page; optional email alerts.
+- [x] Dashboard tile for low stock and dedicated low-stock page; optional email alerts.
 
 ## 9. Warranty Claims
 - [ ] Customer portal/public submission with invoice verification; attachments upload; status display.
