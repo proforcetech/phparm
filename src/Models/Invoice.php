@@ -7,6 +7,7 @@ class Invoice extends BaseModel
     public int $id;
     public string $number;
     public int $customer_id;
+    public ?int $service_type_id = null;
     public ?int $vehicle_id = null;
     public ?int $estimate_id = null;
     public string $status;

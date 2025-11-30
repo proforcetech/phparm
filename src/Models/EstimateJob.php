@@ -6,6 +6,7 @@ class EstimateJob extends BaseModel
 {
     public int $id;
     public int $estimate_id;
+    public ?int $service_type_id = null;
     public string $title;
     public ?string $notes = null;
     public ?string $reference = null;

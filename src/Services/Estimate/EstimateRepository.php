@@ -55,6 +55,11 @@ class EstimateRepository
             $bindings['vehicle_id'] = (int) $filters['vehicle_id'];
         }
 
+        if (!empty($filters['service_type_id'])) {
+            $clauses[] = 'id IN (SELECT estimate_id FROM estimate_jobs WHERE service_type_id = :service_type_id)';
+            $bindings['service_type_id'] = (int) $filters['service_type_id'];
+        }
+
         if (!empty($filters['term'])) {
             $clauses[] = '(number LIKE :term OR status LIKE :term)';
             $bindings['term'] = '%' . $filters['term'] . '%';
@@ -149,16 +154,18 @@ class EstimateRepository
 
         try {
             $invoiceNumber = $this->generateInvoiceNumber($estimate->number);
+            $serviceTypeId = $this->determinePrimaryServiceTypeId($estimateId);
 
             $insert = $pdo->prepare(<<<SQL
-                INSERT INTO invoices (number, customer_id, vehicle_id, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
-                VALUES (:number, :customer_id, :vehicle_id, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
+                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
+                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
             SQL);
 
             $total = $estimate->grand_total;
             $insert->execute([
                 'number' => $invoiceNumber,
                 'customer_id' => $estimate->customer_id,
+                'service_type_id' => $serviceTypeId,
                 'vehicle_id' => $estimate->vehicle_id,
                 'estimate_id' => $estimate->id,
                 'status' => 'pending',
@@ -179,6 +186,7 @@ class EstimateRepository
                 'id' => $invoiceId,
                 'number' => $invoiceNumber,
                 'customer_id' => $estimate->customer_id,
+                'service_type_id' => $serviceTypeId,
                 'vehicle_id' => $estimate->vehicle_id,
                 'estimate_id' => $estimate->id,
                 'status' => 'pending',
@@ -259,6 +267,17 @@ class EstimateRepository
         }
 
         return $candidate;
+    }
+
+    private function determinePrimaryServiceTypeId(int $estimateId): ?int
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT service_type_id, COUNT(*) as usage_count FROM estimate_jobs WHERE estimate_id = :estimate_id AND service_type_id IS NOT NULL GROUP BY service_type_id ORDER BY usage_count DESC, service_type_id ASC LIMIT 1'
+        );
+        $stmt->execute(['estimate_id' => $estimateId]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $result && $result['service_type_id'] !== null ? (int) $result['service_type_id'] : null;
     }
 
     private function invoiceExists(string $number): bool
