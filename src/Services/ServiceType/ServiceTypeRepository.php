@@ -169,6 +169,10 @@ class ServiceTypeRepository
             return null;
         }
 
+        if ($active === false) {
+            $this->assertNotReferenced($id);
+        }
+
         $stmt = $this->connection->pdo()->prepare('UPDATE service_types SET active = :active WHERE id = :id');
         $stmt->execute([
             'active' => $active ? 1 : 0,
@@ -184,6 +188,8 @@ class ServiceTypeRepository
 
     public function delete(int $id): bool
     {
+        $this->assertNotReferenced($id);
+
         $stmt = $this->connection->pdo()->prepare('DELETE FROM service_types WHERE id = :id');
         $stmt->execute(['id' => $id]);
 
@@ -248,6 +254,32 @@ class ServiceTypeRepository
 
             if ($payload['alias'] !== null && $row['alias'] === $payload['alias']) {
                 throw new InvalidArgumentException('A service type with this alias already exists.');
+            }
+        }
+    }
+
+    private function assertNotReferenced(int $id): void
+    {
+        $tables = [
+            'estimate_jobs' => 'estimate jobs',
+            'invoices' => 'invoices',
+        ];
+
+        $pdo = $this->connection->pdo();
+
+        foreach ($tables as $table => $label) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$table} WHERE service_type_id = :id");
+            $stmt->execute(['id' => $id]);
+            $count = (int) $stmt->fetchColumn();
+
+            if ($count > 0) {
+                throw new InvalidArgumentException(
+                    sprintf(
+                        'Cannot modify service type because it is referenced by %d %s.',
+                        $count,
+                        $label
+                    )
+                );
             }
         }
     }
