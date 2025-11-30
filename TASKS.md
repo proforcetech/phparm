@@ -27,19 +27,19 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.
 
 ## 3. Vehicle Data Management (Master Vehicle Table)
-- [ ] CRUD UI + filters for Year/Make/Model/Engine/Transmission/Drive/Trim.
+- [x] CRUD UI + filters for Year/Make/Model/Engine/Transmission/Drive/Trim.
 - [x] CSV import with mapping/preview, duplicate detection, and summary of created/updated/failed rows.
 - [x] Progressive dropdown components for Year→Trim selection for estimate forms and customer vehicles; caching for performance.
 - [x] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
 - [x] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.
 - [x] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
-- [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
+- [x] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
 - [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
 - [x] Repository/service layer for vehicle master CRUD with validation, search, and caching helpers.
 - [x] Policy tests and middleware wiring to protect vehicle master endpoints (manager/admin only).
 
 ## 4. Service Types
-- [ ] CRUD UI with ordering and active/inactive flag.
+- [x] CRUD UI with ordering and active/inactive flag.
 - [x] Integrate into estimate creation and reporting filters.
 - [x] Validation around unique names/aliases, color/icon metadata for UI, and deactivation safeguards when linked to active jobs.
 - [x] Seed data for common automotive services and migration to backfill existing estimates/invoices with service type IDs.
@@ -50,29 +50,29 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Event hooks/audit logging on service type lifecycle changes and integration points for estimates/invoices.
 
 ## 5. Customer & Vehicle Management
-- [ ] Customer CRUD with search, filters (commercial/tax-exempt/open invoices), import/export CSV.
-- [ ] Customer vehicles tab with link to master vehicle data or free-text, VIN/plate capture, notes.
-- [ ] Commercial account toggles and tax-exempt handling.
+- [x] Customer CRUD with search, filters (commercial/tax-exempt/open invoices), import/export CSV.
+- [x] Customer vehicles tab with link to master vehicle data or free-text, VIN/plate capture, notes.
+- [x] Commercial account toggles and tax-exempt handling.
 
 ## 6. Estimates Module
 - [x] Backend list with filters, status actions (approve/reject/expire), email/send link, convert to invoice.
-- [ ] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
-- [ ] Per-job approval status; expiration; notes (internal/customer); audit logging.
-- [ ] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
-- [ ] Email templates and send flow with secure links.
+- [x] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
+- [x] Per-job approval status; expiration; notes (internal/customer); audit logging.
+- [x] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
+- [x] Email templates and send flow with secure links.
 
 ## 7. Inspections
-- [ ] Inspection template builder (sections/items, types, status).
-- [ ] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
-- [ ] Customer portal list/view of inspections.
+- [x] Inspection template builder (sections/items, types, status).
+- [x] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
+- [x] Customer portal list/view of inspections.
 
 ## 8. Inventory Management
 - [x] Inventory CRUD with filters; low-stock computation and alerting.
 - [x] CSV import/export; markup calculation; location notes.
-- [ ] Dashboard tile for low stock and dedicated low-stock page; optional email alerts.
+- [x] Dashboard tile for low stock and dedicated low-stock page; optional email alerts.
 
 ## 9. Warranty Claims
-- [ ] Customer portal/public submission with invoice verification; attachments upload; status display.
+- [x] Customer portal/public submission with invoice verification; attachments upload; status display.
 - [ ] Staff list/detail with timeline, internal notes, status transitions, and messaging (email/SMS) to customer.
 - [ ] Dashboard counters for open/resolved claims.
 
