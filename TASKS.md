@@ -58,13 +58,13 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Backend list with filters, status actions (approve/reject/expire), email/send link, convert to invoice.
 - [x] Estimate editor: header fields, customer search/create, vehicle chain selector, jobs with line-item grid (labor/parts/fee/discount), totals (tax, call-out, mileage, discounts).
 - [x] Per-job approval status; expiration; notes (internal/customer); audit logging.
-- [ ] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
-- [ ] Email templates and send flow with secure links.
+- [x] Customer-facing tokenized view with per-job approve/reject, signature capture, comments; status propagation rules; short-link generator.
+- [x] Email templates and send flow with secure links.
 
 ## 7. Inspections
 - [x] Inspection template builder (sections/items, types, status).
-- [ ] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
-- [ ] Customer portal list/view of inspections.
+- [x] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
+- [x] Customer portal list/view of inspections.
 
 ## 8. Inventory Management
 - [x] Inventory CRUD with filters; low-stock computation and alerting.
@@ -73,27 +73,27 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 9. Warranty Claims
 - [x] Customer portal/public submission with invoice verification; attachments upload; status display.
-- [ ] Staff list/detail with timeline, internal notes, status transitions, and messaging (email/SMS) to customer.
-- [ ] Dashboard counters for open/resolved claims.
+- [x] Staff list/detail with timeline, internal notes, status transitions, and messaging (email/SMS) to customer.
+- [x] Dashboard counters for open/resolved claims.
 
 ## 10. Reminders (Email & SMS)
-- [ ] Campaign model with targeting rules (service type, last visit/invoice, appointment window, mileage/time since service), schedule config, message templates, status lifecycle.
-- [ ] Scheduler/cron runner to enqueue due campaigns, compute recipients per preferences, dispatch via mail/SMS, and log outcomes/unsubscribes.
-- [ ] Preference UI for customers (opt-in/out, channel preference) and dashboard stats for counts/sends.
+- [x] Campaign model with targeting rules (service type, last visit/invoice, appointment window, mileage/time since service), schedule config, message templates, status lifecycle.
+- [x] Scheduler/cron runner to enqueue due campaigns, compute recipients per preferences, dispatch via mail/SMS, and log outcomes/unsubscribes.
+- [x] Preference UI for customers (opt-in/out, channel preference) and dashboard stats for counts/sends.
 
 ## 11. Preset Bundles
-- [ ] Bundle CRUD with default job title and line items.
-- [ ] "Add from bundle" action in estimate editor to inject job + items for editing.
+- [x] Bundle CRUD with default job title and line items.
+- [x] "Add from bundle" action in estimate editor to inject job + items for editing.
 
 ## 12. Time Tracking & Technician Portal
-- [ ] Technician portal showing assigned jobs; start/stop time tracking with geo capture (browser permission fallback handling).
-- [ ] Time entry admin view with filters, manual add/edit, override flagging.
-- [ ] Map display for geo points (optional); data retained in time entry records.
+- [x] Technician portal showing assigned jobs; start/stop time tracking with geo capture (browser permission fallback handling).
+- [x] Time entry admin view with filters, manual add/edit, override flagging.
+- [x] Map display for geo points (optional); data retained in time entry records.
 
 ## 13. Credit Accounts
-- [ ] Credit account model per customer: type, limit, balance, terms (net days/APR/late fees), status.
-- [ ] Operations: link invoice balances, manual payments, online payments to credit account where enabled, late-fee application and summaries.
-- [ ] Customer portal credit page: balance/limit/available credit, due dates, transactions, online payment option.
+- [x] Credit account model per customer: type, limit, balance, terms (net days/APR/late fees), status.
+- [x] Operations: link invoice balances, manual payments, online payments to credit account where enabled, late-fee application and summaries.
+- [x] Customer portal credit page: balance/limit/available credit, due dates, transactions, online payment option.
 
 ## 14. Invoices & Payments
 - [ ] Invoice creation from estimates (all or selected approved jobs) and standalone invoices; status lifecycle including pending approval for scope changes.
