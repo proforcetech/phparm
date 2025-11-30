@@ -31,7 +31,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] CSV import with mapping/preview, duplicate detection, and summary of created/updated/failed rows.
 - [x] Progressive dropdown components for Year→Trim selection for estimate forms and customer vehicles; caching for performance.
 - [x] Backend validation rules (per-year ranges, required relationships), uniqueness constraints, and audit logging of changes.
-- [ ] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.
+- [x] Bulk edit and merge workflow for duplicate records with history note and conflict resolution.
 - [x] API endpoints for search/autocomplete to support vehicle selection in other modules; throttling and caching.
 - [ ] Background job to hydrate missing normalized data (e.g., trim/engine) from VIN decoder integrations where available.
 - [x] Base data model and migration for vehicle_master table defined; relations to customer vehicles established in schema.
@@ -42,7 +42,7 @@ This document captures the actionable engineering tasks required to implement th
 - [ ] CRUD UI with ordering and active/inactive flag.
 - [ ] Integrate into estimate creation and reporting filters.
 - [x] Validation around unique names/aliases, color/icon metadata for UI, and deactivation safeguards when linked to active jobs.
-- [ ] Seed data for common automotive services and migration to backfill existing estimates/invoices with service type IDs.
+- [x] Seed data for common automotive services and migration to backfill existing estimates/invoices with service type IDs.
 - [x] API endpoints and policy tests for listing/filtering active service types for public/portal use.
 - [x] Drag-and-drop reordering with persisted display order and audit trail for changes.
 - [x] Base data model and migration for service_types table created.
