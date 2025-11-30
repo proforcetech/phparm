@@ -17,11 +17,6 @@ class VehicleMasterController
         $this->repository = $repository;
         $this->gate = $gate;
         $this->importer = $importer ?? new VehicleMasterImporter($repository);
-
-    public function __construct(VehicleMasterRepository $repository, AccessGate $gate)
-    {
-        $this->repository = $repository;
-        $this->gate = $gate;
     }
 
     /**

@@ -178,6 +178,17 @@ class ServiceTypeRepository
         return $serviceType;
     }
 
+    public function delete(int $id): bool
+    {
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM service_types WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+
+        unset($this->cache[$id]);
+        $this->listCache = [];
+
+        return $stmt->rowCount() > 0;
+    }
+
     /**
      * @param array<int, int> $orderedIds
      */
