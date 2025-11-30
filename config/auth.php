@@ -24,7 +24,7 @@ return [
                 'users.view', 'users.invite', 'users.update',
                 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*',
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
-                'credit.*', 'reports.view', 'settings.view', 'notifications.view'
+                'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*'
             ],
         ],
         'technician' => [
@@ -32,7 +32,7 @@ return [
             'description' => 'Work estimates, inspections, jobs, and time tracking',
             'permissions' => [
                 'customers.view', 'vehicles.view', 'estimates.view', 'estimates.update',
-                'inspections.*', 'time.*', 'appointments.view'
+                'inspections.*', 'time.*', 'appointments.view', 'service_types.view'
             ],
         ],
         'customer' => [
