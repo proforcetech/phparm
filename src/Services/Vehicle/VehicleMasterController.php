@@ -11,12 +11,19 @@ class VehicleMasterController
     private VehicleMasterRepository $repository;
     private AccessGate $gate;
     private VehicleMasterImporter $importer;
+    private VehicleCascadeService $cascade;
 
-    public function __construct(VehicleMasterRepository $repository, AccessGate $gate, ?VehicleMasterImporter $importer = null)
+    public function __construct(
+        VehicleMasterRepository $repository,
+        AccessGate $gate,
+        ?VehicleMasterImporter $importer = null,
+        ?VehicleCascadeService $cascade = null
+    )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->importer = $importer ?? new VehicleMasterImporter($repository);
+        $this->cascade = $cascade ?? new VehicleCascadeService($repository);
     }
 
     /**
@@ -33,6 +40,90 @@ class VehicleMasterController
         $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
 
         return array_map(static fn ($item) => $item->toArray(), $this->repository->search($filters, $limit, $offset));
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function years(User $user): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->years();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function makes(User $user, int $year): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->makes($year);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function models(User $user, int $year, string $make): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->models($year, $make);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function engines(User $user, int $year, string $make, string $model): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->engines($year, $make, $model);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function transmissions(User $user, int $year, string $make, string $model, string $engine): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->transmissions($year, $make, $model, $engine);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function drives(User $user, int $year, string $make, string $model, string $engine, string $transmission): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->drives($year, $make, $model, $engine, $transmission);
+    }
+
+    /**
+     * @return array<int, string|null>
+     */
+    public function trims(
+        User $user,
+        int $year,
+        string $make,
+        string $model,
+        string $engine,
+        string $transmission,
+        string $drive
+    ): array {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->cascade->trims($year, $make, $model, $engine, $transmission, $drive);
     }
 
     /**
