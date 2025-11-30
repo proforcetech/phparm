@@ -96,28 +96,28 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Customer portal credit page: balance/limit/available credit, due dates, transactions, online payment option.
 
 ## 14. Invoices & Payments
-- [ ] Invoice creation from estimates (all or selected approved jobs) and standalone invoices; status lifecycle including pending approval for scope changes.
-- [ ] Customer-facing invoice view with PDF/print, pay-now (Stripe/Square/PayPal) and credit account interactions.
-- [ ] Payment processing flows with webhooks for Stripe/Square/PayPal; transaction logging; return URL handling.
+- [x] Invoice creation from estimates (all or selected approved jobs) and standalone invoices; status lifecycle including pending approval for scope changes.
+- [x] Customer-facing invoice view with PDF/print, pay-now (Stripe/Square/PayPal) and credit account interactions.
+- [x] Payment processing flows with webhooks for Stripe/Square/PayPal; transaction logging; return URL handling.
 
 ## 15. Financials & Reporting
-- [ ] Income (non-invoice), expenses, purchases ledgers with attachments for receipts.
-- [ ] Financial report endpoints/UI: date-range summary and monthly breakdown (income, expenses, purchases, gross/net); CSV export.
+- [x] Income (non-invoice), expenses, purchases ledgers with attachments for receipts.
+- [x] Financial report endpoints/UI: date-range summary and monthly breakdown (income, expenses, purchases, gross/net); CSV export.
 
 ## 16. Appointments & Availability
-- [ ] Availability configuration (hours, windows, holidays, slot length, buffers).
-- [ ] Appointment entity CRUD with calendar/list views, technician assignment, status transitions.
-- [ ] Customer booking flow showing computed availability, linked to estimates when applicable; notifications for confirmation/changes.
+- [x] Availability configuration (hours, windows, holidays, slot length, buffers).
+- [x] Appointment entity CRUD with calendar/list views, technician assignment, status transitions.
+- [x] Customer booking flow showing computed availability, linked to estimates when applicable; notifications for confirmation/changes.
 
 ## 17. Settings & Integrations
-- [ ] Shop/company profile UI; logo upload; currency.
-- [ ] Terms & conditions editor blocks for frontend request, estimates, invoices.
-- [ ] Pricing defaults (tax rules, labor rate, call-out/mileage defaults) applied across estimates/invoices.
-- [ ] Integration settings pages for Stripe/Square/PayPal/Twilio/SMTP/recaptcha/map keys; secure storage and validation tests.
+- [x] Shop/company profile UI; logo upload; currency.
+- [x] Terms & conditions editor blocks for frontend request, estimates, invoices.
+- [x] Pricing defaults (tax rules, labor rate, call-out/mileage defaults) applied across estimates/invoices.
+- [x] Integration settings pages for Stripe/Square/PayPal/Twilio/SMTP/recaptcha/map keys; secure storage and validation tests.
 
 ## 18. Notifications & Templates
-- [ ] Email/SMS template manager with variables; test-send capability; per-entity logs.
-- [ ] Event triggers wired to notifications (estimate sent/approved/rejected, invoice created/paid, appointment events, warranty updates, payment reminders).
+- [x] Email/SMS template manager with variables; test-send capability; per-entity logs.
+- [x] Event triggers wired to notifications (estimate sent/approved/rejected, invoice created/paid, appointment events, warranty updates, payment reminders).
 
 ## 19. Import/Export & Audit
 - [ ] CSV export endpoints for key datasets; import flows for customers, vehicle master data, inventory with validation and reporting.
