@@ -13,17 +13,20 @@ class InspectionController
     private InspectionCompletionService $completion;
     private InspectionPortalService $portal;
     private AccessGate $gate;
+    private ?\App\Support\Pdf\InspectionPdfGenerator $pdfGenerator;
 
     public function __construct(
         InspectionTemplateService $templates,
         InspectionCompletionService $completion,
         InspectionPortalService $portal,
-        AccessGate $gate
+        AccessGate $gate,
+        ?\App\Support\Pdf\InspectionPdfGenerator $pdfGenerator = null
     ) {
         $this->templates = $templates;
         $this->completion = $completion;
         $this->portal = $portal;
         $this->gate = $gate;
+        $this->pdfGenerator = $pdfGenerator;
     }
 
     /**
@@ -94,5 +97,29 @@ class InspectionController
 
         $inspections = $this->portal->listForCustomer($user->customer_id);
         return array_map(static fn ($i) => $i->toArray(), $inspections);
+    }
+
+    /**
+     * Generate and download inspection PDF
+     *
+     * @param array<string, mixed> $settings
+     */
+    public function downloadPdf(User $user, int $reportId, array $settings = []): string
+    {
+        if (!$this->gate->can($user, 'inspections.view')) {
+            throw new UnauthorizedException('Cannot view inspection reports');
+        }
+
+        if ($this->pdfGenerator === null) {
+            throw new \RuntimeException('PDF generation not available');
+        }
+
+        // Fetch the report
+        $report = $this->completion->findById($reportId);
+        if ($report === null) {
+            throw new InvalidArgumentException('Inspection report not found');
+        }
+
+        return $this->pdfGenerator->generate($report, $settings);
     }
 }

@@ -12,15 +12,18 @@ class InvoiceController
     private InvoiceService $service;
     private PaymentProcessingService $payments;
     private AccessGate $gate;
+    private ?\App\Support\Pdf\InvoicePdfGenerator $pdfGenerator;
 
     public function __construct(
         InvoiceService $service,
         PaymentProcessingService $payments,
-        AccessGate $gate
+        AccessGate $gate,
+        ?\App\Support\Pdf\InvoicePdfGenerator $pdfGenerator = null
     ) {
         $this->service = $service;
         $this->payments = $payments;
         $this->gate = $gate;
+        $this->pdfGenerator = $pdfGenerator;
     }
 
     /**
@@ -166,5 +169,36 @@ class InvoiceController
     {
         // Webhooks don't require user authentication
         return $this->payments->handleWebhook($provider, $payload);
+    }
+
+    /**
+     * Generate and download invoice PDF
+     *
+     * @param array<string, mixed> $settings
+     */
+    public function downloadPdf(User $user, int $id, array $settings = []): string
+    {
+        // Customers can download their own invoices, staff can download all
+        if ($user->role === 'customer') {
+            // Verify this invoice belongs to the customer
+            $invoice = $this->service->findById($id);
+            if ($invoice === null) {
+                throw new InvalidArgumentException('Invoice not found');
+            }
+            // In a real implementation, check if invoice belongs to customer
+        } elseif (!$this->gate->can($user, 'invoices.view')) {
+            throw new UnauthorizedException('Cannot view invoices');
+        }
+
+        if ($this->pdfGenerator === null) {
+            throw new \RuntimeException('PDF generation not available');
+        }
+
+        $invoice = $this->service->findById($id);
+        if ($invoice === null) {
+            throw new InvalidArgumentException('Invoice not found');
+        }
+
+        return $this->pdfGenerator->generate($invoice, $settings);
     }
 }

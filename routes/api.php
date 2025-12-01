@@ -382,12 +382,13 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Invoice routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
 
         $invoiceController = new \App\Services\Invoice\InvoiceController(
             new \App\Services\Invoice\InvoiceService($connection),
             new \App\Services\Invoice\PaymentProcessingService($connection),
-            $gate
+            $gate,
+            new \App\Support\Pdf\InvoicePdfGenerator($connection)
         );
 
         $router->get('/api/invoices', function (Request $request) use ($invoiceController) {
@@ -431,6 +432,28 @@ return function (Router $router, array $config, $connection) {
             $id = (int) $request->getAttribute('id');
             $data = $invoiceController->createCheckout($user, $id, $request->body());
             return Response::json($data);
+        });
+
+        $router->get('/api/invoices/{id}/pdf', function (Request $request) use ($invoiceController, $config) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $settings = [
+                'shop_name' => $config['settings']['shop_name'] ?? 'Auto Repair Shop',
+                'shop_address' => $config['settings']['shop_address'] ?? '',
+                'shop_phone' => $config['settings']['shop_phone'] ?? '',
+                'shop_email' => $config['settings']['shop_email'] ?? '',
+                'invoice_terms' => $config['settings']['invoice_terms'] ?? '',
+            ];
+
+            $pdfContent = $invoiceController->downloadPdf($user, $id, $settings);
+
+            // Return PDF as download
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="invoice-' . $id . '.pdf"');
+            header('Content-Length: ' . strlen($pdfContent));
+            echo $pdfContent;
+            exit;
         });
     });
 
@@ -501,13 +524,14 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Inspection routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
 
         $inspectionController = new \App\Services\Inspection\InspectionController(
             new \App\Services\Inspection\InspectionTemplateService($connection),
             new \App\Services\Inspection\InspectionCompletionService($connection),
             new \App\Services\Inspection\InspectionPortalService($connection),
-            $gate
+            $gate,
+            new \App\Support\Pdf\InspectionPdfGenerator($connection)
         );
 
         $router->get('/api/inspections/templates', function (Request $request) use ($inspectionController) {
@@ -533,6 +557,26 @@ return function (Router $router, array $config, $connection) {
             $user = $request->getAttribute('user');
             $data = $inspectionController->customerList($user);
             return Response::json($data);
+        });
+
+        $router->get('/api/inspections/{id}/pdf', function (Request $request) use ($inspectionController, $config) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $settings = [
+                'shop_name' => $config['settings']['shop_name'] ?? 'Auto Repair Shop',
+                'shop_address' => $config['settings']['shop_address'] ?? '',
+                'shop_phone' => $config['settings']['shop_phone'] ?? '',
+            ];
+
+            $pdfContent = $inspectionController->downloadPdf($user, $id, $settings);
+
+            // Return PDF as download
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="inspection-report-' . $id . '.pdf"');
+            header('Content-Length: ' . strlen($pdfContent));
+            echo $pdfContent;
+            exit;
         });
     });
 
