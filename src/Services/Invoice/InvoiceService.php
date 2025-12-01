@@ -100,6 +100,57 @@ class InvoiceService
         }
     }
 
+    /**
+     * List invoices with optional filters
+     *
+     * @param array<string, mixed> $filters
+     * @return array<int, Invoice>
+     */
+    public function list(array $filters = []): array
+    {
+        $sql = 'SELECT * FROM invoices WHERE 1=1';
+        $params = [];
+
+        if (isset($filters['status'])) {
+            $sql .= ' AND status = :status';
+            $params['status'] = $filters['status'];
+        }
+
+        if (isset($filters['customer_id'])) {
+            $sql .= ' AND customer_id = :customer_id';
+            $params['customer_id'] = (int) $filters['customer_id'];
+        }
+
+        $sql .= ' ORDER BY created_at DESC LIMIT 100';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        $invoices = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $invoices[] = new Invoice($row);
+        }
+
+        return $invoices;
+    }
+
+    /**
+     * Find invoice by ID
+     */
+    public function findById(int $id): ?Invoice
+    {
+        return $this->fetchInvoice($id);
+    }
+
+    /**
+     * Update invoice status
+     */
+    public function updateStatus(int $invoiceId, string $status, ?int $actorId = null): ?Invoice
+    {
+        $updated = $this->applyStatus($invoiceId, $status, $actorId);
+        return $updated ? $this->fetchInvoice($invoiceId) : null;
+    }
+
     public function applyStatus(int $invoiceId, string $status, ?int $actorId = null): bool
     {
         $allowed = ['pending', 'sent', 'partial', 'paid', 'void', 'uncollectible'];

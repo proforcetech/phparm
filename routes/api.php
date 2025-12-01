@@ -54,59 +54,61 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Authentication routes (public)
-    $router->post('/api/auth/login', function (Request $request) use ($config, $connection) {
-        $email = $request->input('email');
-        $password = $request->input('password');
-
-        if (!$email || !$password) {
-            return Response::badRequest('Email and password required');
-        }
-
-        // Load auth service
-        $authService = new \App\Support\Auth\AuthService(
+    $authController = new \App\Services\Auth\AuthController(
+        new \App\Support\Auth\AuthService(
             $connection,
             new RolePermissions($config['auth']['roles']),
-            new \App\Support\Auth\PasswordResetRepository($connection),
+            new \App\Support\Auth\PasswordResetRepository($connection, new \App\Support\Audit\AuditLogger($connection)),
             new \App\Support\Auth\EmailVerificationRepository($connection),
             $config['auth']
-        );
+        )
+    );
 
-        $user = $authService->staffLogin((string) $email, (string) $password);
-
-        if ($user === null) {
-            return Response::unauthorized('Invalid credentials');
-        }
-
-        // Start session
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        $_SESSION['user_id'] = $user->id;
-        $_SESSION['user'] = $user->toArray();
-
-        return Response::json([
-            'user' => $user->toArray(),
-            'message' => 'Login successful',
-        ]);
+    $router->post('/api/auth/login', function (Request $request) use ($authController) {
+        $data = $authController->login($request->body());
+        return Response::json($data);
     });
 
-    $router->post('/api/auth/logout', function (Request $request) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        session_destroy();
-
-        return Response::json(['message' => 'Logged out successfully']);
+    $router->post('/api/auth/customer-login', function (Request $request) use ($authController) {
+        $data = $authController->customerLogin($request->body());
+        return Response::json($data);
     });
 
-    $router->get('/api/auth/me', function (Request $request) {
+    $router->post('/api/auth/logout', function (Request $request) use ($authController) {
+        $data = $authController->logout();
+        return Response::json($data);
+    });
+
+    $router->post('/api/auth/register', function (Request $request) use ($authController) {
+        $data = $authController->registerStaff($request->body());
+        return Response::created($data);
+    });
+
+    $router->post('/api/auth/password-reset', function (Request $request) use ($authController) {
+        $data = $authController->requestPasswordReset($request->body());
+        return Response::json($data);
+    });
+
+    $router->post('/api/auth/password-reset/confirm', function (Request $request) use ($authController) {
+        $data = $authController->resetPassword($request->body());
+        return Response::json($data);
+    });
+
+    $router->post('/api/auth/verify-email', function (Request $request) use ($authController) {
+        $data = $authController->verifyEmail($request->body());
+        return Response::json($data);
+    });
+
+    $router->get('/api/auth/me', function (Request $request) use ($authController) {
         $user = $request->getAttribute('user');
+        $data = $authController->me($user);
+        return Response::json($data);
+    })->middleware(Middleware::auth());
 
-        if (!$user) {
-            return Response::unauthorized('Not authenticated');
-        }
-
-        return Response::json(['user' => $user->toArray()]);
+    $router->put('/api/auth/profile', function (Request $request) use ($authController) {
+        $user = $request->getAttribute('user');
+        $data = $authController->updateProfile($user, $request->body());
+        return Response::json($data);
     })->middleware(Middleware::auth());
 
     // Initialize AccessGate for protected routes
@@ -376,6 +378,432 @@ return function (Router $router, array $config, $connection) {
             $healthService = new \App\Services\Health\HealthStatusService($connection);
             $status = $healthService->check();
             return Response::json($status);
+        });
+    });
+
+    // Invoice routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+
+        $invoiceController = new \App\Services\Invoice\InvoiceController(
+            new \App\Services\Invoice\InvoiceService($connection),
+            new \App\Services\Invoice\PaymentProcessingService($connection),
+            $gate
+        );
+
+        $router->get('/api/invoices', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'customer_id' => $request->queryParam('customer_id'),
+            ];
+            $data = $invoiceController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/invoices/{id}', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $invoiceController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/invoices/from-estimate', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $data = $invoiceController->createFromEstimate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/invoices', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $data = $invoiceController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->patch('/api/invoices/{id}/status', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $invoiceController->updateStatus($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/invoices/{id}/checkout', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $invoiceController->createCheckout($user, $id, $request->body());
+            return Response::json($data);
+        });
+    });
+
+    // Appointment routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+
+        $appointmentController = new \App\Services\Appointment\AppointmentController(
+            new \App\Services\Appointment\AppointmentService($connection),
+            new \App\Services\Appointment\AvailabilityService($connection),
+            $gate
+        );
+
+        $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'customer_id' => $request->queryParam('customer_id'),
+                'technician_id' => $request->queryParam('technician_id'),
+                'date' => $request->queryParam('date'),
+            ];
+            $data = $appointmentController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/appointments/availability', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'date' => $request->queryParam('date'),
+                'technician_id' => $request->queryParam('technician_id'),
+            ];
+            $data = $appointmentController->availability($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/appointments/{id}', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $appointmentController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/appointments', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $data = $appointmentController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/appointments/{id}', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $appointmentController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/appointments/{id}/status', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $appointmentController->updateStatus($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/appointments/{id}', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $appointmentController->destroy($user, $id);
+            return Response::noContent();
+        });
+    });
+
+    // Inspection routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+
+        $inspectionController = new \App\Services\Inspection\InspectionController(
+            new \App\Services\Inspection\InspectionTemplateService($connection),
+            new \App\Services\Inspection\InspectionCompletionService($connection),
+            new \App\Services\Inspection\InspectionPortalService($connection),
+            $gate
+        );
+
+        $router->get('/api/inspections/templates', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $data = $inspectionController->templates($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inspections/templates', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $data = $inspectionController->createTemplate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/inspections/{id}/complete', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $inspectionController->complete($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/inspections/customer', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $data = $inspectionController->customerList($user);
+            return Response::json($data);
+        });
+    });
+
+    // Warranty routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+
+        $warrantyController = new \App\Services\Warranty\WarrantyController(
+            new \App\Services\Warranty\WarrantyClaimService($connection),
+            $gate
+        );
+
+        $router->get('/api/warranty-claims', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $filters = ['status' => $request->queryParam('status')];
+            $data = $warrantyController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/warranty-claims/{id}', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $warrantyController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/warranty-claims', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $data = $warrantyController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->patch('/api/warranty-claims/{id}/status', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $warrantyController->updateStatus($user, $id, $request->body());
+            return Response::json($data);
+        });
+    });
+
+    // Credit Account routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+
+        $creditController = new \App\Services\Credit\CreditAccountController(
+            new \App\Services\Credit\CreditAccountService($connection),
+            new \App\Services\Credit\CreditAccountStatementService($connection),
+            $gate
+        );
+
+        $router->get('/api/credit-accounts', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $data = $creditController->index($user, []);
+            return Response::json($data);
+        });
+
+        $router->get('/api/credit-accounts/{id}', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $creditController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/credit-accounts', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $data = $creditController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/credit-accounts/{id}/payments', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $creditController->recordPayment($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/credit-accounts/{id}/statement', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $creditController->statement($user, $id, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/credit-accounts/customer/me', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $data = $creditController->customerView($user);
+            return Response::json($data);
+        });
+    });
+
+    // Financial routes (Admin/Manager only)
+    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate) {
+
+        $financialController = new \App\Services\Financial\FinancialController(
+            new \App\Services\Financial\FinancialEntryService($connection),
+            new \App\Services\Financial\FinancialReportService($connection),
+            $gate
+        );
+
+        $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $filters = ['type' => $request->queryParam('type')];
+            $data = $financialController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/entries', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $data = $financialController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/financial/entries/{id}', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $financialController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/financial/entries/{id}', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $financialController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        $router->get('/api/financial/reports', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $financialController->report($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/reports/export', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'format' => $request->queryParam('format', 'csv'),
+            ];
+            $data = $financialController->export($user, $params);
+            return Response::json($data);
+        });
+    });
+
+    // Time Tracking routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+
+        $timeController = new \App\Services\TimeTracking\TimeTrackingController(
+            new \App\Services\TimeTracking\TimeTrackingService($connection),
+            new \App\Services\TimeTracking\TechnicianPortalService($connection),
+            $gate
+        );
+
+        $router->get('/api/time-tracking', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $filters = ['technician_id' => $request->queryParam('technician_id')];
+            $data = $timeController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/time-tracking/start', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $data = $timeController->start($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/time-tracking/{id}/stop', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $timeController->stop($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/time-tracking', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $data = $timeController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/time-tracking/{id}', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $timeController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/time-tracking/technician/jobs', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $data = $timeController->assignedJobs($user);
+            return Response::json($data);
+        });
+    });
+
+    // Settings routes (Admin only)
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+
+        $settingsController = new \App\Services\Settings\SettingsController(
+            new \App\Support\SettingsRepository($connection),
+            $gate
+        );
+
+        $router->get('/api/settings', function (Request $request) use ($settingsController) {
+            $user = $request->getAttribute('user');
+            $data = $settingsController->index($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/settings/{key}', function (Request $request) use ($settingsController) {
+            $user = $request->getAttribute('user');
+            $key = $request->getAttribute('key');
+            $value = $settingsController->show($user, (string) $key);
+            return Response::json(['key' => $key, 'value' => $value]);
+        });
+
+        $router->put('/api/settings/{key}', function (Request $request) use ($settingsController) {
+            $user = $request->getAttribute('user');
+            $key = $request->getAttribute('key');
+            $data = $settingsController->update($user, (string) $key, $request->body());
+            return Response::json($data);
+        });
+
+        $router->put('/api/settings', function (Request $request) use ($settingsController) {
+            $user = $request->getAttribute('user');
+            $data = $settingsController->bulkUpdate($user, $request->body());
+            return Response::json($data);
+        });
+    });
+
+    // Audit routes (Admin only)
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+
+        $auditController = new \App\Services\Audit\AuditController(
+            new \App\Services\Audit\AuditLogViewerService($connection),
+            new \App\Services\ImportExport\AuditExportService($connection),
+            $gate
+        );
+
+        $router->get('/api/audit', function (Request $request) use ($auditController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'entity_type' => $request->queryParam('entity_type'),
+                'actor_id' => $request->queryParam('actor_id'),
+            ];
+            $data = $auditController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/audit/{id}', function (Request $request) use ($auditController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $auditController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/audit/export', function (Request $request) use ($auditController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'entity_type' => $request->queryParam('entity_type'),
+                'actor_id' => $request->queryParam('actor_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'format' => $request->queryParam('format', 'csv'),
+            ];
+            $data = $auditController->export($user, $params);
+            return Response::json($data);
         });
     });
 };
