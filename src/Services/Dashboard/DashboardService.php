@@ -172,6 +172,58 @@ class DashboardService
     }
 
     /**
+     * @return ChartSeries
+     */
+    public function serviceTypeBreakdown(DateTimeInterface $start, DateTimeInterface $end, array $options = []): ChartSeries
+    {
+        $timezone = $options['timezone'] ?? 'UTC';
+        $cacheTtl = (int) ($options['cache_ttl'] ?? 300);
+        $role = $this->normalizeRole($options['role'] ?? 'admin');
+        $this->enforceRoleScope($role, $options);
+        $tileSettings = $this->loadTileSettings();
+        if (!$this->isTileEnabled('charts', $role, $tileSettings)) {
+            return new ChartSeries('Service Types', [], []);
+        }
+
+        $cacheKey = $this->makeCacheKey('service_type_breakdown', $start, $end, $options);
+
+        return $this->remember($cacheKey, $cacheTtl, function () use ($start, $end, $options, $timezone) {
+            $pdo = $this->connection->pdo();
+            [$startUtc, $endUtc] = $this->normalizeRange($start, $end, $timezone);
+            $bindings = [
+                'start' => $startUtc->format('Y-m-d H:i:s'),
+                'end' => $endUtc->format('Y-m-d H:i:s'),
+            ];
+
+            $customerFilter = '';
+            if (isset($options['customer_id'])) {
+                $customerFilter = ' AND e.customer_id = :customer_id';
+                $bindings['customer_id'] = $options['customer_id'];
+            }
+
+            $sql = 'SELECT st.name AS label, COALESCE(SUM(e.grand_total), 0) AS total '
+                . 'FROM estimates e '
+                . 'JOIN service_types st ON st.id = e.service_type_id '
+                . 'WHERE e.created_at BETWEEN :start AND :end' . $customerFilter . ' '
+                . 'GROUP BY st.name '
+                . 'ORDER BY st.display_order ASC, st.name ASC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($bindings);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            $categories = [];
+            $data = [];
+            foreach ($rows as $row) {
+                $categories[] = (string) $row['label'];
+                $data[] = (float) $row['total'];
+            }
+
+            return new ChartSeries('Service Type Totals', $data, $categories);
+        });
+    }
+
+    /**
      * @param array<int, string> $categories
      * @return array<int, float>
      */

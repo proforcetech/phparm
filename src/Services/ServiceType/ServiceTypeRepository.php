@@ -249,6 +249,16 @@ class ServiceTypeRepository
     }
 
     /**
+     * @return array<int, int>
+     */
+    public function displayOrder(): array
+    {
+        $stmt = $this->connection->pdo()->query('SELECT id FROM service_types ORDER BY display_order ASC, name ASC');
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     private function assertUnique(array $payload, ?int $ignoreId = null): void
