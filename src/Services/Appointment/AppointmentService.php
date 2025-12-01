@@ -85,6 +85,78 @@ class AppointmentService
         return $updated;
     }
 
+    /**
+     * List all appointments with filters
+     *
+     * @param array<string, mixed> $filters
+     * @return array<int, Appointment>
+     */
+    public function list(array $filters = []): array
+    {
+        $sql = 'SELECT * FROM appointments WHERE 1=1';
+        $params = [];
+
+        if (isset($filters['status'])) {
+            $sql .= ' AND status = :status';
+            $params['status'] = $filters['status'];
+        }
+
+        if (isset($filters['customer_id'])) {
+            $sql .= ' AND customer_id = :customer_id';
+            $params['customer_id'] = (int) $filters['customer_id'];
+        }
+
+        if (isset($filters['technician_id'])) {
+            $sql .= ' AND technician_id = :technician_id';
+            $params['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        if (isset($filters['date'])) {
+            $sql .= ' AND DATE(start_time) = :date';
+            $params['date'] = $filters['date'];
+        }
+
+        $sql .= ' ORDER BY start_time ASC LIMIT 100';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return array_map(static fn($row) => new Appointment($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * Find appointment by ID
+     */
+    public function findById(int $id): ?Appointment
+    {
+        return $this->fetch($id);
+    }
+
+    /**
+     * Delete appointment
+     */
+    public function delete(int $id, int $actorId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM appointments WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $deleted = $stmt->rowCount() > 0;
+
+        if ($deleted) {
+            $this->log('appointment.deleted', $id, $actorId);
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Update appointment status
+     */
+    public function updateStatus(int $id, string $status, int $actorId): ?Appointment
+    {
+        $updated = $this->transitionStatus($id, $status, $actorId);
+        return $updated ? $this->fetch($id) : null;
+    }
+
     public function listForCustomer(int $customerId): array
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM appointments WHERE customer_id = :customer_id ORDER BY start_time DESC');

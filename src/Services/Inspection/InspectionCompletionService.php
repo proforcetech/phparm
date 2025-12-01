@@ -52,6 +52,14 @@ class InspectionCompletionService
     }
 
     /**
+     * Find inspection report by ID
+     */
+    public function findById(int $reportId): ?InspectionReport
+    {
+        return $this->find($reportId);
+    }
+
+    /**
      * @param array<string, mixed> $responses
      */
     public function complete(int $reportId, array $responses, int $actorId, ?string $signatureData = null, ?string $pdfPath = null): ?InspectionReport
