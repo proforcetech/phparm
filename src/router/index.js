@@ -27,6 +27,12 @@ const routes = [
     meta: { guest: true },
   },
   {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/auth/Register.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/dashboard/AdminDashboard.vue'),
@@ -168,6 +174,11 @@ router.beforeEach((to, from, next) => {
 
   // Check if route requires customer access
   if (to.meta.requiresCustomer && !authStore.isCustomer) {
+    return next('/dashboard')
+  }
+
+  // Check if route requires admin access
+  if (to.meta.requiresAdmin && !authStore.isAdmin) {
     return next('/dashboard')
   }
 
