@@ -5,10 +5,10 @@ require __DIR__ . '/vendor/autoload.php';
 use App\Support\Env;
 
 $envFile = __DIR__ . '/.env';
-$env = new Env($envFile);
+$GLOBALS['env'] = new Env($envFile);
 
-function env(string $key, $default = null) use ($env) {
-    return $env->get($key, $default);
+function env(string $key, $default = null) {
+    return $GLOBALS['env']->get($key, $default);
 }
 
 $config = [

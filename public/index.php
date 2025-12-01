@@ -1,23 +1,29 @@
 <?php
 
+/**
+ * Main application entry point
+ * Handles all HTTP requests through the router
+ */
+
 $config = require __DIR__ . '/../bootstrap.php';
 
 use App\Database\Connection;
+use App\Support\Http\Request;
+use App\Support\Http\Router;
 
+// Initialize database connection
 $connection = new Connection($config['database']);
 
-$health = [
-    'app' => 'Automotive Repair Shop Management System',
-    'environment' => env('APP_ENV', 'production'),
-    'database' => 'not connected',
-];
+// Create router instance
+$router = new Router();
 
-try {
-    $connection->pdo();
-    $health['database'] = 'connected';
-} catch (Throwable $e) {
-    $health['database'] = 'connection failed: ' . $e->getMessage();
-}
+// Load route definitions
+$routeLoader = require __DIR__ . '/../routes/api.php';
+$routeLoader($router, $config, $connection);
 
-header('Content-Type: application/json');
-echo json_encode($health, JSON_PRETTY_PRINT);
+// Capture incoming request
+$request = Request::capture();
+
+// Dispatch and send response
+$response = $router->dispatch($request);
+$response->send();
