@@ -65,6 +65,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Inspection template builder (sections/items, types, status).
 - [x] Inspection completion UI linking to customer/vehicle/estimate/appointment; finalize to stored record and PDF; optional email to customer.
 - [x] Customer portal list/view of inspections.
+- [x] Customer portal inspection service to enforce ownership checks and surface per-customer inspection history.
 
 ## 8. Inventory Management
 - [x] Inventory CRUD with filters; low-stock computation and alerting.
@@ -80,6 +81,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Campaign model with targeting rules (service type, last visit/invoice, appointment window, mileage/time since service), schedule config, message templates, status lifecycle.
 - [x] Scheduler/cron runner to enqueue due campaigns, compute recipients per preferences, dispatch via mail/SMS, and log outcomes/unsubscribes.
 - [x] Preference UI for customers (opt-in/out, channel preference) and dashboard stats for counts/sends.
+- [x] Reminder campaign controller for activating/pausing campaigns and triggering immediate runs via scheduler integration.
 
 ## 11. Preset Bundles
 - [x] Bundle CRUD with default job title and line items.
@@ -94,6 +96,7 @@ This document captures the actionable engineering tasks required to implement th
 - [x] Credit account model per customer: type, limit, balance, terms (net days/APR/late fees), status.
 - [x] Operations: link invoice balances, manual payments, online payments to credit account where enabled, late-fee application and summaries.
 - [x] Customer portal credit page: balance/limit/available credit, due dates, transactions, online payment option.
+- [x] Statement generator producing period-bound transaction lists and ending balance snapshots for customers.
 
 ## 14. Invoices & Payments
 - [x] Invoice creation from estimates (all or selected approved jobs) and standalone invoices; status lifecycle including pending approval for scope changes.
@@ -122,8 +125,10 @@ This document captures the actionable engineering tasks required to implement th
 ## 19. Import/Export & Audit
 - [x] CSV export endpoints for key datasets; import flows for customers, vehicle master data, inventory with validation and reporting.
 - [x] Audit log viewer with filters; track entity actions and settings changes with metadata snapshots.
+- [x] CSV exporter for audit logs with entity/actor filters to support compliance exports.
 
 ## 20. QA & Observability
 - [x] Automated tests per module (unit + feature + permissions); seed/factory data for fixtures.
 - [x] API request/response logging, error tracking setup, performance profiling hooks.
 - [x] Admin health/status page for queues, schedulers, and integration connectivity checks.
+- [x] Health status controller returning aggregated check state for UI/API consumption.
