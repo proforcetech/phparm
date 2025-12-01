@@ -54,61 +54,59 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Authentication routes (public)
-    $authController = new \App\Services\Auth\AuthController(
-        new \App\Support\Auth\AuthService(
+    $router->post('/api/auth/login', function (Request $request) use ($config, $connection) {
+        $email = $request->input('email');
+        $password = $request->input('password');
+
+        if (!$email || !$password) {
+            return Response::badRequest('Email and password required');
+        }
+
+        // Load auth service
+        $authService = new \App\Support\Auth\AuthService(
             $connection,
             new RolePermissions($config['auth']['roles']),
-            new \App\Support\Auth\PasswordResetRepository($connection, new \App\Support\Audit\AuditLogger($connection)),
+            new \App\Support\Auth\PasswordResetRepository($connection),
             new \App\Support\Auth\EmailVerificationRepository($connection),
             $config['auth']
-        )
-    );
+        );
 
-    $router->post('/api/auth/login', function (Request $request) use ($authController) {
-        $data = $authController->login($request->body());
-        return Response::json($data);
+        $user = $authService->staffLogin((string) $email, (string) $password);
+
+        if ($user === null) {
+            return Response::unauthorized('Invalid credentials');
+        }
+
+        // Start session
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        $_SESSION['user_id'] = $user->id;
+        $_SESSION['user'] = $user->toArray();
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'message' => 'Login successful',
+        ]);
     });
 
-    $router->post('/api/auth/customer-login', function (Request $request) use ($authController) {
-        $data = $authController->customerLogin($request->body());
-        return Response::json($data);
+    $router->post('/api/auth/logout', function (Request $request) {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        session_destroy();
+
+        return Response::json(['message' => 'Logged out successfully']);
     });
 
-    $router->post('/api/auth/logout', function (Request $request) use ($authController) {
-        $data = $authController->logout();
-        return Response::json($data);
-    });
-
-    $router->post('/api/auth/register', function (Request $request) use ($authController) {
-        $data = $authController->registerStaff($request->body());
-        return Response::created($data);
-    });
-
-    $router->post('/api/auth/password-reset', function (Request $request) use ($authController) {
-        $data = $authController->requestPasswordReset($request->body());
-        return Response::json($data);
-    });
-
-    $router->post('/api/auth/password-reset/confirm', function (Request $request) use ($authController) {
-        $data = $authController->resetPassword($request->body());
-        return Response::json($data);
-    });
-
-    $router->post('/api/auth/verify-email', function (Request $request) use ($authController) {
-        $data = $authController->verifyEmail($request->body());
-        return Response::json($data);
-    });
-
-    $router->get('/api/auth/me', function (Request $request) use ($authController) {
+    $router->get('/api/auth/me', function (Request $request) {
         $user = $request->getAttribute('user');
-        $data = $authController->me($user);
-        return Response::json($data);
-    })->middleware(Middleware::auth());
 
-    $router->put('/api/auth/profile', function (Request $request) use ($authController) {
-        $user = $request->getAttribute('user');
-        $data = $authController->updateProfile($user, $request->body());
-        return Response::json($data);
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        return Response::json(['user' => $user->toArray()]);
     })->middleware(Middleware::auth());
 
     // Payment webhook endpoints (public - no authentication required)
