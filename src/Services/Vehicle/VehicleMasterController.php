@@ -12,18 +12,24 @@ class VehicleMasterController
     private AccessGate $gate;
     private VehicleMasterImporter $importer;
     private VehicleCascadeService $cascade;
+    private ?VinDecoderService $vinDecoder;
+    private ?VehicleNormalizationJob $normalizationJob;
 
     public function __construct(
         VehicleMasterRepository $repository,
         AccessGate $gate,
         ?VehicleMasterImporter $importer = null,
-        ?VehicleCascadeService $cascade = null
+        ?VehicleCascadeService $cascade = null,
+        ?VinDecoderService $vinDecoder = null,
+        ?VehicleNormalizationJob $normalizationJob = null
     )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->importer = $importer ?? new VehicleMasterImporter($repository);
         $this->cascade = $cascade ?? new VehicleCascadeService($repository);
+        $this->vinDecoder = $vinDecoder;
+        $this->normalizationJob = $normalizationJob;
     }
 
     /**
@@ -228,6 +234,103 @@ class VehicleMasterController
         }
 
         return $filters;
+    }
+
+    /**
+     * Decode a VIN and return vehicle information
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function decodeVin(User $user, array $data): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        if (!isset($data['vin'])) {
+            throw new InvalidArgumentException('VIN is required');
+        }
+
+        if ($this->vinDecoder === null) {
+            throw new \RuntimeException('VIN decoder service is not available');
+        }
+
+        $vin = (string) $data['vin'];
+
+        // Validate format first
+        if (!$this->vinDecoder->isValidFormat($vin)) {
+            throw new InvalidArgumentException('Invalid VIN format. VIN must be 17 characters.');
+        }
+
+        // Decode the VIN
+        $decoded = $this->vinDecoder->decode($vin);
+
+        return [
+            'vin' => $vin,
+            'decoded' => $decoded,
+            'message' => 'VIN decoded successfully',
+        ];
+    }
+
+    /**
+     * Run vehicle normalization job to populate missing data from VIN decoder
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function runNormalization(User $user, array $data = []): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.update');
+
+        if ($this->normalizationJob === null) {
+            throw new \RuntimeException('Vehicle normalization job is not available');
+        }
+
+        $batchSize = isset($data['batch_size']) ? max(1, min(500, (int) $data['batch_size'])) : 50;
+
+        $result = $this->normalizationJob->run($batchSize);
+
+        return [
+            'message' => 'Normalization job completed',
+            'processed' => $result['processed'],
+            'normalized' => $result['normalized'],
+            'skipped' => $result['skipped'],
+        ];
+    }
+
+    /**
+     * Validate VIN format
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function validateVin(User $user, array $data): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        if (!isset($data['vin'])) {
+            throw new InvalidArgumentException('VIN is required');
+        }
+
+        if ($this->vinDecoder === null) {
+            throw new \RuntimeException('VIN decoder service is not available');
+        }
+
+        $vin = (string) $data['vin'];
+        $isValid = $this->vinDecoder->isValidFormat($vin);
+
+        $response = [
+            'vin' => $vin,
+            'valid' => $isValid,
+        ];
+
+        if ($isValid) {
+            $response['basic_info'] = $this->vinDecoder->getBasicInfo($vin);
+        }
+
+        return $response;
     }
 
     private function assertManageAccess(User $user): void

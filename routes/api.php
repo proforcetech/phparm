@@ -240,7 +240,20 @@ return function (Router $router, array $config, $connection) {
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
         $vehicleRepository = new \App\Services\Vehicle\VehicleMasterRepository($connection);
-        $vehicleController = new \App\Services\Vehicle\VehicleMasterController($vehicleRepository, $gate);
+
+        // VIN decoder setup
+        $vinDecoder = new \App\Services\Vehicle\NhtsaVinDecoder();
+        $vinDecoderService = new \App\Services\Vehicle\VinDecoderService($vinDecoder);
+        $normalizationJob = new \App\Services\Vehicle\VehicleNormalizationJob($connection, $vehicleRepository, $vinDecoder);
+
+        $vehicleController = new \App\Services\Vehicle\VehicleMasterController(
+            $vehicleRepository,
+            $gate,
+            null, // importer
+            null, // cascade
+            $vinDecoderService,
+            $normalizationJob
+        );
 
         $router->get('/api/vehicles', function (Request $request) use ($vehicleController) {
             $user = $request->getAttribute('user');
@@ -258,6 +271,26 @@ return function (Router $router, array $config, $connection) {
             $user = $request->getAttribute('user');
             $data = $vehicleController->store($user, $request->body());
             return Response::created($data);
+        });
+
+        // VIN decoder endpoints
+        $router->post('/api/vehicles/decode-vin', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $data = $vehicleController->decodeVin($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/vehicles/validate-vin', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $data = $vehicleController->validateVin($user, $request->body());
+            return Response::json($data);
+        });
+
+        // Vehicle normalization endpoint
+        $router->post('/api/vehicles/normalize', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $data = $vehicleController->runNormalization($user, $request->body());
+            return Response::json($data);
         });
     });
 
