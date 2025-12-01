@@ -111,6 +111,29 @@ return function (Router $router, array $config, $connection) {
         return Response::json($data);
     })->middleware(Middleware::auth());
 
+    // Payment webhook endpoints (public - no authentication required)
+    $paymentConfig = require __DIR__ . '/../config/payments.php';
+    $gatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
+    $webhookPaymentService = new \App\Services\Invoice\PaymentProcessingService($connection, $gatewayFactory);
+
+    $router->post('/api/webhooks/payments/stripe', function (Request $request) use ($webhookPaymentService) {
+        $signature = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
+        $data = $webhookPaymentService->handleWebhook('stripe', $request->body(), $signature);
+        return Response::json($data);
+    });
+
+    $router->post('/api/webhooks/payments/square', function (Request $request) use ($webhookPaymentService) {
+        $signature = $_SERVER['HTTP_X_SQUARE_SIGNATURE'] ?? '';
+        $data = $webhookPaymentService->handleWebhook('square', $request->body(), $signature);
+        return Response::json($data);
+    });
+
+    $router->post('/api/webhooks/payments/paypal', function (Request $request) use ($webhookPaymentService) {
+        $signature = $_SERVER['HTTP_PAYPAL_TRANSMISSION_SIG'] ?? '';
+        $data = $webhookPaymentService->handleWebhook('paypal', $request->body(), $signature);
+        return Response::json($data);
+    });
+
     // Initialize AccessGate for protected routes
     $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
 
@@ -417,9 +440,13 @@ return function (Router $router, array $config, $connection) {
     // Invoice routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
 
+        // Payment gateway setup
+        $paymentConfig = require __DIR__ . '/../config/payments.php';
+        $gatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
+
         $invoiceController = new \App\Services\Invoice\InvoiceController(
             new \App\Services\Invoice\InvoiceService($connection),
-            new \App\Services\Invoice\PaymentProcessingService($connection),
+            new \App\Services\Invoice\PaymentProcessingService($connection, $gatewayFactory),
             $gate,
             new \App\Support\Pdf\InvoicePdfGenerator($connection)
         );
@@ -464,6 +491,19 @@ return function (Router $router, array $config, $connection) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $data = $invoiceController->createCheckout($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/invoices/{id}/refund', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $invoiceController->refundPayment($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/payment/gateways', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $data = $invoiceController->getAvailableGateways($user);
             return Response::json($data);
         });
 

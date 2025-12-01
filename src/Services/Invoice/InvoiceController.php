@@ -151,12 +151,14 @@ class InvoiceController
             throw new InvalidArgumentException('provider is required (stripe, square, or paypal)');
         }
 
-        $checkoutUrl = $this->payments->createCheckoutSession($id, (string) $data['provider'], $data);
+        $result = $this->payments->createCheckoutSession($id, (string) $data['provider'], $data);
 
         return [
-            'checkout_url' => $checkoutUrl,
+            'checkout_url' => $result['checkout_url'] ?? null,
+            'session_id' => $result['session_id'] ?? $result['payment_id'] ?? null,
             'invoice_id' => $id,
             'provider' => $data['provider'],
+            'data' => $result,
         ];
     }
 
@@ -164,11 +166,58 @@ class InvoiceController
      * Handle payment webhook
      *
      * @param array<string, mixed> $payload
+     * @return array<string, mixed>
      */
-    public function handleWebhook(string $provider, array $payload): bool
+    public function handleWebhook(string $provider, array $payload, string $signature = ''): array
     {
         // Webhooks don't require user authentication
-        return $this->payments->handleWebhook($provider, $payload);
+        return $this->payments->handleWebhook($provider, $payload, $signature);
+    }
+
+    /**
+     * Get available payment gateways
+     *
+     * @return array<string, mixed>
+     */
+    public function getAvailableGateways(User $user): array
+    {
+        // Anyone can view available payment methods
+        return [
+            'gateways' => $this->payments->getAvailableGateways(),
+        ];
+    }
+
+    /**
+     * Process refund for an invoice payment
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function refundPayment(User $user, int $id, array $data): array
+    {
+        $this->gate->assert($user, 'invoices.refund');
+
+        if (!isset($data['transaction_id'])) {
+            throw new InvalidArgumentException('transaction_id is required');
+        }
+
+        if (!isset($data['amount'])) {
+            throw new InvalidArgumentException('amount is required');
+        }
+
+        $result = $this->payments->refundPayment(
+            $id,
+            (string) $data['transaction_id'],
+            (float) $data['amount'],
+            (string) ($data['reason'] ?? '')
+        );
+
+        return [
+            'refund_id' => $result['refund_id'],
+            'status' => $result['status'],
+            'amount' => $result['amount'],
+            'message' => 'Refund processed successfully',
+        ];
     }
 
     /**
