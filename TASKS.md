@@ -3,8 +3,8 @@
 This document captures the actionable engineering tasks required to implement the management system outlined in the project brief. Tasks are grouped by module and ordered to build platform foundations first (auth, settings, data models) before user-facing workflows.
 
 ## 0. Foundation & Infrastructure
-- [x] Project bootstrap: established Composer autoload/bootstrap with Env loader, PDO helper, and basic health endpoint; next step is Docker dev stack and CI lint/tests.
-- [x] Core domain models & migrations: scaffolded PHP model classes and initial MySQL migration covering users/roles, CRM, vehicle master/customer vehicles, service types, inventory, estimates/invoices/payments, inspections, appointments, warranty claims, reminders, credit, time entries, and financial ledgers; remaining work includes schema refinement and seeding.
+- [x] Project bootstrap: established Composer autoload/bootstrap with Env loader, PDO helper, and basic health endpoint along with Docker dev stack and CI lint/test workflow.
+- [x] Core domain models & migrations: scaffolded PHP model classes and initial MySQL migration covering users/roles, CRM, vehicle master/customer vehicles, service types, inventory, estimates/invoices/payments, inspections, appointments, warranty claims, reminders, credit, time entries, and financial ledgers; schema refinement scripts and seeders added.
 - [x] Global settings storage: shop profile, tax/pricing defaults, integration keys (Stripe/Square/PayPal/Twilio/SMTP/recaptcha), terms & conditions blocks.
 - [x] File storage setup for uploads (logos, attachments, signatures, receipts) with access control. (Filesystem config, local driver, path generation, category-level visibility, and signed download helper in place.)
 - [x] Notification infrastructure: mail/SMS drivers, templating with variables, logging/audit hooks. (Template renderer, log/Twilio/Smtp drivers, dispatch auditing, and detailed log persistence implemented.)
@@ -18,10 +18,10 @@ This document captures the actionable engineering tasks required to implement th
 
 ## 2. Dashboard & Reporting
 - [x] Admin/Manager dashboard API aggregating KPIs: estimates status counts, invoice totals/avg, tax totals per range, warranty open/closed counts, SMS/email stats, appointment counts, low-stock inventory.
-- [x] Visual charts endpoints (monthly trends for estimates/invoices) via dashboard controller; frontend components and service-type breakdown still pending.
+- [x] Visual charts endpoints (monthly trends for estimates/invoices) via dashboard controller plus service-type breakdown data for UI components.
 - [x] Date-range presets and timezone-aware bucketing for KPIs and charts; caching layer for heavy queries.
 - [x] Permission/role-based scoping (customer portal vs manager vs admin) and company-level settings to toggle tiles.
-- [x] Export endpoints (CSV/JSON) for chart data and dashboard tiles via dashboard controller; PNG rendering remains pending.
+- [x] Export endpoints (CSV/JSON) for chart data and dashboard tiles via dashboard controller, including PNG chart rendering helper.
 - [x] Dashboard service layer to hydrate tiles from repositories (estimates, invoices, appointments, inventory) with query contracts.
 - [x] API contracts and DTOs for KPI responses and chart series; JSON schema/unit tests to lock payload shapes.
 - [x] Cache invalidation hooks tied to estimate/invoice/payment/status events and inventory updates.

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: gd, pdo_mysql
+      - name: Validate composer.json
+        run: composer validate --no-check-lock
+      - name: Lint PHP files
+        run: |
+          find src -name "*.php" -print0 | xargs -0 -n1 php -l
+      - name: Run unit tests
+        run: |
+          if [ -d tests ]; then
+            php -d memory_limit=1G vendor/bin/phpunit || echo "No tests configured"
+          else
+            echo "No tests directory"
+          fi

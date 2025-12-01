@@ -4,6 +4,7 @@ namespace App\Services\Dashboard;
 
 use App\DTO\Dashboard\ChartSeries;
 use App\DTO\Dashboard\KpiResponse;
+use App\Services\Dashboard\ChartImageRenderer;
 use DateTimeImmutable;
 use DateTimeInterface;
 use InvalidArgumentException;
@@ -11,10 +12,12 @@ use InvalidArgumentException;
 class DashboardController
 {
     private DashboardService $service;
+    private ChartImageRenderer $renderer;
 
-    public function __construct(DashboardService $service)
+    public function __construct(DashboardService $service, ?ChartImageRenderer $renderer = null)
     {
         $this->service = $service;
+        $this->renderer = $renderer ?? new ChartImageRenderer();
     }
 
     /**
@@ -46,6 +49,21 @@ class DashboardController
 
     /**
      * @param array<string, mixed> $params
+     * @return array<string, mixed>
+     */
+    public function handleServiceTypeBreakdown(array $params): array
+    {
+        [$start, $end, $timezone] = $this->resolveRange($params);
+        $options = $this->extractOptions($params);
+        $options['timezone'] = $timezone;
+
+        $series = $this->service->serviceTypeBreakdown($start, $end, $options);
+
+        return $series->toArray();
+    }
+
+    /**
+     * @param array<string, mixed> $params
      * @return array{filename: string, content_type: string, body: string}
      */
     public function exportDashboardData(array $params): array
@@ -67,6 +85,36 @@ class DashboardController
         }
 
         throw new InvalidArgumentException('Unsupported export type: ' . $type);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @return array{filename: string, content_type: string, body: string}
+     */
+    public function exportChartImage(array $params): array
+    {
+        $chart = strtolower((string) ($params['chart'] ?? 'monthly_trends'));
+        [$start, $end, $timezone] = $this->resolveRange($params);
+        $options = $this->extractOptions($params);
+        $options['timezone'] = $timezone;
+
+        if ($chart === 'service_types') {
+            $series = [$this->service->serviceTypeBreakdown($start, $end, $options)];
+            $title = 'Service Type Breakdown';
+            $filename = sprintf('service_type_breakdown_%s_to_%s.png', $start->format('Ymd'), $end->format('Ymd'));
+        } else {
+            $series = $this->service->monthlyTrends($start, $end, $options);
+            $title = 'Monthly Trends';
+            $filename = sprintf('monthly_trends_%s_to_%s.png', $start->format('Ymd'), $end->format('Ymd'));
+        }
+
+        $body = $this->renderer->renderBarChart($series, $title);
+
+        return [
+            'filename' => $filename,
+            'content_type' => 'image/png',
+            'body' => $body,
+        ];
     }
 
     /**
