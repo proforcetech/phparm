@@ -45,6 +45,28 @@ class TimeTrackingService
         return $entry ?? new TimeEntry(['id' => $entryId]);
     }
 
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<int, TimeEntry>
+     */
+    public function list(array $filters = []): array
+    {
+        $sql = 'SELECT * FROM time_entries';
+        $params = [];
+
+        if (isset($filters['technician_id'])) {
+            $sql .= ' WHERE technician_id = :technician_id';
+            $params['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        $sql .= ' ORDER BY started_at DESC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return array_map(static fn (array $row) => new TimeEntry($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
     public function stop(int $entryId, int $actorId, ?float $lat = null, ?float $lng = null): ?TimeEntry
     {
         $entry = $this->find($entryId);
@@ -81,7 +103,8 @@ class TimeTrackingService
         string $endedAt,
         ?int $estimateJobId = null,
         ?string $notes = null,
-        bool $override = true
+        bool $override = true,
+        ?int $actorId = null
     ): TimeEntry {
         $start = new DateTimeImmutable($startedAt);
         $end = new DateTimeImmutable($endedAt);
@@ -101,9 +124,65 @@ class TimeTrackingService
         ]);
 
         $entryId = (int) $this->connection->pdo()->lastInsertId();
-        $this->log($technicianId, 'time.manual', $entryId, ['minutes' => $minutes]);
+        $this->log($actorId ?? $technicianId, 'time.manual', $entryId, ['minutes' => $minutes]);
 
         return $this->find($entryId) ?? new TimeEntry(['id' => $entryId]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function createManual(array $data, int $actorId): TimeEntry
+    {
+        return $this->manualEntry(
+            (int) $data['technician_id'],
+            (string) $data['started_at'],
+            (string) $data['ended_at'],
+            isset($data['estimate_job_id']) ? (int) $data['estimate_job_id'] : null,
+            $data['notes'] ?? null,
+            $data['manual_override'] ?? true,
+            $actorId
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function update(int $entryId, array $data, int $actorId): ?TimeEntry
+    {
+        $entry = $this->find($entryId);
+        if ($entry === null) {
+            return null;
+        }
+
+        $startedAt = $data['started_at'] ?? $entry->started_at;
+        $endedAt = $data['ended_at'] ?? $entry->ended_at;
+        $estimateJobId = $data['estimate_job_id'] ?? $entry->estimate_job_id;
+        $notes = $data['notes'] ?? $entry->notes;
+        $override = $data['manual_override'] ?? $entry->manual_override;
+
+        $start = new DateTimeImmutable($startedAt);
+        $end = $endedAt !== null ? new DateTimeImmutable($endedAt) : null;
+        $minutes = $end !== null ? max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60) : null;
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, notes = :notes, manual_override = :override, updated_at = NOW() WHERE id = :id'
+        );
+
+        $stmt->execute([
+            'id' => $entryId,
+            'started_at' => $start->format('Y-m-d H:i:s'),
+            'ended_at' => $end?->format('Y-m-d H:i:s'),
+            'minutes' => $minutes,
+            'estimate_job_id' => $estimateJobId,
+            'notes' => $notes,
+            'override' => $override ? 1 : 0,
+        ]);
+
+        $updated = $this->find($entryId);
+        $this->log($actorId, 'time.update', $entryId, ['duration_minutes' => $minutes]);
+
+        return $updated;
     }
 
     public function find(int $entryId): ?TimeEntry

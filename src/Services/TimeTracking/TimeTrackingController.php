@@ -51,7 +51,12 @@ class TimeTrackingController
             throw new UnauthorizedException('Only technicians can start time entries');
         }
 
-        $entry = $this->service->start($user->id, $data);
+        $entry = $this->service->start(
+            $user->id,
+            $data['estimate_job_id'] ?? null,
+            $data['lat'] ?? null,
+            $data['lng'] ?? null
+        );
         return $entry->toArray();
     }
 
@@ -67,7 +72,12 @@ class TimeTrackingController
             throw new UnauthorizedException('Only technicians can stop time entries');
         }
 
-        $entry = $this->service->stop($id, $data, $user->id);
+        $entry = $this->service->stop(
+            $id,
+            $user->id,
+            $data['lat'] ?? null,
+            $data['lng'] ?? null
+        );
 
         if ($entry === null) {
             throw new InvalidArgumentException('Time entry not found');
