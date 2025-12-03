@@ -8,7 +8,7 @@ CREATE TABLE role_permissions (
     created_at TIMESTAMP NULL,
     UNIQUE KEY role_permission_unique (role, permission),
     INDEX idx_role_permissions_role (role)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO roles (name, description) VALUES
     ('admin', 'Full control across all modules'),

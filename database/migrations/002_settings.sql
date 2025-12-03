@@ -8,4 +8,4 @@ CREATE TABLE settings (
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_settings_group (`group`)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
