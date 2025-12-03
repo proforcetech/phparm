@@ -3,6 +3,7 @@
 namespace App\Services\TimeTracking;
 
 use App\Database\Connection;
+use App\Models\TechnicianJob;
 use PDO;
 
 class TechnicianPortalService
@@ -34,7 +35,18 @@ class TechnicianPortalService
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute(['tech' => $technicianId]);
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(
+            static fn (array $row) => new TechnicianJob($row),
+            $stmt->fetchAll(PDO::FETCH_ASSOC)
+        );
+    }
+
+    /**
+     * @return array<int, TechnicianJob>
+     */
+    public function getAssignedJobs(int $technicianId): array
+    {
+        return $this->assignedJobs($technicianId);
     }
 
     public function activeTimer(int $technicianId): ?array
