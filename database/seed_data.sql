@@ -3,6 +3,10 @@
 
 START TRANSACTION;
 
+-- Prevent foreign key constraints from blocking idempotent sample data refreshes
+SET @OLD_FOREIGN_KEY_CHECKS := @@FOREIGN_KEY_CHECKS;
+SET FOREIGN_KEY_CHECKS = 0;
+
 -- Role seeds are handled by migrations but are repeated here for idempotency
 INSERT INTO roles (name, description) VALUES
     ('admin', 'Full control across all modules'),
@@ -52,6 +56,18 @@ ON DUPLICATE KEY UPDATE
     description = VALUES(description),
     updated_at = NOW();
 
+
+-- Clear existing demo records in dependency order for safe re-runs
+DELETE FROM invoice_items WHERE id IN (4101, 4102);
+DELETE FROM invoices WHERE id IN (4001);
+DELETE FROM estimate_items WHERE id IN (3201, 3202, 3203, 3204);
+DELETE FROM estimate_jobs WHERE id IN (3101, 3102, 3103);
+DELETE FROM estimates WHERE id IN (3001, 3002);
+DELETE FROM time_entries WHERE id IN (5001);
+DELETE FROM customer_vehicles WHERE id IN (2001, 2002);
+DELETE FROM customers WHERE id IN (1001, 1002);
+
+-- Demo customers
 -- Demo customers
 DELETE FROM customers WHERE id IN (1001, 1002);
 INSERT INTO customers (id, first_name, last_name, business_name, email, phone, street, city, state, postal_code, country, is_commercial, tax_exempt, notes, external_reference, created_at, updated_at) VALUES
@@ -101,6 +117,11 @@ INSERT INTO invoice_items (id, invoice_id, type, description, quantity, unit_pri
     (4102, 4001, 'part', 'Full synthetic oil and filter', 1, 25.00, 1, 25.00);
 
 -- Example time entry for technician
+INSERT INTO time_entries (id, technician_id, estimate_job_id, started_at, ended_at, duration_minutes, start_latitude, start_longitude, end_latitude, end_longitude, manual_override, notes) VALUES
+    (5001, 3, 3102, DATE_SUB(NOW(), INTERVAL 2 HOUR), DATE_SUB(NOW(), INTERVAL 90 MINUTE), 30.0, 40.7128, -74.0060, 40.7128, -74.0060, 0, 'Travel and setup for mobile oil change');
+
+SET FOREIGN_KEY_CHECKS = @OLD_FOREIGN_KEY_CHECKS;
+
 DELETE FROM time_entries WHERE id IN (5001);
 INSERT INTO time_entries (id, technician_id, estimate_job_id, started_at, ended_at, duration_minutes, start_latitude, start_longitude, end_latitude, end_longitude, manual_override, notes) VALUES
     (5001, 3, 3102, DATE_SUB(NOW(), INTERVAL 2 HOUR), DATE_SUB(NOW(), INTERVAL 90 MINUTE), 30.0, 40.7128, -74.0060, 40.7128, -74.0060, 0, 'Travel and setup for mobile oil change');
