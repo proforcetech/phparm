@@ -801,9 +801,11 @@ return function (Router $router, array $config, $connection) {
     // Time Tracking routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
+        $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
+
         $timeController = new \App\Services\TimeTracking\TimeTrackingController(
-            new \App\Services\TimeTracking\TimeTrackingService($connection),
-            new \App\Services\TimeTracking\TechnicianPortalService($connection),
+            $timeTrackingService,
+            new \App\Services\TimeTracking\TechnicianPortalService($connection, $timeTrackingService),
             $gate
         );
 
