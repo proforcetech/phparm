@@ -8,4 +8,4 @@ CREATE TABLE password_resets (
     created_at TIMESTAMP NULL,
     UNIQUE KEY unique_token (token),
     INDEX idx_password_reset_email (email)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

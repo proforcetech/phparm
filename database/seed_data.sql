@@ -66,9 +66,9 @@ INSERT INTO customer_vehicles (id, customer_id, vehicle_master_id, year, make, m
 
 -- Estimates with jobs and line items
 DELETE FROM estimates WHERE id IN (3001, 3002);
-INSERT INTO estimates (id, number, customer_id, vehicle_id, status, technician_id, expiration_date, subtotal, tax, call_out_fee, mileage_total, discounts, grand_total, internal_notes, customer_notes, service_type_id, created_at, updated_at) VALUES
-    (3001, 'EST-0001', 1001, 2001, 'draft', 3, DATE_ADD(CURDATE(), INTERVAL 14 DAY), 180.00, 12.60, 0, 0, 0, 192.60, 'Check rear brakes during visit', 'Please confirm OEM pads', @brake_service_type_id, NOW(), NOW()),
-    (3002, 'EST-0002', 1002, 2002, 'sent', 3, DATE_ADD(CURDATE(), INTERVAL 30 DAY), 95.00, 6.65, 25.00, 0, 0, 126.65, 'Mobile service request', 'Submit PO before scheduling', @oil_change_type_id, NOW(), NOW());
+INSERT INTO estimates (id, number, customer_id, vehicle_id, status, technician_id, expiration_date, subtotal, tax, call_out_fee, mileage_total, discounts, grand_total, internal_notes, customer_notes, created_at, updated_at) VALUES
+    (3001, 'EST-0001', 1001, 2001, 'draft', 3, DATE_ADD(CURDATE(), INTERVAL 14 DAY), 180.00, 12.60, 0, 0, 0, 192.60, 'Check rear brakes during visit', 'Please confirm OEM pads', NOW(), NOW()),
+    (3002, 'EST-0002', 1002, 2002, 'sent', 3, DATE_ADD(CURDATE(), INTERVAL 30 DAY), 95.00, 6.65, 25.00, 0, 0, 126.65, 'Mobile service request', 'Submit PO before scheduling', NOW(), NOW());
 
 DELETE FROM estimate_jobs WHERE id IN (3101, 3102, 3103);
 INSERT INTO estimate_jobs (id, estimate_id, service_type_id, title, notes, reference, customer_status, subtotal, tax, total) VALUES

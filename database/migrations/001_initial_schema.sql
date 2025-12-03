@@ -3,7 +3,7 @@ CREATE TABLE roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     description VARCHAR(255) NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -16,7 +16,7 @@ CREATE TABLE users (
     remember_token VARCHAR(100) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -36,7 +36,7 @@ CREATE TABLE customers (
     external_reference VARCHAR(120) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE vehicle_master (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -50,7 +50,7 @@ CREATE TABLE vehicle_master (
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     UNIQUE KEY vehicle_unique (year, make, model, engine, transmission, drive, trim)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customer_vehicles (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -70,7 +70,7 @@ CREATE TABLE customer_vehicles (
     updated_at TIMESTAMP NULL,
     INDEX idx_customer_vehicle_customer (customer_id),
     CONSTRAINT fk_customer_vehicle_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE service_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -78,7 +78,7 @@ CREATE TABLE service_types (
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1,
     display_order INT DEFAULT 0
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -92,7 +92,7 @@ CREATE TABLE inventory_items (
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
     notes TEXT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimates (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -116,7 +116,7 @@ CREATE TABLE estimates (
     INDEX idx_estimate_vehicle (vehicle_id),
     CONSTRAINT fk_estimate_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_estimate_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimate_jobs (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -130,7 +130,7 @@ CREATE TABLE estimate_jobs (
     total DECIMAL(12,2) DEFAULT 0,
     INDEX idx_estimate_job_estimate (estimate_id),
     CONSTRAINT fk_estimate_job_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimate_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -143,7 +143,7 @@ CREATE TABLE estimate_items (
     line_total DECIMAL(12,2) DEFAULT 0,
     INDEX idx_estimate_item_job (estimate_job_id),
     CONSTRAINT fk_estimate_item_job FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE invoices (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -165,7 +165,7 @@ CREATE TABLE invoices (
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_invoice_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
     CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE invoice_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -178,7 +178,7 @@ CREATE TABLE invoice_items (
     line_total DECIMAL(12,2) DEFAULT 0,
     INDEX idx_invoice_item_invoice (invoice_id),
     CONSTRAINT fk_invoice_item_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE payments (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -191,7 +191,7 @@ CREATE TABLE payments (
     created_at TIMESTAMP NULL,
     INDEX idx_payment_invoice (invoice_id),
     CONSTRAINT fk_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE appointments (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -206,7 +206,7 @@ CREATE TABLE appointments (
     INDEX idx_appointment_customer (customer_id),
     CONSTRAINT fk_appointment_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_appointment_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE warranty_claims (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -220,7 +220,7 @@ CREATE TABLE warranty_claims (
     updated_at TIMESTAMP NULL,
     INDEX idx_warranty_customer (customer_id),
     CONSTRAINT fk_warranty_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE reminder_campaigns (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -231,7 +231,7 @@ CREATE TABLE reminder_campaigns (
     service_type_filter VARCHAR(160) NULL,
     last_run_at DATETIME NULL,
     next_run_at DATETIME NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE bundles (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -240,7 +240,7 @@ CREATE TABLE bundles (
     service_type_id INT NULL,
     default_job_title VARCHAR(160) NOT NULL,
     CONSTRAINT fk_bundle_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE bundle_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -252,7 +252,7 @@ CREATE TABLE bundle_items (
     taxable TINYINT(1) DEFAULT 1,
     INDEX idx_bundle_item_bundle (bundle_id),
     CONSTRAINT fk_bundle_item_bundle FOREIGN KEY (bundle_id) REFERENCES bundles (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE time_entries (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -267,7 +267,7 @@ CREATE TABLE time_entries (
     end_longitude DECIMAL(10,6) NULL,
     manual_override TINYINT(1) DEFAULT 0,
     notes TEXT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE credit_accounts (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -280,7 +280,7 @@ CREATE TABLE credit_accounts (
     late_fee DECIMAL(12,2) DEFAULT 0,
     status VARCHAR(20) NOT NULL,
     CONSTRAINT fk_credit_account_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE financial_entries (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -291,14 +291,14 @@ CREATE TABLE financial_entries (
     vendor VARCHAR(160) NULL,
     description TEXT NULL,
     attachment_path VARCHAR(255) NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inspection_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inspection_sections (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -306,7 +306,7 @@ CREATE TABLE inspection_sections (
     name VARCHAR(160) NOT NULL,
     display_order INT DEFAULT 0,
     CONSTRAINT fk_inspection_section_template FOREIGN KEY (template_id) REFERENCES inspection_templates (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inspection_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -316,4 +316,4 @@ CREATE TABLE inspection_items (
     default_value VARCHAR(160) NULL,
     display_order INT DEFAULT 0,
     CONSTRAINT fk_inspection_item_section FOREIGN KEY (section_id) REFERENCES inspection_sections (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
