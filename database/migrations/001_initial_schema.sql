@@ -126,6 +126,7 @@ CREATE TABLE estimates (
 CREATE TABLE estimate_jobs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     estimate_id INT NOT NULL,
+    service_type_id INT NOT NULL,
     title VARCHAR(160) NOT NULL,
     notes TEXT NULL,
     reference VARCHAR(120) NULL,
