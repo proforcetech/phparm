@@ -120,8 +120,7 @@ HTML;
             <tr>
                 <td>{$item['description']}</td>
                 <td class="text-right">{$item['quantity']}</td>
-                <td class="text-right">\$
-{NUMBER_FORMAT($item['unit_price'], 2)}</td>
+                <td class="text-right">\${NUMBER_FORMAT($item['unit_price'], 2)}</td>
                 <td class="text-right">\${NUMBER_FORMAT($lineTotal, 2)}</td>
             </tr>
 HTML;
