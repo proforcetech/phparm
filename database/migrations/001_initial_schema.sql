@@ -75,6 +75,9 @@ CREATE TABLE customer_vehicles (
 CREATE TABLE service_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
+    alias VARCHAR(120) NOT NULL,
+    color VARCHAR(120) NOT NULL,
+    icon VARCHAR(120) NOT NULL,
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1,
     display_order INT DEFAULT 0,
