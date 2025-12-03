@@ -77,7 +77,9 @@ CREATE TABLE service_types (
     name VARCHAR(120) NOT NULL,
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1,
-    display_order INT DEFAULT 0
+    display_order INT DEFAULT 0,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_items (
