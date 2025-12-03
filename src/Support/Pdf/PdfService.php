@@ -4,6 +4,7 @@ namespace App\Support\Pdf;
 
 use Dompdf\Dompdf;
 use Dompdf\Options;
+use RuntimeException;
 
 class PdfService
 {
@@ -11,6 +12,12 @@ class PdfService
 
     public function __construct()
     {
+        if (!class_exists(Dompdf::class) || !class_exists(Options::class)) {
+            throw new RuntimeException(
+                'PDF generation requires dompdf. Install dependencies with "composer install" or "composer require dompdf/dompdf".'
+            );
+        }
+
         $this->options = new Options();
         $this->options->set('isHtml5ParserEnabled', true);
         $this->options->set('isRemoteEnabled', true);
