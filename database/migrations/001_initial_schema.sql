@@ -157,6 +157,7 @@ CREATE TABLE invoices (
     customer_id INT NOT NULL,
     vehicle_id INT NULL,
     estimate_id INT NULL,
+    service_type_id INT NULL,
     status VARCHAR(40) NOT NULL,
     issue_date DATE NOT NULL,
     due_date DATE NULL,
