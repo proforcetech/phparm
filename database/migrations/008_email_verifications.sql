@@ -9,4 +9,4 @@ CREATE TABLE email_verifications (
     UNIQUE KEY unique_email_verification_token (token),
     INDEX idx_email_verifications_user (user_id),
     CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users (id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

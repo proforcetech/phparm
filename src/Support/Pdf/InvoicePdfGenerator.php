@@ -41,19 +41,20 @@ class InvoicePdfGenerator extends PdfService
      *
      * @param array<string, mixed> $settings
      */
-    private function buildInvoiceHtml(Invoice $invoice, array $settings): string
-    {
-        $customer = $this->fetchCustomer($invoice->customer_id);
-        $items = $this->fetchInvoiceItems($invoice->id);
+private function buildInvoiceHtml(Invoice $invoice, array $settings): string
+{
+    $customer = $this->fetchCustomer($invoice->customer_id);
+    $items    = $this->fetchInvoiceItems($invoice->id);
 
-        $shopName = $settings['shop_name'] ?? 'Auto Repair Shop';
-        $shopAddress = $settings['shop_address'] ?? '';
-        $shopPhone = $settings['shop_phone'] ?? '';
-        $shopEmail = $settings['shop_email'] ?? '';
+    $shopName    = $settings['shop_name']    ?? 'Auto Repair Shop';
+    $shopAddress = $settings['shop_address'] ?? '';
+    $shopPhone   = $settings['shop_phone']   ?? '';
+    $shopEmail   = $settings['shop_email']   ?? '';
 
-        $html = $this->getBaseStyles();
+    $html = $this->getBaseStyles();
 
-        $html .= <<<HTML
+    // Header
+    $html .= <<<HTML
 <div class="header">
     <table style="width: 100%; border: none;">
         <tr>
@@ -83,23 +84,24 @@ class InvoicePdfGenerator extends PdfService
     <strong>{$customer['first_name']} {$customer['last_name']}</strong><br>
 HTML;
 
-        if (!empty($customer['business_name'])) {
-            $html .= $customer['business_name'] . '<br>';
-        }
+    if (!empty($customer['business_name'])) {
+        $html .= $customer['business_name'] . '<br>';
+    }
 
-        $html .= <<<HTML
+    $html .= <<<HTML
     {$customer['email']}<br>
     {$customer['phone']}<br>
 HTML;
 
-        if (!empty($customer['street'])) {
-            $html .= $customer['street'] . '<br>';
-            $html .= $customer['city'] . ', ' . $customer['state'] . ' ' . $customer['postal_code'] . '<br>';
-        }
+    if (!empty($customer['street'])) {
+        $html .= $customer['street'] . '<br>';
+        $html .= $customer['city'] . ', ' . $customer['state'] . ' ' . $customer['postal_code'] . '<br>';
+    }
 
-        $html .= '</div>';
+    $html .= '</div>';
 
-        $html .= <<<HTML
+    // Items table header
+    $html .= <<<HTML
 <div class="items-section">
     <h3>Items</h3>
     <table>
@@ -114,75 +116,68 @@ HTML;
         <tbody>
 HTML;
 
-        foreach ($items as $item) {
-            $lineTotal = $item['quantity'] * $item['unit_price'];
-            $html .= <<<HTML
-            <tr>
-                <td>{$item['description']}</td>
-                <td class="text-right">{$item['quantity']}</td>
-                <td class="text-right">\${NUMBER_FORMAT($item['unit_price'], 2)}</td>
-                <td class="text-right">\${NUMBER_FORMAT($lineTotal, 2)}</td>
-            </tr>
-HTML;
-        }
+    // Item rows (use number_format directly)
+    foreach ($items as $item) {
+        $lineTotal = $item['quantity'] * $item['unit_price'];
 
-        $html .= <<<HTML
+        $html .= '<tr>';
+        $html .= '<td>' . htmlspecialchars((string) $item['description']) . '</td>';
+        $html .= '<td class="text-right">' . (float) $item['quantity'] . '</td>';
+        $html .= '<td class="text-right">$' . number_format((float) $item['unit_price'], 2) . '</td>';
+        $html .= '<td class="text-right">$' . number_format((float) $lineTotal, 2) . '</td>';
+        $html .= '</tr>';
+    }
+
+    $html .= <<<HTML
         </tbody>
     </table>
 </div>
-
-<div class="totals">
-    <table>
-        <tr>
-            <td><strong>Subtotal:</strong></td>
-            <td class="text-right">\${NUMBER_FORMAT($invoice->subtotal, 2)}</td>
-        </tr>
-        <tr>
-            <td><strong>Tax:</strong></td>
-            <td class="text-right">\${NUMBER_FORMAT($invoice->tax, 2)}</td>
-        </tr>
-        <tr style="border-top: 2px solid #333;">
-            <td><strong>Total:</strong></td>
-            <td class="text-right"><strong>\${NUMBER_FORMAT($invoice->total, 2)}</strong></td>
-        </tr>
 HTML;
 
-        if ($invoice->amount_paid > 0) {
-            $html .= <<<HTML
-        <tr>
+    // Totals section
+    $html .= '<div class="totals"><table>';
+
+    $html .= '<tr>
+        <td><strong>Subtotal:</strong></td>
+        <td class="text-right">$' . number_format((float) $invoice->subtotal, 2) . '</td>
+    </tr>';
+
+    $html .= '<tr>
+        <td><strong>Tax:</strong></td>
+        <td class="text-right">$' . number_format((float) $invoice->tax, 2) . '</td>
+    </tr>';
+
+    $html .= '<tr style="border-top: 2px solid #333;">
+        <td><strong>Total:</strong></td>
+        <td class="text-right"><strong>$' . number_format((float) $invoice->total, 2) . '</strong></td>
+    </tr>';
+
+    if ($invoice->amount_paid > 0) {
+        $html .= '<tr>
             <td>Amount Paid:</td>
-            <td class="text-right">\${NUMBER_FORMAT($invoice->amount_paid, 2)}</td>
-        </tr>
-        <tr style="border-top: 1px solid #ddd;">
+            <td class="text-right">$' . number_format((float) $invoice->amount_paid, 2) . '</td>
+        </tr>';
+
+        $html .= '<tr style="border-top: 1px solid #ddd;">
             <td><strong>Balance Due:</strong></td>
-            <td class="text-right"><strong>\${NUMBER_FORMAT($invoice->balance_due, 2)}</strong></td>
-        </tr>
-HTML;
-        }
-
-        $html .= <<<HTML
-    </table>
-</div>
-HTML;
-
-        if (!empty($settings['invoice_terms'])) {
-            $html .= <<<HTML
-<div class="footer">
-    <h3>Terms & Conditions</h3>
-    <p>{$settings['invoice_terms']}</p>
-</div>
-HTML;
-        }
-
-        $html .= '<div class="footer">Thank you for your business!</div>';
-
-        // Replace NUMBER_FORMAT placeholders
-        $html = preg_replace_callback('/\{NUMBER_FORMAT\(([\d.]+), (\d+)\)\}/', function($matches) {
-            return number_format((float)$matches[1], (int)$matches[2]);
-        }, $html);
-
-        return $html;
+            <td class="text-right"><strong>$' . number_format((float) $invoice->balance_due, 2) . '</strong></td>
+        </tr>';
     }
+
+    $html .= '</table></div>';
+
+    // Terms
+    if (!empty($settings['invoice_terms'])) {
+        $html .= '<div class="footer">'
+            . '<h3>Terms &amp; Conditions</h3>'
+            . '<p>' . nl2br(htmlspecialchars((string) $settings['invoice_terms'])) . '</p>'
+            . '</div>';
+    }
+
+    $html .= '<div class="footer">Thank you for your business!</div>';
+
+    return $html;
+}
 
     /**
      * @return array<string, mixed>
