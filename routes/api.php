@@ -84,15 +84,20 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid credentials');
         }
 
-        // Start session
+        // Start session and capture session identifier so the SPA can treat
+        // the login as authenticated. The frontend currently expects a
+        // `token` field, so we return the PHP session ID to keep the
+        // existing client-side logic working.
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $sessionId = session_id();
 
         return Response::json([
             'user' => $user->toArray(),
+            'token' => $sessionId,
             'message' => 'Login successful',
         ]);
     });
