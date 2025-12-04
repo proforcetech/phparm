@@ -63,12 +63,19 @@ return function (Router $router, array $config, $connection) {
         }
 
         // Load auth service
+        $authConfig = $config['auth'];
         $authService = new \App\Support\Auth\AuthService(
             $connection,
-            new RolePermissions($config['auth']['roles']),
-            new \App\Support\Auth\PasswordResetRepository($connection),
-            new \App\Support\Auth\EmailVerificationRepository($connection),
-            $config['auth']
+            new RolePermissions($authConfig['roles']),
+            new \App\Support\Auth\PasswordResetRepository(
+                $connection,
+                (int) ($authConfig['passwords']['expire_minutes'] ?? 60)
+            ),
+            new \App\Support\Auth\EmailVerificationRepository(
+                $connection,
+                (int) ($authConfig['verification']['token_ttl_hours'] ?? 48)
+            ),
+            $authConfig
         );
 
         $user = $authService->staffLogin((string) $email, (string) $password);
@@ -801,9 +808,11 @@ return function (Router $router, array $config, $connection) {
     // Time Tracking routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
+        $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
+
         $timeController = new \App\Services\TimeTracking\TimeTrackingController(
-            new \App\Services\TimeTracking\TimeTrackingService($connection),
-            new \App\Services\TimeTracking\TechnicianPortalService($connection),
+            $timeTrackingService,
+            new \App\Services\TimeTracking\TechnicianPortalService($connection, $timeTrackingService),
             $gate
         );
 
