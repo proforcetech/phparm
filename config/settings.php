@@ -158,6 +158,24 @@ return [
             'description' => 'reCAPTCHA secret key for server-side verification.',
             'value' => null,
         ],
+        'integrations.partstech.api_base' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Base URL for PartsTech API requests.',
+            'value' => 'https://api.partstech.com',
+        ],
+        'integrations.partstech.api_key' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'PartsTech API key used for VIN decoding and catalog search.',
+            'value' => null,
+        ],
+        'integrations.partstech.markup_tiers' => [
+            'group' => 'integrations',
+            'type' => 'json',
+            'description' => 'Optional pricing markup tiers applied to PartsTech catalog results.',
+            'value' => [],
+        ],
         'documents.terms.estimates' => [
             'group' => 'documents',
             'type' => 'string',
