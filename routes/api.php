@@ -6,6 +6,7 @@ use App\Support\Http\Response;
 use App\Support\Http\Middleware;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\RolePermissions;
+use InvalidArgumentException;
 
 /**
  * API Routes Definition
@@ -152,6 +153,7 @@ return function (Router $router, array $config, $connection) {
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
+        $settingsRepository = new \App\Support\SettingsRepository($connection);
 
         $router->get('/api/dashboard', function (Request $request) use ($dashboardController) {
             $params = [
@@ -173,6 +175,35 @@ return function (Router $router, array $config, $connection) {
 
             $data = $dashboardController->handleMonthlyTrends($params);
             return Response::json($data);
+        });
+
+        // PartsTech integration
+        $auditConfig = require __DIR__ . '/../config/audit.php';
+        $partsTechService = new \App\Services\Integrations\PartsTechService(
+            $settingsRepository,
+            new \App\Support\Audit\AuditLogger($connection, $auditConfig)
+        );
+
+        $router->post('/api/partstech/vin', function (Request $request) use ($partsTechService) {
+            try {
+                $vin = (string) ($request->body()['vin'] ?? '');
+                $data = $partsTechService->decodeVin($vin);
+                return Response::json($data);
+            } catch (InvalidArgumentException $exception) {
+                return Response::badRequest($exception->getMessage());
+            }
+        });
+
+        $router->post('/api/partstech/search', function (Request $request) use ($partsTechService) {
+            try {
+                $payload = $request->body();
+                $query = (string) ($payload['query'] ?? '');
+                $vehicle = is_array($payload['vehicle'] ?? null) ? $payload['vehicle'] : [];
+                $results = $partsTechService->searchParts($query, $vehicle);
+                return Response::json(['results' => $results]);
+            } catch (InvalidArgumentException $exception) {
+                return Response::badRequest($exception->getMessage());
+            }
         });
     });
 

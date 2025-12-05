@@ -48,7 +48,7 @@ class SettingsService
      */
     public function updateIntegrations(array $payload, int $actorId): void
     {
-        $allowed = ['stripe', 'square', 'paypal', 'twilio', 'smtp', 'recaptcha', 'maps'];
+        $allowed = ['stripe', 'square', 'paypal', 'twilio', 'smtp', 'recaptcha', 'maps', 'partstech'];
         foreach (array_keys($payload) as $provider) {
             if (!in_array($provider, $allowed, true)) {
                 throw new InvalidArgumentException('Unknown provider ' . $provider);
