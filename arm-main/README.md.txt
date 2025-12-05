@@ -1,0 +1,1 @@
+This directory contains the WordPress plugin which is being transitioned to a standalone system
