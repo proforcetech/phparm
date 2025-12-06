@@ -8,8 +8,8 @@ Reviewed the WordPress plugin customer portal (`arm_main/includes/public/Custome
 
 ### Tasks
 1. **Protect and bootstrap the customer portal**
-   - Add auth/role guards for portal routes and hydrate the customer context on load.
-   - Ensure portal assets/localized config expose the API base, auth token, and nonce-equivalent for customer actions.
+   - [x] Add auth/role guards for portal routes and hydrate the customer context on load.
+   - [x] Ensure portal assets/localized config expose the API base, auth token, and nonce-equivalent for customer actions.
 
 ## Portal tabs and data parity
 - The plugin renders vehicle lists with add/edit/delete controls, estimate and invoice lists with deep links, and embeds credit account balances/transactions from dedicated queries and templates.【F:arm-main/includes/public/Customer_Dashboard.php†L80-L244】
@@ -25,6 +25,6 @@ Reviewed the WordPress plugin customer portal (`arm_main/includes/public/Custome
 - The standalone profile screen renders static inputs and buttons without binding to customer data or saving reminder preferences/email/SMS settings.【F:src/views/customer-portal/Profile.vue†L1-L45】
 
 ### Tasks
-3. **Wire profile and reminders management**
+3. [x] **Wire profile and reminders management**
    - Load customer profile/reminder preferences into the form and persist updates through customer/reminder APIs with success/error handling.
    - Include timezone/hour selection and preference toggles comparable to the plugin, and surface validation/redirect feedback.

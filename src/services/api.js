@@ -14,6 +14,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+
+    const portalNonce = localStorage.getItem('portal_nonce')
+    if (portalNonce) {
+      config.headers['X-Portal-Nonce'] = portalNonce
+    }
     return config
   },
   (error) => {

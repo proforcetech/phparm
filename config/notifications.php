@@ -30,5 +30,7 @@ return [
     'templates' => [
         'estimate.sent' => 'Your estimate {{estimate_number}} is ready. View at {{estimate_url}}.',
         'invoice.due' => 'Invoice {{invoice_number}} is due on {{due_date}}. Pay at {{invoice_url}}.',
+        'reminder.campaign' => '{{body}}',
+        'reminder.campaign.sms' => '{{body}}',
     ],
 ];

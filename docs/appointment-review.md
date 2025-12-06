@@ -7,9 +7,9 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone code reads and writes availability settings via an `availability_settings` table, but no migration creates that table and there is no UI to define hours or closed dates, leaving slot generation dependent on hardcoded defaults only.【F:src/Services/Appointment/AvailabilityService.php†L23-L85】【F:database/migrations/001_initial_schema.sql†L203-L216】
 
 ### Tasks
-1. **Add availability settings schema**
+1. [x] **Add availability settings schema**
    - Introduce a migration/model for `availability_settings` (or port the plugin’s hours/holiday schema) so AvailabilityService has persisted hours/holidays, including indexes by day/date.
-2. **Expose admin configuration UI**
+2. [x] **Expose admin configuration UI**
    - Build a backend+frontend screen to manage weekly hours, holidays/closed dates, and slot/buffer lengths, persisting to the new availability table and replacing defaults.
 
 ## Slot calculation and blackout handling
@@ -17,9 +17,9 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone slot generation simply iterates between configured start/end times with an optional buffer and only checks for overlapping appointments, ignoring holiday closures, per-day schedules, and date validation so customers may book outside business rules.【F:src/Services/Appointment/AvailabilityService.php†L23-L85】
 
 ### Tasks
-1. **Align slot generation with schedules**
+1. [x] **Align slot generation with schedules**
    - Incorporate weekday-specific hours, holiday blackouts, and input validation into the slot generator and API, matching the plugin’s refusal of closed days and duplicate start times.
-2. **Return user-facing closure context**
+2. [x] **Return user-facing closure context**
    - When a date is blocked (holiday or no hours), include a reason/label in the response for UI display.
 
 ## Appointment lifecycle data and webhooks
@@ -27,7 +27,7 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone appointments table omits audit timestamps and requires a vehicle link while the service only logs locally, providing no outbound webhooks or customer-facing lifecycle notifications.【F:database/migrations/001_initial_schema.sql†L203-L216】【F:src/Services/Appointment/AppointmentService.php†L19-L90】
 
 ### Tasks
-1. **Enrich appointment schema and history**
+1. [x] **Enrich appointment schema and history**
    - Add created/updated timestamps, notes, and nullable customer/vehicle references where applicable to appointments, with audit logging of status transitions.
 2. **Emit lifecycle events/webhooks**
    - Publish appointment booked/updated/canceled events (or webhooks) carrying schedule and customer context to support external calendar workflows similar to the plugin’s Make integration.
