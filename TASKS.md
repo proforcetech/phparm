@@ -25,16 +25,16 @@ As each section is complete it will marked as such.
 
 [x] Examine the customer dashboard functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/customer-dashboard-review.md for identified follow-ups.)
 
-[] Examine the reminder system functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the reminder system functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/reminder-review.md for identified follow-ups.)
 
-[] Examine the appointment functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the appointment functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/appointment-review.md for identified follow-ups.)
 
-[] Examine the appointment availability functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the appointment availability functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/appointment-availability-review.md for identified follow-ups.)
 
-[] Examine the Time Logs functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the Time Logs functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/time-logs-review.md for identified follow-ups.)
 
-[] Examine the Purchases, Expenses and basic accounting functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the Purchases, Expenses and basic accounting functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/purchases-expenses-review.md for identified follow-ups.)
 
-[] Examine the preset bundles functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the preset bundles functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/preset-bundles-review.md for identified follow-ups.)
 
-[] Examine the time logs functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function.
+[x] Examine the time logs functionality of the existing plugin (located in arm-main) and ensure they exist in the standalone script, both frontend and backend. Create tasks for each missing function. (See docs/time-logs-review.md for identified follow-ups.)
