@@ -133,4 +133,33 @@ class CreditAccountController
             'available_credit' => $this->service->getAvailableCredit($account->id),
         ];
     }
+
+    /**
+     * Customer portal - transaction history & reminders
+     *
+     * @return array<string, mixed>
+     */
+    public function customerHistory(User $user): array
+    {
+        if ($user->role !== 'customer' || $user->customer_id === null) {
+            throw new UnauthorizedException('Only customers can access this endpoint');
+        }
+
+        return $this->service->customerLedger($user->customer_id);
+    }
+
+    /**
+     * Customer portal - submit payment for review
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function submitCustomerPayment(User $user, array $data): array
+    {
+        if ($user->role !== 'customer' || $user->customer_id === null) {
+            throw new UnauthorizedException('Only customers can access this endpoint');
+        }
+
+        return $this->service->submitCustomerPayment($user->customer_id, $data, $user->id);
+    }
 }

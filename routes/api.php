@@ -16,6 +16,20 @@ use InvalidArgumentException;
  * @param \App\Database\Connection $connection
  */
 return function (Router $router, array $config, $connection) {
+    $authConfig = $config['auth'];
+    $authService = new \App\Support\Auth\AuthService(
+        $connection,
+        new RolePermissions($authConfig['roles']),
+        new \App\Support\Auth\PasswordResetRepository(
+            $connection,
+            (int) ($authConfig['passwords']['expire_minutes'] ?? 60)
+        ),
+        new \App\Support\Auth\EmailVerificationRepository(
+            $connection,
+            (int) ($authConfig['verification']['token_ttl_hours'] ?? 48)
+        ),
+        $authConfig
+    );
 
     // Health check (public)
     $router->get('/health', function (Request $request) use ($connection) {
@@ -63,22 +77,6 @@ return function (Router $router, array $config, $connection) {
             return Response::badRequest('Email and password required');
         }
 
-        // Load auth service
-        $authConfig = $config['auth'];
-        $authService = new \App\Support\Auth\AuthService(
-            $connection,
-            new RolePermissions($authConfig['roles']),
-            new \App\Support\Auth\PasswordResetRepository(
-                $connection,
-                (int) ($authConfig['passwords']['expire_minutes'] ?? 60)
-            ),
-            new \App\Support\Auth\EmailVerificationRepository(
-                $connection,
-                (int) ($authConfig['verification']['token_ttl_hours'] ?? 48)
-            ),
-            $authConfig
-        );
-
         $user = $authService->staffLogin((string) $email, (string) $password);
 
         if ($user === null) {
@@ -103,6 +101,38 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
+    $router->post('/api/auth/customer-login', function (Request $request) use ($authService) {
+        $email = $request->input('email');
+        $password = $request->input('password');
+
+        if (!$email || !$password) {
+            return Response::badRequest('Email and password required');
+        }
+
+        $user = $authService->customerPortalLogin((string) $email, (string) $password);
+
+        if ($user === null) {
+            return Response::unauthorized('Invalid credentials');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $_SESSION['user_id'] = $user->id;
+        $_SESSION['user'] = $user->toArray();
+        $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $sessionId = session_id();
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'token' => $sessionId,
+            'nonce' => $_SESSION['portal_nonce'],
+            'api_base' => '/api',
+            'message' => 'Login successful',
+        ]);
+    });
+
     $router->post('/api/auth/logout', function (Request $request) {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
@@ -121,6 +151,62 @@ return function (Router $router, array $config, $connection) {
 
         return Response::json(['user' => $user->toArray()]);
     })->middleware(Middleware::auth());
+
+    $router->get('/api/customer-portal/bootstrap', function (Request $request) {
+        $user = $request->getAttribute('user');
+
+        if ($user === null || !$user instanceof \App\Models\User) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if ($user->role !== 'customer') {
+            return Response::unauthorized('Customer access required');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'token' => session_id(),
+            'nonce' => $_SESSION['portal_nonce'],
+            'api_base' => '/api',
+        ]);
+    })->middleware([Middleware::auth(), Middleware::role('customer')]);
+
+    $router->group([Middleware::auth(), Middleware::role('customer')], function (Router $router) use ($connection) {
+        $preferenceController = new \App\Services\Reminder\ReminderPreferenceController(
+            new \App\Services\Reminder\ReminderPreferenceService($connection),
+            new \App\Services\Customer\CustomerRepository($connection)
+        );
+
+        $router->get('/api/customer/reminder-preferences', function (Request $request) use ($preferenceController) {
+            $user = $request->getAttribute('user');
+
+            if ($user === null || !$user instanceof \App\Models\User) {
+                return Response::unauthorized('Not authenticated');
+            }
+
+            $data = $preferenceController->showForCustomer($user);
+
+            return Response::json($data);
+        });
+
+        $router->put('/api/customer/reminder-preferences', function (Request $request) use ($preferenceController) {
+            $user = $request->getAttribute('user');
+
+            if ($user === null || !$user instanceof \App\Models\User) {
+                return Response::unauthorized('Not authenticated');
+            }
+
+            $data = $preferenceController->upsertForCustomer($user, $request->body());
+
+            return Response::json($data);
+        });
+    });
 
     // Payment webhook endpoints (public - no authentication required)
     $paymentConfig = require __DIR__ . '/../config/payments.php';
@@ -448,22 +534,71 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Reminder Campaign routes
-    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection) {
+    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $config) {
+        $notificationConfig = require __DIR__ . '/../config/notifications.php';
+        $templateEngine = new \App\Support\Notifications\TemplateEngine();
+        $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+        $preferenceService = new \App\Services\Reminder\ReminderPreferenceService($connection);
+        $campaignService = new \App\Services\Reminder\ReminderCampaignService($connection);
+        $logService = new \App\Services\Reminder\ReminderLogService($connection);
+        $scheduler = new \App\Services\Reminder\ReminderScheduler(
+            $connection,
+            $campaignService,
+            $preferenceService,
+            $notifications,
+            $logService,
+            $templateEngine
+        );
+        $controller = new \App\Services\Reminder\ReminderCampaignController($campaignService, $scheduler, $logService);
 
-        $router->get('/api/reminders', function (Request $request) use ($connection) {
-            $user = $request->getAttribute('user');
-            $reminderService = new \App\Services\Reminder\ReminderCampaignService($connection);
-            $campaigns = $reminderService->list();
-            return Response::json($campaigns);
+        $router->get('/api/reminders', function () use ($controller) {
+            $data = $controller->index();
+            return Response::json($data);
         });
 
-        $router->post('/api/reminders/{id}/activate', function (Request $request) use ($connection) {
+        $router->post('/api/reminders', function (Request $request) use ($controller) {
+            $user = $request->getAttribute('user');
+            $data = $controller->store($request->body(), $user->id);
+            return Response::created($data->toArray());
+        });
+
+        $router->put('/api/reminders/{id}', function (Request $request) use ($controller) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
 
-            $reminderService = new \App\Services\Reminder\ReminderCampaignService($connection);
-            $campaign = $reminderService->activate($id, $user->id);
-            return Response::json($campaign);
+            $campaign = $controller->update($id, $request->body(), $user->id);
+            return Response::json($campaign?->toArray());
+        });
+
+        $router->post('/api/reminders/{id}/pause', function (Request $request) use ($controller) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $campaign = $controller->pause($id, $user->id);
+            return Response::json($campaign?->toArray());
+        });
+
+        $router->post('/api/reminders/{id}/activate', function (Request $request) use ($controller) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $campaign = $controller->activate($id, $user->id);
+            return Response::json($campaign?->toArray());
+        });
+
+        $router->post('/api/reminders/{id}/run', function (Request $request) use ($controller) {
+            $user = $request->getAttribute('user');
+            $controller->runNow((int) $request->getAttribute('id'), $user->id);
+            return Response::json(['status' => 'queued']);
+        });
+
+        $router->get('/api/reminders/{id}/logs', function (Request $request) use ($controller) {
+            $id = (int) $request->getAttribute('id');
+            $limit = (int) $request->queryParam('limit', 50);
+
+            $logs = $controller->logs($id, $limit);
+            return Response::json($logs);
         });
     });
 
@@ -572,14 +707,22 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Appointment routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $appointmentController = new \App\Services\Appointment\AppointmentController(
+        new \App\Services\Appointment\AppointmentService($connection),
+        new \App\Services\Appointment\AvailabilityService($connection),
+        $gate
+    );
 
-        $appointmentController = new \App\Services\Appointment\AppointmentController(
-            new \App\Services\Appointment\AppointmentService($connection),
-            new \App\Services\Appointment\AvailabilityService($connection),
-            $gate
-        );
+    $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
+        $params = [
+            'date' => $request->queryParam('date'),
+            'technician_id' => $request->queryParam('technician_id'),
+        ];
+        $data = $appointmentController->availability(null, $params);
+        return Response::json($data);
+    });
 
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -613,6 +756,18 @@ return function (Router $router, array $config, $connection) {
             $user = $request->getAttribute('user');
             $data = $appointmentController->store($user, $request->body());
             return Response::created($data);
+        });
+
+        $router->get('/api/appointments/availability/config', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $data = $appointmentController->availabilityConfig($user);
+            return Response::json($data);
+        });
+
+        $router->put('/api/appointments/availability/config', function (Request $request) use ($appointmentController) {
+            $user = $request->getAttribute('user');
+            $data = $appointmentController->saveAvailabilityConfig($user, $request->body());
+            return Response::json($data);
         });
 
         $router->put('/api/appointments/{id}', function (Request $request) use ($appointmentController) {
@@ -779,6 +934,18 @@ return function (Router $router, array $config, $connection) {
         $router->get('/api/credit-accounts/customer/me', function (Request $request) use ($creditController) {
             $user = $request->getAttribute('user');
             $data = $creditController->customerView($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/credit-accounts/customer/history', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $data = $creditController->customerHistory($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/credit-accounts/customer/payments', function (Request $request) use ($creditController) {
+            $user = $request->getAttribute('user');
+            $data = $creditController->submitCustomerPayment($user, $request->body());
             return Response::json($data);
         });
     });

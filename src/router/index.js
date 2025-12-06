@@ -69,6 +69,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/appointments/availability-settings',
+    name: 'AvailabilitySettings',
+    component: () => import('@/views/appointments/AvailabilitySettings.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/customers',
     name: 'CustomerList',
     component: () => import('@/views/customers/CustomerList.vue'),
@@ -117,6 +123,12 @@ const routes = [
     meta: { requiresAuth: true, requiresCustomer: true },
   },
   {
+    path: '/portal/credit',
+    name: 'CustomerCredit',
+    component: () => import('@/views/customer-portal/Credit.vue'),
+    meta: { requiresAuth: true, requiresCustomer: true },
+  },
+  {
     path: '/portal/appointments',
     name: 'CustomerAppointments',
     component: () => import('@/views/customer-portal/Appointments.vue'),
@@ -151,8 +163,19 @@ const router = createRouter({
 })
 
 // Navigation guards
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+
+  authStore.checkAuth()
+
+  if (authStore.isAuthenticated && !authStore.user) {
+    try {
+      await authStore.fetchCurrentUser()
+    } catch (err) {
+      console.error('Failed to hydrate user', err)
+      return next('/login')
+    }
+  }
 
   // Check if route requires authentication
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
@@ -173,8 +196,19 @@ router.beforeEach((to, from, next) => {
   }
 
   // Check if route requires customer access
-  if (to.meta.requiresCustomer && !authStore.isCustomer) {
-    return next('/dashboard')
+  if (to.meta.requiresCustomer) {
+    if (!authStore.isCustomer) {
+      return next('/dashboard')
+    }
+
+    if (!authStore.portalReady) {
+      try {
+        await authStore.bootstrapPortal()
+      } catch (err) {
+        console.error('Failed to bootstrap portal', err)
+        return next('/login')
+      }
+    }
   }
 
   // Check if route requires admin access

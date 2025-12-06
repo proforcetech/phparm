@@ -1,11 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth.service'
+import { portalService } from '@/services/portal.service'
 import router from '@/router'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const token = ref(null)
+  const portalConfig = ref({
+    apiBase: '/api',
+    nonce: null,
+  })
   const loading = ref(false)
   const error = ref(null)
 
@@ -13,6 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isCustomer = computed(() => user.value?.role === 'customer')
   const isStaff = computed(() => user.value && user.value.role !== 'customer')
   const isAdmin = computed(() => user.value?.role === 'admin')
+  const portalReady = computed(() => isCustomer.value && !!portalConfig.value.nonce)
 
   /**
    * Check if user is logged in (on app mount)
@@ -20,10 +26,29 @@ export const useAuthStore = defineStore('auth', () => {
   function checkAuth() {
     const storedToken = localStorage.getItem('auth_token')
     const storedUser = localStorage.getItem('user')
+    const storedNonce = localStorage.getItem('portal_nonce')
 
     if (storedToken && storedUser) {
       token.value = storedToken
       user.value = JSON.parse(storedUser)
+    }
+
+    if (storedNonce) {
+      portalConfig.value.nonce = storedNonce
+    }
+  }
+
+  async function fetchCurrentUser() {
+    try {
+      const data = await authService.me()
+      if (data.user) {
+        user.value = data.user
+        localStorage.setItem('user', JSON.stringify(data.user))
+      }
+      return data
+    } catch (err) {
+      await logout()
+      throw err
     }
   }
 
@@ -45,6 +70,18 @@ export const useAuthStore = defineStore('auth', () => {
 
         localStorage.setItem('auth_token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
+
+        if (data.api_base) {
+          portalConfig.value.apiBase = data.api_base
+        }
+
+        if (data.user.role === 'customer' && data.nonce) {
+          portalConfig.value.nonce = data.nonce
+          localStorage.setItem('portal_nonce', data.nonce)
+        } else {
+          portalConfig.value.nonce = null
+          localStorage.removeItem('portal_nonce')
+        }
 
         // Redirect based on role
         if (data.user.role === 'customer') {
@@ -74,8 +111,10 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       user.value = null
       token.value = null
+      portalConfig.value.nonce = null
       localStorage.removeItem('auth_token')
       localStorage.removeItem('user')
+      localStorage.removeItem('portal_nonce')
       router.push('/login')
     }
   }
@@ -154,18 +193,51 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function bootstrapPortal() {
+    if (!isCustomer.value) {
+      return null
+    }
+
+    const data = await portalService.bootstrap()
+
+    if (data.user) {
+      user.value = data.user
+      localStorage.setItem('user', JSON.stringify(data.user))
+    }
+
+    if (data.token) {
+      token.value = data.token
+      localStorage.setItem('auth_token', data.token)
+    }
+
+    if (data.api_base) {
+      portalConfig.value.apiBase = data.api_base
+    }
+
+    if (data.nonce) {
+      portalConfig.value.nonce = data.nonce
+      localStorage.setItem('portal_nonce', data.nonce)
+    }
+
+    return data
+  }
+
   return {
     user,
     token,
+    portalConfig,
     loading,
     error,
     isAuthenticated,
     isCustomer,
     isStaff,
     isAdmin,
+    portalReady,
     checkAuth,
+    fetchCurrentUser,
     login,
     logout,
+    bootstrapPortal,
     register,
     requestPasswordReset,
     resetPassword,

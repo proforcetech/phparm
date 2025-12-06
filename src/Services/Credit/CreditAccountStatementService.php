@@ -19,10 +19,10 @@ class CreditAccountStatementService
     /**
      * @return array<string, mixed>
      */
-    public function generate(int $customerId, ?string $period = null): array
+    public function generate(int $accountId, ?string $startDate = null, ?string $endDate = null): array
     {
-        [$from, $to] = $this->resolveRange($period);
-        $account = $this->fetchAccount($customerId);
+        [$from, $to] = $this->resolveRange($startDate, $endDate);
+        $account = $this->fetchAccount($accountId);
         $transactions = $this->fetchTransactions($account['id'] ?? null, $from, $to);
 
         $balance = $account['balance'] ?? 0.0;
@@ -31,7 +31,7 @@ class CreditAccountStatementService
         }
 
         return [
-            'customer_id' => $customerId,
+            'account_id' => $accountId,
             'account' => $account,
             'period' => ['from' => $from?->format('Y-m-d'), 'to' => $to?->format('Y-m-d')],
             'transactions' => $transactions,
@@ -42,10 +42,10 @@ class CreditAccountStatementService
     /**
      * @return array<string, mixed>|null
      */
-    private function fetchAccount(int $customerId): ?array
+    private function fetchAccount(int $accountId): ?array
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT id, limit_amount, balance as balance FROM credit_accounts WHERE customer_id = :customer_id LIMIT 1');
-        $stmt->execute(['customer_id' => $customerId]);
+        $stmt = $this->connection->pdo()->prepare('SELECT id, customer_id, credit_limit, balance, available_credit, status FROM credit_accounts WHERE id = :account_id LIMIT 1');
+        $stmt->execute(['account_id' => $accountId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row ?: null;
@@ -60,7 +60,7 @@ class CreditAccountStatementService
             return [];
         }
 
-        $sql = 'SELECT occurred_at, description, amount, reference FROM credit_account_transactions WHERE credit_account_id = :account_id';
+        $sql = 'SELECT occurred_at, transaction_type, description, amount, balance_after, reference_type, reference_id FROM credit_transactions WHERE credit_account_id = :account_id';
         $params = ['account_id' => $accountId];
 
         if ($from !== null) {
@@ -80,6 +80,7 @@ class CreditAccountStatementService
 
         return array_map(static function (array $row) {
             $row['amount'] = (float) $row['amount'];
+            $row['balance_after'] = isset($row['balance_after']) ? (float) $row['balance_after'] : null;
             return $row;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
@@ -87,20 +88,27 @@ class CreditAccountStatementService
     /**
      * @return array{0: ?DateTimeImmutable, 1: ?DateTimeImmutable}
      */
-    private function resolveRange(?string $period): array
+    private function resolveRange(?string $start, ?string $end): array
     {
-        if ($period === null || $period === 'all') {
+        if (($start === null || $start === 'all') && $end === null) {
             return [null, null];
         }
 
-        $end = new DateTimeImmutable('now');
-        $start = match ($period) {
-            '30d' => $end->sub(new DateInterval('P30D')),
-            '90d' => $end->sub(new DateInterval('P90D')),
-            '12m' => $end->sub(new DateInterval('P1Y')),
-            default => null,
-        };
+        if (in_array($start, ['30d', '90d', '12m'], true) && $end === null) {
+            $computedEnd = new DateTimeImmutable('now');
+            $computedStart = match ($start) {
+                '30d' => $computedEnd->sub(new DateInterval('P30D')),
+                '90d' => $computedEnd->sub(new DateInterval('P90D')),
+                '12m' => $computedEnd->sub(new DateInterval('P1Y')),
+                default => null,
+            };
 
-        return [$start, $end];
+            return [$computedStart, $computedEnd];
+        }
+
+        $resolvedStart = $start !== null ? new DateTimeImmutable($start) : null;
+        $resolvedEnd = $end !== null ? new DateTimeImmutable($end) : null;
+
+        return [$resolvedStart, $resolvedEnd];
     }
 }

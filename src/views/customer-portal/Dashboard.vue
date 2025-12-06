@@ -36,6 +36,16 @@
         </div>
       </Card>
 
+      <Card class="hover:shadow-lg transition-shadow cursor-pointer" @click="$router.push('/portal/credit')">
+        <div class="text-center py-6">
+          <svg class="mx-auto h-12 w-12 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4-1.343 4-3M4 12c0 3.866 3.582 7 8 7s8-3.134 8-7-3.582-7-8-7-8 3.134-8 7z" />
+          </svg>
+          <h3 class="mt-4 text-lg font-medium text-gray-900">Credit Account</h3>
+          <p class="mt-1 text-sm text-gray-500">Check balance and submit payments</p>
+        </div>
+      </Card>
+
       <Card class="hover:shadow-lg transition-shadow cursor-pointer" @click="$router.push('/portal/profile')">
         <div class="text-center py-6">
           <svg class="mx-auto h-12 w-12 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">

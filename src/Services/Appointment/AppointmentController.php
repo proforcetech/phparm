@@ -120,9 +120,8 @@ class AppointmentController
      * @param array<string, mixed> $params
      * @return array<int, array<string, mixed>>
      */
-    public function availability(User $user, array $params): array
+    public function availability(?User $user, array $params): array
     {
-        // Allow customers to check availability
         $date = $params['date'] ?? date('Y-m-d');
         $technicianId = isset($params['technician_id']) ? (int) $params['technician_id'] : null;
 
@@ -154,5 +153,32 @@ class AppointmentController
         }
 
         return $appointment->toArray();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function availabilityConfig(User $user): array
+    {
+        if (!$this->gate->can($user, 'appointments.update')) {
+            throw new UnauthorizedException('Cannot view availability settings');
+        }
+
+        return $this->availability->getConfig();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function saveAvailabilityConfig(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'appointments.update')) {
+            throw new UnauthorizedException('Cannot update availability settings');
+        }
+
+        $this->availability->saveConfig($data);
+
+        return $this->availability->getConfig();
     }
 }

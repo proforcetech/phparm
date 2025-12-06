@@ -7,9 +7,9 @@ Reviewed the plugin’s availability management under `arm-main` against the sta
 - The standalone schema never creates an availability table while `AvailabilityService` still reads and writes to `availability_settings`, meaning availability data cannot persist and there is no UI to manage business hours or closures.【F:database/migrations/001_initial_schema.sql†L203-L216】【F:src/Services/Appointment/AvailabilityService.php†L51-L72】
 
 ### Tasks
-1. **Add availability persistence**
+1. [x] **Add availability persistence**
    - Introduce a migration/model to store weekly hours and holidays (or mirror the plugin schema) and wire `AvailabilityService` to it instead of the non-existent `availability_settings` table.
-2. **Build admin configuration screen**
+2. [x] **Build admin configuration screen**
    - Provide a backend + frontend screen to edit weekly hours, holidays/closed dates, and slot/buffer defaults with nonce-protected saves, replacing the placeholder defaults.
 
 ## Slot lookup API coverage
@@ -17,9 +17,9 @@ Reviewed the plugin’s availability management under `arm-main` against the sta
 - The standalone controller exposes an `availability` endpoint that calls an unimplemented `getAvailableSlots` method, and `generateSlots` only iterates between global start/end defaults without weekday/holiday logic or input validation.【F:src/Services/Appointment/AppointmentController.php†L118-L132】【F:src/Services/Appointment/AvailabilityService.php†L23-L46】
 
 ### Tasks
-1. **Implement slot search service**
+1. [x] **Implement slot search service**
    - Add `getAvailableSlots` to `AvailabilityService` (and its interface) to validate dates, factor per-day hours/holidays, and filter out conflicting appointments similar to the plugin’s slot handler.
-2. **Return closure context in responses**
+2. [x] **Return closure context in responses**
    - Include a reason/label when a date is closed or holiday so UIs can mirror the plugin’s feedback when no slots are available.
 
 ## Customer-facing availability access
@@ -27,7 +27,7 @@ Reviewed the plugin’s availability management under `arm-main` against the sta
 - The standalone controller method accepts a `User` object and relies on router/controller wiring not present in routes, leaving no public endpoint for customers to discover available slots from the portal or pre-auth flows.【F:src/Services/Appointment/AppointmentController.php†L117-L133】【F:routes/api.php†L1-L120】
 
 ### Tasks
-1. **Expose public availability route**
+1. [x] **Expose public availability route**
    - Add a customer/guest-accessible route that proxies to the slot search service with appropriate throttling and captcha/nonce protections.
-2. **Integrate with booking widgets**
+2. [x] **Integrate with booking widgets**
    - Wire the new route into the customer portal and any embeddable widgets so availability is shown without requiring an authenticated staff session.

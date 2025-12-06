@@ -25,7 +25,7 @@ class AppointmentService
      */
     public function create(array $payload, int $actorId): Appointment
     {
-        $required = ['customer_id', 'start_time', 'end_time', 'status'];
+        $required = ['start_time', 'end_time', 'status'];
         foreach ($required as $field) {
             if (!isset($payload[$field])) {
                 throw new InvalidArgumentException("Missing {$field}");
@@ -40,7 +40,7 @@ class AppointmentService
             'VALUES (:customer_id, :vehicle_id, :technician_id, :status, :start_time, :end_time, :estimate_id, :notes)'
         );
         $stmt->execute([
-            'customer_id' => $payload['customer_id'],
+            'customer_id' => $payload['customer_id'] ?? null,
             'vehicle_id' => $payload['vehicle_id'] ?? null,
             'technician_id' => $payload['technician_id'] ?? null,
             'status' => $payload['status'],
@@ -68,7 +68,7 @@ class AppointmentService
         }
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE appointments SET status = :status, technician_id = :technician_id, start_time = :start_time, end_time = :end_time, notes = :notes WHERE id = :id'
+            'UPDATE appointments SET status = :status, technician_id = :technician_id, start_time = :start_time, end_time = :end_time, notes = :notes, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute([
             'status' => $payload['status'] ?? $existing->status,
@@ -83,6 +83,43 @@ class AppointmentService
         $this->log('appointment.updated', $appointmentId, $actorId, ['before' => $existing->toArray(), 'after' => $updated?->toArray()]);
 
         return $updated;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<int, Appointment>
+     */
+    public function list(array $filters = []): array
+    {
+        $sql = 'SELECT * FROM appointments WHERE 1=1';
+        $params = [];
+
+        if (!empty($filters['status'])) {
+            $sql .= ' AND status = :status';
+            $params['status'] = $filters['status'];
+        }
+
+        if (!empty($filters['customer_id'])) {
+            $sql .= ' AND customer_id = :customer_id';
+            $params['customer_id'] = $filters['customer_id'];
+        }
+
+        if (!empty($filters['technician_id'])) {
+            $sql .= ' AND technician_id = :technician_id';
+            $params['technician_id'] = $filters['technician_id'];
+        }
+
+        if (!empty($filters['date'])) {
+            $sql .= ' AND DATE(start_time) = :start_date';
+            $params['start_date'] = $filters['date'];
+        }
+
+        $sql .= ' ORDER BY start_time DESC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return array_map(static fn($row) => new Appointment($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
     public function listForCustomer(int $customerId): array
@@ -100,7 +137,7 @@ class AppointmentService
             throw new InvalidArgumentException('Invalid status');
         }
 
-        $stmt = $this->connection->pdo()->prepare('UPDATE appointments SET status = :status WHERE id = :id');
+        $stmt = $this->connection->pdo()->prepare('UPDATE appointments SET status = :status, updated_at = NOW() WHERE id = :id');
         $stmt->execute(['status' => $status, 'id' => $appointmentId]);
         $updated = $stmt->rowCount() > 0;
         if ($updated) {
@@ -108,6 +145,13 @@ class AppointmentService
         }
 
         return $updated;
+    }
+
+    public function updateStatus(int $appointmentId, string $status, int $actorId): ?Appointment
+    {
+        $updated = $this->transitionStatus($appointmentId, $status, $actorId);
+
+        return $updated ? $this->fetch($appointmentId) : null;
     }
 
     private function fetch(int $appointmentId): ?Appointment
