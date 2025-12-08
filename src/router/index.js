@@ -57,9 +57,39 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/bundles',
+    name: 'BundleList',
+    component: () => import('@/views/bundles/BundleList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/bundles/create',
+    name: 'BundleCreate',
+    component: () => import('@/views/bundles/BundleForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/bundles/:id/edit',
+    name: 'BundleEdit',
+    component: () => import('@/views/bundles/BundleForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/appointments',
     name: 'AppointmentList',
     component: () => import('@/views/appointments/AppointmentList.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/time-logs',
+    name: 'TimeLogs',
+    component: () => import('@/views/time/TimeLogs.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/my-time',
+    name: 'TechnicianTime',
+    component: () => import('@/views/time/TechnicianPortal.vue'),
     meta: { requiresAuth: true },
   },
   {
@@ -105,6 +135,42 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/inventory/create',
+    name: 'InventoryCreate',
+    component: () => import('@/views/inventory/InventoryForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/inventory/:id/edit',
+    name: 'InventoryEdit',
+    component: () => import('@/views/inventory/InventoryForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/inventory/alerts',
+    name: 'InventoryAlerts',
+    component: () => import('@/views/inventory/InventoryAlerts.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/financial/entries',
+    name: 'FinancialEntries',
+    component: () => import('@/views/financial/FinancialEntries.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/reports',
+    name: 'FinancialReports',
+    component: () => import('@/views/financial/Reports.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('@/views/settings/SettingsPage.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/portal',
     name: 'CustomerPortal',
     component: () => import('@/views/customer-portal/Dashboard.vue'),
@@ -132,6 +198,18 @@ const routes = [
     path: '/portal/appointments',
     name: 'CustomerAppointments',
     component: () => import('@/views/customer-portal/Appointments.vue'),
+    meta: { requiresAuth: true, requiresCustomer: true },
+  },
+  {
+    path: '/portal/warranty-claims',
+    name: 'CustomerWarrantyClaims',
+    component: () => import('@/views/customer-portal/WarrantyClaims.vue'),
+    meta: { requiresAuth: true, requiresCustomer: true },
+  },
+  {
+    path: '/portal/warranty-claims/:id',
+    name: 'CustomerWarrantyClaimDetail',
+    component: () => import('@/views/customer-portal/WarrantyClaimDetail.vue'),
     meta: { requiresAuth: true, requiresCustomer: true },
   },
   {

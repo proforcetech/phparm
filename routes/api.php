@@ -6,6 +6,8 @@ use App\Support\Http\Response;
 use App\Support\Http\Middleware;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\RolePermissions;
+use App\Support\Audit\AuditLogger;
+use App\Support\Webhooks\WebhookDispatcher;
 use InvalidArgumentException;
 
 /**
@@ -182,6 +184,7 @@ return function (Router $router, array $config, $connection) {
             new \App\Services\Reminder\ReminderPreferenceService($connection),
             new \App\Services\Customer\CustomerRepository($connection)
         );
+        $customerVehicleService = new \App\Services\Customer\CustomerVehicleService($connection);
 
         $router->get('/api/customer/reminder-preferences', function (Request $request) use ($preferenceController) {
             $user = $request->getAttribute('user');
@@ -205,6 +208,38 @@ return function (Router $router, array $config, $connection) {
             $data = $preferenceController->upsertForCustomer($user, $request->body());
 
             return Response::json($data);
+        });
+
+        $router->get('/api/customer/vehicles', function (Request $request) use ($customerVehicleService) {
+            $user = $request->getAttribute('user');
+
+            if ($user === null || !$user instanceof \App\Models\User) {
+                return Response::unauthorized('Not authenticated');
+            }
+
+            if ($user->customer_id === null) {
+                return Response::badRequest('Customer profile missing');
+            }
+
+            $vehicles = $customerVehicleService->listVehicles($user->customer_id);
+
+            return Response::json(['data' => $vehicles]);
+        });
+
+        $router->post('/api/customer/vehicles', function (Request $request) use ($customerVehicleService) {
+            $user = $request->getAttribute('user');
+
+            if ($user === null || !$user instanceof \App\Models\User) {
+                return Response::unauthorized('Not authenticated');
+            }
+
+            if ($user->customer_id === null) {
+                return Response::badRequest('Customer profile missing');
+            }
+
+            $vehicle = $customerVehicleService->attachVehicle($user->customer_id, $request->body());
+
+            return Response::created($vehicle);
         });
     });
 
@@ -234,12 +269,15 @@ return function (Router $router, array $config, $connection) {
     // Initialize AccessGate for protected routes
     $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
 
+    // Shared settings repository with seeded defaults
+    $settingsRepository = new \App\Support\SettingsRepository($connection);
+    $settingsRepository->seedDefaults($config['settings']['defaults']);
+
     // Dashboard routes (authenticated)
-    $router->group([Middleware::auth()], function (Router $router) use ($config, $connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($config, $connection, $gate, $settingsRepository) {
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
-        $settingsRepository = new \App\Support\SettingsRepository($connection);
 
         $router->get('/api/dashboard', function (Request $request) use ($dashboardController) {
             $params = [
@@ -417,6 +455,12 @@ return function (Router $router, array $config, $connection) {
             return Response::json($data);
         });
 
+        $router->get('/api/vehicles/{id}', function (Request $request, int $id) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $data = $vehicleController->show($user, $id);
+            return Response::json($data);
+        });
+
         $router->post('/api/vehicles', function (Request $request) use ($vehicleController) {
             $user = $request->getAttribute('user');
             $data = $vehicleController->store($user, $request->body());
@@ -455,10 +499,34 @@ return function (Router $router, array $config, $connection) {
             $filters = [
                 'query' => $request->queryParam('query'),
                 'category' => $request->queryParam('category'),
-                'low_stock' => $request->queryParam('low_stock') === 'true',
+                'low_stock_only' => $request->queryParam('low_stock') === 'true',
             ];
 
             $data = $inventoryController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/dashboard/inventory/low-stock', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $limit = max(1, (int) ($request->queryParam('limit') ?? 5));
+
+            $data = $inventoryController->lowStockTile($user, $limit);
+
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/low-stock', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+                'query' => $request->queryParam('query'),
+                'category' => $request->queryParam('category'),
+                'location' => $request->queryParam('location'),
+            ];
+
+            $data = $inventoryController->lowStock($user, $params);
+
             return Response::json($data);
         });
 
@@ -496,14 +564,73 @@ return function (Router $router, array $config, $connection) {
     // Estimate routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
+        $bundleController = new \App\Services\Estimate\BundleController(
+            new \App\Services\Estimate\BundleService($connection),
+            $gate
+        );
+
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection);
         $estimateController = new \App\Services\Estimate\EstimateController($estimateRepository, $gate);
+
+        $router->get('/api/bundles', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'query' => $request->queryParam('query'),
+                'active' => $request->queryParam('active'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $bundleController->index($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/bundles/{id}', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $bundleController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/bundles', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $data = $bundleController->store($user, $request->body());
+
+            return Response::created($data);
+        });
+
+        $router->put('/api/bundles/{id}', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $bundleController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/bundles/{id}', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $bundleController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        $router->get('/api/estimates/bundles/{id}/items', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $items = $bundleController->fetchItemsForEstimate($user, $id);
+            return Response::json(['items' => $items]);
+        });
 
         $router->get('/api/estimates', function (Request $request) use ($estimateController) {
             $user = $request->getAttribute('user');
             $filters = [
                 'status' => $request->queryParam('status'),
                 'customer_id' => $request->queryParam('customer_id'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
 
             $data = $estimateController->index($user, $filters);
@@ -632,6 +759,8 @@ return function (Router $router, array $config, $connection) {
             $filters = [
                 'status' => $request->queryParam('status'),
                 'customer_id' => $request->queryParam('customer_id'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
             $data = $invoiceController->index($user, $filters);
             return Response::json($data);
@@ -707,8 +836,17 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Appointment routes
+    $appointmentAudit = new AuditLogger($connection, $config['audit']);
+    $webhookConfig = $config['appointments']['webhooks'] ?? [];
+    $appointmentWebhooks = new WebhookDispatcher(
+        !empty($webhookConfig['enabled']) ? ($webhookConfig['endpoints'] ?? []) : [],
+        (string) ($webhookConfig['secret'] ?? ''),
+        (int) ($webhookConfig['timeout'] ?? 5),
+        $appointmentAudit
+    );
+
     $appointmentController = new \App\Services\Appointment\AppointmentController(
-        new \App\Services\Appointment\AppointmentService($connection),
+        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks),
         new \App\Services\Appointment\AvailabilityService($connection),
         $gate
     );
@@ -883,6 +1021,27 @@ return function (Router $router, array $config, $connection) {
             $data = $warrantyController->updateStatus($user, $id, $request->body());
             return Response::json($data);
         });
+
+        $router->get('/api/customer/warranty-claims', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $filters = ['status' => $request->queryParam('status')];
+            $data = $warrantyController->customerIndex($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/customer/warranty-claims/{id}', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $warrantyController->customerShow($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/customer/warranty-claims/{id}/reply', function (Request $request) use ($warrantyController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $warrantyController->reply($user, $id, $request->body());
+            return Response::json($data);
+        });
     });
 
     // Credit Account routes
@@ -961,7 +1120,15 @@ return function (Router $router, array $config, $connection) {
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
             $user = $request->getAttribute('user');
-            $filters = ['type' => $request->queryParam('type')];
+            $filters = [
+                'type' => $request->queryParam('type'),
+                'category' => $request->queryParam('category'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
             $data = $financialController->index($user, $filters);
             return Response::json($data);
         });
@@ -991,6 +1158,7 @@ return function (Router $router, array $config, $connection) {
             $params = [
                 'start_date' => $request->queryParam('start_date'),
                 'end_date' => $request->queryParam('end_date'),
+                'category' => $request->queryParam('category'),
             ];
             $data = $financialController->report($user, $params);
             return Response::json($data);
@@ -1002,8 +1170,22 @@ return function (Router $router, array $config, $connection) {
                 'start_date' => $request->queryParam('start_date'),
                 'end_date' => $request->queryParam('end_date'),
                 'format' => $request->queryParam('format', 'csv'),
+                'category' => $request->queryParam('category'),
             ];
             $data = $financialController->export($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/entries/export', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'type' => $request->queryParam('type'),
+                'category' => $request->queryParam('category'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+            ];
+            $data = $financialController->exportEntries($user, $filters);
             return Response::json($data);
         });
     });
@@ -1021,7 +1203,14 @@ return function (Router $router, array $config, $connection) {
 
         $router->get('/api/time-tracking', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
-            $filters = ['technician_id' => $request->queryParam('technician_id')];
+            $filters = [
+                'technician_id' => $request->queryParam('technician_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
             $data = $timeController->index($user, $filters);
             return Response::json($data);
         });
@@ -1057,13 +1246,19 @@ return function (Router $router, array $config, $connection) {
             $data = $timeController->assignedJobs($user);
             return Response::json($data);
         });
+
+        $router->get('/api/time-tracking/technician/portal', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $data = $timeController->portal($user);
+            return Response::json($data);
+        });
     });
 
     // Settings routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository) {
 
         $settingsController = new \App\Services\Settings\SettingsController(
-            new \App\Support\SettingsRepository($connection),
+            $settingsRepository,
             $gate
         );
 

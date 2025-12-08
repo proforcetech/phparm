@@ -7,10 +7,10 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone app only exposes API CRUD for time entries without any admin UI, lacks date-range filtering, pagination, or job/technician context on list calls (only an optional technician_id filter).【F:src/Services/TimeTracking/TimeTrackingService.php†L52-L68】
 
 ### Tasks
-1. **Build admin time log UI**
+1. [x] **Build admin time log UI**
    - Create an admin-facing page/component to list time entries with date filters, job/technician context, and location summaries, plus inline actions to open edits.
    - Render recent adjustment history on the same screen for visibility similar to the plugin.
-2. **Extend listing endpoints**
+2. [x] **Extend listing endpoints**
    - Add date-range, pagination, and optional search parameters to time log listings, and return joined job/technician metadata for the admin UI to consume.
 
 ## Missing adjustment reason capture for manual changes
@@ -18,7 +18,7 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone manual entry and update paths accept notes but do not require or persist an adjustment reason, so changes are unaudited beyond a generic audit log entry.【F:src/Services/TimeTracking/TimeTrackingService.php†L100-L186】
 
 ### Tasks
-1. **Require reason input on admin actions**
+1. [x] **Require reason input on admin actions**
    - Update manual create/update APIs to require a reason field and validate presence; propagate this to the UI forms.
-2. **Persist and expose adjustment reasons**
+2. [x] **Persist and expose adjustment reasons**
    - Store adjustment reasons alongside updates (leveraging the planned adjustment table) and include them in responses so admin history mirrors the plugin expectations.

@@ -67,7 +67,9 @@ class SettingsRepository
     public function set(string $key, $value, ?string $type = null, string $group = 'general', ?string $description = null): void
     {
         $existing = $this->find($key);
-        $type ??= $this->inferTypeFromValue($value);
+        $type ??= $existing?->type ?? $this->inferTypeFromValue($value);
+        $group = $existing?->group ?? $group;
+        $description ??= $existing?->description;
         $encodedValue = $this->encodeValue($value, $type);
 
         $sql = <<<SQL

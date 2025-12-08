@@ -18,6 +18,7 @@ $config = [
     'notifications' => require __DIR__ . '/config/notifications.php',
     'audit' => require __DIR__ . '/config/audit.php',
     'auth' => require __DIR__ . '/config/auth.php',
+    'appointments' => require __DIR__ . '/config/appointments.php',
 ];
 
 return $config;

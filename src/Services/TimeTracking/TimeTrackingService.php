@@ -21,21 +21,34 @@ class TimeTrackingService
         $this->audit = $audit;
     }
 
-    public function start(int $technicianId, ?int $estimateJobId = null, ?float $lat = null, ?float $lng = null): TimeEntry
+    /**
+     * @param array<string, mixed>|null $location
+     */
+    public function start(int $technicianId, ?int $estimateJobId = null, ?array $location = null): TimeEntry
     {
         $open = $this->fetchOpenEntry($technicianId);
         if ($open !== null) {
             throw new InvalidArgumentException('Technician already has an active timer.');
         }
 
+        $normalizedLocation = $this->normalizeLocation($location);
+
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, start_latitude, start_longitude, manual_override, created_at, updated_at) VALUES (:technician_id, :estimate_job_id, NOW(), :lat, :lng, 0, NOW(), NOW())'
+            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, start_latitude, start_longitude, start_accuracy, start_altitude, start_speed, start_heading, start_recorded_at, start_source, start_error, manual_override, created_at, updated_at) '
+            . 'VALUES (:technician_id, :estimate_job_id, NOW(), :lat, :lng, :accuracy, :altitude, :speed, :heading, :recorded_at, :source, :error, 0, NOW(), NOW())'
         );
         $stmt->execute([
             'technician_id' => $technicianId,
             'estimate_job_id' => $estimateJobId,
-            'lat' => $lat,
-            'lng' => $lng,
+            'lat' => $normalizedLocation['lat'],
+            'lng' => $normalizedLocation['lng'],
+            'accuracy' => $normalizedLocation['accuracy'],
+            'altitude' => $normalizedLocation['altitude'],
+            'speed' => $normalizedLocation['speed'],
+            'heading' => $normalizedLocation['heading'],
+            'recorded_at' => $normalizedLocation['recorded_at'],
+            'source' => $normalizedLocation['source'],
+            'error' => $normalizedLocation['error'],
         ]);
 
         $entryId = (int) $this->connection->pdo()->lastInsertId();
@@ -47,27 +60,92 @@ class TimeTrackingService
 
     /**
      * @param array<string, mixed> $filters
-     * @return array<int, TimeEntry>
+     * @return array<string, mixed>
      */
-    public function list(array $filters = []): array
+    public function list(array $filters = [], int $limit = 25, int $offset = 0): array
     {
-        $sql = 'SELECT * FROM time_entries';
+        $baseSql = 'FROM time_entries te '
+            . 'LEFT JOIN users u ON u.id = te.technician_id '
+            . 'LEFT JOIN estimate_jobs ej ON ej.id = te.estimate_job_id '
+            . 'LEFT JOIN estimates e ON e.id = ej.estimate_id '
+            . 'LEFT JOIN customers c ON c.id = e.customer_id '
+            . 'LEFT JOIN customer_vehicles cv ON cv.id = e.vehicle_id '
+            . 'WHERE 1=1';
         $params = [];
 
         if (isset($filters['technician_id'])) {
-            $sql .= ' WHERE technician_id = :technician_id';
+            $baseSql .= ' AND te.technician_id = :technician_id';
             $params['technician_id'] = (int) $filters['technician_id'];
         }
 
-        $sql .= ' ORDER BY started_at DESC';
+        if (!empty($filters['start_date'])) {
+            $baseSql .= ' AND te.started_at >= :start_date';
+            $params['start_date'] = $filters['start_date'] . ' 00:00:00';
+        }
+
+        if (!empty($filters['end_date'])) {
+            $baseSql .= ' AND te.started_at <= :end_date';
+            $params['end_date'] = $filters['end_date'] . ' 23:59:59';
+        }
+
+        if (!empty($filters['search'])) {
+            $baseSql .= ' AND (u.name LIKE :search OR ej.title LIKE :search OR c.name LIKE :search OR e.number LIKE :search)';
+            $params['search'] = '%' . $filters['search'] . '%';
+        }
+
+        $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $sql = 'SELECT te.*, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
+            . 'c.name AS customer_name, cv.vin AS vehicle_vin ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
-        $stmt->execute($params);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue(':' . $key, $value, $type);
+        }
 
-        return array_map(static fn (array $row) => new TimeEntry($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $entries = array_map(static fn (array $row) => new TimeEntry($row), $rows);
+        $adjustments = $this->fetchAdjustments(array_map(static fn (TimeEntry $entry) => $entry->id, $entries));
+
+        $metaById = [];
+        foreach ($rows as $row) {
+            $metaById[(int) $row['id']] = $row;
+        }
+
+        $data = [];
+        foreach ($entries as $entry) {
+            $row = $entry->toArray();
+            $meta = $metaById[$entry->id] ?? [];
+            $row['technician_name'] = $meta['technician_name'] ?? null;
+            $row['job_title'] = $meta['job_title'] ?? null;
+            $row['estimate_number'] = $meta['estimate_number'] ?? null;
+            $row['customer_name'] = $meta['customer_name'] ?? null;
+            $row['vehicle_vin'] = $meta['vehicle_vin'] ?? null;
+            $row['adjustments'] = $adjustments[$entry->id] ?? [];
+            $data[] = $row;
+        }
+
+        return [
+            'data' => $data,
+            'pagination' => [
+                'total' => $total,
+                'limit' => $limit,
+                'offset' => $offset,
+            ],
+        ];
     }
 
-    public function stop(int $entryId, int $actorId, ?float $lat = null, ?float $lng = null): ?TimeEntry
+    /**
+     * @param array<string, mixed>|null $location
+     */
+    public function stop(int $entryId, int $actorId, ?array $location = null): ?TimeEntry
     {
         $entry = $this->find($entryId);
         if ($entry === null || $entry->ended_at !== null) {
@@ -78,14 +156,25 @@ class TimeTrackingService
         $startedAt = new DateTimeImmutable($entry->started_at);
         $minutes = ($endedAt->getTimestamp() - $startedAt->getTimestamp()) / 60;
 
+        $endLocation = $this->normalizeLocation($location);
+
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE time_entries SET ended_at = :ended_at, end_latitude = :lat, end_longitude = :lng, duration_minutes = :minutes, updated_at = NOW() WHERE id = :id'
+            'UPDATE time_entries SET ended_at = :ended_at, end_latitude = :lat, end_longitude = :lng, end_accuracy = :accuracy, '
+            . 'end_altitude = :altitude, end_speed = :speed, end_heading = :heading, end_recorded_at = :recorded_at, '
+            . 'end_source = :source, end_error = :error, duration_minutes = :minutes, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute([
             'id' => $entryId,
             'ended_at' => $endedAt->format('Y-m-d H:i:s'),
-            'lat' => $lat,
-            'lng' => $lng,
+            'lat' => $endLocation['lat'],
+            'lng' => $endLocation['lng'],
+            'accuracy' => $endLocation['accuracy'],
+            'altitude' => $endLocation['altitude'],
+            'speed' => $endLocation['speed'],
+            'heading' => $endLocation['heading'],
+            'recorded_at' => $endLocation['recorded_at'],
+            'source' => $endLocation['source'],
+            'error' => $endLocation['error'],
             'minutes' => $minutes,
         ]);
 
@@ -103,12 +192,17 @@ class TimeTrackingService
         string $endedAt,
         ?int $estimateJobId = null,
         ?string $notes = null,
+        ?string $reason = null,
         bool $override = true,
         ?int $actorId = null
     ): TimeEntry {
         $start = new DateTimeImmutable($startedAt);
         $end = new DateTimeImmutable($endedAt);
         $minutes = max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60);
+
+        if ($reason === null || trim($reason) === '') {
+            throw new InvalidArgumentException('Adjustment reason is required for manual entry');
+        }
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, ended_at, duration_minutes, manual_override, notes, created_at, updated_at) VALUES (:technician_id, :estimate_job_id, :started_at, :ended_at, :minutes, :override, :notes, NOW(), NOW())'
@@ -125,6 +219,27 @@ class TimeTrackingService
 
         $entryId = (int) $this->connection->pdo()->lastInsertId();
         $this->log($actorId ?? $technicianId, 'time.manual', $entryId, ['minutes' => $minutes]);
+        $this->recordAdjustment(
+            $entryId,
+            $actorId ?? $technicianId,
+            $reason,
+            [
+                'started_at' => null,
+                'ended_at' => null,
+                'duration_minutes' => null,
+                'estimate_job_id' => null,
+                'notes' => null,
+                'manual_override' => null,
+            ],
+            [
+                'started_at' => $start->format('Y-m-d H:i:s'),
+                'ended_at' => $end->format('Y-m-d H:i:s'),
+                'duration_minutes' => $minutes,
+                'estimate_job_id' => $estimateJobId,
+                'notes' => $notes,
+                'manual_override' => $override,
+            ]
+        );
 
         return $this->find($entryId) ?? new TimeEntry(['id' => $entryId]);
     }
@@ -134,12 +249,17 @@ class TimeTrackingService
      */
     public function createManual(array $data, int $actorId): TimeEntry
     {
+        if (!isset($data['reason']) || trim((string) $data['reason']) === '') {
+            throw new InvalidArgumentException('Adjustment reason is required');
+        }
+
         return $this->manualEntry(
             (int) $data['technician_id'],
             (string) $data['started_at'],
             (string) $data['ended_at'],
             isset($data['estimate_job_id']) ? (int) $data['estimate_job_id'] : null,
             $data['notes'] ?? null,
+            (string) $data['reason'],
             $data['manual_override'] ?? true,
             $actorId
         );
@@ -153,6 +273,10 @@ class TimeTrackingService
         $entry = $this->find($entryId);
         if ($entry === null) {
             return null;
+        }
+
+        if (!isset($data['reason']) || trim((string) $data['reason']) === '') {
+            throw new InvalidArgumentException('Adjustment reason is required');
         }
 
         $startedAt = $data['started_at'] ?? $entry->started_at;
@@ -181,6 +305,27 @@ class TimeTrackingService
 
         $updated = $this->find($entryId);
         $this->log($actorId, 'time.update', $entryId, ['duration_minutes' => $minutes]);
+        $this->recordAdjustment(
+            $entryId,
+            $actorId,
+            (string) $data['reason'],
+            [
+                'started_at' => $entry->started_at,
+                'ended_at' => $entry->ended_at,
+                'duration_minutes' => $entry->duration_minutes,
+                'estimate_job_id' => $entry->estimate_job_id,
+                'notes' => $entry->notes,
+                'manual_override' => $entry->manual_override,
+            ],
+            [
+                'started_at' => $start->format('Y-m-d H:i:s'),
+                'ended_at' => $end?->format('Y-m-d H:i:s'),
+                'duration_minutes' => $minutes,
+                'estimate_job_id' => $estimateJobId,
+                'notes' => $notes,
+                'manual_override' => (bool) $override,
+            ]
+        );
 
         return $updated;
     }
@@ -209,6 +354,101 @@ class TimeTrackingService
         $stmt->execute(['tech' => $technicianId]);
 
         return array_map(static fn (array $row) => new TimeEntry($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @param array<int, int> $entryIds
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function fetchAdjustments(array $entryIds): array
+    {
+        if (count($entryIds) === 0) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($entryIds), '?'));
+        $sql = 'SELECT ta.*, u.name AS actor_name FROM time_adjustments ta '
+            . 'LEFT JOIN users u ON u.id = ta.actor_id WHERE ta.time_entry_id IN (' . $placeholders . ') ORDER BY ta.created_at DESC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($entryIds as $index => $id) {
+            $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+        }
+
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $grouped = [];
+
+        foreach ($rows as $row) {
+            $entryId = (int) $row['time_entry_id'];
+            $grouped[$entryId] ??= [];
+            $grouped[$entryId][] = $row;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param array<string, mixed> $before
+     * @param array<string, mixed> $after
+     */
+    private function recordAdjustment(int $entryId, int $actorId, string $reason, array $before, array $after): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_started_at, previous_ended_at, previous_duration_minutes, previous_estimate_job_id, previous_notes, previous_manual_override, new_started_at, new_ended_at, new_duration_minutes, new_estimate_job_id, new_notes, new_manual_override) '
+            . 'VALUES (:entry_id, :actor_id, :reason, :prev_start, :prev_end, :prev_minutes, :prev_job, :prev_notes, :prev_override, :new_start, :new_end, :new_minutes, :new_job, :new_notes, :new_override)'
+        );
+
+        $stmt->execute([
+            'entry_id' => $entryId,
+            'actor_id' => $actorId,
+            'reason' => $reason,
+            'prev_start' => $before['started_at'],
+            'prev_end' => $before['ended_at'],
+            'prev_minutes' => $before['duration_minutes'],
+            'prev_job' => $before['estimate_job_id'],
+            'prev_notes' => $before['notes'],
+            'prev_override' => $before['manual_override'],
+            'new_start' => $after['started_at'],
+            'new_end' => $after['ended_at'],
+            'new_minutes' => $after['duration_minutes'],
+            'new_job' => $after['estimate_job_id'],
+            'new_notes' => $after['notes'],
+            'new_override' => $after['manual_override'],
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed>|null $location
+     * @return array<string, mixed>
+     */
+    private function normalizeLocation(?array $location): array
+    {
+        if ($location === null) {
+            return [
+                'lat' => null,
+                'lng' => null,
+                'accuracy' => null,
+                'altitude' => null,
+                'speed' => null,
+                'heading' => null,
+                'recorded_at' => null,
+                'source' => null,
+                'error' => null,
+            ];
+        }
+
+        return [
+            'lat' => $location['lat'] ?? $location['latitude'] ?? null,
+            'lng' => $location['lng'] ?? $location['longitude'] ?? null,
+            'accuracy' => $location['accuracy'] ?? null,
+            'altitude' => $location['altitude'] ?? null,
+            'speed' => $location['speed'] ?? null,
+            'heading' => $location['heading'] ?? null,
+            'recorded_at' => $location['recorded_at'] ?? null,
+            'source' => $location['source'] ?? null,
+            'error' => $location['error'] ?? null,
+        ];
     }
 
     private function log(int $actorId, string $event, int $entryId, array $context = []): void

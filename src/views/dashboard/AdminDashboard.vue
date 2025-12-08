@@ -131,6 +131,62 @@
         </Card>
       </div>
 
+      <!-- Inventory Alerts -->
+      <Card class="mb-8">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-medium text-gray-900">Inventory Alerts</h3>
+              <p class="text-sm text-gray-500">Low and out-of-stock items that need attention</p>
+            </div>
+            <Button variant="outline" @click="$router.push('/inventory/alerts')">
+              View alerts
+            </Button>
+          </div>
+        </template>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="p-4 rounded-lg bg-red-50 border border-red-100">
+            <p class="text-sm font-medium text-red-700">Out of Stock</p>
+            <p class="mt-2 text-3xl font-bold text-red-800">
+              {{ inventoryAlerts.counts.out_of_stock || 0 }}
+            </p>
+            <p class="text-sm text-red-600">Items unavailable for sale</p>
+          </div>
+
+          <div class="p-4 rounded-lg bg-amber-50 border border-amber-100">
+            <p class="text-sm font-medium text-amber-700">Low Stock</p>
+            <p class="mt-2 text-3xl font-bold text-amber-800">
+              {{ inventoryAlerts.counts.low_stock || 0 }}
+            </p>
+            <p class="text-sm text-amber-600">Items approaching threshold</p>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <div v-if="inventoryAlerts.items.length === 0" class="text-sm text-gray-600">
+            All tracked items are above their low-stock thresholds.
+          </div>
+          <div v-else class="divide-y divide-gray-200">
+            <div
+              v-for="item in inventoryAlerts.items"
+              :key="item.id"
+              class="py-3 flex items-center justify-between"
+            >
+              <div>
+                <p class="text-sm font-medium text-gray-900">{{ item.name }}</p>
+                <p class="text-xs text-gray-500">
+                  {{ item.stock_quantity }} in stock • Threshold {{ item.low_stock_threshold }}
+                </p>
+              </div>
+              <Badge :variant="getSeverityVariant(item.severity)">
+                {{ item.severity === 'out' ? 'Out of Stock' : 'Low Stock' }}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <!-- Recent Activity -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
         <!-- Recent Invoices -->
@@ -307,6 +363,7 @@ const stats = ref({
 
 const recentInvoices = ref([])
 const recentAppointments = ref([])
+const inventoryAlerts = ref({ counts: { out_of_stock: 0, low_stock: 0 }, items: [] })
 
 onMounted(async () => {
   await loadDashboardData()
@@ -318,10 +375,11 @@ async function loadDashboardData() {
     error.value = null
 
     // Load all dashboard data in parallel
-    const [statsData, invoicesData, appointmentsData] = await Promise.all([
+    const [statsData, invoicesData, appointmentsData, lowStockData] = await Promise.all([
       dashboardService.getStats().catch(() => ({})),
       dashboardService.getRecentInvoices().catch(() => []),
       dashboardService.getRecentAppointments().catch(() => []),
+      dashboardService.getInventoryLowStockTile().catch(() => null),
     ])
 
     stats.value = {
@@ -337,6 +395,10 @@ async function loadDashboardData() {
 
     recentInvoices.value = invoicesData.data || invoicesData || []
     recentAppointments.value = appointmentsData.data || appointmentsData || []
+    inventoryAlerts.value = {
+      counts: lowStockData?.counts || { out_of_stock: 0, low_stock: 0 },
+      items: lowStockData?.items || [],
+    }
   } catch (err) {
     console.error('Failed to load dashboard data:', err)
     error.value = 'Failed to load dashboard data. Please try again.'
@@ -381,5 +443,14 @@ function getAppointmentStatusVariant(status) {
     'no-show': 'default',
   }
   return variants[status?.toLowerCase()] || 'default'
+}
+
+function getSeverityVariant(severity) {
+  const variants = {
+    'out': 'danger',
+    'low': 'warning',
+  }
+
+  return variants[severity] || 'default'
 }
 </script>

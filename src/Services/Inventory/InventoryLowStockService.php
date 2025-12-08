@@ -2,6 +2,7 @@
 
 namespace App\Services\Inventory;
 
+use App\Models\InventoryItem;
 use App\Support\Notifications\NotificationDispatcher;
 use InvalidArgumentException;
 
@@ -50,7 +51,13 @@ class InventoryLowStockService
         $filters['low_stock_only'] = true;
         $items = $this->repository->list($filters, $limit, $offset);
 
-        return array_map(static fn ($item) => $item->toArray(), $items);
+        return array_map(static function (InventoryItem $item) {
+            $data = $item->toArray();
+            $data['severity'] = $item->stock_quantity === 0 ? 'out' : 'low';
+            $data['recommended_reorder'] = max(0, $item->reorder_quantity - $item->stock_quantity);
+
+            return $data;
+        }, $items);
     }
 
     /**

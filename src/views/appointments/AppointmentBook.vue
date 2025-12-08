@@ -16,7 +16,7 @@
 
     <Card>
       <div class="space-y-6">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Date</label>
             <Input v-model="form.date" type="date" class="mt-1" @change="loadAvailability" />
@@ -25,8 +25,32 @@
             <label class="block text-sm font-medium text-gray-700">Technician (optional)</label>
             <Input v-model="form.technician_id" type="number" min="0" class="mt-1" placeholder="Technician ID" @change="loadAvailability" />
           </div>
-          <div class="flex items-end">
-            <Button class="w-full" :loading="loading" @click="loadAvailability">Check availability</Button>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Customer ID (optional)</label>
+            <Input v-model="form.customer_id" type="number" min="0" class="mt-1" placeholder="Customer" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Vehicle ID (optional)</label>
+            <Input v-model="form.vehicle_id" type="number" min="0" class="mt-1" placeholder="Vehicle" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Status</label>
+            <Select v-model="form.status" :options="statusOptions" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700">Notes</label>
+            <Textarea v-model="form.notes" rows="2" placeholder="Add visit notes or context" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <p class="text-sm text-gray-600">Choose an available slot to book the appointment.</p>
+          <div class="flex gap-2">
+            <Button variant="secondary" :loading="loading" @click="loadAvailability">Refresh</Button>
+            <Button :disabled="!selectedSlot" :loading="saving" @click="bookAppointment">Book appointment</Button>
           </div>
         </div>
 
@@ -37,18 +61,25 @@
         <div v-else>
           <h3 class="text-sm font-semibold text-gray-700">Available Slots</h3>
           <div v-if="availability.slots.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div
+            <button
               v-for="slot in availability.slots"
               :key="slot.start"
-              class="rounded-lg border border-gray-200 p-3 shadow-sm flex items-center justify-between"
+              class="rounded-lg border border-gray-200 p-3 shadow-sm flex items-center justify-between text-left"
+              :class="[
+                selectedSlot?.start === slot.start ? 'ring-2 ring-primary-500' : '',
+                slot.available ? 'bg-white' : 'bg-gray-50'
+              ]"
+              :disabled="!slot.available"
+              @click="selectSlot(slot)"
             >
               <div>
                 <p class="font-semibold text-gray-900">{{ formatTime(slot.start) }} - {{ formatTime(slot.end) }}</p>
                 <p class="text-xs text-gray-500">{{ form.date }}</p>
               </div>
-              <Badge v-if="slot.available" variant="success">Open</Badge>
-              <Badge v-else variant="warning">Booked</Badge>
-            </div>
+              <Badge :variant="slot.available ? 'success' : 'warning'" >
+                {{ slot.available ? 'Open' : 'Booked' }}
+              </Badge>
+            </button>
           </div>
           <div v-else class="text-sm text-gray-500">No slots available for the selected date.</div>
         </div>
@@ -59,18 +90,36 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
-import { fetchAvailability } from '@/services/appointment.service'
+import Select from '@/components/ui/Select.vue'
+import Textarea from '@/components/ui/Textarea.vue'
+import { createAppointment, fetchAvailability, getAppointment } from '@/services/appointment.service'
 
+const route = useRoute()
 const loading = ref(false)
+const saving = ref(false)
 const availability = reactive({ slots: [], closed: false, reason: '' })
 const form = reactive({
   date: new Date().toISOString().substring(0, 10),
-  technician_id: ''
+  technician_id: '',
+  customer_id: '',
+  vehicle_id: '',
+  status: 'scheduled',
+  notes: ''
 })
+const selectedSlot = ref(null)
+
+const statusOptions = [
+  { label: 'Scheduled', value: 'scheduled' },
+  { label: 'Confirmed', value: 'confirmed' },
+  { label: 'In progress', value: 'in_progress' },
+  { label: 'Completed', value: 'completed' },
+  { label: 'Cancelled', value: 'cancelled' }
+]
 
 const formatTime = (value) => {
   const date = new Date(value)
@@ -88,10 +137,52 @@ const loadAvailability = async () => {
     availability.slots = data.slots || []
     availability.closed = Boolean(data.closed)
     availability.reason = data.reason || ''
+    if (!availability.slots.find((slot) => selectedSlot.value?.start === slot.start)) {
+      selectedSlot.value = null
+    }
   } finally {
     loading.value = false
   }
 }
 
+const selectSlot = (slot) => {
+  if (!slot.available) return
+  selectedSlot.value = slot
+}
+
+const bookAppointment = async () => {
+  if (!selectedSlot.value) return
+  saving.value = true
+  try {
+    await createAppointment({
+      start_time: selectedSlot.value.start,
+      end_time: selectedSlot.value.end,
+      technician_id: form.technician_id || null,
+      customer_id: form.customer_id || null,
+      vehicle_id: form.vehicle_id || null,
+      status: form.status,
+      notes: form.notes
+    })
+    selectedSlot.value = null
+    await loadAvailability()
+  } finally {
+    saving.value = false
+  }
+}
+
+const preloadFromClone = async () => {
+  const cloneId = route.query.clone
+  if (!cloneId) return
+  const existing = await getAppointment(cloneId)
+  form.date = existing.start_time.substring(0, 10)
+  form.technician_id = existing.technician_id || ''
+  form.customer_id = existing.customer_id || ''
+  form.vehicle_id = existing.vehicle_id || ''
+  form.status = existing.status
+  form.notes = existing.notes || ''
+  await loadAvailability()
+}
+
 onMounted(loadAvailability)
+onMounted(preloadFromClone)
 </script>

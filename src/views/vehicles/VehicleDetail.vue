@@ -15,14 +15,80 @@
     </div>
 
     <Card>
-      <div class="text-center py-12">
-        <p class="text-sm text-gray-500">Vehicle details coming soon.</p>
+      <div v-if="loading" class="py-6 text-center text-sm text-gray-500">Loading vehicle...</div>
+      <div v-else-if="vehicle" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <p class="text-xs text-gray-500">Year</p>
+            <p class="text-lg font-semibold text-gray-900">{{ vehicle.year }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">Make</p>
+            <p class="text-lg font-semibold text-gray-900">{{ vehicle.make }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">Model</p>
+            <p class="text-lg font-semibold text-gray-900">{{ vehicle.model }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <p class="text-xs text-gray-500">Engine</p>
+            <p class="text-sm text-gray-900">{{ vehicle.engine || 'Unknown' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">Transmission</p>
+            <p class="text-sm text-gray-900">{{ vehicle.transmission || 'Unknown' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">Drive</p>
+            <p class="text-sm text-gray-900">{{ vehicle.drive || 'Unknown' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">Trim</p>
+            <p class="text-sm text-gray-900">{{ vehicle.trim || 'N/A' }}</p>
+          </div>
+        </div>
+
+        <div class="rounded-md bg-gray-50 p-4">
+          <p class="text-sm font-semibold text-gray-800">Raw payload</p>
+          <pre class="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{{ pretty(vehicle) }}</pre>
+        </div>
       </div>
+      <div v-else class="py-6 text-center text-sm text-gray-500">Vehicle not found.</div>
     </Card>
   </div>
 </template>
 
 <script setup>
-import Card from '@/components/ui/Card.vue'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
+import Card from '@/components/ui/Card.vue'
+import { getVehicle } from '@/services/vehicle.service'
+
+const route = useRoute()
+const router = useRouter()
+const loading = ref(true)
+const vehicle = ref(null)
+
+const pretty = (value) => JSON.stringify(value, null, 2)
+
+const loadVehicle = async () => {
+  loading.value = true
+  try {
+    vehicle.value = await getVehicle(route.params.id)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  if (!route.params.id) {
+    router.push('/vehicles')
+    return
+  }
+  loadVehicle()
+})
 </script>

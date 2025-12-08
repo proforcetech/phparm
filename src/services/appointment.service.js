@@ -19,3 +19,23 @@ export function saveAvailabilityConfig(payload) {
 export function createAppointment(payload) {
   return api.post('/appointments', payload).then((r) => r.data)
 }
+
+export function listAppointments(params = {}) {
+  return api.get('/appointments', { params }).then((r) => r.data)
+}
+
+export function getAppointment(id) {
+  return api.get(`/appointments/${id}`).then((r) => r.data)
+}
+
+export function updateAppointment(id, payload) {
+  return api.put(`/appointments/${id}`, payload).then((r) => r.data)
+}
+
+export function deleteAppointment(id) {
+  return api.delete(`/appointments/${id}`).then((r) => r.data)
+}
+
+export function updateAppointmentStatus(id, status) {
+  return api.patch(`/appointments/${id}/status`, { status }).then((r) => r.data)
+}

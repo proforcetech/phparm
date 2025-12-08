@@ -4,6 +4,7 @@ namespace App\Services\Warranty;
 
 use App\Database\Connection;
 use App\Models\WarrantyClaim;
+use App\Models\WarrantyClaimMessage;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -23,7 +24,7 @@ class WarrantyClaimService
     /**
      * @param array<string, mixed> $payload
      */
-    public function submit(int $customerId, array $payload, ?int $actorId = null): WarrantyClaim
+    public function submit(array $payload, int $customerId, ?int $actorId = null): WarrantyClaim
     {
         $this->assertPayload($payload);
         $invoiceId = $payload['invoice_id'] ?? null;
@@ -46,6 +47,7 @@ class WarrantyClaimService
         ]);
 
         $claimId = (int) $this->connection->pdo()->lastInsertId();
+        $this->addMessage($claimId, $payload['description'], 'customer', $customerId);
         $claim = $this->find($claimId);
         $this->log('warranty.submitted', $claimId, $actorId, ['after' => $claim?->toArray()]);
 
@@ -90,6 +92,15 @@ class WarrantyClaimService
         return $claims;
     }
 
+    /**
+     * @return array<int, WarrantyClaim>
+     */
+    public function listForCustomer(int $customerId, array $filters = [], int $limit = 50, int $offset = 0): array
+    {
+        $filters['customer_id'] = $customerId;
+        return $this->list($filters, $limit, $offset);
+    }
+
     public function updateStatus(int $claimId, string $status, ?int $actorId = null): ?WarrantyClaim
     {
         $allowed = ['open', 'in_review', 'resolved', 'rejected'];
@@ -121,6 +132,73 @@ class WarrantyClaimService
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row ? $this->map($row) : null;
+    }
+
+    public function findForCustomer(int $customerId, int $claimId): ?WarrantyClaim
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM warranty_claims WHERE id = :id AND customer_id = :customer_id LIMIT 1');
+        $stmt->execute(['id' => $claimId, 'customer_id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? $this->map($row) : null;
+    }
+
+    /**
+     * @return array<int, WarrantyClaimMessage>
+     */
+    public function messages(int $claimId): array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM warranty_claim_messages WHERE claim_id = :id ORDER BY created_at ASC');
+        $stmt->execute(['id' => $claimId]);
+
+        return array_map(fn (array $row) => $this->mapMessage($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    public function addMessage(int $claimId, string $message, string $actorType, int $actorId): WarrantyClaimMessage
+    {
+        if (!in_array($actorType, ['customer', 'staff'], true)) {
+            throw new InvalidArgumentException('Invalid warranty claim actor type');
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            INSERT INTO warranty_claim_messages (claim_id, actor_type, actor_id, message, created_at, updated_at)
+            VALUES (:claim_id, :actor_type, :actor_id, :message, NOW(), NOW())
+        SQL);
+
+        $stmt->execute([
+            'claim_id' => $claimId,
+            'actor_type' => $actorType,
+            'actor_id' => $actorId,
+            'message' => $message,
+        ]);
+
+        $this->connection->pdo()->prepare('UPDATE warranty_claims SET updated_at = NOW() WHERE id = :id')
+            ->execute(['id' => $claimId]);
+
+        return new WarrantyClaimMessage([
+            'id' => (int) $this->connection->pdo()->lastInsertId(),
+            'claim_id' => $claimId,
+            'actor_type' => $actorType,
+            'actor_id' => $actorId,
+            'message' => $message,
+        ]);
+    }
+
+    public function replyAsCustomer(int $claimId, int $customerId, string $message): ?WarrantyClaim
+    {
+        $claim = $this->findForCustomer($customerId, $claimId);
+        if ($claim === null) {
+            return null;
+        }
+
+        if (in_array($claim->status, ['resolved', 'rejected'], true)) {
+            throw new InvalidArgumentException('Cannot reply to a closed warranty claim.');
+        }
+
+        $this->addMessage($claimId, $message, 'customer', $customerId);
+        $this->log('warranty.customer_reply', $claimId, $customerId, ['message' => $message]);
+
+        return $this->find($claimId);
     }
 
     /**
@@ -156,6 +234,22 @@ class WarrantyClaimService
             'subject' => (string) $row['subject'],
             'description' => (string) $row['description'],
             'status' => (string) $row['status'],
+            'created_at' => $row['created_at'],
+            'updated_at' => $row['updated_at'],
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function mapMessage(array $row): WarrantyClaimMessage
+    {
+        return new WarrantyClaimMessage([
+            'id' => (int) $row['id'],
+            'claim_id' => (int) $row['claim_id'],
+            'actor_type' => (string) $row['actor_type'],
+            'actor_id' => (int) $row['actor_id'],
+            'message' => (string) $row['message'],
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ]);

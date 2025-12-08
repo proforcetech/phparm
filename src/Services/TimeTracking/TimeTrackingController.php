@@ -35,8 +35,11 @@ class TimeTrackingController
             throw new UnauthorizedException('Cannot view time entries');
         }
 
-        $entries = $this->service->list($filters);
-        return array_map(static fn ($e) => $e->toArray(), $entries);
+        $page = isset($filters['page']) ? (int) $filters['page'] : 1;
+        $perPage = isset($filters['per_page']) ? (int) $filters['per_page'] : 25;
+        $offset = ($page - 1) * $perPage;
+
+        return $this->service->list($filters, $perPage, $offset);
     }
 
     /**
@@ -54,8 +57,7 @@ class TimeTrackingController
         $entry = $this->service->start(
             $user->id,
             $data['estimate_job_id'] ?? null,
-            $data['lat'] ?? null,
-            $data['lng'] ?? null
+            $data['location'] ?? ['lat' => $data['lat'] ?? null, 'lng' => $data['lng'] ?? null]
         );
         return $entry->toArray();
     }
@@ -75,8 +77,7 @@ class TimeTrackingController
         $entry = $this->service->stop(
             $id,
             $user->id,
-            $data['lat'] ?? null,
-            $data['lng'] ?? null
+            $data['location'] ?? ['lat' => $data['lat'] ?? null, 'lng' => $data['lng'] ?? null]
         );
 
         if ($entry === null) {
@@ -136,5 +137,19 @@ class TimeTrackingController
 
         $jobs = $this->portal->getAssignedJobs($user->id);
         return array_map(static fn ($j) => $j->toArray(), $jobs);
+    }
+
+    /**
+     * Technician portal summary payload
+     *
+     * @return array<string, mixed>
+     */
+    public function portal(User $user): array
+    {
+        if ($user->role !== 'technician') {
+            throw new UnauthorizedException('Only technicians can access this endpoint');
+        }
+
+        return $this->portal->summary($user->id);
     }
 }

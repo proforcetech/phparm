@@ -62,4 +62,40 @@ class TechnicianPortalService
     {
         return array_map(static fn ($entry) => $entry->toArray(), $this->timeTracking->entriesForTechnician($technicianId));
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function summary(int $technicianId): array
+    {
+        $history = $this->timeHistory($technicianId);
+        $today = new \DateTimeImmutable('today');
+        $week = (new \DateTimeImmutable('today'))->modify('monday this week');
+
+        $todayMinutes = 0;
+        $weekMinutes = 0;
+
+        foreach ($history as $entry) {
+            $startedAt = new \DateTimeImmutable($entry['started_at']);
+            $minutes = (float) ($entry['duration_minutes'] ?? 0);
+
+            if ($startedAt >= $today) {
+                $todayMinutes += $minutes;
+            }
+
+            if ($startedAt >= $week) {
+                $weekMinutes += $minutes;
+            }
+        }
+
+        return [
+            'jobs' => $this->assignedJobs($technicianId),
+            'active_entry' => $this->activeTimer($technicianId),
+            'history' => $history,
+            'totals' => [
+                'today_minutes' => $todayMinutes,
+                'week_minutes' => $weekMinutes,
+            ],
+        ];
+    }
 }

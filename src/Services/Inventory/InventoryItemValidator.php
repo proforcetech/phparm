@@ -29,10 +29,14 @@ class InventoryItemValidator
                 : null,
             'stock_quantity' => isset($data['stock_quantity']) ? max(0, (int) $data['stock_quantity']) : 0,
             'low_stock_threshold' => isset($data['low_stock_threshold']) ? max(0, (int) $data['low_stock_threshold']) : 0,
+            'reorder_quantity' => isset($data['reorder_quantity']) ? max(0, (int) $data['reorder_quantity']) : 0,
             'cost' => isset($data['cost']) ? max(0.0, (float) $data['cost']) : 0.0,
             'sale_price' => isset($data['sale_price']) ? max(0.0, (float) $data['sale_price']) : 0.0,
             'location' => isset($data['location']) && $data['location'] !== ''
                 ? $this->sanitize((string) $data['location'], 160)
+                : null,
+            'vendor' => isset($data['vendor']) && $data['vendor'] !== ''
+                ? $this->sanitize((string) $data['vendor'], 160)
                 : null,
             'notes' => isset($data['notes']) && $data['notes'] !== '' ? trim((string) $data['notes']) : null,
         ];

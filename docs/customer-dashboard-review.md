@@ -17,8 +17,8 @@ Reviewed the WordPress plugin customer portal (`arm_main/includes/public/Custome
 
 ### Tasks
 2. **Implement data-backed portal tabs**
-   - Connect vehicles, estimates, invoices, and credit account views to their API endpoints with pagination, links to public estimate/invoice PDFs, and credit transaction summaries.
-   - Add vehicle CRUD modals and optimistic updates mirroring the plugin’s AJAX flows and validations (make/model required, soft delete behavior).
+   - [x] Connect vehicles, estimates, invoices, and credit account views to their API endpoints with pagination, links to public estimate/invoice PDFs, and credit transaction summaries.
+   - [x] Add vehicle CRUD modals and optimistic updates mirroring the plugin’s AJAX flows and validations (make/model required, soft delete behavior).
 
 ## Profile and reminder preferences
 - The plugin lets customers update display name, email, phone, and reminder preferences (channel, lead days, hour, timezone), persisting via `Preferences::upsert` and handling nonce validation and redirects.【F:arm-main/includes/public/Customer_Dashboard.php†L247-L390】
