@@ -245,5 +245,12 @@ All errors are logged to error_log for debugging.
 3. [x] Implement request validation
    - Validators implemented for Vehicle, ServiceType, and domain-specific validations
    - Input validation integrated throughout controllers
-4. [ ] Add rate limiting middleware
-5. [ ] Set up API documentation (OpenAPI/Swagger)
+4. [x] Add rate limiting middleware
+   - `Middleware::throttle()` - Global rate limiting (60 req/min per IP+path)
+   - `Middleware::throttleStrict()` - Strict limiting for auth endpoints (5 req/min)
+   - `Middleware::throttleByUser()` - User-based rate limiting
+   - File-based storage in `storage/temp/ratelimits/`
+   - Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+5. [x] Set up API documentation (OpenAPI/Swagger)
+   - Full OpenAPI 3.0 specification at `docs/openapi.yaml`
+   - Documents all endpoints, schemas, and authentication methods

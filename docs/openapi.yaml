@@ -1,0 +1,2089 @@
+openapi: 3.0.3
+info:
+  title: Automotive Repair Shop Management API
+  description: |
+    RESTful API for the Automotive Repair Shop Management System.
+
+    ## Authentication
+    The API supports two authentication methods:
+    - **Session-based**: Login via `/api/auth/login` to establish a session
+    - **Bearer Token**: Include `Authorization: Bearer {token}` header
+
+    ## Rate Limiting
+    - Global rate limit: 60 requests per minute per IP/path
+    - Authentication endpoints: 5 requests per minute (strict)
+
+    Rate limit headers are included in responses:
+    - `X-RateLimit-Limit`: Maximum requests allowed
+    - `X-RateLimit-Remaining`: Remaining requests in window
+    - `X-RateLimit-Reset`: Unix timestamp when limit resets
+  version: 1.0.0
+  contact:
+    name: API Support
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+tags:
+  - name: Health
+    description: System health and status
+  - name: Authentication
+    description: User authentication and session management
+  - name: Dashboard
+    description: Dashboard metrics and KPIs
+  - name: Customers
+    description: Customer management
+  - name: Vehicles
+    description: Vehicle management and VIN decoding
+  - name: Inventory
+    description: Parts and inventory management
+  - name: Estimates
+    description: Repair estimates
+  - name: Invoices
+    description: Invoice management and payments
+  - name: Appointments
+    description: Appointment scheduling
+  - name: Service Types
+    description: Service type configuration
+  - name: Bundles
+    description: Preset service bundles
+  - name: Reminders
+    description: Customer reminder campaigns
+  - name: Inspections
+    description: Vehicle inspections
+  - name: Warranty Claims
+    description: Warranty claim management
+  - name: Credit Accounts
+    description: Customer credit accounts
+  - name: Financial
+    description: Financial entries and reports
+  - name: Time Tracking
+    description: Technician time tracking
+  - name: Settings
+    description: System settings
+  - name: Audit
+    description: Audit logs
+
+paths:
+  /:
+    get:
+      tags:
+        - Health
+      summary: API information
+      description: Returns basic API information and available endpoints
+      responses:
+        '200':
+          description: API information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: Automotive Repair Shop Management API
+                  version:
+                    type: string
+                    example: 1.0.0
+                  endpoints:
+                    type: object
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns system health status including database connectivity
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app:
+                    type: string
+                  environment:
+                    type: string
+                  database:
+                    type: string
+                    enum: [connected, not connected]
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Staff login
+      description: Authenticate staff users (admin, manager, technician)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/customer-login:
+    post:
+      tags:
+        - Authentication
+      summary: Customer portal login
+      description: Authenticate customer users for the customer portal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/AuthResponse'
+                  - type: object
+                    properties:
+                      nonce:
+                        type: string
+                      api_base:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout
+      description: End the current session
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user
+      description: Returns the currently authenticated user
+      security:
+        - bearerAuth: []
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Get dashboard KPIs
+      description: Returns key performance indicators for the dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard KPIs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revenue:
+                    type: object
+                  appointments:
+                    type: object
+                  invoices:
+                    type: object
+
+  /api/dashboard/charts:
+    get:
+      tags:
+        - Dashboard
+      summary: Get chart data
+      description: Returns data for dashboard charts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Chart data
+
+  /api/customers:
+    get:
+      tags:
+        - Customers
+      summary: List customers
+      description: Returns a paginated list of customers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name, email, or phone
+      responses:
+        '200':
+          description: Customer list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+    post:
+      tags:
+        - Customers
+      summary: Create customer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+      responses:
+        '201':
+          description: Customer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/customers/{id}:
+    get:
+      tags:
+        - Customers
+      summary: Get customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Customer details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - Customers
+      summary: Update customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+      responses:
+        '200':
+          description: Customer updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Customers
+      summary: Delete customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Customer deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/vehicles:
+    get:
+      tags:
+        - Vehicles
+      summary: List vehicles
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+      responses:
+        '200':
+          description: Vehicle list
+    post:
+      tags:
+        - Vehicles
+      summary: Create vehicle
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleInput'
+      responses:
+        '201':
+          description: Vehicle created
+
+  /api/vehicles/decode-vin:
+    post:
+      tags:
+        - Vehicles
+      summary: Decode VIN
+      description: Decode a VIN to get vehicle information
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vin
+              properties:
+                vin:
+                  type: string
+                  minLength: 17
+                  maxLength: 17
+      responses:
+        '200':
+          description: Decoded vehicle information
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/vehicles/years:
+    get:
+      tags:
+        - Vehicles
+      summary: Get available years
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of available years
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+
+  /api/inventory:
+    get:
+      tags:
+        - Inventory
+      summary: List inventory items
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inventory list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryItem'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+    post:
+      tags:
+        - Inventory
+      summary: Create inventory item
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemInput'
+      responses:
+        '201':
+          description: Item created
+
+  /api/inventory/{id}:
+    get:
+      tags:
+        - Inventory
+      summary: Get inventory item
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Inventory item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItem'
+    put:
+      tags:
+        - Inventory
+      summary: Update inventory item
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemInput'
+      responses:
+        '200':
+          description: Item updated
+    delete:
+      tags:
+        - Inventory
+      summary: Delete inventory item
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Item deleted
+
+  /api/inventory/low-stock:
+    get:
+      tags:
+        - Inventory
+      summary: Get low stock items
+      description: Returns items at or below their low stock threshold
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Low stock items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryItem'
+
+  /api/estimates:
+    get:
+      tags:
+        - Estimates
+      summary: List estimates
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, sent, approved, declined, expired, converted]
+        - name: customer_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estimate list
+    post:
+      tags:
+        - Estimates
+      summary: Create estimate
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimateInput'
+      responses:
+        '201':
+          description: Estimate created
+
+  /api/estimates/{id}:
+    get:
+      tags:
+        - Estimates
+      summary: Get estimate
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Estimate details
+    put:
+      tags:
+        - Estimates
+      summary: Update estimate
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimateInput'
+      responses:
+        '200':
+          description: Estimate updated
+
+  /api/invoices:
+    get:
+      tags:
+        - Invoices
+      summary: List invoices
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, sent, paid, overdue, cancelled]
+        - name: customer_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Invoice list
+    post:
+      tags:
+        - Invoices
+      summary: Create invoice
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceInput'
+      responses:
+        '201':
+          description: Invoice created
+
+  /api/invoices/{id}:
+    get:
+      tags:
+        - Invoices
+      summary: Get invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Invoice details
+
+  /api/invoices/{id}/checkout:
+    post:
+      tags:
+        - Invoices
+      summary: Create checkout session
+      description: Create a payment checkout session for an invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+              properties:
+                provider:
+                  type: string
+                  enum: [stripe, square, paypal]
+                success_url:
+                  type: string
+                  format: uri
+                cancel_url:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url:
+                    type: string
+                    format: uri
+                  session_id:
+                    type: string
+
+  /api/invoices/{id}/refund:
+    post:
+      tags:
+        - Invoices
+      summary: Process refund
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transaction_id
+              properties:
+                transaction_id:
+                  type: string
+                amount:
+                  type: number
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Refund processed
+
+  /api/invoices/{id}/pdf:
+    get:
+      tags:
+        - Invoices
+      summary: Download invoice PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: PDF document
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /api/invoices/from-estimate:
+    post:
+      tags:
+        - Invoices
+      summary: Create invoice from estimate
+      description: Convert an approved estimate to an invoice
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - estimate_id
+              properties:
+                estimate_id:
+                  type: integer
+      responses:
+        '201':
+          description: Invoice created from estimate
+
+  /api/appointments:
+    get:
+      tags:
+        - Appointments
+      summary: List appointments
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Appointment list
+    post:
+      tags:
+        - Appointments
+      summary: Create appointment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentInput'
+      responses:
+        '201':
+          description: Appointment created
+
+  /api/appointments/{id}:
+    get:
+      tags:
+        - Appointments
+      summary: Get appointment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Appointment details
+    put:
+      tags:
+        - Appointments
+      summary: Update appointment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentInput'
+      responses:
+        '200':
+          description: Appointment updated
+    delete:
+      tags:
+        - Appointments
+      summary: Delete appointment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Appointment deleted
+
+  /api/appointments/availability:
+    get:
+      tags:
+        - Appointments
+      summary: Get available slots
+      description: Returns available appointment slots for a given date
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Available slots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slots:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        start:
+                          type: string
+                          format: time
+                        end:
+                          type: string
+                          format: time
+                        available:
+                          type: boolean
+
+  /api/public/appointments/availability:
+    get:
+      tags:
+        - Appointments
+      summary: Get public availability
+      description: Public endpoint for checking appointment availability
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Available slots
+
+  /api/service-types:
+    get:
+      tags:
+        - Service Types
+      summary: List service types
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Service type list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceType'
+    post:
+      tags:
+        - Service Types
+      summary: Create service type
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceTypeInput'
+      responses:
+        '201':
+          description: Service type created
+
+  /api/service-types/{id}:
+    put:
+      tags:
+        - Service Types
+      summary: Update service type
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceTypeInput'
+      responses:
+        '200':
+          description: Service type updated
+    delete:
+      tags:
+        - Service Types
+      summary: Delete service type
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Service type deleted
+
+  /api/bundles:
+    get:
+      tags:
+        - Bundles
+      summary: List bundles
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Bundle list
+    post:
+      tags:
+        - Bundles
+      summary: Create bundle
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BundleInput'
+      responses:
+        '201':
+          description: Bundle created
+
+  /api/bundles/{id}:
+    get:
+      tags:
+        - Bundles
+      summary: Get bundle
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Bundle details
+    put:
+      tags:
+        - Bundles
+      summary: Update bundle
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Bundle updated
+    delete:
+      tags:
+        - Bundles
+      summary: Delete bundle
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Bundle deleted
+
+  /api/reminders:
+    get:
+      tags:
+        - Reminders
+      summary: List reminder campaigns
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Campaign list
+    post:
+      tags:
+        - Reminders
+      summary: Create reminder campaign
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderCampaignInput'
+      responses:
+        '201':
+          description: Campaign created
+
+  /api/reminders/{id}/activate:
+    post:
+      tags:
+        - Reminders
+      summary: Activate campaign
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Campaign activated
+
+  /api/reminders/{id}/pause:
+    post:
+      tags:
+        - Reminders
+      summary: Pause campaign
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Campaign paused
+
+  /api/warranty-claims:
+    get:
+      tags:
+        - Warranty Claims
+      summary: List warranty claims
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Warranty claim list
+    post:
+      tags:
+        - Warranty Claims
+      summary: Create warranty claim
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarrantyClaimInput'
+      responses:
+        '201':
+          description: Claim created
+
+  /api/warranty-claims/{id}:
+    get:
+      tags:
+        - Warranty Claims
+      summary: Get warranty claim
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Claim details
+
+  /api/credit-accounts:
+    get:
+      tags:
+        - Credit Accounts
+      summary: List credit accounts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Credit account list
+    post:
+      tags:
+        - Credit Accounts
+      summary: Create credit account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditAccountInput'
+      responses:
+        '201':
+          description: Account created
+
+  /api/credit-accounts/{id}:
+    get:
+      tags:
+        - Credit Accounts
+      summary: Get credit account
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Account details
+
+  /api/credit-accounts/{id}/payments:
+    post:
+      tags:
+        - Credit Accounts
+      summary: Record payment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: number
+                reference:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Payment recorded
+
+  /api/financial/entries:
+    get:
+      tags:
+        - Financial
+      summary: List financial entries
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [expense, purchase, income]
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Financial entry list
+    post:
+      tags:
+        - Financial
+      summary: Create financial entry
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinancialEntryInput'
+      responses:
+        '201':
+          description: Entry created
+
+  /api/financial/reports:
+    get:
+      tags:
+        - Financial
+      summary: Get financial reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Financial report data
+
+  /api/financial/reports/export:
+    get:
+      tags:
+        - Financial
+      summary: Export financial report
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /api/time-tracking:
+    get:
+      tags:
+        - Time Tracking
+      summary: List time entries
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - name: technician_id
+          in: query
+          schema:
+            type: integer
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Time entry list
+    post:
+      tags:
+        - Time Tracking
+      summary: Create manual time entry
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeEntryInput'
+      responses:
+        '201':
+          description: Entry created
+
+  /api/time-tracking/start:
+    post:
+      tags:
+        - Time Tracking
+      summary: Start timer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_id:
+                  type: integer
+                location:
+                  $ref: '#/components/schemas/GeoLocation'
+      responses:
+        '200':
+          description: Timer started
+
+  /api/time-tracking/{id}/stop:
+    post:
+      tags:
+        - Time Tracking
+      summary: Stop timer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                location:
+                  $ref: '#/components/schemas/GeoLocation'
+      responses:
+        '200':
+          description: Timer stopped
+
+  /api/time-tracking/export:
+    get:
+      tags:
+        - Time Tracking
+      summary: Export time entries
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /api/settings:
+    get:
+      tags:
+        - Settings
+      summary: Get all settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Settings object
+    put:
+      tags:
+        - Settings
+      summary: Update multiple settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Settings updated
+
+  /api/settings/{key}:
+    get:
+      tags:
+        - Settings
+      summary: Get setting value
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Setting value
+    put:
+      tags:
+        - Settings
+      summary: Update setting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+      responses:
+        '200':
+          description: Setting updated
+
+  /api/audit:
+    get:
+      tags:
+        - Audit
+      summary: List audit logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit log list
+
+  /api/audit/export:
+    get:
+      tags:
+        - Audit
+      summary: Export audit logs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /public/invoices/{token}:
+    get:
+      tags:
+        - Invoices
+      summary: Get public invoice
+      description: View invoice via public token (no auth required)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invoice details
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/webhooks/payments/stripe:
+    post:
+      tags:
+        - Invoices
+      summary: Stripe webhook
+      description: Receives payment notifications from Stripe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processed
+
+  /api/webhooks/payments/square:
+    post:
+      tags:
+        - Invoices
+      summary: Square webhook
+      description: Receives payment notifications from Square
+      responses:
+        '200':
+          description: Webhook processed
+
+  /api/webhooks/payments/paypal:
+    post:
+      tags:
+        - Invoices
+      summary: PayPal webhook
+      description: Receives payment notifications from PayPal
+      responses:
+        '200':
+          description: Webhook processed
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT or session token
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Resource ID
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+      description: Page number
+    per_page:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+      description: Items per page
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until rate limit resets
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+              message:
+                type: string
+              retry_after:
+                type: integer
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, manager, technician, customer]
+        customer_id:
+          type: integer
+          nullable: true
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+        message:
+          type: string
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+        first_name:
+          type: string
+        last_name:
+          type: string
+        business_name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        street:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+        is_commercial:
+          type: boolean
+        tax_exempt:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CustomerInput:
+      type: object
+      required:
+        - first_name
+        - last_name
+        - email
+        - phone
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        business_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        street:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+        is_commercial:
+          type: boolean
+        tax_exempt:
+          type: boolean
+
+    VehicleInput:
+      type: object
+      required:
+        - year
+        - make
+        - model
+      properties:
+        customer_id:
+          type: integer
+        year:
+          type: integer
+        make:
+          type: string
+        model:
+          type: string
+        engine:
+          type: string
+        transmission:
+          type: string
+        drive:
+          type: string
+        trim:
+          type: string
+        vin:
+          type: string
+        license_plate:
+          type: string
+
+    InventoryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        sku:
+          type: string
+        category:
+          type: string
+        stock_quantity:
+          type: integer
+        low_stock_threshold:
+          type: integer
+        reorder_quantity:
+          type: integer
+        cost:
+          type: number
+        sale_price:
+          type: number
+        vendor:
+          type: string
+        location:
+          type: string
+
+    InventoryItemInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        category:
+          type: string
+        stock_quantity:
+          type: integer
+        low_stock_threshold:
+          type: integer
+        reorder_quantity:
+          type: integer
+        cost:
+          type: number
+        sale_price:
+          type: number
+        vendor:
+          type: string
+        location:
+          type: string
+
+    ServiceType:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        alias:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+        display_order:
+          type: integer
+
+    ServiceTypeInput:
+      type: object
+      required:
+        - name
+        - alias
+        - color
+        - icon
+      properties:
+        name:
+          type: string
+        alias:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+        display_order:
+          type: integer
+
+    EstimateInput:
+      type: object
+      required:
+        - customer_id
+      properties:
+        customer_id:
+          type: integer
+        vehicle_id:
+          type: integer
+        jobs:
+          type: array
+          items:
+            type: object
+        notes:
+          type: string
+
+    InvoiceInput:
+      type: object
+      required:
+        - customer_id
+      properties:
+        customer_id:
+          type: integer
+        estimate_id:
+          type: integer
+        jobs:
+          type: array
+          items:
+            type: object
+        notes:
+          type: string
+        due_date:
+          type: string
+          format: date
+
+    AppointmentInput:
+      type: object
+      required:
+        - customer_id
+        - scheduled_at
+      properties:
+        customer_id:
+          type: integer
+        vehicle_id:
+          type: integer
+        service_type_id:
+          type: integer
+        scheduled_at:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+        notes:
+          type: string
+        technician_id:
+          type: integer
+
+    BundleInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        service_type_id:
+          type: integer
+        is_active:
+          type: boolean
+        sort_order:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [LABOR, PART, FEE, DISCOUNT]
+              name:
+                type: string
+              quantity:
+                type: number
+              price:
+                type: number
+
+    ReminderCampaignInput:
+      type: object
+      required:
+        - name
+        - channel
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        channel:
+          type: string
+          enum: [email, sms, both]
+        frequency_unit:
+          type: string
+          enum: [days, weeks, months]
+        frequency_interval:
+          type: integer
+        service_type_filter:
+          type: integer
+        email_subject:
+          type: string
+        email_body:
+          type: string
+        sms_body:
+          type: string
+
+    WarrantyClaimInput:
+      type: object
+      required:
+        - invoice_id
+        - description
+      properties:
+        invoice_id:
+          type: integer
+        description:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: string
+
+    CreditAccountInput:
+      type: object
+      required:
+        - customer_id
+        - credit_limit
+      properties:
+        customer_id:
+          type: integer
+        credit_limit:
+          type: number
+        notes:
+          type: string
+
+    FinancialEntryInput:
+      type: object
+      required:
+        - type
+        - amount
+        - date
+      properties:
+        type:
+          type: string
+          enum: [expense, purchase, income]
+        amount:
+          type: number
+        date:
+          type: string
+          format: date
+        vendor:
+          type: string
+        category:
+          type: string
+        reference:
+          type: string
+        description:
+          type: string
+
+    TimeEntryInput:
+      type: object
+      required:
+        - technician_id
+        - start_time
+        - end_time
+      properties:
+        technician_id:
+          type: integer
+        job_id:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          description: Required for manual entries
+
+    GeoLocation:
+      type: object
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+        accuracy:
+          type: number
+        altitude:
+          type: number
+        heading:
+          type: number
+        speed:
+          type: number
+
+    PaginationMeta:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
