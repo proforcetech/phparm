@@ -125,6 +125,31 @@ class DashboardService
                 'low_stock' => (int) ($inventoryRow['low_stock'] ?? 0),
             ];
 
+            $todayStart = new DateTimeImmutable('today', new DateTimeZone($timezone));
+            $todayEnd = $todayStart->setTime(23, 59, 59);
+            $todayBindings = [
+                'start' => $todayStart->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+                'end' => $todayEnd->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+            ];
+
+            $pendingInvoiceStmt = $pdo->prepare(
+                'SELECT COUNT(*) FROM invoices WHERE status IN ("pending", "sent", "partial")'
+            );
+            $pendingInvoiceStmt->execute();
+            $pendingInvoices = (int) ($pendingInvoiceStmt->fetchColumn() ?: 0);
+
+            $appointmentsTodayStmt = $pdo->prepare(
+                'SELECT COUNT(*) FROM appointments WHERE start_time BETWEEN :start AND :end'
+            );
+            $appointmentsTodayStmt->execute($todayBindings);
+            $appointmentsToday = (int) ($appointmentsTodayStmt->fetchColumn() ?: 0);
+
+            $response->summary = [
+                'revenue' => $response->invoiceTotals['total'] ?? 0.0,
+                'pending_invoices' => $pendingInvoices,
+                'appointments_today' => $appointmentsToday,
+            ];
+
             return $response;
         });
 
@@ -185,14 +210,16 @@ class DashboardService
             return new ChartSeries('Service Types', [], []);
         }
 
+        $limit = isset($options['limit']) ? max(1, (int) $options['limit']) : 10;
         $cacheKey = $this->makeCacheKey('service_type_breakdown', $start, $end, $options);
 
-        return $this->remember($cacheKey, $cacheTtl, function () use ($start, $end, $options, $timezone) {
+        return $this->remember($cacheKey, $cacheTtl, function () use ($start, $end, $options, $timezone, $limit) {
             $pdo = $this->connection->pdo();
             [$startUtc, $endUtc] = $this->normalizeRange($start, $end, $timezone);
             $bindings = [
                 'start' => $startUtc->format('Y-m-d H:i:s'),
                 'end' => $endUtc->format('Y-m-d H:i:s'),
+                'limit' => $limit,
             ];
 
             $customerFilter = '';
@@ -206,10 +233,15 @@ class DashboardService
                 . 'JOIN service_types st ON st.id = e.service_type_id '
                 . 'WHERE e.created_at BETWEEN :start AND :end' . $customerFilter . ' '
                 . 'GROUP BY st.name '
-                . 'ORDER BY st.display_order ASC, st.name ASC';
+                . 'ORDER BY total DESC '
+                . 'LIMIT :limit';
 
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($bindings);
+            foreach ($bindings as $key => $value) {
+                $paramType = $key === 'limit' ? PDO::PARAM_INT : PDO::PARAM_STR;
+                $stmt->bindValue(':' . $key, $value, $paramType);
+            }
+            $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
             $categories = [];

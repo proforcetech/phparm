@@ -43,6 +43,27 @@ class TimeTrackingController
     }
 
     /**
+     * Export time entries as CSV
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, string>
+     */
+    public function export(User $user, array $filters = []): array
+    {
+        if (!$this->gate->can($user, 'time_tracking.view')) {
+            throw new UnauthorizedException('Cannot export time entries');
+        }
+
+        $csv = $this->service->exportCsv($filters);
+
+        return [
+            'format' => 'csv',
+            'filename' => 'time-entries.csv',
+            'data' => $csv,
+        ];
+    }
+
+    /**
      * Start time entry
      *
      * @param array<string, mixed> $data

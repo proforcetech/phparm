@@ -21,6 +21,7 @@ class InvoiceService
      * @var string[]
      */
     private array $allowedStatuses = ['pending', 'sent', 'partial', 'paid', 'void', 'uncollectible'];
+    private int $publicTtlDays = 30;
 
     public function __construct(Connection $connection, ?AuditLogger $audit = null)
     {
@@ -50,6 +51,8 @@ class InvoiceService
                 'status' => 'pending',
                 'estimate_id' => $estimateId,
                 'issue_date' => date('Y-m-d'),
+                'public_token' => $this->generatePublicToken(),
+                'public_token_expires_at' => $this->calculatePublicExpiry(),
             ]);
 
             $totals = $this->copyEstimateJobs($invoiceId, $jobIds, $estimateId);
@@ -96,6 +99,8 @@ class InvoiceService
                 'estimate_id' => $payload['estimate_id'] ?? null,
                 'due_date' => $payload['due_date'] ?? null,
                 'notes' => $payload['notes'] ?? null,
+                'public_token' => $payload['public_token'] ?? $this->generatePublicToken(),
+                'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
             ]);
 
             $totals = $this->persistItems($invoiceId, $payload['items'], $payload['tax_rate'] ?? 0.0);
@@ -163,9 +168,9 @@ class InvoiceService
         ]);
     }
 
-    public function getPublicView(int $invoiceId): ?Invoice
+    public function getPublicView(string $token): ?Invoice
     {
-        return $this->fetchInvoice($invoiceId);
+        return $this->findByPublicToken($token);
     }
 
     /**
@@ -207,6 +212,26 @@ class InvoiceService
     public function findById(int $id): ?Invoice
     {
         return $this->fetchInvoice($id);
+    }
+
+    public function findByPublicToken(string $token): ?Invoice
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM invoices WHERE public_token = :token'
+        );
+        $stmt->execute(['token' => $token]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $invoice = new Invoice($row);
+        if ($this->isPublicTokenExpired($invoice)) {
+            return null;
+        }
+
+        return $invoice;
     }
 
     public function generatePayUrl(int $invoiceId, string $provider): string
@@ -315,8 +340,8 @@ class InvoiceService
     private function insertInvoice(array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoices (customer_id, vehicle_id, number, status, estimate_id, issue_date, due_date, notes, subtotal, tax, total, amount_paid, balance_due) '
-            . 'VALUES (:customer_id, :vehicle_id, :number, :status, :estimate_id, :issue_date, :due_date, :notes, 0, 0, 0, 0, 0)'
+            'INSERT INTO invoices (customer_id, vehicle_id, number, status, estimate_id, issue_date, due_date, notes, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
+            . 'VALUES (:customer_id, :vehicle_id, :number, :status, :estimate_id, :issue_date, :due_date, :notes, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'],
@@ -327,6 +352,8 @@ class InvoiceService
             'issue_date' => $payload['issue_date'] ?? date('Y-m-d'),
             'due_date' => $payload['due_date'] ?? null,
             'notes' => $payload['notes'] ?? null,
+            'public_token' => $payload['public_token'] ?? $this->generatePublicToken(),
+            'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
         ]);
 
         return (int) $this->connection->pdo()->lastInsertId();
@@ -436,6 +463,25 @@ class InvoiceService
     private function generateInvoiceNumber(): string
     {
         return 'INV-' . date('Ymd-His') . '-' . random_int(1000, 9999);
+    }
+
+    private function generatePublicToken(): string
+    {
+        return bin2hex(random_bytes(20));
+    }
+
+    private function calculatePublicExpiry(): string
+    {
+        return date('Y-m-d H:i:s', strtotime("+{$this->publicTtlDays} days"));
+    }
+
+    private function isPublicTokenExpired(Invoice $invoice): bool
+    {
+        if ($invoice->public_token_expires_at === null) {
+            return false;
+        }
+
+        return strtotime($invoice->public_token_expires_at) < time();
     }
 
     private function log(string $action, int $entityId, ?int $actorId, array $payload = []): void

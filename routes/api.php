@@ -8,7 +8,6 @@ use App\Support\Auth\AccessGate;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
-use InvalidArgumentException;
 
 /**
  * API Routes Definition
@@ -50,6 +49,8 @@ return function (Router $router, array $config, $connection) {
 
         return Response::json($health);
     });
+
+    $paymentConfig = require __DIR__ . '/../config/payments.php';
 
     // API info (public)
     $router->get('/', function () {
@@ -301,6 +302,18 @@ return function (Router $router, array $config, $connection) {
             return Response::json($data);
         });
 
+        $router->get('/api/dashboard/charts/service-types', function (Request $request) use ($dashboardController) {
+            $params = [
+                'start' => $request->queryParam('start'),
+                'end' => $request->queryParam('end'),
+                'timezone' => $request->queryParam('timezone', 'UTC'),
+                'limit' => $request->queryParam('limit', 10),
+            ];
+
+            $data = $dashboardController->handleServiceTypeBreakdown($params);
+            return Response::json($data);
+        });
+
         // PartsTech integration
         $auditConfig = require __DIR__ . '/../config/audit.php';
         $partsTechService = new \App\Services\Integrations\PartsTechService(
@@ -380,6 +393,40 @@ return function (Router $router, array $config, $connection) {
             $customerController->destroy($user, $id);
             return Response::noContent();
         });
+
+        $router->get('/api/customers/{id}/vehicles', function (Request $request) use ($customerController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $customerController->listVehicles($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/customers/{id}/vehicles', function (Request $request) use ($customerController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $customerController->attachVehicle($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/customers/{id}/vehicles/{vehicleId}', function (Request $request) use ($customerController) {
+            $user = $request->getAttribute('user');
+            $customerId = (int) $request->getAttribute('id');
+            $vehicleId = (int) $request->getAttribute('vehicleId');
+
+            $data = $customerController->updateVehicle($user, $customerId, $vehicleId, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/customers/{id}/vehicles/{vehicleId}', function (Request $request) use ($customerController) {
+            $user = $request->getAttribute('user');
+            $customerId = (int) $request->getAttribute('id');
+            $vehicleId = (int) $request->getAttribute('vehicleId');
+
+            $customerController->deleteVehicle($user, $customerId, $vehicleId);
+            return Response::noContent();
+        });
     });
 
     // Service Type routes
@@ -442,6 +489,68 @@ return function (Router $router, array $config, $connection) {
             $vinDecoderService,
             $normalizationJob
         );
+
+        $router->get('/api/vehicles/years', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            return Response::json($vehicleController->years($user));
+        });
+
+        $router->get('/api/vehicles/{year}/makes', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $year = (int) $request->getAttribute('year');
+
+            return Response::json($vehicleController->makes($user, $year));
+        });
+
+        $router->get('/api/vehicles/{year}/{make}/models', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $year = (int) $request->getAttribute('year');
+            $make = (string) $request->getAttribute('make');
+
+            return Response::json($vehicleController->models($user, $year, $make));
+        });
+
+        $router->get('/api/vehicles/{year}/{make}/{model}/engines', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $year = (int) $request->getAttribute('year');
+            $make = (string) $request->getAttribute('make');
+            $model = (string) $request->getAttribute('model');
+
+            return Response::json($vehicleController->engines($user, $year, $make, $model));
+        });
+
+        $router->get('/api/vehicles/{year}/{make}/{model}/{engine}/transmissions', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $year = (int) $request->getAttribute('year');
+            $make = (string) $request->getAttribute('make');
+            $model = (string) $request->getAttribute('model');
+            $engine = (string) $request->getAttribute('engine');
+
+            return Response::json($vehicleController->transmissions($user, $year, $make, $model, $engine));
+        });
+
+        $router->get('/api/vehicles/{year}/{make}/{model}/{engine}/{transmission}/drives', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $year = (int) $request->getAttribute('year');
+            $make = (string) $request->getAttribute('make');
+            $model = (string) $request->getAttribute('model');
+            $engine = (string) $request->getAttribute('engine');
+            $transmission = (string) $request->getAttribute('transmission');
+
+            return Response::json($vehicleController->drives($user, $year, $make, $model, $engine, $transmission));
+        });
+
+        $router->get('/api/vehicles/{year}/{make}/{model}/{engine}/{transmission}/{drive}/trims', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $year = (int) $request->getAttribute('year');
+            $make = (string) $request->getAttribute('make');
+            $model = (string) $request->getAttribute('model');
+            $engine = (string) $request->getAttribute('engine');
+            $transmission = (string) $request->getAttribute('transmission');
+            $drive = (string) $request->getAttribute('drive');
+
+            return Response::json($vehicleController->trims($user, $year, $make, $model, $engine, $transmission, $drive));
+        });
 
         $router->get('/api/vehicles', function (Request $request) use ($vehicleController) {
             $user = $request->getAttribute('user');
@@ -740,11 +849,49 @@ return function (Router $router, array $config, $connection) {
         });
     });
 
+    // Public invoice routes
+    $publicGatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
+    $publicInvoiceController = new \App\Services\Invoice\InvoicePublicController(
+        new \App\Services\Invoice\InvoiceService($connection),
+        new \App\Services\Invoice\PaymentProcessingService($connection, $publicGatewayFactory),
+        new \App\Support\Pdf\InvoicePdfGenerator($connection)
+    );
+
+    $router->get('/public/invoices/{token}', function (Request $request) use ($publicInvoiceController) {
+        $token = (string) $request->getAttribute('token');
+        $invoice = $publicInvoiceController->show($token);
+        return Response::json($invoice);
+    });
+
+    $router->post('/public/invoices/{token}/checkout', function (Request $request) use ($publicInvoiceController) {
+        $token = (string) $request->getAttribute('token');
+        $data = $publicInvoiceController->createCheckout($token, $request->body());
+        return Response::json($data);
+    });
+
+    $router->get('/public/invoices/{token}/pdf', function (Request $request) use ($publicInvoiceController, $config) {
+        $token = (string) $request->getAttribute('token');
+        $settings = [
+            'shop_name' => $config['settings']['shop_name'] ?? 'Auto Repair Shop',
+            'shop_address' => $config['settings']['shop_address'] ?? '',
+            'shop_phone' => $config['settings']['shop_phone'] ?? '',
+            'shop_email' => $config['settings']['shop_email'] ?? '',
+            'invoice_terms' => $config['settings']['invoice_terms'] ?? '',
+        ];
+
+        $pdfContent = $publicInvoiceController->downloadPdf($token, $settings);
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="invoice-' . $token . '.pdf"');
+        header('Content-Length: ' . strlen($pdfContent));
+        echo $pdfContent;
+        exit;
+    });
+
     // Invoice routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
 
         // Payment gateway setup
-        $paymentConfig = require __DIR__ . '/../config/payments.php';
         $gatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
 
         $invoiceController = new \App\Services\Invoice\InvoiceController(
@@ -1123,6 +1270,7 @@ return function (Router $router, array $config, $connection) {
             $filters = [
                 'type' => $request->queryParam('type'),
                 'category' => $request->queryParam('category'),
+                'vendor' => $request->queryParam('vendor'),
                 'start_date' => $request->queryParam('start_date'),
                 'end_date' => $request->queryParam('end_date'),
                 'search' => $request->queryParam('search'),
@@ -1159,6 +1307,7 @@ return function (Router $router, array $config, $connection) {
                 'start_date' => $request->queryParam('start_date'),
                 'end_date' => $request->queryParam('end_date'),
                 'category' => $request->queryParam('category'),
+                'vendor' => $request->queryParam('vendor'),
             ];
             $data = $financialController->report($user, $params);
             return Response::json($data);
@@ -1171,6 +1320,7 @@ return function (Router $router, array $config, $connection) {
                 'end_date' => $request->queryParam('end_date'),
                 'format' => $request->queryParam('format', 'csv'),
                 'category' => $request->queryParam('category'),
+                'vendor' => $request->queryParam('vendor'),
             ];
             $data = $financialController->export($user, $params);
             return Response::json($data);
@@ -1181,6 +1331,7 @@ return function (Router $router, array $config, $connection) {
             $filters = [
                 'type' => $request->queryParam('type'),
                 'category' => $request->queryParam('category'),
+                'vendor' => $request->queryParam('vendor'),
                 'start_date' => $request->queryParam('start_date'),
                 'end_date' => $request->queryParam('end_date'),
                 'search' => $request->queryParam('search'),
@@ -1212,6 +1363,19 @@ return function (Router $router, array $config, $connection) {
                 'per_page' => $request->queryParam('per_page', 25),
             ];
             $data = $timeController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/time-tracking/export', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'technician_id' => $request->queryParam('technician_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'limit' => $request->queryParam('limit'),
+            ];
+            $data = $timeController->export($user, $filters);
             return Response::json($data);
         });
 

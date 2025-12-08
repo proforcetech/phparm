@@ -22,3 +22,10 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
    - Update manual create/update APIs to require a reason field and validate presence; propagate this to the UI forms.
 2. [x] **Persist and expose adjustment reasons**
    - Store adjustment reasons alongside updates (leveraging the planned adjustment table) and include them in responses so admin history mirrors the plugin expectations.
+
+## Export parity for auditing
+- The plugin lets administrators export filtered time log tables to CSV for reconciliation outside WordPress, while the standalone tool only rendered on-screen lists without an export hook.【F:arm-main/includes/timelogs/Admin.php†L62-L218】
+
+### Tasks
+1. [x] **Provide CSV export endpoint**
+   - Add a time-tracking export route that applies the same filters as the admin grid and returns CSV payloads ready for download.

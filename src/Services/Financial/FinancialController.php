@@ -35,10 +35,11 @@ class FinancialController
             throw new UnauthorizedException('Cannot view financial entries');
         }
 
-        $entries = $this->entries->list($filters);
+        $result = $this->entries->paginate($filters);
 
         return [
-            'data' => array_map(static fn ($e) => $e->toArray(), $entries),
+            'data' => array_map(static fn ($e) => $e->toArray(), $result['data']),
+            'pagination' => $result['pagination'],
         ];
     }
 
@@ -110,12 +111,13 @@ class FinancialController
         $startDate = $params['start_date'] ?? null;
         $endDate = $params['end_date'] ?? null;
         $category = $params['category'] ?? null;
+        $vendor = $params['vendor'] ?? null;
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');
         }
 
-        return $this->reports->generate($startDate, $endDate, $category);
+        return $this->reports->generate($startDate, $endDate, $category, $vendor);
     }
 
     /**
@@ -134,12 +136,13 @@ class FinancialController
         $endDate = $params['end_date'] ?? null;
         $format = $params['format'] ?? 'csv';
         $category = $params['category'] ?? null;
+        $vendor = $params['vendor'] ?? null;
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');
         }
 
-        $data = $this->reports->export($startDate, $endDate, $format, $category);
+        $data = $this->reports->export($startDate, $endDate, $format, $category, $vendor);
 
         return [
             'format' => $format,
@@ -160,7 +163,7 @@ class FinancialController
             throw new UnauthorizedException('Cannot export financial entries');
         }
 
-        $data = $this->entries->export($filters);
+        $data = $this->entries->exportCsv($filters);
 
         return [
             'format' => 'csv',

@@ -143,6 +143,71 @@ class TimeTrackingService
     }
 
     /**
+     * Export time entries with context and adjustment reasons.
+     *
+     * @param array<string, mixed> $filters
+     */
+    public function exportCsv(array $filters = []): string
+    {
+        $limit = isset($filters['limit']) ? (int) $filters['limit'] : 1000;
+        $result = $this->list($filters, $limit, 0);
+        $rows = $result['data'];
+
+        if (count($rows) === 0) {
+            return '';
+        }
+
+        $buffer = fopen('php://temp', 'r+');
+        fputcsv($buffer, [
+            'ID',
+            'Technician',
+            'Job Title',
+            'Estimate #',
+            'Customer',
+            'Vehicle VIN',
+            'Started At',
+            'Ended At',
+            'Duration (minutes)',
+            'Manual Override',
+            'Notes',
+            'Adjustments',
+        ]);
+
+        foreach ($rows as $row) {
+            $adjustments = $row['adjustments'] ?? [];
+            $adjustmentNotes = array_map(static function (array $adj) {
+                return sprintf(
+                    '%s by %s at %s',
+                    $adj['reason'],
+                    $adj['actor_name'] ?? ('User #' . $adj['actor_id']),
+                    $adj['created_at'] ?? ''
+                );
+            }, $adjustments);
+
+            fputcsv($buffer, [
+                $row['id'] ?? null,
+                $row['technician_name'] ?? ('Tech #' . ($row['technician_id'] ?? '')),
+                $row['job_title'] ?? null,
+                $row['estimate_number'] ?? null,
+                $row['customer_name'] ?? null,
+                $row['vehicle_vin'] ?? null,
+                $row['started_at'] ?? null,
+                $row['ended_at'] ?? null,
+                $row['duration_minutes'] ?? null,
+                ($row['manual_override'] ?? false) ? 'Yes' : 'No',
+                $row['notes'] ?? null,
+                implode(' | ', $adjustmentNotes),
+            ]);
+        }
+
+        rewind($buffer);
+        $csv = stream_get_contents($buffer) ?: '';
+        fclose($buffer);
+
+        return $csv;
+    }
+
+    /**
      * @param array<string, mixed>|null $location
      */
     public function stop(int $entryId, int $actorId, ?array $location = null): ?TimeEntry

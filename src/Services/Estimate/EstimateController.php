@@ -64,7 +64,16 @@ class EstimateController
     {
         $this->assertManageAccess($user);
 
-        $estimate = $this->repository->updateStatus($estimateId, 'rejected', $user->id, $reason);
+        $estimate = $this->repository->updateStatus($estimateId, 'declined', $user->id, $reason);
+
+        return $estimate?->toArray();
+    }
+
+    public function requestReapproval(User $user, int $estimateId, ?string $reason = null): ?array
+    {
+        $this->assertManageAccess($user);
+
+        $estimate = $this->repository->updateStatus($estimateId, 'needs_reapproval', $user->id, $reason);
 
         return $estimate?->toArray();
     }

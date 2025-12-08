@@ -21,7 +21,7 @@ class FinancialReportService
     /**
      * @return array<string, mixed>
      */
-    public function generate(string $startDate, string $endDate, ?string $category = null): array
+    public function generate(string $startDate, string $endDate, ?string $category = null, ?string $vendor = null): array
     {
         $start = DateTimeImmutable::createFromFormat('Y-m-d', $startDate) ?: null;
         $end = DateTimeImmutable::createFromFormat('Y-m-d', $endDate) ?: null;
@@ -30,20 +30,20 @@ class FinancialReportService
             throw new InvalidArgumentException('Invalid date range');
         }
 
-        $summary = $this->summary($start, $end, $category);
+        $summary = $this->summary($start, $end, $category, $vendor);
 
         return [
             'range' => [$start->format('Y-m-d'), $end->format('Y-m-d')],
             'summary' => $summary,
             'net' => $summary['income'] - $summary['expense'] - $summary['purchase'],
-            'monthly' => $this->monthlyBreakdown($start, $end, $category),
+            'monthly' => $this->monthlyBreakdown($start, $end, $category, $vendor),
         ];
     }
 
     /**
      * @return array<string, float>
      */
-    public function summary(DateTimeImmutable $start, DateTimeImmutable $end, ?string $category = null): array
+    public function summary(DateTimeImmutable $start, DateTimeImmutable $end, ?string $category = null, ?string $vendor = null): array
     {
         $sql = 'SELECT type, SUM(amount) as total FROM financial_entries WHERE entry_date BETWEEN :start AND :end';
         $params = [
@@ -54,6 +54,11 @@ class FinancialReportService
         if ($category) {
             $sql .= ' AND category = :category';
             $params['category'] = $category;
+        }
+
+        if ($vendor) {
+            $sql .= ' AND vendor = :vendor';
+            $params['vendor'] = $vendor;
         }
 
         $sql .= ' GROUP BY type';
@@ -72,7 +77,7 @@ class FinancialReportService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function monthlyBreakdown(DateTimeImmutable $start, DateTimeImmutable $end, ?string $category = null): array
+    public function monthlyBreakdown(DateTimeImmutable $start, DateTimeImmutable $end, ?string $category = null, ?string $vendor = null): array
     {
         $period = new DatePeriod($start->modify('first day of this month'), new DateInterval('P1M'), $end->modify('first day of next month'));
         $results = [];
@@ -80,7 +85,7 @@ class FinancialReportService
         foreach ($period as $month) {
             $monthStart = $month->modify('first day of this month');
             $monthEnd = $month->modify('last day of this month');
-            $summary = $this->summary($monthStart, $monthEnd, $category);
+            $summary = $this->summary($monthStart, $monthEnd, $category, $vendor);
             $results[] = [
                 'month' => $monthStart->format('Y-m'),
                 'summary' => $summary,
@@ -91,9 +96,9 @@ class FinancialReportService
         return $results;
     }
 
-    public function export(string $startDate, string $endDate, string $format = 'csv', ?string $category = null): string
+    public function export(string $startDate, string $endDate, string $format = 'csv', ?string $category = null, ?string $vendor = null): string
     {
-        $report = $this->generate($startDate, $endDate, $category);
+        $report = $this->generate($startDate, $endDate, $category, $vendor);
 
         if ($format !== 'csv') {
             throw new InvalidArgumentException('Unsupported export format');

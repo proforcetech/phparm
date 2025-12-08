@@ -56,6 +56,9 @@ class DashboardController
         [$start, $end, $timezone] = $this->resolveRange($params);
         $options = $this->extractOptions($params);
         $options['timezone'] = $timezone;
+        if (isset($params['limit'])) {
+            $options['limit'] = (int) $params['limit'];
+        }
 
         $series = $this->service->serviceTypeBreakdown($start, $end, $options);
 

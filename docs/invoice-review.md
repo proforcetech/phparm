@@ -22,6 +22,6 @@ Compared the WordPress plugin under `arm-main` to the standalone system to ident
 - The plugin exposes tokenized public invoice URLs with built-in PDF downloads plus Stripe Checkout and PayPal buttons for unpaid invoices; the standalone implementation only returns a raw record for public view and generates placeholder pay URLs without tokens or provider hand-offs.【F:arm-main/templates/invoice-view.php†L13-L176】【F:src/Services/Invoice/InvoiceService.php†L142-L151】
 
 ### Tasks
-3. **Add secure public invoice access with payment and PDF flows**
+3. [x] **Add secure public invoice access with payment and PDF flows**
    - Issue and persist public tokens for invoices, load customer-facing views by token, and allow PDF downloads for owners.
    - Wire payment initiation to real providers (Stripe/PayPal/Square) for unpaid invoices, aligning with the plugin’s public payment buttons.

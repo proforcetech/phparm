@@ -34,3 +34,6 @@ Thumbs.db
 # Testing
 /coverage/
 .phpunit.result.cache
+
+# Frontend dependencies
+node_modules/
