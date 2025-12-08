@@ -5,6 +5,7 @@ use App\Support\Http\Request;
 use App\Support\Http\Response;
 use App\Support\Http\Middleware;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
@@ -30,6 +31,15 @@ return function (Router $router, array $config, $connection) {
             (int) ($authConfig['verification']['token_ttl_hours'] ?? 48)
         ),
         $authConfig
+    );
+
+    // Initialize JWT service for token generation
+    $jwtConfig = $authConfig['jwt'] ?? [];
+    $jwtService = new JwtService(
+        $connection,
+        $jwtConfig['secret'] ?? 'default-secret-key-change-in-production',
+        $jwtConfig['ttl'] ?? 3600,
+        $jwtConfig['refresh_ttl'] ?? 604800
     );
 
     // Apply global rate limiting (60 requests per minute per IP+path)
@@ -75,7 +85,7 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Authentication routes (public) - with strict rate limiting (5 attempts per minute)
-    $router->post('/api/auth/login', function (Request $request) use ($config, $connection) {
+    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService) {
         $email = $request->input('email');
         $password = $request->input('password');
 
@@ -89,25 +99,28 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid credentials');
         }
 
-        // Start session and capture session identifier so the SPA can treat
-        // the login as authenticated. The frontend currently expects a
-        // `token` field, so we return the PHP session ID to keep the
-        // existing client-side logic working.
+        // Start session for backwards compatibility
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
-        $sessionId = session_id();
+
+        // Generate JWT tokens
+        $accessToken = $jwtService->generateToken($user);
+        $refreshToken = $jwtService->generateRefreshToken($user);
 
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $sessionId,
+            'token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $jwtService->getTokenTtl(),
+            'token_type' => 'Bearer',
             'message' => 'Login successful',
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-login', function (Request $request) use ($authService) {
+    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService) {
         $email = $request->input('email');
         $password = $request->input('password');
 
@@ -121,6 +134,7 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid credentials');
         }
 
+        // Start session for backwards compatibility
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
@@ -128,16 +142,39 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
-        $sessionId = session_id();
+
+        // Generate JWT tokens
+        $accessToken = $jwtService->generateToken($user);
+        $refreshToken = $jwtService->generateRefreshToken($user);
 
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $sessionId,
+            'token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $jwtService->getTokenTtl(),
+            'token_type' => 'Bearer',
             'nonce' => $_SESSION['portal_nonce'],
             'api_base' => '/api',
             'message' => 'Login successful',
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
+
+    // Token refresh endpoint
+    $router->post('/api/auth/refresh', function (Request $request) use ($jwtService) {
+        $refreshToken = $request->input('refresh_token');
+
+        if (!$refreshToken) {
+            return Response::badRequest('Refresh token required');
+        }
+
+        $result = $jwtService->refreshTokens((string) $refreshToken);
+
+        if ($result === null) {
+            return Response::unauthorized('Invalid or expired refresh token');
+        }
+
+        return Response::json($result);
+    })->middleware(Middleware::throttleStrict(10, 60));
 
     $router->post('/api/auth/logout', function (Request $request) {
         if (session_status() === PHP_SESSION_NONE) {
@@ -157,6 +194,121 @@ return function (Router $router, array $config, $connection) {
 
         return Response::json(['user' => $user->toArray()]);
     })->middleware(Middleware::auth());
+
+    // Password reset request (forgot password)
+    $router->post('/api/auth/forgot-password', function (Request $request) use ($authService, $connection, $authConfig) {
+        $email = $request->input('email');
+
+        if (!$email) {
+            return Response::badRequest('Email is required');
+        }
+
+        $token = $authService->requestPasswordReset((string) $email);
+
+        // Send email if token was created (user exists)
+        if ($token !== null) {
+            $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+            $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+                $notificationsConfig,
+                new \App\Support\Notifications\TemplateEngine(),
+                new \App\Support\Notifications\NotificationLogRepository($connection)
+            );
+
+            $appUrl = env('APP_URL', 'http://localhost:8080');
+            $resetUrl = $appUrl . '/reset-password?token=' . urlencode($token->token);
+            $expiryHours = round(($authConfig['passwords']['expire_minutes'] ?? 60) / 60, 1);
+
+            try {
+                $dispatcher->sendMail(
+                    'auth.password_reset',
+                    (string) $email,
+                    ['reset_url' => $resetUrl, 'expiry_hours' => $expiryHours],
+                    'Reset Your Password'
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to send password reset email: ' . $e->getMessage());
+            }
+        }
+
+        // Always return success to prevent email enumeration
+        return Response::json(['message' => 'If an account exists, a password reset link has been sent']);
+    })->middleware(Middleware::throttleStrict(3, 60));
+
+    // Reset password with token
+    $router->post('/api/auth/reset-password', function (Request $request) use ($authService) {
+        $token = $request->input('token');
+        $password = $request->input('password');
+
+        if (!$token || !$password) {
+            return Response::badRequest('Token and password are required');
+        }
+
+        $success = $authService->resetPassword((string) $token, (string) $password);
+
+        if (!$success) {
+            return Response::badRequest('Invalid or expired token');
+        }
+
+        return Response::json(['message' => 'Password reset successfully']);
+    })->middleware(Middleware::throttleStrict(5, 60));
+
+    // Verify email with token
+    $router->post('/api/auth/verify-email', function (Request $request) use ($authService) {
+        $token = $request->input('token');
+
+        if (!$token) {
+            return Response::badRequest('Token is required');
+        }
+
+        $success = $authService->verifyEmail((string) $token);
+
+        if (!$success) {
+            return Response::badRequest('Invalid or expired verification token');
+        }
+
+        return Response::json(['message' => 'Email verified successfully']);
+    })->middleware(Middleware::throttleStrict(10, 60));
+
+    // Resend verification email
+    $router->post('/api/auth/resend-verification', function (Request $request) use ($authService, $connection, $authConfig) {
+        $user = $request->getAttribute('user');
+
+        if (!$user || !($user instanceof \App\Models\User)) {
+            return Response::unauthorized('Authentication required');
+        }
+
+        if ($user->email_verified) {
+            return Response::json(['message' => 'Email is already verified']);
+        }
+
+        $token = $authService->issueVerificationToken($user->id);
+
+        // Send verification email
+        $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+        $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+            $notificationsConfig,
+            new \App\Support\Notifications\TemplateEngine(),
+            new \App\Support\Notifications\NotificationLogRepository($connection)
+        );
+
+        $appUrl = env('APP_URL', 'http://localhost:8080');
+        $verificationUrl = $appUrl . '/verify-email?token=' . urlencode($token->token);
+        $expiryHours = $authConfig['verification']['token_ttl_hours'] ?? 48;
+
+        try {
+            $dispatcher->sendMail(
+                'auth.email_verification',
+                $user->email,
+                ['name' => $user->name, 'verification_url' => $verificationUrl, 'expiry_hours' => $expiryHours],
+                'Verify Your Email Address'
+            );
+        } catch (\Throwable $e) {
+            error_log('Failed to send verification email: ' . $e->getMessage());
+            return Response::serverError('Failed to send verification email');
+        }
+
+        return Response::json(['message' => 'Verification email has been sent']);
+    })->middleware([Middleware::auth(), Middleware::throttleStrict(3, 60)]);
 
     $router->get('/api/customer-portal/bootstrap', function (Request $request) {
         $user = $request->getAttribute('user');
