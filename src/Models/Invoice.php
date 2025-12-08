@@ -18,6 +18,8 @@ class Invoice extends BaseModel
     public float $total = 0.0;
     public float $amount_paid = 0.0;
     public float $balance_due = 0.0;
+    public ?string $public_token = null;
+    public ?string $public_token_expires_at = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }

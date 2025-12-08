@@ -28,53 +28,18 @@ class FinancialEntryService
      */
     public function list(array $filters = []): array
     {
-        $sql = 'SELECT * FROM financial_entries WHERE 1=1';
-        $params = [];
+        return $this->query($filters, false)['data'];
+    }
 
-        if (!empty($filters['type'])) {
-            $sql .= ' AND type = :type';
-            $params['type'] = $filters['type'];
-        }
-
-        if (!empty($filters['category'])) {
-            $sql .= ' AND category = :category';
-            $params['category'] = $filters['category'];
-        }
-
-        if (!empty($filters['start_date'])) {
-            $sql .= ' AND entry_date >= :start_date';
-            $params['start_date'] = $filters['start_date'];
-        }
-
-        if (!empty($filters['end_date'])) {
-            $sql .= ' AND entry_date <= :end_date';
-            $params['end_date'] = $filters['end_date'];
-        }
-
-        if (!empty($filters['search'])) {
-            $sql .= ' AND (vendor LIKE :search OR reference LIKE :search OR purchase_order LIKE :search OR description LIKE :search)';
-            $params['search'] = '%' . $filters['search'] . '%';
-        }
-
-        $sql .= ' ORDER BY entry_date DESC, id DESC LIMIT :limit OFFSET :offset';
-        $page = max(1, (int) ($filters['page'] ?? 1));
-        $perPage = max(1, min(100, (int) ($filters['per_page'] ?? 25)));
-
-        $stmt = $this->connection->pdo()->prepare($sql);
-        foreach ($params as $key => $value) {
-            $param = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
-            $stmt->bindValue(':' . $key, $value, $param);
-        }
-        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-        $stmt->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
-        $stmt->execute();
-
-        $entries = [];
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $entries[] = new FinancialEntry($row);
-        }
-
-        return $entries;
+    /**
+     * Paginate financial entries with optional filters
+     *
+     * @param array<string, mixed> $filters
+     * @return array{data: array<int, FinancialEntry>, pagination: array<string, int>}
+     */
+    public function paginate(array $filters = []): array
+    {
+        return $this->query($filters, true);
     }
 
     /**
@@ -168,10 +133,35 @@ class FinancialEntryService
                 'Purchase Order' => $entry->purchase_order,
                 'Vendor' => $entry->vendor,
                 'Date' => $entry->entry_date,
-                'Amount' => $entry->amount,
+                'Amount' => number_format($entry->amount, 2, '.', ''),
                 'Description' => $entry->description,
             ];
         }, $entries);
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    public function exportCsv(array $filters = []): string
+    {
+        $rows = $this->export($filters);
+        $csvRows = [];
+        $csvRows[] = array_keys($rows[0] ?? [
+            'Type' => 'Type',
+            'Category' => 'Category',
+            'Reference' => 'Reference',
+            'Purchase Order' => 'Purchase Order',
+            'Vendor' => 'Vendor',
+            'Date' => 'Date',
+            'Amount' => 'Amount',
+            'Description' => 'Description',
+        ]);
+
+        foreach ($rows as $row) {
+            $csvRows[] = array_values($row);
+        }
+
+        return $this->toCsv($csvRows);
     }
 
     public function attachReceipt(int $entryId, string $path, int $actorId): bool
@@ -184,6 +174,94 @@ class FinancialEntryService
         }
 
         return $updated;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array{data: array<int, FinancialEntry>, pagination: array<string, int>}
+     */
+    private function query(array $filters, bool $withPagination = false): array
+    {
+        $sql = 'SELECT * FROM financial_entries WHERE 1=1';
+        $params = [];
+
+        if (!empty($filters['type'])) {
+            $sql .= ' AND type = :type';
+            $params['type'] = $filters['type'];
+        }
+
+        if (!empty($filters['category'])) {
+            $sql .= ' AND category = :category';
+            $params['category'] = $filters['category'];
+        }
+
+        if (!empty($filters['vendor'])) {
+            $sql .= ' AND vendor = :vendor';
+            $params['vendor'] = $filters['vendor'];
+        }
+
+        if (!empty($filters['start_date'])) {
+            $sql .= ' AND entry_date >= :start_date';
+            $params['start_date'] = $filters['start_date'];
+        }
+
+        if (!empty($filters['end_date'])) {
+            $sql .= ' AND entry_date <= :end_date';
+            $params['end_date'] = $filters['end_date'];
+        }
+
+        if (!empty($filters['search'])) {
+            $sql .= ' AND (vendor LIKE :search OR reference LIKE :search OR purchase_order LIKE :search OR description LIKE :search)';
+            $params['search'] = '%' . $filters['search'] . '%';
+        }
+
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perPage = max(1, min(100, (int) ($filters['per_page'] ?? 25)));
+
+        $count = null;
+        if ($withPagination) {
+            $countSql = 'SELECT COUNT(*) FROM (' . $sql . ') as counted';
+            $countStmt = $this->connection->pdo()->prepare($countSql);
+            foreach ($params as $key => $value) {
+                $param = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+                $countStmt->bindValue(':' . $key, $value, $param);
+            }
+            $countStmt->execute();
+            $count = (int) $countStmt->fetchColumn();
+        }
+
+        $sql .= ' ORDER BY entry_date DESC, id DESC';
+        if ($withPagination) {
+            $sql .= ' LIMIT :limit OFFSET :offset';
+        }
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($params as $key => $value) {
+            $param = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $stmt->bindValue(':' . $key, $value, $param);
+        }
+
+        if ($withPagination) {
+            $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        }
+
+        $stmt->execute();
+
+        $entries = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $entries[] = new FinancialEntry($row);
+        }
+
+        return [
+            'data' => $entries,
+            'pagination' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $count ?? count($entries),
+                'total_pages' => $withPagination ? (int) ceil(($count ?? count($entries)) / $perPage) : 1,
+            ],
+        ];
     }
 
     private function fetch(int $entryId): ?FinancialEntry
@@ -229,5 +307,21 @@ class FinancialEntryService
         }
 
         $this->audit->log(new AuditEntry($action, 'financial', $entityId, $actorId, $payload));
+    }
+
+    /**
+     * @param array<int, array<int, string>> $rows
+     */
+    private function toCsv(array $rows): string
+    {
+        $fh = fopen('php://temp', 'r+');
+        foreach ($rows as $row) {
+            fputcsv($fh, $row);
+        }
+        rewind($fh);
+        $csv = stream_get_contents($fh) ?: '';
+        fclose($fh);
+
+        return $csv;
     }
 }

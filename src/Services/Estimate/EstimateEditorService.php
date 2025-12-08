@@ -29,12 +29,13 @@ class EstimateEditorService
     public function create(array $payload, int $actorId): Estimate
     {
         $this->assertValidPayload($payload);
+        $status = $this->determineStatusForCreate($payload);
 
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
 
         try {
-            $estimateId = $this->insertEstimate($payload);
+            $estimateId = $this->insertEstimate($payload, $status);
             $totals = $this->persistJobsAndItems($estimateId, $payload['jobs'], $payload['tax_rate'] ?? 0.0);
             $this->applyTotals($estimateId, $payload, $totals);
 
@@ -60,12 +61,13 @@ class EstimateEditorService
         }
 
         $this->assertValidPayload($payload, true);
+        $status = $this->determineStatusForUpdate($existing, $payload);
 
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
 
         try {
-            $this->updateEstimateHeader($estimateId, $payload);
+            $this->updateEstimateHeader($estimateId, $payload, $status);
             $this->deleteExistingJobs($estimateId);
             $totals = $this->persistJobsAndItems($estimateId, $payload['jobs'], $payload['tax_rate'] ?? 0.0);
             $this->applyTotals($estimateId, $payload, $totals);
@@ -145,7 +147,7 @@ class EstimateEditorService
     /**
      * @param array<string, mixed> $payload
      */
-    private function insertEstimate(array $payload): int
+    private function insertEstimate(array $payload, string $status): int
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             INSERT INTO estimates (number, customer_id, vehicle_id, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, subtotal, tax, grand_total, created_at, updated_at)
@@ -158,7 +160,7 @@ class EstimateEditorService
             'vehicle_id' => (int) $payload['vehicle_id'],
             'technician_id' => $payload['technician_id'] ?? null,
             'expiration_date' => $payload['expiration_date'] ?? null,
-            'status' => $payload['status'] ?? 'draft',
+            'status' => $status,
             'internal_notes' => $payload['internal_notes'] ?? null,
             'customer_notes' => $payload['customer_notes'] ?? null,
             'call_out_fee' => (float) ($payload['call_out_fee'] ?? 0),
@@ -172,7 +174,7 @@ class EstimateEditorService
     /**
      * @param array<string, mixed> $payload
      */
-    private function updateEstimateHeader(int $estimateId, array $payload): void
+    private function updateEstimateHeader(int $estimateId, array $payload, ?string $status): void
     {
         $sql = <<<SQL
             UPDATE estimates SET
@@ -196,7 +198,7 @@ class EstimateEditorService
             'vehicle_id' => (int) $payload['vehicle_id'],
             'technician_id' => $payload['technician_id'] ?? null,
             'expiration_date' => $payload['expiration_date'] ?? null,
-            'status' => $payload['status'] ?? null,
+            'status' => $status,
             'internal_notes' => $payload['internal_notes'] ?? null,
             'customer_notes' => $payload['customer_notes'] ?? null,
             'call_out_fee' => (float) ($payload['call_out_fee'] ?? 0),
@@ -383,5 +385,48 @@ class EstimateEditorService
         }
 
         $this->audit->log(new AuditEntry($event, 'estimate', (string) $estimateId, $actorId, $context));
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function determineStatusForCreate(array $payload): string
+    {
+        $candidate = $payload['status'] ?? 'draft';
+        $normalized = EstimateRepository::normalizeStatus($candidate);
+        if (!in_array($normalized, EstimateRepository::ALLOWED_STATUSES, true)) {
+            throw new InvalidArgumentException('Invalid estimate status value.');
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function determineStatusForUpdate(Estimate $existing, array $payload): ?string
+    {
+        if (array_key_exists('status', $payload)) {
+            if ($payload['status'] === null) {
+                return null;
+            }
+
+            $normalized = EstimateRepository::normalizeStatus((string) $payload['status']);
+            if (!in_array($normalized, EstimateRepository::ALLOWED_STATUSES, true)) {
+                throw new InvalidArgumentException('Invalid estimate status value.');
+            }
+
+            if ($existing->status === 'approved' && $normalized === 'approved') {
+                return 'needs_reapproval';
+            }
+
+            return $normalized;
+        }
+
+        if ($existing->status === 'approved') {
+            return 'needs_reapproval';
+        }
+
+        return null;
     }
 }

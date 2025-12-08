@@ -13,6 +13,21 @@ use Throwable;
 
 class EstimateRepository
 {
+    public const ALLOWED_STATUSES = [
+        'draft',
+        'pending',
+        'sent',
+        'approved',
+        'declined',
+        'expired',
+        'needs_reapproval',
+        'converted',
+    ];
+
+    private const STATUS_ALIASES = [
+        'rejected' => 'declined',
+    ];
+
     private Connection $connection;
     private ?AuditLogger $audit;
 
@@ -103,16 +118,20 @@ class EstimateRepository
             return null;
         }
 
-        $allowedStatuses = ['sent', 'approved', 'rejected', 'expired'];
-        if (!in_array($status, $allowedStatuses, true)) {
+        $normalized = self::normalizeStatus($status);
+        if (!in_array($normalized, self::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid status for estimate lifecycle.');
+        }
+
+        if ($estimate->status === $normalized) {
+            return $estimate;
         }
 
         $before = $estimate->toArray();
         $stmt = $this->connection->pdo()->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id');
-        $stmt->execute(['status' => $status, 'id' => $id]);
+        $stmt->execute(['status' => $normalized, 'id' => $id]);
 
-        $estimate->status = $status;
+        $estimate->status = $normalized;
         $this->log('estimate.status_changed', $id, $actorId, [
             'before' => $before,
             'after' => $estimate->toArray(),
@@ -124,22 +143,19 @@ class EstimateRepository
 
     public function markExpiredBefore(string $date, ?int $actorId = null): int
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT id FROM estimates WHERE expiration_date < :date AND status NOT IN (\'expired\', \'converted\')');
+        $stmt = $this->connection->pdo()->prepare('SELECT id, status FROM estimates WHERE expiration_date < :date AND status NOT IN (\'expired\', \'converted\')');
         $stmt->execute(['date' => $date]);
-        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($ids)) {
+        if (empty($rows)) {
             return 0;
         }
 
-        $update = $this->connection->pdo()->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id IN (' . implode(',', $ids) . ')');
-        $update->execute(['status' => 'expired']);
-
-        foreach ($ids as $estimateId) {
-            $this->log('estimate.status_changed', $estimateId, $actorId, ['before' => ['status' => 'pending'], 'after' => ['status' => 'expired']]);
+        foreach ($rows as $row) {
+            $this->updateStatus((int) $row['id'], 'expired', $actorId, 'Auto-expired after ' . $date);
         }
 
-        return count($ids);
+        return count($rows);
     }
 
     public function convertToInvoice(int $estimateId, string $issueDate, ?string $dueDate = null, ?int $actorId = null): ?Invoice
@@ -179,8 +195,7 @@ class EstimateRepository
             ]);
 
             $invoiceId = (int) $pdo->lastInsertId();
-            $pdo->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id')
-                ->execute(['status' => 'converted', 'id' => $estimateId]);
+            $this->updateStatus($estimateId, 'converted', $actorId, 'Converted to invoice ' . $invoiceNumber);
 
             $invoice = new Invoice([
                 'id' => $invoiceId,
@@ -295,5 +310,12 @@ class EstimateRepository
         }
 
         $this->audit->log(new AuditEntry($event, 'estimate', (string) $estimateId, $actorId, $context));
+    }
+
+    public static function normalizeStatus(string $status): string
+    {
+        $normalized = strtolower($status);
+
+        return self::STATUS_ALIASES[$normalized] ?? $normalized;
     }
 }

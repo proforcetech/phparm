@@ -103,6 +103,26 @@ class CustomerController
     }
 
     /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function updateVehicle(User $user, int $customerId, int $vehicleId, array $data): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'customers.update');
+
+        return $this->vehicleService->updateVehicle($customerId, $vehicleId, $data);
+    }
+
+    public function deleteVehicle(User $user, int $customerId, int $vehicleId): bool
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'customers.update');
+
+        return $this->vehicleService->deleteVehicle($customerId, $vehicleId);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listVehicles(User $user, int $customerId): array

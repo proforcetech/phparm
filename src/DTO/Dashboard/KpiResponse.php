@@ -34,6 +34,11 @@ class KpiResponse
      */
     public array $inventoryAlerts = [];
 
+    /**
+     * @var array<string, float|int>
+     */
+    public array $summary = [];
+
     public function toArray(): array
     {
         return [
@@ -43,6 +48,7 @@ class KpiResponse
             'warranty' => $this->warrantyCounts,
             'appointments' => $this->appointmentCounts,
             'inventory' => $this->inventoryAlerts,
+            'summary' => $this->summary,
         ];
     }
 }

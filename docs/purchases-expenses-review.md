@@ -14,6 +14,8 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 3. [x] **Support delete/edit flows with audit logging**
    - Extend the financial entry APIs to handle updates and deletions with audit trails so UI actions map to backend capabilities.
 
+Completed with paginated listings, vendor/category/date filters, and CSV exports for both entries and monthly reports.
+
 ## Missing domain fields and validation parity
 - Plugin forms persist vendor names, purchase orders/references, categories, and transaction dates for purchases/expenses, enforcing presence before saving.【F:arm-main/includes/admin/Purchases.php†L25-L67】【F:arm-main/includes/admin/Expenses.php†L25-L67】
 - The standalone `record` method only requires `amount` and `date`, storing everything else as optional metadata and not distinguishing vendor/category/reference/purchase_order fields, reducing reporting fidelity.【F:src/Services/Financial/FinancialEntryService.php†L23-L69】

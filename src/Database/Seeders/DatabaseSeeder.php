@@ -18,9 +18,32 @@ class DatabaseSeeder
 
     public function seed(): void
     {
+        $this->seedVehicleMaster();
         $this->seedServiceTypes();
         $this->seedSettings();
         $this->seedDemoCustomers();
+    }
+
+    private function seedVehicleMaster(): void
+    {
+        $pdo = $this->connection->pdo();
+        $vehicles = [
+            ['year' => 2020, 'make' => 'Toyota', 'model' => 'Camry', 'engine' => '2.5L I4', 'transmission' => 'Automatic', 'drive' => 'FWD', 'trim' => 'SE'],
+            ['year' => 2020, 'make' => 'Toyota', 'model' => 'Camry', 'engine' => '3.5L V6', 'transmission' => 'Automatic', 'drive' => 'FWD', 'trim' => 'XSE'],
+            ['year' => 2021, 'make' => 'Ford', 'model' => 'F-150', 'engine' => '3.5L EcoBoost V6', 'transmission' => 'Automatic', 'drive' => '4WD', 'trim' => 'Lariat'],
+            ['year' => 2021, 'make' => 'Ford', 'model' => 'F-150', 'engine' => '5.0L V8', 'transmission' => 'Automatic', 'drive' => '4WD', 'trim' => 'Platinum'],
+            ['year' => 2019, 'make' => 'Honda', 'model' => 'Civic', 'engine' => '2.0L I4', 'transmission' => 'CVT', 'drive' => 'FWD', 'trim' => 'EX'],
+            ['year' => 2019, 'make' => 'Honda', 'model' => 'Civic', 'engine' => '1.5L Turbo I4', 'transmission' => 'CVT', 'drive' => 'FWD', 'trim' => 'Touring'],
+        ];
+
+        $stmt = $pdo->prepare('INSERT INTO vehicle_master (year, make, model, engine, transmission, drive, trim, created_at, updated_at) '
+            . 'VALUES (:year, :make, :model, :engine, :transmission, :drive, :trim, :created_at, :updated_at) '
+            . 'ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)');
+
+        $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+        foreach ($vehicles as $vehicle) {
+            $stmt->execute(array_merge($vehicle, ['created_at' => $now, 'updated_at' => $now]));
+        }
     }
 
     private function seedServiceTypes(): void
