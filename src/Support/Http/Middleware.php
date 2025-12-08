@@ -8,6 +8,28 @@ use App\Support\Auth\UnauthorizedException;
 
 class Middleware
 {
+    private static ?RateLimiter $rateLimiter = null;
+
+    /**
+     * Get or create the default rate limiter instance.
+     */
+    private static function getRateLimiter(): RateLimiter
+    {
+        if (self::$rateLimiter === null) {
+            $storagePath = dirname(__DIR__, 3) . '/storage/temp/ratelimits';
+            self::$rateLimiter = new RateLimiter($storagePath);
+        }
+        return self::$rateLimiter;
+    }
+
+    /**
+     * Set a custom rate limiter instance (for testing or custom configuration).
+     */
+    public static function setRateLimiter(RateLimiter $limiter): void
+    {
+        self::$rateLimiter = $limiter;
+    }
+
     /**
      * Authenticate user from session or bearer token
      */
@@ -132,6 +154,129 @@ class Middleware
 
             return $next($request);
         };
+    }
+
+    /**
+     * Rate limiting middleware using IP address.
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 60)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     */
+    public static function throttle(int $maxAttempts = 60, int $decaySeconds = 60): callable
+    {
+        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds) {
+            $limiter = self::getRateLimiter()->withLimits($maxAttempts, $decaySeconds);
+            $key = self::resolveRateLimitKey($request);
+
+            if ($limiter->tooManyAttempts($key)) {
+                $retryAfter = $limiter->availableIn($key);
+                return Response::json([
+                    'error' => 'Too many requests',
+                    'message' => 'Rate limit exceeded. Please try again later.',
+                    'retry_after' => $retryAfter,
+                ], 429)
+                    ->withHeader('Retry-After', (string) $retryAfter)
+                    ->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', '0')
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $retryAfter));
+            }
+
+            $hits = $limiter->hit($key);
+            $remaining = max(0, $maxAttempts - $hits);
+
+            $response = $next($request);
+
+            if ($response instanceof Response) {
+                $response->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', (string) $remaining)
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $decaySeconds));
+            }
+
+            return $response;
+        };
+    }
+
+    /**
+     * Strict rate limiting for sensitive endpoints (e.g., login, password reset).
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 5)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     */
+    public static function throttleStrict(int $maxAttempts = 5, int $decaySeconds = 60): callable
+    {
+        return self::throttle($maxAttempts, $decaySeconds);
+    }
+
+    /**
+     * Rate limiting by authenticated user instead of IP.
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 100)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     */
+    public static function throttleByUser(int $maxAttempts = 100, int $decaySeconds = 60): callable
+    {
+        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds) {
+            $limiter = self::getRateLimiter()->withLimits($maxAttempts, $decaySeconds);
+
+            $user = $request->getAttribute('user');
+            $key = $user instanceof User
+                ? 'user:' . $user->id
+                : 'ip:' . self::getClientIp($request);
+
+            if ($limiter->tooManyAttempts($key)) {
+                $retryAfter = $limiter->availableIn($key);
+                return Response::json([
+                    'error' => 'Too many requests',
+                    'message' => 'Rate limit exceeded. Please try again later.',
+                    'retry_after' => $retryAfter,
+                ], 429)
+                    ->withHeader('Retry-After', (string) $retryAfter)
+                    ->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', '0')
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $retryAfter));
+            }
+
+            $hits = $limiter->hit($key);
+            $remaining = max(0, $maxAttempts - $hits);
+
+            $response = $next($request);
+
+            if ($response instanceof Response) {
+                $response->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', (string) $remaining)
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $decaySeconds));
+            }
+
+            return $response;
+        };
+    }
+
+    /**
+     * Resolve the rate limit key for a request.
+     */
+    private static function resolveRateLimitKey(Request $request): string
+    {
+        return 'ip:' . self::getClientIp($request) . ':' . $request->path();
+    }
+
+    /**
+     * Get the client IP address from the request.
+     */
+    private static function getClientIp(Request $request): string
+    {
+        // Check for forwarded IP (when behind proxy/load balancer)
+        $forwardedFor = $request->header('X-Forwarded-For');
+        if ($forwardedFor !== null) {
+            $ips = array_map('trim', explode(',', $forwardedFor));
+            return $ips[0];
+        }
+
+        $realIp = $request->header('X-Real-IP');
+        if ($realIp !== null) {
+            return $realIp;
+        }
+
+        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 
     /**

@@ -32,6 +32,9 @@ return function (Router $router, array $config, $connection) {
         $authConfig
     );
 
+    // Apply global rate limiting (60 requests per minute per IP+path)
+    $router->middleware(Middleware::throttle(60, 60));
+
     // Health check (public)
     $router->get('/health', function (Request $request) use ($connection) {
         $health = [
@@ -71,7 +74,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    // Authentication routes (public)
+    // Authentication routes (public) - with strict rate limiting (5 attempts per minute)
     $router->post('/api/auth/login', function (Request $request) use ($config, $connection) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -102,7 +105,7 @@ return function (Router $router, array $config, $connection) {
             'token' => $sessionId,
             'message' => 'Login successful',
         ]);
-    });
+    })->middleware(Middleware::throttleStrict(5, 60));
 
     $router->post('/api/auth/customer-login', function (Request $request) use ($authService) {
         $email = $request->input('email');
@@ -134,7 +137,7 @@ return function (Router $router, array $config, $connection) {
             'api_base' => '/api',
             'message' => 'Login successful',
         ]);
-    });
+    })->middleware(Middleware::throttleStrict(5, 60));
 
     $router->post('/api/auth/logout', function (Request $request) {
         if (session_status() === PHP_SESSION_NONE) {
