@@ -230,16 +230,20 @@ All errors are logged to error_log for debugging.
 
 ## Next Steps
 
-1. Implement remaining controllers for:
-   - Invoices
-   - Appointments
-   - Inspections
-   - Time Tracking
-   - Financial Reports
-   - Warranty Claims
-   - Credit Accounts
+1. [x] Implement remaining controllers for:
+   - [x] Invoices (`InvoiceController`, `InvoicePublicController`)
+   - [x] Appointments (`AppointmentController`)
+   - [x] Inspections (`InspectionController`)
+   - [x] Time Tracking (`TimeTrackingController`)
+   - [x] Financial Reports (`FinancialController`)
+   - [x] Warranty Claims (`WarrantyController`)
+   - [x] Credit Accounts (`CreditAccountController`)
 
-2. Add authentication token support (JWT or similar)
-3. Implement request validation
-4. Add rate limiting middleware
-5. Set up API documentation (OpenAPI/Swagger)
+2. [x] Add authentication token support (JWT or similar)
+   - Bearer token authentication implemented in `Middleware::auth()`
+   - Session-based authentication also supported
+3. [x] Implement request validation
+   - Validators implemented for Vehicle, ServiceType, and domain-specific validations
+   - Input validation integrated throughout controllers
+4. [ ] Add rate limiting middleware
+5. [ ] Set up API documentation (OpenAPI/Swagger)
