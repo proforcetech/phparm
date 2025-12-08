@@ -229,6 +229,176 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/forgot-password:
+    post:
+      tags:
+        - Authentication
+      summary: Request password reset
+      description: |
+        Request a password reset email. Always returns success to prevent
+        email enumeration attacks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Request processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: If an account exists, a password reset link has been sent
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/reset-password:
+    post:
+      tags:
+        - Authentication
+      summary: Reset password with token
+      description: Reset user password using a valid reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - password
+              properties:
+                token:
+                  type: string
+                  description: Password reset token from email
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/verify-email:
+    post:
+      tags:
+        - Authentication
+      summary: Verify email address
+      description: Verify user email using a verification token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  description: Email verification token
+      responses:
+        '200':
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/resend-verification:
+    post:
+      tags:
+        - Authentication
+      summary: Resend verification email
+      description: Request a new verification email for the authenticated user
+      security:
+        - bearerAuth: []
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Exchange a refresh token for a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Tokens refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  token_type:
+                    type: string
+                    example: Bearer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
   /api/dashboard:
     get:
       tags:

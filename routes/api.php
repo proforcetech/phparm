@@ -195,6 +195,121 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['user' => $user->toArray()]);
     })->middleware(Middleware::auth());
 
+    // Password reset request (forgot password)
+    $router->post('/api/auth/forgot-password', function (Request $request) use ($authService, $connection, $authConfig) {
+        $email = $request->input('email');
+
+        if (!$email) {
+            return Response::badRequest('Email is required');
+        }
+
+        $token = $authService->requestPasswordReset((string) $email);
+
+        // Send email if token was created (user exists)
+        if ($token !== null) {
+            $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+            $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+                $notificationsConfig,
+                new \App\Support\Notifications\TemplateEngine(),
+                new \App\Support\Notifications\NotificationLogRepository($connection)
+            );
+
+            $appUrl = env('APP_URL', 'http://localhost:8080');
+            $resetUrl = $appUrl . '/reset-password?token=' . urlencode($token->token);
+            $expiryHours = round(($authConfig['passwords']['expire_minutes'] ?? 60) / 60, 1);
+
+            try {
+                $dispatcher->sendMail(
+                    'auth.password_reset',
+                    (string) $email,
+                    ['reset_url' => $resetUrl, 'expiry_hours' => $expiryHours],
+                    'Reset Your Password'
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to send password reset email: ' . $e->getMessage());
+            }
+        }
+
+        // Always return success to prevent email enumeration
+        return Response::json(['message' => 'If an account exists, a password reset link has been sent']);
+    })->middleware(Middleware::throttleStrict(3, 60));
+
+    // Reset password with token
+    $router->post('/api/auth/reset-password', function (Request $request) use ($authService) {
+        $token = $request->input('token');
+        $password = $request->input('password');
+
+        if (!$token || !$password) {
+            return Response::badRequest('Token and password are required');
+        }
+
+        $success = $authService->resetPassword((string) $token, (string) $password);
+
+        if (!$success) {
+            return Response::badRequest('Invalid or expired token');
+        }
+
+        return Response::json(['message' => 'Password reset successfully']);
+    })->middleware(Middleware::throttleStrict(5, 60));
+
+    // Verify email with token
+    $router->post('/api/auth/verify-email', function (Request $request) use ($authService) {
+        $token = $request->input('token');
+
+        if (!$token) {
+            return Response::badRequest('Token is required');
+        }
+
+        $success = $authService->verifyEmail((string) $token);
+
+        if (!$success) {
+            return Response::badRequest('Invalid or expired verification token');
+        }
+
+        return Response::json(['message' => 'Email verified successfully']);
+    })->middleware(Middleware::throttleStrict(10, 60));
+
+    // Resend verification email
+    $router->post('/api/auth/resend-verification', function (Request $request) use ($authService, $connection, $authConfig) {
+        $user = $request->getAttribute('user');
+
+        if (!$user || !($user instanceof \App\Models\User)) {
+            return Response::unauthorized('Authentication required');
+        }
+
+        if ($user->email_verified) {
+            return Response::json(['message' => 'Email is already verified']);
+        }
+
+        $token = $authService->issueVerificationToken($user->id);
+
+        // Send verification email
+        $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+        $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+            $notificationsConfig,
+            new \App\Support\Notifications\TemplateEngine(),
+            new \App\Support\Notifications\NotificationLogRepository($connection)
+        );
+
+        $appUrl = env('APP_URL', 'http://localhost:8080');
+        $verificationUrl = $appUrl . '/verify-email?token=' . urlencode($token->token);
+        $expiryHours = $authConfig['verification']['token_ttl_hours'] ?? 48;
+
+        try {
+            $dispatcher->sendMail(
+                'auth.email_verification',
+                $user->email,
+                ['name' => $user->name, 'verification_url' => $verificationUrl, 'expiry_hours' => $expiryHours],
+                'Verify Your Email Address'
+            );
+        } catch (\Throwable $e) {
+            error_log('Failed to send verification email: ' . $e->getMessage());
+            return Response::serverError('Failed to send verification email');
+        }
+
+        return Response::json(['message' => 'Verification email has been sent']);
+    })->middleware([Middleware::auth(), Middleware::throttleStrict(3, 60)]);
+
     $router->get('/api/customer-portal/bootstrap', function (Request $request) {
         $user = $request->getAttribute('user');
 
