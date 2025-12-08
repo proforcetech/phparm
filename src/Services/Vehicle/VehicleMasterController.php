@@ -49,6 +49,17 @@ class VehicleMasterController
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function show(User $user, int $id): ?array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->repository->find($id)?->toArray();
+    }
+
+    /**
      * @return array<int, int>
      */
     public function years(User $user): array

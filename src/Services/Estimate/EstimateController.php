@@ -5,6 +5,7 @@ namespace App\Services\Estimate;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
+use InvalidArgumentException;
 
 class EstimateController
 {
@@ -24,11 +25,30 @@ class EstimateController
     public function index(User $user, array $params = []): array
     {
         $this->assertViewAccess($user);
-        $filters = $this->extractFilters($params);
+        $filters = $this->extractFilters($params, $user);
         $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 50;
         $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
 
         return array_map(static fn ($estimate) => $estimate->toArray(), $this->repository->list($filters, $limit, $offset));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function show(User $user, int $estimateId): array
+    {
+        $this->assertViewAccess($user);
+
+        $estimate = $this->repository->find($estimateId);
+        if ($estimate === null) {
+            throw new InvalidArgumentException('Estimate not found');
+        }
+
+        if ($user->role === 'customer' && $user->customer_id !== null && $estimate->customer_id !== $user->customer_id) {
+            throw new UnauthorizedException('Cannot view another customer\'s estimate.');
+        }
+
+        return $estimate->toArray();
     }
 
     public function approve(User $user, int $estimateId, ?string $reason = null): ?array
@@ -79,13 +99,17 @@ class EstimateController
      * @param array<string, mixed> $params
      * @return array<string, mixed>
      */
-    private function extractFilters(array $params): array
+    private function extractFilters(array $params, ?User $user = null): array
     {
         $filters = [];
         foreach (['status', 'customer_id', 'vehicle_id', 'service_type_id', 'term', 'created_from', 'created_to'] as $key) {
             if (isset($params[$key]) && $params[$key] !== '') {
                 $filters[$key] = $params[$key];
             }
+        }
+
+        if ($user !== null && $user->role === 'customer' && $user->customer_id !== null) {
+            $filters['customer_id'] = $user->customer_id;
         }
 
         return $filters;

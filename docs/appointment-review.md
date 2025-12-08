@@ -29,5 +29,5 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 ### Tasks
 1. [x] **Enrich appointment schema and history**
    - Add created/updated timestamps, notes, and nullable customer/vehicle references where applicable to appointments, with audit logging of status transitions.
-2. **Emit lifecycle events/webhooks**
+2. [x] **Emit lifecycle events/webhooks**
    - Publish appointment booked/updated/canceled events (or webhooks) carrying schedule and customer context to support external calendar workflows similar to the plugin’s Make integration.

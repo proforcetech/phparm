@@ -36,7 +36,10 @@ class FinancialController
         }
 
         $entries = $this->entries->list($filters);
-        return array_map(static fn ($e) => $e->toArray(), $entries);
+
+        return [
+            'data' => array_map(static fn ($e) => $e->toArray(), $entries),
+        ];
     }
 
     /**
@@ -106,12 +109,13 @@ class FinancialController
 
         $startDate = $params['start_date'] ?? null;
         $endDate = $params['end_date'] ?? null;
+        $category = $params['category'] ?? null;
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');
         }
 
-        return $this->reports->generate($startDate, $endDate);
+        return $this->reports->generate($startDate, $endDate, $category);
     }
 
     /**
@@ -129,17 +133,39 @@ class FinancialController
         $startDate = $params['start_date'] ?? null;
         $endDate = $params['end_date'] ?? null;
         $format = $params['format'] ?? 'csv';
+        $category = $params['category'] ?? null;
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');
         }
 
-        $data = $this->reports->export($startDate, $endDate, $format);
+        $data = $this->reports->export($startDate, $endDate, $format, $category);
 
         return [
             'format' => $format,
             'data' => $data,
             'filename' => "financial-report-{$startDate}-{$endDate}.{$format}",
+        ];
+    }
+
+    /**
+     * Export financial entries
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function exportEntries(User $user, array $filters): array
+    {
+        if (!$this->gate->can($user, 'financials.view')) {
+            throw new UnauthorizedException('Cannot export financial entries');
+        }
+
+        $data = $this->entries->export($filters);
+
+        return [
+            'format' => 'csv',
+            'filename' => 'financial-entries.csv',
+            'data' => $data,
         ];
     }
 }

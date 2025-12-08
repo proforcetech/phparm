@@ -48,4 +48,14 @@ export default {
     })
     return response.data
   },
+
+  /**
+   * Get low-stock inventory tile data for dashboard widgets
+   */
+  async getInventoryLowStockTile(limit = 5) {
+    const response = await api.get('/dashboard/inventory/low-stock', {
+      params: { limit },
+    })
+    return response.data
+  },
 }

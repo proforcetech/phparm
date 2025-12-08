@@ -7,7 +7,7 @@ Compared the WordPress plugin implementation under `arm-main` with the standalon
 - The standalone seed data only provides a shop name, currency, a single tax rate, and a sender email—omitting terms content, labor pricing, and storefront contact/branding details needed by estimates, invoices, and customer views.【F:src/Database/Seeders/DatabaseSeeder.php†L50-L72】
 
 ### Tasks
-1. **Add missing shop/terms settings**
+1. [x] **Add missing shop/terms settings**
    - Introduce settings for terms/conditions (HTML), notification email, labor rate, and shop contact details (address, phone, email, logo) in the settings repository and migrations.
    - Expose these settings through the API and seed sensible defaults so estimates/invoices can render correct business metadata.
 
@@ -16,7 +16,7 @@ Compared the WordPress plugin implementation under `arm-main` with the standalon
 - The standalone system lacks provider-specific credential fields or UI hooks; frontend architecture still lists “Settings pages” as undone, leaving no way to configure payment gateways or catalog integrations.【F:docs/FRONTEND_ARCHITECTURE.md†L328-L332】
 
 ### Tasks
-2. **Implement payment/integration settings screens**
+2. [x] **Implement payment/integration settings screens**
    - Add settings definitions and secure storage for Stripe/PayPal/Zoho/PartsTech keys, webhook secrets, and redirect URLs, with masked audit logging for sensitive fields.
    - Provide API endpoints and frontend forms to edit these credentials and validate values (e.g., known providers, URL formats) before saving.
 
@@ -25,6 +25,6 @@ Compared the WordPress plugin implementation under `arm-main` with the standalon
 - The standalone settings seeding and services do not capture slot length, buffer times, or closed dates, leaving appointment scheduling without configurable working calendars.
 
 ### Tasks
-3. **Add scheduling settings and storage**
+3. [x] **Add scheduling settings and storage**
    - Create schema/storage for slot duration, buffers, working hours, and holidays, and expose CRUD endpoints plus UI to manage them.
    - Ensure appointment booking, availability checks, and reminders consume these settings when calculating open times.

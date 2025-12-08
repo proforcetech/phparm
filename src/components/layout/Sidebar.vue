@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -54,8 +54,10 @@ import {
   UserGroupIcon,
   TruckIcon,
   CubeIcon,
+  RectangleStackIcon,
   ChartBarIcon,
   Cog6ToothIcon,
+  ClockIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -69,16 +71,45 @@ const route = useRoute()
 const authStore = useAuthStore()
 const isOpen = ref(true)
 
+function handleResize() {
+  if (typeof window === 'undefined') return
+  if (window.innerWidth >= 1024) {
+    isOpen.value = true
+  }
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    isOpen.value = false
+  }
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
 // Admin menu items
 const adminMenuItems = [
   { path: '/dashboard', label: 'Dashboard', icon: HomeIcon },
   { path: '/invoices', label: 'Invoices', icon: DocumentTextIcon },
   { path: '/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/customers', label: 'Customers', icon: UserGroupIcon },
   { path: '/vehicles', label: 'Vehicles', icon: TruckIcon },
+  { path: '/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
+  { path: '/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
   { path: '/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
   { path: '/reports', label: 'Reports', icon: ChartBarIcon },
   { path: '/settings', label: 'Settings', icon: Cog6ToothIcon },
+]
+
+const technicianMenuItems = [
+  { path: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/my-time', label: 'My Time', icon: ClockIcon },
+  { path: '/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/appointments', label: 'Appointments', icon: CalendarIcon },
 ]
 
 // Customer menu items
@@ -91,12 +122,23 @@ const customerMenuItems = [
 ]
 
 const menuItems = computed(() => {
-  return props.type === 'customer' ? customerMenuItems : adminMenuItems
+  if (props.type === 'customer') {
+    return customerMenuItems
+  }
+
+  if (authStore.user?.role === 'technician') {
+    return technicianMenuItems
+  }
+
+  return adminMenuItems
 })
 
 function isActive(path) {
   if (path === '/dashboard' || path === '/portal') {
     return route.path === path
+  }
+  if (path === '/inventory') {
+    return route.path === '/inventory'
   }
   return route.path.startsWith(path)
 }

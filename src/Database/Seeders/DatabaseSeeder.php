@@ -3,6 +3,7 @@
 namespace App\Database\Seeders;
 
 use App\Database\Connection;
+use App\Support\SettingsRepository;
 use DateTimeImmutable;
 use PDO;
 
@@ -49,26 +50,10 @@ class DatabaseSeeder
 
     private function seedSettings(): void
     {
-        $pdo = $this->connection->pdo();
-        $settings = [
-            'shop.name' => 'Demo Auto Shop',
-            'shop.currency' => 'USD',
-            'pricing.tax_rate' => '0.07',
-            'notifications.from_email' => 'noreply@example.com',
-        ];
-
-        $stmt = $pdo->prepare('INSERT INTO settings (`key`, `value`, created_at, updated_at) '
-            . 'VALUES (:key, :value, :now, :now) '
-            . 'ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = VALUES(updated_at)');
-
-        $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
-        foreach ($settings as $key => $value) {
-            $stmt->execute([
-                'key' => $key,
-                'value' => $value,
-                'now' => $now,
-            ]);
-        }
+        $config = require __DIR__ . '/../../../config/settings.php';
+        $defaults = $config['defaults'] ?? [];
+        $repository = new SettingsRepository($this->connection);
+        $repository->seedDefaults($defaults);
     }
 
     private function seedDemoCustomers(): void

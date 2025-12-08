@@ -7,10 +7,10 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone app defines API routes and backend services for time tracking, but there is no Vue view or customer/technician route that renders an equivalent dashboard or start/stop controls for technicians.【F:routes/api.php†L841-L890】
 
 ### Tasks
-1. **Build technician time portal in the frontend**
+1. [x] **Build technician time portal in the frontend**
    - Add a Vue page/component that surfaces assigned jobs, current timer state, summary totals, and start/stop actions mirroring the plugin UI.
    - Integrate with the existing `/api/time-tracking` endpoints using the technician's session/auth context.
-2. **Expose portal entry point**
+2. [x] **Expose portal entry point**
    - Add a navigation item/route for technicians (and shortcode-equivalent embedding if needed) so they can reach the time portal without admin access.
 
 ## Missing adjustment audit trail
@@ -18,10 +18,10 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone schema only defines a `time_entries` table with basic start/end coordinates and no adjustment history or admin actor linkage, so edits are not auditable.【F:database/migrations/001_initial_schema.sql†L264-L277】
 
 ### Tasks
-1. **Add time adjustment table and model**
+1. [x] **Add time adjustment table and model**
    - Create a migration/model/service to store adjustment events (prior values, new values, actor, reason) linked to `time_entries`.
    - Emit audit events when admins update or override entries.
-2. **Expose adjustment history in APIs**
+2. [x] **Expose adjustment history in APIs**
    - Return adjustment records from admin time-tracking detail responses and allow optional reason input when updating entries.
 
 ## Missing rich location capture and normalization
@@ -29,7 +29,7 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone implementation records only start/end latitude/longitude columns with no accuracy/timestamp metadata, losing context for compliance or verification uses.【F:database/migrations/001_initial_schema.sql†L264-L277】【F:src/Services/TimeTracking/TimeTrackingService.php†L20-L83】
 
 ### Tasks
-1. **Expand schema for location metadata**
+1. [x] **Expand schema for location metadata**
    - Extend `time_entries` to store normalized geolocation details for start and stop events (accuracy, heading, speed, recorded_at, source/error notes) similar to the plugin payload.
-2. **Normalize and persist incoming location data**
+2. [x] **Normalize and persist incoming location data**
    - Update start/stop endpoints to accept structured location objects, normalize them, and store both raw coordinates and metadata; ensure responses expose the recorded location data for frontend display.

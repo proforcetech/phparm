@@ -32,5 +32,6 @@ return [
         'invoice.due' => 'Invoice {{invoice_number}} is due on {{due_date}}. Pay at {{invoice_url}}.',
         'reminder.campaign' => '{{body}}',
         'reminder.campaign.sms' => '{{body}}',
+        'inventory.low_stock_alert' => "{{total}} items are low on stock:\n{{#items}}{{name}} ({{sku}}) - {{stock_quantity}} remaining\n{{/items}}",
     ],
 ];

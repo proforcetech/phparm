@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\Appointment;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
+use App\Support\Webhooks\WebhookDispatcher;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use PDO;
@@ -14,10 +15,15 @@ class AppointmentService
 {
     private Connection $connection;
     private ?AuditLogger $audit;
-    public function __construct(Connection $connection, ?AuditLogger $audit = null)
+    private ?WebhookDispatcher $webhooks;
+    /**
+     * @param array<string, mixed> $config
+     */
+    public function __construct(Connection $connection, ?AuditLogger $audit = null, ?WebhookDispatcher $webhooks = null)
     {
         $this->connection = $connection;
         $this->audit = $audit;
+        $this->webhooks = $webhooks;
     }
 
     /**
@@ -53,6 +59,7 @@ class AppointmentService
         $appointmentId = (int) $this->connection->pdo()->lastInsertId();
         $appointment = $this->fetch($appointmentId);
         $this->log('appointment.created', $appointmentId, $actorId, $payload);
+        $this->notify('appointment.created', $appointment);
 
         return $appointment ?? new Appointment(['id' => $appointmentId]);
     }
@@ -81,8 +88,14 @@ class AppointmentService
 
         $updated = $this->fetch($appointmentId);
         $this->log('appointment.updated', $appointmentId, $actorId, ['before' => $existing->toArray(), 'after' => $updated?->toArray()]);
+        $this->notify('appointment.updated', $updated, ['before' => $existing->toArray(), 'actor_id' => $actorId]);
 
         return $updated;
+    }
+
+    public function findById(int $appointmentId): ?Appointment
+    {
+        return $this->fetch($appointmentId);
     }
 
     /**
@@ -142,6 +155,8 @@ class AppointmentService
         $updated = $stmt->rowCount() > 0;
         if ($updated) {
             $this->log('appointment.status_changed', $appointmentId, $actorId, ['status' => $status]);
+            $current = $this->fetch($appointmentId);
+            $this->notify('appointment.status_changed', $current, ['status' => $status, 'actor_id' => $actorId]);
         }
 
         return $updated;
@@ -152,6 +167,21 @@ class AppointmentService
         $updated = $this->transitionStatus($appointmentId, $status, $actorId);
 
         return $updated ? $this->fetch($appointmentId) : null;
+    }
+
+    public function delete(int $appointmentId, int $actorId): bool
+    {
+        $appointment = $this->fetch($appointmentId);
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM appointments WHERE id = :id');
+        $stmt->execute(['id' => $appointmentId]);
+
+        $deleted = $stmt->rowCount() > 0;
+        if ($deleted) {
+            $this->log('appointment.deleted', $appointmentId, $actorId, ['appointment' => $appointment?->toArray()]);
+            $this->notify('appointment.deleted', $appointment, ['actor_id' => $actorId]);
+        }
+
+        return $deleted;
     }
 
     private function fetch(int $appointmentId): ?Appointment
@@ -170,5 +200,63 @@ class AppointmentService
         }
 
         $this->audit->log(new AuditEntry($action, 'appointment', $entityId, $actorId, $payload));
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function notify(string $event, ?Appointment $appointment, array $context = []): void
+    {
+        if ($appointment === null || $this->webhooks === null) {
+            return;
+        }
+
+        $payload = array_merge([
+            'appointment' => [
+                'id' => $appointment->id,
+                'status' => $appointment->status,
+                'start_time' => $appointment->start_time,
+                'end_time' => $appointment->end_time,
+                'estimate_id' => $appointment->estimate_id,
+                'technician_id' => $appointment->technician_id,
+                'notes' => $appointment->notes,
+            ],
+            'customer' => $this->fetchCustomer($appointment->customer_id),
+            'vehicle' => $this->fetchVehicle($appointment->vehicle_id),
+        ], $context);
+
+        $this->webhooks->dispatch($event, $payload);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchCustomer(?int $customerId): ?array
+    {
+        if ($customerId === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT id, first_name, last_name, email, phone, external_reference FROM customers WHERE id = :id');
+        $stmt->execute(['id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchVehicle(?int $vehicleId): ?array
+    {
+        if ($vehicleId === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT id, customer_id, year, make, model, engine, transmission, drive, trim, vin, license_plate FROM customer_vehicles WHERE id = :id');
+        $stmt->execute(['id' => $vehicleId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
     }
 }

@@ -7,11 +7,11 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone app only provides a backend `FinancialEntryService` to record generic entries without any admin UI, CSV export endpoints, or page-level filters; it also lacks delete/edit flows beyond receipt attachment.【F:src/Services/Financial/FinancialEntryService.php†L23-L69】
 
 ### Tasks
-1. **Implement admin purchases/expenses pages**
+1. [x] **Implement admin purchases/expenses pages**
    - Add UI surfaces for listing, filtering by date/category, exporting CSV, and CRUD actions that mirror the plugin admin pages.
-2. **Add API endpoints for CSV export and filtering**
+2. [x] **Add API endpoints for CSV export and filtering**
    - Provide REST routes to export filtered purchases/expenses CSVs and to list entries with date/category filters for the new admin UI.
-3. **Support delete/edit flows with audit logging**
+3. [x] **Support delete/edit flows with audit logging**
    - Extend the financial entry APIs to handle updates and deletions with audit trails so UI actions map to backend capabilities.
 
 ## Missing domain fields and validation parity
@@ -19,9 +19,9 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone `record` method only requires `amount` and `date`, storing everything else as optional metadata and not distinguishing vendor/category/reference/purchase_order fields, reducing reporting fidelity.【F:src/Services/Financial/FinancialEntryService.php†L23-L69】
 
 ### Tasks
-1. **Expand schema and payload validation**
+1. [x] **Expand schema and payload validation**
    - Add first-class columns/fields for vendor, category, reference, purchase order, and description with validation rules matching the plugin forms.
-2. **Migrate existing entries**
+2. [x] **Migrate existing entries**
    - Backfill or migrate current `financial_entries` records so newly required fields are populated where possible (e.g., from metadata or receipts).
 
 ## Financial reporting parity gaps
@@ -29,9 +29,9 @@ Reviewed the WordPress plugin implementation under `arm-main` against the standa
 - The standalone reporting service can compute summaries and monthly breakdowns over a date range but lacks category filters, UI exposure, or CSV export endpoints for the same data.【F:src/Services/Financial/FinancialReportService.php†L20-L62】
 
 ### Tasks
-1. **Expose financial reports UI and API**
+1. [x] **Expose financial reports UI and API**
    - Build a reporting endpoint and admin page that surfaces total and monthly breakdowns for income/expenses/purchases with date filters.
-2. **Add CSV export for reports**
+2. [x] **Add CSV export for reports**
    - Implement CSV export for the summarized monthly data to match plugin capabilities.
-3. **Extend filtering options**
+3. [x] **Extend filtering options**
    - Include category (and potentially vendor) filters in reporting queries to align with plugin expectations.

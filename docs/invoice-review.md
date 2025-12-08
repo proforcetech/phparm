@@ -6,7 +6,7 @@ Compared the WordPress plugin under `arm-main` to the standalone system to ident
 - The standalone `InvoiceController` calls `list`, `findById`, and `updateStatus` on the invoice service, but these methods are not implemented in `InvoiceService`, leaving list/detail/status routes non-functional.【F:src/Services/Invoice/InvoiceController.php†L35-L134】【F:src/Services/Invoice/InvoiceService.php†L26-L318】
 
 ### Tasks
-1. **Implement the controller’s required invoice service methods**
+1. [x] **Implement the controller’s required invoice service methods**
    - Add `list`, `findById`, and `updateStatus` implementations in `InvoiceService` that honor filters, return models, and reuse status validation/logging.
    - Ensure the controller calls resolve to working queries so invoice listing, retrieval, and status updates operate end-to-end.
 
@@ -14,7 +14,7 @@ Compared the WordPress plugin under `arm-main` to the standalone system to ident
 - The plugin only converts APPROVED estimates and automatically copies call-out fees and mileage lines into invoices, while the standalone service converts any estimate ID and only pulls explicitly passed job IDs without the extra charges.【F:arm-main/includes/invoices/Controller.php†L88-L183】【F:src/Services/Invoice/InvoiceService.php†L26-L182】
 
 ### Tasks
-2. **Enforce approved-only conversions and mirror plugin line item extras**
+2. [x] **Enforce approved-only conversions and mirror plugin line item extras**
    - Require the source estimate to be approved before conversion and surface a clear error otherwise.
    - Automatically append call-out fee and mileage charges from the source estimate to the new invoice, matching the plugin’s behavior.
 

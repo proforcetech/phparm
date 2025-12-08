@@ -92,10 +92,12 @@ CREATE TABLE inventory_items (
     category VARCHAR(120) NULL,
     stock_quantity INT DEFAULT 0,
     low_stock_threshold INT DEFAULT 0,
+    reorder_quantity INT DEFAULT 0,
     cost DECIMAL(12,2) DEFAULT 0,
     sale_price DECIMAL(12,2) DEFAULT 0,
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
+    vendor VARCHAR(160) NULL,
     notes TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -246,6 +248,8 @@ CREATE TABLE bundles (
     description TEXT NULL,
     service_type_id INT NULL,
     default_job_title VARCHAR(160) NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
     CONSTRAINT fk_bundle_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -257,6 +261,7 @@ CREATE TABLE bundle_items (
     quantity DECIMAL(10,2) NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
     taxable TINYINT(1) DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
     INDEX idx_bundle_item_bundle (bundle_id),
     CONSTRAINT fk_bundle_item_bundle FOREIGN KEY (bundle_id) REFERENCES bundles (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -270,10 +275,47 @@ CREATE TABLE time_entries (
     duration_minutes DECIMAL(10,2) NULL,
     start_latitude DECIMAL(10,6) NULL,
     start_longitude DECIMAL(10,6) NULL,
+    start_accuracy DECIMAL(10,2) NULL,
+    start_altitude DECIMAL(10,2) NULL,
+    start_speed DECIMAL(10,2) NULL,
+    start_heading DECIMAL(10,2) NULL,
+    start_recorded_at DATETIME NULL,
+    start_source VARCHAR(60) NULL,
+    start_error TEXT NULL,
     end_latitude DECIMAL(10,6) NULL,
     end_longitude DECIMAL(10,6) NULL,
+    end_accuracy DECIMAL(10,2) NULL,
+    end_altitude DECIMAL(10,2) NULL,
+    end_speed DECIMAL(10,2) NULL,
+    end_heading DECIMAL(10,2) NULL,
+    end_recorded_at DATETIME NULL,
+    end_source VARCHAR(60) NULL,
+    end_error TEXT NULL,
     manual_override TINYINT(1) DEFAULT 0,
-    notes TEXT NULL
+    notes TEXT NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE time_adjustments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    time_entry_id INT NOT NULL,
+    actor_id INT NOT NULL,
+    reason TEXT NOT NULL,
+    previous_started_at DATETIME NULL,
+    previous_ended_at DATETIME NULL,
+    previous_duration_minutes DECIMAL(10,2) NULL,
+    previous_estimate_job_id INT NULL,
+    previous_notes TEXT NULL,
+    previous_manual_override TINYINT(1) NULL,
+    new_started_at DATETIME NULL,
+    new_ended_at DATETIME NULL,
+    new_duration_minutes DECIMAL(10,2) NULL,
+    new_estimate_job_id INT NULL,
+    new_notes TEXT NULL,
+    new_manual_override TINYINT(1) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_time_adjustment_entry FOREIGN KEY (time_entry_id) REFERENCES time_entries (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE credit_accounts (
@@ -293,6 +335,8 @@ CREATE TABLE financial_entries (
     id INT AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(20) NOT NULL,
     category VARCHAR(120) NOT NULL,
+    reference VARCHAR(120) NOT NULL,
+    purchase_order VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     entry_date DATE NOT NULL,
     vendor VARCHAR(160) NULL,
