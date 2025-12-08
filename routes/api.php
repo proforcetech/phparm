@@ -5,6 +5,7 @@ use App\Support\Http\Request;
 use App\Support\Http\Response;
 use App\Support\Http\Middleware;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
@@ -30,6 +31,15 @@ return function (Router $router, array $config, $connection) {
             (int) ($authConfig['verification']['token_ttl_hours'] ?? 48)
         ),
         $authConfig
+    );
+
+    // Initialize JWT service for token generation
+    $jwtConfig = $authConfig['jwt'] ?? [];
+    $jwtService = new JwtService(
+        $connection,
+        $jwtConfig['secret'] ?? 'default-secret-key-change-in-production',
+        $jwtConfig['ttl'] ?? 3600,
+        $jwtConfig['refresh_ttl'] ?? 604800
     );
 
     // Apply global rate limiting (60 requests per minute per IP+path)
@@ -75,7 +85,7 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Authentication routes (public) - with strict rate limiting (5 attempts per minute)
-    $router->post('/api/auth/login', function (Request $request) use ($config, $connection) {
+    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService) {
         $email = $request->input('email');
         $password = $request->input('password');
 
@@ -89,25 +99,28 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid credentials');
         }
 
-        // Start session and capture session identifier so the SPA can treat
-        // the login as authenticated. The frontend currently expects a
-        // `token` field, so we return the PHP session ID to keep the
-        // existing client-side logic working.
+        // Start session for backwards compatibility
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
-        $sessionId = session_id();
+
+        // Generate JWT tokens
+        $accessToken = $jwtService->generateToken($user);
+        $refreshToken = $jwtService->generateRefreshToken($user);
 
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $sessionId,
+            'token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $jwtService->getTokenTtl(),
+            'token_type' => 'Bearer',
             'message' => 'Login successful',
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-login', function (Request $request) use ($authService) {
+    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService) {
         $email = $request->input('email');
         $password = $request->input('password');
 
@@ -121,6 +134,7 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid credentials');
         }
 
+        // Start session for backwards compatibility
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
@@ -128,16 +142,39 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
-        $sessionId = session_id();
+
+        // Generate JWT tokens
+        $accessToken = $jwtService->generateToken($user);
+        $refreshToken = $jwtService->generateRefreshToken($user);
 
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $sessionId,
+            'token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $jwtService->getTokenTtl(),
+            'token_type' => 'Bearer',
             'nonce' => $_SESSION['portal_nonce'],
             'api_base' => '/api',
             'message' => 'Login successful',
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
+
+    // Token refresh endpoint
+    $router->post('/api/auth/refresh', function (Request $request) use ($jwtService) {
+        $refreshToken = $request->input('refresh_token');
+
+        if (!$refreshToken) {
+            return Response::badRequest('Refresh token required');
+        }
+
+        $result = $jwtService->refreshTokens((string) $refreshToken);
+
+        if ($result === null) {
+            return Response::unauthorized('Invalid or expired refresh token');
+        }
+
+        return Response::json($result);
+    })->middleware(Middleware::throttleStrict(10, 60));
 
     $router->post('/api/auth/logout', function (Request $request) {
         if (session_status() === PHP_SESSION_NONE) {

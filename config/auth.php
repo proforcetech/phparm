@@ -11,6 +11,15 @@ return [
         'require_customer_verification' => true,
         'token_ttl_hours' => 48,
     ],
+    'jwt' => [
+        // Secret key for signing JWT tokens (min 32 characters)
+        // In production, use a strong random key from environment variable
+        'secret' => env('JWT_SECRET', 'your-256-bit-secret-key-change-in-production'),
+        // Access token lifetime in seconds (default: 1 hour)
+        'ttl' => (int) env('JWT_TTL', 3600),
+        // Refresh token lifetime in seconds (default: 7 days)
+        'refresh_ttl' => (int) env('JWT_REFRESH_TTL', 604800),
+    ],
     'roles' => [
         'admin' => [
             'label' => 'Admin',

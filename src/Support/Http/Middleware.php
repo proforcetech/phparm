@@ -2,13 +2,16 @@
 
 namespace App\Support\Http;
 
+use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\JwtService;
 use App\Support\Auth\UnauthorizedException;
 
 class Middleware
 {
     private static ?RateLimiter $rateLimiter = null;
+    private static ?JwtService $jwtService = null;
 
     /**
      * Get or create the default rate limiter instance.
@@ -28,6 +31,38 @@ class Middleware
     public static function setRateLimiter(RateLimiter $limiter): void
     {
         self::$rateLimiter = $limiter;
+    }
+
+    /**
+     * Get or create the JWT service instance.
+     */
+    private static function getJwtService(): JwtService
+    {
+        if (self::$jwtService === null) {
+            $configPath = dirname(__DIR__, 3) . '/config/auth.php';
+            $config = file_exists($configPath) ? require $configPath : [];
+            $jwtConfig = $config['jwt'] ?? [];
+
+            $secret = $jwtConfig['secret'] ?? 'default-secret-key-change-in-production';
+            $ttl = $jwtConfig['ttl'] ?? 3600;
+            $refreshTtl = $jwtConfig['refresh_ttl'] ?? 604800;
+
+            // Create database connection
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            self::$jwtService = new JwtService($connection, $secret, $ttl, $refreshTtl);
+        }
+        return self::$jwtService;
+    }
+
+    /**
+     * Set a custom JWT service instance (for testing or custom configuration).
+     */
+    public static function setJwtService(JwtService $service): void
+    {
+        self::$jwtService = $service;
     }
 
     /**
@@ -280,13 +315,20 @@ class Middleware
     }
 
     /**
-     * Simple token validation (for demonstration)
-     * In production, use JWT or database-backed tokens
+     * Validate a JWT bearer token and return the user data.
+     *
+     * @param string $token The JWT token to validate
+     * @return User|null The authenticated user or null if invalid
      */
-    private static function validateToken(string $token): ?array
+    private static function validateToken(string $token): ?User
     {
-        // This is a placeholder - implement proper token validation
-        // For now, just return null to indicate invalid token
-        return null;
+        try {
+            $jwtService = self::getJwtService();
+            return $jwtService->validateToken($token);
+        } catch (\Throwable $e) {
+            // Log validation errors but don't expose details
+            error_log('JWT validation error: ' . $e->getMessage());
+            return null;
+        }
     }
 }
