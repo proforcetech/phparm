@@ -105,6 +105,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/appointments/calendar',
+    name: 'AppointmentCalendar',
+    component: () => import('@/views/appointments/AppointmentCalendar.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/time-logs',
     name: 'TimeLogs',
     component: () => import('@/views/time/TimeLogs.vue'),
