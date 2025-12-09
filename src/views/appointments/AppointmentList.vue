@@ -133,7 +133,7 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import Table from '@/components/ui/Table.vue'
-import { listAppointments, updateAppointmentStatus } from '@/services/appointment.service'
+import appointmentService from '@/services/appointment.service'
 
 const loading = ref(false)
 const appointments = ref([])
@@ -183,14 +183,15 @@ const loadAppointments = async () => {
   if (filters.technician_id) params.technician_id = filters.technician_id
 
   try {
-    appointments.value = await listAppointments(params)
+    const response = await appointmentService.getAppointments(params)
+    appointments.value = response.data?.data || []
   } finally {
     loading.value = false
   }
 }
 
 const changeStatus = async (id, status) => {
-  await updateAppointmentStatus(id, status)
+  await appointmentService.updateAppointmentStatus(id, status)
   await loadAppointments()
 }
 

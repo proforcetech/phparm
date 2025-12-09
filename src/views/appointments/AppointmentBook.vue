@@ -97,7 +97,7 @@ import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Select from '@/components/ui/Select.vue'
 import Textarea from '@/components/ui/Textarea.vue'
-import { createAppointment, fetchAvailability, getAppointment } from '@/services/appointment.service'
+import appointmentService from '@/services/appointment.service'
 
 const route = useRoute()
 const loading = ref(false)
@@ -133,7 +133,8 @@ const loadAvailability = async () => {
     if (form.technician_id) {
       params.technician_id = form.technician_id
     }
-    const data = await fetchAvailability(params)
+    const response = await appointmentService.fetchAvailability(params)
+    const data = response.data
     availability.slots = data.slots || []
     availability.closed = Boolean(data.closed)
     availability.reason = data.reason || ''
@@ -154,7 +155,7 @@ const bookAppointment = async () => {
   if (!selectedSlot.value) return
   saving.value = true
   try {
-    await createAppointment({
+    await appointmentService.createAppointment({
       start_time: selectedSlot.value.start,
       end_time: selectedSlot.value.end,
       technician_id: form.technician_id || null,
@@ -173,7 +174,8 @@ const bookAppointment = async () => {
 const preloadFromClone = async () => {
   const cloneId = route.query.clone
   if (!cloneId) return
-  const existing = await getAppointment(cloneId)
+  const response = await appointmentService.getAppointment(cloneId)
+  const existing = response.data
   form.date = existing.start_time.substring(0, 10)
   form.technician_id = existing.technician_id || ''
   form.customer_id = existing.customer_id || ''
