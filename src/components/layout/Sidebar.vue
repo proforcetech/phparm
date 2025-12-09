@@ -93,6 +93,7 @@ onBeforeUnmount(() => {
 const adminMenuItems = [
   { path: '/dashboard', label: 'Dashboard', icon: HomeIcon },
   { path: '/invoices', label: 'Invoices', icon: DocumentTextIcon },
+  { path: '/estimates', label: 'Estimates', icon: DocumentTextIcon },
   { path: '/appointments', label: 'Appointments', icon: CalendarIcon },
   { path: '/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/customers', label: 'Customers', icon: UserGroupIcon },
