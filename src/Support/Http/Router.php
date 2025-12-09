@@ -20,6 +20,11 @@ class Router
     private array $globalMiddleware = [];
 
     /**
+     * @var array<callable>
+     */
+    private array $groupMiddleware = [];
+
+    /**
      * @var array<string, Route>
      */
     private array $namedRoutes = [];
@@ -70,6 +75,12 @@ class Router
     private function addRoute(string $method, string $pattern, callable $handler): Route
     {
         $route = new Route($method, $pattern, $handler);
+
+        // Apply active group middleware to the new route
+        foreach ($this->groupMiddleware as $middleware) {
+            $route->middleware($middleware);
+        }
+
         $this->routes[] = $route;
         return $route;
     }
@@ -88,12 +99,16 @@ class Router
      */
     public function group(array $middleware, callable $callback): void
     {
-        $previousMiddleware = $this->globalMiddleware;
-        $this->globalMiddleware = array_merge($this->globalMiddleware, $middleware);
+        // Save current group middleware state to handle nesting
+        $previousGroupMiddleware = $this->groupMiddleware;
+        
+        // Merge new middleware into the group stack
+        $this->groupMiddleware = array_merge($this->groupMiddleware, $middleware);
 
         $callback($this);
 
-        $this->globalMiddleware = $previousMiddleware;
+        // Restore previous state
+        $this->groupMiddleware = $previousGroupMiddleware;
     }
 
     public function dispatch(Request $request): Response
@@ -111,6 +126,7 @@ class Router
             }
 
             // Build middleware stack (global + route-specific)
+            // Note: Route-specific now includes the group middleware attached in addRoute
             $middleware = array_merge($this->globalMiddleware, $route->getMiddleware());
 
             // Execute middleware chain
