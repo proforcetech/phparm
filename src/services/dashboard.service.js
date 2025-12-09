@@ -30,22 +30,18 @@ export default {
   },
 
   /**
-   * Get revenue chart data
+   * Get monthly trends chart data (revenue/estimates)
    */
-  async getRevenueChart(period = '30days') {
-    const response = await api.get('/dashboard/revenue-chart', {
-      params: { period }
-    })
+  async getMonthlyTrendsChart(params = {}) {
+    const response = await api.get('/dashboard/charts', { params })
     return response.data
   },
 
   /**
-   * Get appointment chart data
+   * Get service type breakdown chart data
    */
-  async getAppointmentChart(period = '30days') {
-    const response = await api.get('/dashboard/appointment-chart', {
-      params: { period }
-    })
+  async getServiceTypeChart(params = {}) {
+    const response = await api.get('/dashboard/charts/service-types', { params })
     return response.data
   },
 
