@@ -57,6 +57,30 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/estimates',
+    name: 'EstimateList',
+    component: () => import('@/views/estimates/EstimateList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/estimates/create',
+    name: 'EstimateCreate',
+    component: () => import('@/views/estimates/EstimateCreate.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/estimates/:id',
+    name: 'EstimateDetail',
+    component: () => import('@/views/estimates/EstimateDetail.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/estimates/:id/edit',
+    name: 'EstimateEdit',
+    component: () => import('@/views/estimates/EstimateCreate.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/bundles',
     name: 'BundleList',
     component: () => import('@/views/bundles/BundleList.vue'),
@@ -78,6 +102,12 @@ const routes = [
     path: '/appointments',
     name: 'AppointmentList',
     component: () => import('@/views/appointments/AppointmentList.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/appointments/calendar',
+    name: 'AppointmentCalendar',
+    component: () => import('@/views/appointments/AppointmentCalendar.vue'),
     meta: { requiresAuth: true },
   },
   {

@@ -1,5 +1,7 @@
 # Credit Accounts Functionality Review
 
+**STATUS: ✅ COMPLETE**
+
 Compared the WordPress plugin under `arm-main` to the standalone system to identify credit account gaps requiring follow-up work.
 
 ## Service/controller contract mismatches

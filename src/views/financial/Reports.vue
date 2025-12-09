@@ -50,6 +50,14 @@
       </div>
     </div>
 
+    <!-- Chart -->
+    <div v-if="chartData.labels.length" class="bg-white shadow rounded p-6 mb-6">
+      <h3 class="text-lg font-semibold text-gray-900 mb-4">Monthly Financial Trends</h3>
+      <div class="h-80">
+        <BarChart :data="chartData" :options="chartOptions" />
+      </div>
+    </div>
+
     <div class="bg-white shadow rounded overflow-hidden">
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
@@ -84,7 +92,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
+import BarChart from '@/components/charts/BarChart.vue'
 import financialService from '@/services/financial.service'
 import { useToast } from '@/stores/toast'
 
@@ -148,5 +157,60 @@ function exportReport() {
       URL.revokeObjectURL(url)
     })
     .catch(() => toast.error('Failed to export report'))
+}
+
+// Chart data
+const chartData = computed(() => {
+  if (!report.monthly || report.monthly.length === 0) {
+    return { labels: [], datasets: [] }
+  }
+
+  return {
+    labels: report.monthly.map(row => row.month),
+    datasets: [
+      {
+        label: 'Income',
+        data: report.monthly.map(row => row.summary.income),
+        backgroundColor: 'rgba(16, 185, 129, 0.8)',
+      },
+      {
+        label: 'Expenses',
+        data: report.monthly.map(row => row.summary.expense),
+        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+      },
+      {
+        label: 'Purchases',
+        data: report.monthly.map(row => row.summary.purchase),
+        backgroundColor: 'rgba(249, 115, 22, 0.8)',
+      }
+    ]
+  }
+})
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'top',
+    },
+    tooltip: {
+      callbacks: {
+        label: function(context) {
+          return context.dataset.label + ': $' + context.parsed.y.toLocaleString()
+        }
+      }
+    }
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+      ticks: {
+        callback: function(value) {
+          return '$' + value.toLocaleString()
+        }
+      }
+    }
+  }
 }
 </script>

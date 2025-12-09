@@ -187,6 +187,37 @@
         </div>
       </Card>
 
+      <!-- Charts -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
+        <!-- Revenue Trends -->
+        <Card>
+          <template #header>
+            <h3 class="text-lg font-medium text-gray-900">Monthly Revenue Trends</h3>
+            <p class="text-sm text-gray-500">Last 6 months</p>
+          </template>
+          <div class="h-64">
+            <LineChart v-if="revenueChartData.labels.length" :data="revenueChartData" />
+            <div v-else class="flex items-center justify-center h-full text-gray-500 text-sm">
+              No data available
+            </div>
+          </div>
+        </Card>
+
+        <!-- Service Types Breakdown -->
+        <Card>
+          <template #header>
+            <h3 class="text-lg font-medium text-gray-900">Top Service Types</h3>
+            <p class="text-sm text-gray-500">Last 6 months</p>
+          </template>
+          <div class="h-64">
+            <DoughnutChart v-if="serviceTypeChartData.labels.length" :data="serviceTypeChartData" />
+            <div v-else class="flex items-center justify-center h-full text-gray-500 text-sm">
+              No data available
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <!-- Recent Activity -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
         <!-- Recent Invoices -->
@@ -343,6 +374,8 @@ import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
+import LineChart from '@/components/charts/LineChart.vue'
+import DoughnutChart from '@/components/charts/DoughnutChart.vue'
 import dashboardService from '@/services/dashboard.service'
 
 const router = useRouter()
@@ -364,6 +397,8 @@ const stats = ref({
 const recentInvoices = ref([])
 const recentAppointments = ref([])
 const inventoryAlerts = ref({ counts: { out_of_stock: 0, low_stock: 0 }, items: [] })
+const revenueChartData = ref({ labels: [], datasets: [] })
+const serviceTypeChartData = ref({ labels: [], datasets: [] })
 
 onMounted(async () => {
   await loadDashboardData()
@@ -374,12 +409,26 @@ async function loadDashboardData() {
     loading.value = true
     error.value = null
 
+    // Calculate date range for charts (last 6 months)
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setMonth(startDate.getMonth() - 6)
+
     // Load all dashboard data in parallel
-    const [statsData, invoicesData, appointmentsData, lowStockData] = await Promise.all([
+    const [statsData, invoicesData, appointmentsData, lowStockData, trendsData, serviceTypesData] = await Promise.all([
       dashboardService.getStats().catch(() => ({})),
       dashboardService.getRecentInvoices().catch(() => []),
       dashboardService.getRecentAppointments().catch(() => []),
       dashboardService.getInventoryLowStockTile().catch(() => null),
+      dashboardService.getMonthlyTrendsChart({
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0]
+      }).catch(() => []),
+      dashboardService.getServiceTypeChart({
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0],
+        limit: 8
+      }).catch(() => ({ label: '', data: [], categories: [] })),
     ])
 
     stats.value = {
@@ -398,6 +447,41 @@ async function loadDashboardData() {
     inventoryAlerts.value = {
       counts: lowStockData?.counts || { out_of_stock: 0, low_stock: 0 },
       items: lowStockData?.items || [],
+    }
+
+    // Process chart data
+    if (trendsData && trendsData.length > 0) {
+      const categories = trendsData[0]?.categories || []
+      revenueChartData.value = {
+        labels: categories.map(formatMonthLabel),
+        datasets: trendsData.map((series, index) => ({
+          label: series.label,
+          data: series.data,
+          borderColor: index === 0 ? '#3B82F6' : '#10B981',
+          backgroundColor: index === 0 ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+          tension: 0.4,
+          fill: true
+        }))
+      }
+    }
+
+    if (serviceTypesData && serviceTypesData.categories && serviceTypesData.categories.length > 0) {
+      serviceTypeChartData.value = {
+        labels: serviceTypesData.categories,
+        datasets: [{
+          data: serviceTypesData.data,
+          backgroundColor: [
+            '#3B82F6',
+            '#10B981',
+            '#F59E0B',
+            '#EF4444',
+            '#8B5CF6',
+            '#EC4899',
+            '#14B8A6',
+            '#F97316'
+          ]
+        }]
+      }
     }
   } catch (err) {
     console.error('Failed to load dashboard data:', err)
@@ -452,5 +536,12 @@ function getSeverityVariant(severity) {
   }
 
   return variants[severity] || 'default'
+}
+
+function formatMonthLabel(yearMonth) {
+  if (!yearMonth) return ''
+  const [year, month] = yearMonth.split('-')
+  const date = new Date(parseInt(year), parseInt(month) - 1)
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 </script>
