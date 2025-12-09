@@ -93,7 +93,7 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/appointments/book',
+    path: '/appointments/create',
     name: 'AppointmentBook',
     component: () => import('@/views/appointments/AppointmentBook.vue'),
     meta: { requiresAuth: true },
