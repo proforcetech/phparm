@@ -95,7 +95,8 @@ src/
 │   └── domain/
 │       ├── InvoiceCard.vue
 │       ├── AppointmentCard.vue
-│       └── VehicleCard.vue
+│       ├── VehicleCard.vue
+│       └── CustomerCard.vue
 ├── services/
 │   ├── api.js             # Axios instance
 │   ├── auth.service.js    # Auth API calls
