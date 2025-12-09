@@ -78,7 +78,7 @@ import { onMounted, reactive, ref } from 'vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
-import { fetchAvailabilityConfig, saveAvailabilityConfig } from '@/services/appointment.service'
+import appointmentService from '@/services/appointment.service'
 
 const dayLabels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const saving = ref(false)
@@ -100,7 +100,8 @@ const resetToDefaults = () => {
 }
 
 const hydrate = async () => {
-  const data = await fetchAvailabilityConfig()
+  const response = await appointmentService.fetchAvailabilityConfig()
+  const data = response.data
   hours.splice(0, hours.length, ...(data.hours?.length ? data.hours : defaultHours()))
   holidays.splice(0, holidays.length, ...(data.holidays || []))
 }
@@ -108,7 +109,7 @@ const hydrate = async () => {
 const save = async () => {
   saving.value = true
   try {
-    await saveAvailabilityConfig({ hours: [...hours], holidays: [...holidays] })
+    await appointmentService.saveAvailabilityConfig({ hours: [...hours], holidays: [...holidays] })
   } finally {
     saving.value = false
   }

@@ -62,7 +62,7 @@ import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
-import { fetchPublicAvailability } from '@/services/appointment.service'
+import appointmentService from '@/services/appointment.service'
 
 const loading = ref(false)
 const availability = reactive({ slots: [], closed: false, reason: '' })
@@ -83,7 +83,8 @@ const loadAvailability = async () => {
     if (form.technician_id) {
       params.technician_id = form.technician_id
     }
-    const data = await fetchPublicAvailability(params)
+    const response = await appointmentService.fetchPublicAvailability(params)
+    const data = response.data
     availability.slots = data.slots || []
     availability.closed = Boolean(data.closed)
     availability.reason = data.reason || ''
