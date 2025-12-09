@@ -328,14 +328,14 @@ return Response::json(['message' => 'Verification email has been sent']);
 
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
 
-        return Response::json([
+return Response::json([
             'user' => $user->toArray(),
             'token' => session_id(),
             'nonce' => $_SESSION['portal_nonce'],
             'api_base' => '/api',
         ]);
-    })->middleware([Middleware::auth())
-      ->Middleware::role('customer'));
+    })->middleware(Middleware::auth())
+      ->middleware(Middleware::role('customer'));
 
     $router->group([Middleware::auth(), Middleware::role('customer')], function (Router $router) use ($connection) {
         $preferenceController = new \App\Services\Reminder\ReminderPreferenceController(
