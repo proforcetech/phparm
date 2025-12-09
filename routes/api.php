@@ -335,7 +335,7 @@ return Response::json(['message' => 'Verification email has been sent']);
             'api_base' => '/api',
         ]);
     })->middleware([Middleware::auth())
-      ->Middleware::role('customer')]);
+      ->Middleware::role('customer')]));
 
     $router->group([Middleware::auth(), Middleware::role('customer')], function (Router $router) use ($connection) {
         $preferenceController = new \App\Services\Reminder\ReminderPreferenceController(
