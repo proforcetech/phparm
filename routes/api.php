@@ -1045,8 +1045,8 @@ return Response::json([
         exit;
     });
 
-    // Invoice routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
+// Invoice routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $paymentConfig) {
 
         // Payment gateway setup
         $gatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
