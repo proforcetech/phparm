@@ -319,7 +319,8 @@ export default api;
 - [x] Chart.js integration
 
 ### Phase 3: Appointments & Vehicles (Week 3)
-- [x] Appointment calendar
+- [x] Appointment list view with filters
+- [x] Appointment calendar (day/week/month views)
 - [x] Appointment booking form
 - [x] Vehicle list/detail
 - [x] VIN decoder integration
