@@ -1,5 +1,7 @@
 # Appointment Availability Review
 
+**STATUS: ✅ COMPLETE**
+
 Reviewed the plugin’s availability management under `arm-main` against the standalone system. The following gaps require follow-up tasks.
 
 ## Hours/holiday storage and admin UI

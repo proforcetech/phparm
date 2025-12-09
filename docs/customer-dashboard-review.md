@@ -1,5 +1,7 @@
 # Customer Dashboard Review
 
+**STATUS: ✅ COMPLETE**
+
 Reviewed the WordPress plugin customer portal (`arm_main/includes/public/Customer_Dashboard.php`) against the standalone customer portal views. The following gaps were identified and should be tracked as follow-up tasks.
 
 ## Customer portal shell, access, and assets

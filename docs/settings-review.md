@@ -1,5 +1,7 @@
 # Settings Functionality Review
 
+**STATUS: ✅ COMPLETE**
+
 Compared the WordPress plugin implementation under `arm-main` with the standalone system. The following settings gaps were identified and should be tracked as follow-up tasks.
 
 ## Missing general shop configuration coverage

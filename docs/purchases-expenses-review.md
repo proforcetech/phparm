@@ -1,5 +1,7 @@
 # Purchases, Expenses, and Accounting Review
 
+**STATUS: ✅ COMPLETE**
+
 Reviewed the WordPress plugin implementation under `arm-main` against the standalone system. The following gaps were identified and should be tracked as follow-up tasks.
 
 ## Missing admin UI flows and CSV exports for expenses/purchases

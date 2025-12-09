@@ -1,5 +1,7 @@
 # Inventory Notifications/Alerts Review
 
+**STATUS: ✅ COMPLETE**
+
 Reviewed the WordPress plugin implementation under `arm-main` against the standalone system. The following gaps were identified and should be tracked as follow-up tasks.
 
 ## Dedicated low-stock alerts UI and navigation

@@ -1,5 +1,7 @@
 # Invoice Functionality Review
 
+**STATUS: ✅ COMPLETE**
+
 Compared the WordPress plugin under `arm-main` to the standalone system to identify invoice-related gaps that need follow-up work.
 
 ## Missing service methods wired to controllers
