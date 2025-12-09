@@ -315,6 +315,8 @@ export default api;
 - [x] Estimate to invoice conversion
 - [x] PDF download integration
 - [x] Payment checkout integration
+- [x] Revenue and service type charts
+- [x] Chart.js integration
 
 ### Phase 3: Appointments & Vehicles (Week 3)
 - [x] Appointment calendar
@@ -332,11 +334,11 @@ export default api;
 
 ### Phase 5: Polish & Optimization (Week 5)
 - [x] Inventory management
-- [x] Reports & analytics
+- [x] Reports & analytics with charts
 - [x] Settings pages
- - [x] Mobile optimization
- - [x] Performance optimization
- - [x] Testing & bug fixes
+- [x] Mobile optimization
+- [x] Performance optimization
+- [x] Testing & bug fixes
 
 ## Installation Commands
 
