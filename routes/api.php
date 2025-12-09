@@ -307,8 +307,9 @@ return function (Router $router, array $config, $connection) {
             return Response::serverError('Failed to send verification email');
         }
 
-        return Response::json(['message' => 'Verification email has been sent']);
-    })->middleware([Middleware::auth(), Middleware::throttleStrict(3, 60)]);
+return Response::json(['message' => 'Verification email has been sent']);
+})->middleware(Middleware::auth())
+  ->middleware(Middleware::throttleStrict(3, 60));
 
     $router->get('/api/customer-portal/bootstrap', function (Request $request) {
         $user = $request->getAttribute('user');
