@@ -310,6 +310,9 @@ export default api;
 - [x] Admin dashboard
 - [x] Invoice list/detail views
 - [x] Invoice creation form
+- [x] Estimate list/detail views
+- [x] Estimate creation form
+- [x] Estimate to invoice conversion
 - [x] PDF download integration
 - [x] Payment checkout integration
 
