@@ -2,15 +2,23 @@
   <div>
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Vehicles</h1>
-        <p class="mt-1 text-sm text-gray-500">Search and decode vehicle master records</p>
+        <h1 class="text-2xl font-bold text-gray-900">Customer Vehicles</h1>
+        <p class="mt-1 text-sm text-gray-500">Manage vehicles in customer garages</p>
       </div>
-      <Button @click="$router.push('/vehicles/create')">
-        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        Add Vehicle
-      </Button>
+      <div class="flex gap-3">
+        <Button variant="secondary" @click="$router.push('/vehicle-master')">
+          <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+          </svg>
+          Vehicle Database
+        </Button>
+        <Button @click="$router.push('/vehicles/create')">
+          <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add to Customer Garage
+        </Button>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -100,12 +108,14 @@ const vinLoading = ref(false)
 const router = useRouter()
 
 const columns = [
+  { key: 'customer_id', label: 'Customer' },
   { key: 'year', label: 'Year' },
   { key: 'make', label: 'Make' },
   { key: 'model', label: 'Model' },
-  { key: 'engine', label: 'Engine' },
-  { key: 'transmission', label: 'Transmission' },
-  { key: 'drive', label: 'Drive' }
+  { key: 'vin', label: 'VIN' },
+  { key: 'license_plate', label: 'License Plate' },
+  { key: 'mileage_in', label: 'Mileage In' },
+  { key: 'mileage_out', label: 'Mileage Out' }
 ]
 
 const loadVehicles = async () => {

@@ -147,6 +147,24 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/vehicle-master',
+    name: 'VehicleMasterList',
+    component: () => import('@/views/vehicle-master/VehicleMasterList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/vehicle-master/create',
+    name: 'VehicleMasterCreate',
+    component: () => import('@/views/vehicle-master/VehicleMasterForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/vehicle-master/:id/edit',
+    name: 'VehicleMasterEdit',
+    component: () => import('@/views/vehicle-master/VehicleMasterForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/vehicles',
     name: 'VehicleList',
     component: () => import('@/views/vehicles/VehicleList.vue'),
