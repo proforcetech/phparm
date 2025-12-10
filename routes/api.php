@@ -559,6 +559,15 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->get('/api/customers/{id}/vehicles/{vehicleId}', function (Request $request) use ($customerController) {
+            $user = $request->getAttribute('user');
+            $customerId = (int) $request->getAttribute('id');
+            $vehicleId = (int) $request->getAttribute('vehicleId');
+
+            $data = $customerController->getVehicle($user, $customerId, $vehicleId);
+            return Response::json($data);
+        });
+
         $router->post('/api/customers/{id}/vehicles', function (Request $request) use ($customerController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -731,6 +740,27 @@ return Response::json([
             $user = $request->getAttribute('user');
             $data = $vehicleController->store($user, $request->body());
             return Response::created($data);
+        });
+
+        $router->put('/api/vehicles/{id}', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $vehicleController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/vehicles/{id}', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $vehicleController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // CSV upload endpoint
+        $router->post('/api/vehicles/upload-csv', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $data = $vehicleController->uploadCsv($user, $request);
+            return Response::json($data);
         });
 
         // VIN decoder endpoints

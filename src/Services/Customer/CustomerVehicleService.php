@@ -29,9 +29,9 @@ class CustomerVehicleService
         $payload = $this->normalizeVehiclePayload($customerId, $data);
 
         $sql = 'INSERT INTO customer_vehicles (customer_id, vehicle_master_id, year, make, model, engine, transmission, drive, '
-            . 'trim, vin, license_plate, notes, created_at, updated_at) '
+            . 'trim, vin, license_plate, notes, mileage_in, mileage_out, created_at, updated_at) '
             . 'VALUES (:customer_id, :vehicle_master_id, :year, :make, :model, :engine, :transmission, :drive, :trim, '
-            . ':vin, :license_plate, :notes, :created_at, :updated_at)';
+            . ':vin, :license_plate, :notes, :mileage_in, :mileage_out, :created_at, :updated_at)';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($payload);
@@ -52,8 +52,8 @@ class CustomerVehicleService
 
         $sql = 'UPDATE customer_vehicles SET vehicle_master_id = :vehicle_master_id, year = :year, make = :make, '
             . 'model = :model, engine = :engine, transmission = :transmission, drive = :drive, trim = :trim, '
-            . 'vin = :vin, license_plate = :license_plate, notes = :notes, updated_at = :updated_at '
-            . 'WHERE id = :id AND customer_id = :customer_id';
+            . 'vin = :vin, license_plate = :license_plate, notes = :notes, mileage_in = :mileage_in, mileage_out = :mileage_out, '
+            . 'updated_at = :updated_at WHERE id = :id AND customer_id = :customer_id';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute(array_merge($payload, ['id' => $vehicleId]));
@@ -142,6 +142,8 @@ class CustomerVehicleService
             'vin' => isset($data['vin']) ? trim((string) $data['vin']) : ($existing['vin'] ?? null),
             'license_plate' => isset($data['license_plate']) ? trim((string) $data['license_plate']) : ($existing['license_plate'] ?? null),
             'notes' => isset($data['notes']) ? trim((string) $data['notes']) : ($existing['notes'] ?? null),
+            'mileage_in' => isset($data['mileage_in']) ? (int) $data['mileage_in'] : ($existing['mileage_in'] ?? null),
+            'mileage_out' => isset($data['mileage_out']) ? (int) $data['mileage_out'] : ($existing['mileage_out'] ?? null),
             'created_at' => $existing['created_at'] ?? $now,
             'updated_at' => $now,
         ];

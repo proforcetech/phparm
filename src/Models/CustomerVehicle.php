@@ -17,6 +17,8 @@ class CustomerVehicle extends BaseModel
     public ?string $vin = null;
     public ?string $license_plate = null;
     public ?string $notes = null;
+    public ?int $mileage_in = null;
+    public ?int $mileage_out = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }

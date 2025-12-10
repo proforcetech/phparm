@@ -210,6 +210,44 @@ class VehicleMasterController
     }
 
     /**
+     * Upload and process CSV file with vehicle data
+     * @return array<string, mixed>
+     */
+    public function uploadCsv(User $user, $request): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.create');
+
+        // Get uploaded file
+        $files = $request->uploadedFiles();
+        if (empty($files['file'])) {
+            throw new InvalidArgumentException('No file uploaded');
+        }
+
+        $file = $files['file'];
+
+        // Read CSV content
+        $csvContent = file_get_contents($file->getFilePath());
+        if ($csvContent === false) {
+            throw new InvalidArgumentException('Failed to read CSV file');
+        }
+
+        // Default mapping for standard CSV format
+        $mapping = [
+            'year' => 0,
+            'make' => 1,
+            'model' => 2,
+            'engine' => 3,
+            'transmission' => 4,
+            'drive' => 5,
+            'trim' => 6,
+        ];
+
+        // Import the CSV
+        return $this->importer->import($csvContent, $mapping, false);
+    }
+
+    /**
      * @param array<string, int|string> $mapping
      * @return array<string, mixed>
      */

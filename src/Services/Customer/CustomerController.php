@@ -123,6 +123,23 @@ class CustomerController
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function getVehicle(User $user, int $customerId, int $vehicleId): array
+    {
+        $this->assertViewAccess($user);
+
+        $vehicles = $this->vehicleService->listVehicles($customerId);
+        foreach ($vehicles as $vehicle) {
+            if ($vehicle['id'] === $vehicleId) {
+                return $vehicle;
+            }
+        }
+
+        throw new \InvalidArgumentException('Vehicle not found for this customer.');
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listVehicles(User $user, int $customerId): array

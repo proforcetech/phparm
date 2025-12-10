@@ -2,8 +2,8 @@
   <div>
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">{{ isEditing ? 'Edit Vehicle' : 'New Vehicle' }}</h1>
-        <p class="mt-1 text-sm text-gray-500">{{ isEditing ? 'Update vehicle information' : 'Add a new customer vehicle' }}</p>
+        <h1 class="text-2xl font-bold text-gray-900">{{ isEditing ? 'Edit Customer Vehicle' : 'Add Vehicle to Customer Garage' }}</h1>
+        <p class="mt-1 text-sm text-gray-500">{{ isEditing ? 'Update vehicle information' : 'Add a vehicle to a customer\'s garage' }}</p>
       </div>
       <Button variant="secondary" @click="goBack">Back to list</Button>
     </div>
@@ -17,20 +17,28 @@
           <p class="mt-1 text-xs text-gray-500">Enter the customer ID who owns this vehicle</p>
         </div>
 
-        <!-- VIN Decoder Section -->
+        <!-- VIN Section -->
         <div class="border-t border-gray-200 pt-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">VIN Decoder</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4">VIN Information</h3>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div class="md:col-span-2">
               <label class="block text-sm font-medium text-gray-700">VIN</label>
               <Input v-model="form.vin" placeholder="1HGBH41JXMN109186" maxlength="30" />
+              <p class="mt-1 text-xs text-gray-500">Optional - Enter vehicle identification number</p>
             </div>
-            <div class="flex items-end">
-              <Button type="button" variant="secondary" @click="decodeVinNumber" :loading="decoding" :disabled="!form.vin || form.vin.length < 17" class="w-full">
+            <div class="flex items-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                @click="decodeVinNumber"
+                :loading="decoding"
+                :disabled="!form.vin || form.vin.length < 17"
+                class="flex-1"
+              >
                 <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                Decode VIN
+                Decode
               </Button>
             </div>
           </div>
@@ -38,40 +46,102 @@
           <p v-if="vinSuccess" class="mt-2 text-sm text-green-600">{{ vinSuccess }}</p>
         </div>
 
-        <!-- Vehicle Information -->
+        <!-- Vehicle Selection from Database -->
         <div class="border-t border-gray-200 pt-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Vehicle Information</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Vehicle Specifications</h3>
+          <p class="text-sm text-gray-600 mb-4">Select vehicle from database or VIN decoder will populate these fields</p>
+
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <label class="block text-sm font-medium text-gray-700">Year *</label>
-              <Input v-model.number="form.year" type="number" required placeholder="2024" min="1900" max="2100" />
+              <select
+                v-model.number="form.year"
+                required
+                @change="onYearChange"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Year</option>
+                <option v-for="year in years" :key="year" :value="year">{{ year }}</option>
+              </select>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Make *</label>
-              <Input v-model="form.make" required placeholder="Ford" />
+              <select
+                v-model="form.make"
+                required
+                @change="onMakeChange"
+                :disabled="!form.year"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Make</option>
+                <option v-for="make in makes" :key="make" :value="make">{{ make }}</option>
+              </select>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Model *</label>
-              <Input v-model="form.model" required placeholder="F-150" />
+              <select
+                v-model="form.model"
+                required
+                @change="onModelChange"
+                :disabled="!form.make"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Model</option>
+                <option v-for="model in models" :key="model" :value="model">{{ model }}</option>
+              </select>
             </div>
           </div>
 
           <div class="grid grid-cols-1 gap-4 md:grid-cols-4 mt-4">
             <div>
               <label class="block text-sm font-medium text-gray-700">Engine *</label>
-              <Input v-model="form.engine" required placeholder="5.0L V8" />
+              <select
+                v-model="form.engine"
+                required
+                @change="onEngineChange"
+                :disabled="!form.model"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Engine</option>
+                <option v-for="engine in engines" :key="engine" :value="engine">{{ engine }}</option>
+              </select>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Transmission *</label>
-              <Input v-model="form.transmission" required placeholder="Automatic" />
+              <select
+                v-model="form.transmission"
+                required
+                @change="onTransmissionChange"
+                :disabled="!form.engine"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Transmission</option>
+                <option v-for="transmission in transmissions" :key="transmission" :value="transmission">{{ transmission }}</option>
+              </select>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Drive *</label>
-              <Input v-model="form.drive" required placeholder="4WD" />
+              <select
+                v-model="form.drive"
+                required
+                @change="onDriveChange"
+                :disabled="!form.transmission"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Drive</option>
+                <option v-for="drive in drives" :key="drive" :value="drive">{{ drive }}</option>
+              </select>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Trim</label>
-              <Input v-model="form.trim" placeholder="Lariat" />
+              <select
+                v-model="form.trim"
+                :disabled="!form.drive"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">Select Trim (Optional)</option>
+                <option v-for="trim in trims" :key="trim" :value="trim">{{ trim }}</option>
+              </select>
             </div>
           </div>
         </div>
@@ -79,10 +149,20 @@
         <!-- Additional Information -->
         <div class="border-t border-gray-200 pt-6">
           <h3 class="text-lg font-medium text-gray-900 mb-4">Additional Information</h3>
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <label class="block text-sm font-medium text-gray-700">License Plate</label>
               <Input v-model="form.license_plate" placeholder="ABC-1234" maxlength="30" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Mileage In</label>
+              <Input v-model.number="form.mileage_in" type="number" placeholder="50000" min="0" />
+              <p class="mt-1 text-xs text-gray-500">Mileage when vehicle arrives</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Mileage Out</label>
+              <Input v-model.number="form.mileage_out" type="number" placeholder="50100" min="0" />
+              <p class="mt-1 text-xs text-gray-500">Mileage when vehicle leaves</p>
             </div>
           </div>
 
@@ -106,7 +186,7 @@
           </div>
           <div class="flex gap-3">
             <Button type="button" variant="secondary" @click="goBack">Cancel</Button>
-            <Button type="submit" :loading="saving">{{ isEditing ? 'Update Vehicle' : 'Create Vehicle' }}</Button>
+            <Button type="submit" :loading="saving">{{ isEditing ? 'Update Vehicle' : 'Add to Garage' }}</Button>
           </div>
         </div>
       </form>
@@ -115,12 +195,22 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onMounted, reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
-import { getVehicle, createVehicle, updateVehicle, decodeVin } from '@/services/vehicle.service'
+import {
+  getYears,
+  getMakes,
+  getModels,
+  getEngines,
+  getTransmissions,
+  getDrives,
+  getTrims,
+  decodeVin
+} from '@/services/vehicle-master.service'
+import { createCustomerVehicle, updateCustomerVehicle, getCustomerVehicle } from '@/services/customer-vehicle.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -134,6 +224,14 @@ const error = ref('')
 const vinError = ref('')
 const vinSuccess = ref('')
 
+const years = ref([])
+const makes = ref([])
+const models = ref([])
+const engines = ref([])
+const transmissions = ref([])
+const drives = ref([])
+const trims = ref([])
+
 const form = reactive({
   customer_id: null,
   year: null,
@@ -145,20 +243,139 @@ const form = reactive({
   trim: '',
   vin: '',
   license_plate: '',
+  mileage_in: null,
+  mileage_out: null,
   notes: '',
 })
 
 const isEditing = computed(() => !!route.params.id)
 
 onMounted(async () => {
+  await loadYears()
   if (isEditing.value) {
     await loadVehicle()
   }
 })
 
+async function loadYears() {
+  try {
+    years.value = await getYears()
+  } catch (err) {
+    console.error('Failed to load years:', err)
+  }
+}
+
+async function onYearChange() {
+  form.make = ''
+  form.model = ''
+  form.engine = ''
+  form.transmission = ''
+  form.drive = ''
+  form.trim = ''
+  makes.value = []
+  models.value = []
+  engines.value = []
+  transmissions.value = []
+  drives.value = []
+  trims.value = []
+
+  if (form.year) {
+    try {
+      makes.value = await getMakes(form.year)
+    } catch (err) {
+      console.error('Failed to load makes:', err)
+    }
+  }
+}
+
+async function onMakeChange() {
+  form.model = ''
+  form.engine = ''
+  form.transmission = ''
+  form.drive = ''
+  form.trim = ''
+  models.value = []
+  engines.value = []
+  transmissions.value = []
+  drives.value = []
+  trims.value = []
+
+  if (form.year && form.make) {
+    try {
+      models.value = await getModels(form.year, form.make)
+    } catch (err) {
+      console.error('Failed to load models:', err)
+    }
+  }
+}
+
+async function onModelChange() {
+  form.engine = ''
+  form.transmission = ''
+  form.drive = ''
+  form.trim = ''
+  engines.value = []
+  transmissions.value = []
+  drives.value = []
+  trims.value = []
+
+  if (form.year && form.make && form.model) {
+    try {
+      engines.value = await getEngines(form.year, form.make, form.model)
+    } catch (err) {
+      console.error('Failed to load engines:', err)
+    }
+  }
+}
+
+async function onEngineChange() {
+  form.transmission = ''
+  form.drive = ''
+  form.trim = ''
+  transmissions.value = []
+  drives.value = []
+  trims.value = []
+
+  if (form.year && form.make && form.model && form.engine) {
+    try {
+      transmissions.value = await getTransmissions(form.year, form.make, form.model, form.engine)
+    } catch (err) {
+      console.error('Failed to load transmissions:', err)
+    }
+  }
+}
+
+async function onTransmissionChange() {
+  form.drive = ''
+  form.trim = ''
+  drives.value = []
+  trims.value = []
+
+  if (form.year && form.make && form.model && form.engine && form.transmission) {
+    try {
+      drives.value = await getDrives(form.year, form.make, form.model, form.engine, form.transmission)
+    } catch (err) {
+      console.error('Failed to load drives:', err)
+    }
+  }
+}
+
+async function onDriveChange() {
+  form.trim = ''
+  trims.value = []
+
+  if (form.year && form.make && form.model && form.engine && form.transmission && form.drive) {
+    try {
+      trims.value = await getTrims(form.year, form.make, form.model, form.engine, form.transmission, form.drive)
+    } catch (err) {
+      console.error('Failed to load trims:', err)
+    }
+  }
+}
+
 async function loadVehicle() {
   try {
-    const vehicle = await getVehicle(route.params.id)
+    const vehicle = await getCustomerVehicle(route.params.customerId, route.params.id)
     Object.assign(form, {
       customer_id: vehicle.customer_id,
       year: vehicle.year,
@@ -170,8 +387,36 @@ async function loadVehicle() {
       trim: vehicle.trim || '',
       vin: vehicle.vin || '',
       license_plate: vehicle.license_plate || '',
+      mileage_in: vehicle.mileage_in || null,
+      mileage_out: vehicle.mileage_out || null,
       notes: vehicle.notes || '',
     })
+
+    // Load cascade dropdowns based on loaded values
+    if (form.year) await onYearChange()
+    if (form.make) {
+      form.make = vehicle.make
+      await onMakeChange()
+    }
+    if (form.model) {
+      form.model = vehicle.model
+      await onModelChange()
+    }
+    if (form.engine) {
+      form.engine = vehicle.engine
+      await onEngineChange()
+    }
+    if (form.transmission) {
+      form.transmission = vehicle.transmission
+      await onTransmissionChange()
+    }
+    if (form.drive) {
+      form.drive = vehicle.drive
+      await onDriveChange()
+    }
+    if (form.trim) {
+      form.trim = vehicle.trim
+    }
   } catch (err) {
     error.value = 'Failed to load vehicle'
     console.error(err)
@@ -191,12 +436,30 @@ async function decodeVinNumber() {
   try {
     const decoded = await decodeVin(form.vin)
 
-    if (decoded.year) form.year = decoded.year
-    if (decoded.make) form.make = decoded.make
-    if (decoded.model) form.model = decoded.model
-    if (decoded.engine) form.engine = decoded.engine
-    if (decoded.transmission) form.transmission = decoded.transmission
-    if (decoded.drive) form.drive = decoded.drive
+    if (decoded.year) {
+      form.year = decoded.year
+      await onYearChange()
+    }
+    if (decoded.make) {
+      form.make = decoded.make
+      await onMakeChange()
+    }
+    if (decoded.model) {
+      form.model = decoded.model
+      await onModelChange()
+    }
+    if (decoded.engine) {
+      form.engine = decoded.engine
+      await onEngineChange()
+    }
+    if (decoded.transmission) {
+      form.transmission = decoded.transmission
+      await onTransmissionChange()
+    }
+    if (decoded.drive) {
+      form.drive = decoded.drive
+      await onDriveChange()
+    }
     if (decoded.trim) form.trim = decoded.trim
 
     vinSuccess.value = 'VIN decoded successfully!'
@@ -217,22 +480,18 @@ async function save() {
 
   try {
     if (isEditing.value) {
-      await updateVehicle(form.customer_id, route.params.id, form)
+      await updateCustomerVehicle(form.customer_id, route.params.id, form)
       success.value = 'Vehicle updated successfully!'
       toast.success('Vehicle updated successfully!')
-
-      setTimeout(() => {
-        router.push('/vehicles')
-      }, 1500)
     } else {
-      await createVehicle(form)
-      success.value = 'Vehicle created successfully!'
-      toast.success('Vehicle created successfully!')
-
-      setTimeout(() => {
-        router.push('/vehicles')
-      }, 1500)
+      await createCustomerVehicle(form.customer_id, form)
+      success.value = 'Vehicle added to customer garage successfully!'
+      toast.success('Vehicle added to customer garage successfully!')
     }
+
+    setTimeout(() => {
+      router.push('/vehicles')
+    }, 1500)
   } catch (err) {
     error.value = err.response?.data?.message || 'Failed to save vehicle'
     toast.error('Failed to save vehicle')
