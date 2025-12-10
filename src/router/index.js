@@ -153,6 +153,18 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/vehicles/create',
+    name: 'VehicleCreate',
+    component: () => import('@/views/vehicles/VehicleForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/vehicles/:id/edit',
+    name: 'VehicleEdit',
+    component: () => import('@/views/vehicles/VehicleForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/vehicles/:id',
     name: 'VehicleDetail',
     component: () => import('@/views/vehicles/VehicleDetail.vue'),
