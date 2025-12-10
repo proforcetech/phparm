@@ -152,7 +152,7 @@ class CustomerRepository
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
 
-        $sql = 'SELECT * FROM customers ' . $where . ' ORDER BY name ASC LIMIT :limit OFFSET :offset';
+        $sql = 'SELECT * FROM customers ' . $where . ' ORDER BY last_name ASC, first_name ASC LIMIT :limit OFFSET :offset';
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($bindings as $key => $value) {
             $stmt->bindValue(':' . $key, $value);
