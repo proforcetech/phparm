@@ -87,10 +87,11 @@ class CMSBootstrap
         }
 
         // Set CMS environment variables for the Database class
+        // The CMS Database class looks for DB_NAME and DB_USER
         $_ENV['DB_HOST'] = $this->config['database']['host'];
         $_ENV['DB_PORT'] = $this->config['database']['port'];
-        $_ENV['DB_NAME'] = $this->config['database']['name'];
-        $_ENV['DB_USER'] = $this->config['database']['user'];
+        $_ENV['DB_NAME'] = $this->config['database']['database'];  // Maps to 'database' key
+        $_ENV['DB_USER'] = $this->config['database']['username'];  // Maps to 'username' key
         $_ENV['DB_PASSWORD'] = $this->config['database']['password'];
         $_ENV['DB_CHARSET'] = $this->config['database']['charset'];
         $_ENV['APP_DEBUG'] = $this->config['debug'];

@@ -22,10 +22,10 @@ return [
     'database' => [
         'host' => env('DB_HOST', 'localhost'),
         'port' => env('DB_PORT', '3306'),
-        'name' => env('DB_NAME', 'fixitforus_cms'),
-        'user' => env('DB_USER', 'root'),
+        'database' => env('DB_DATABASE', 'phparm'),
+        'username' => env('DB_USERNAME', 'root'),
         'password' => env('DB_PASSWORD', ''),
-        'charset' => env('DB_CHARSET', 'utf8mb4'),
+        'charset' => 'utf8mb4',
     ],
 
     // URL routing configuration
