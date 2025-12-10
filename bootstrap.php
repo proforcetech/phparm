@@ -19,6 +19,7 @@ $config = [
     'audit' => require __DIR__ . '/config/audit.php',
     'auth' => require __DIR__ . '/config/auth.php',
     'appointments' => require __DIR__ . '/config/appointments.php',
+    'cms' => require __DIR__ . '/config/cms.php',
 ];
 
 return $config;
