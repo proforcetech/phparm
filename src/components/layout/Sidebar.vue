@@ -119,6 +119,8 @@ const customerMenuItems = [
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
+  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon }, // ADD THIS
+  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon }, // ADD THIS
   { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
