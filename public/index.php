@@ -54,6 +54,10 @@ $router = new Router();
 $routeLoader = require __DIR__ . '/../routes/api.php';
 $routeLoader($router, $config, $connection);
 
+// Load CMS routes
+$cmsRouteLoader = require __DIR__ . '/../routes/cms.php';
+$cmsRouteLoader($router, $config, $connection);
+
 // Capture incoming request
 $request = Request::capture();
 
