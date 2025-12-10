@@ -89,7 +89,7 @@ class TimeTrackingService
         }
 
         if (!empty($filters['search'])) {
-            $baseSql .= ' AND (u.name LIKE :search OR ej.title LIKE :search OR c.name LIKE :search OR e.number LIKE :search)';
+            $baseSql .= ' AND (u.name LIKE :search OR ej.title LIKE :search OR CONCAT(c.first_name, " ", c.last_name) LIKE :search OR e.number LIKE :search)';
             $params['search'] = '%' . $filters['search'] . '%';
         }
 
@@ -98,7 +98,7 @@ class TimeTrackingService
         $total = (int) $countStmt->fetchColumn();
 
         $sql = 'SELECT te.*, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
-            . 'c.name AS customer_name, cv.vin AS vehicle_vin ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
+            . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($params as $key => $value) {
