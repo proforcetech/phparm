@@ -58,6 +58,8 @@ import {
   ChartBarIcon,
   Cog6ToothIcon,
   ClockIcon,
+  CreditCardIcon,
+  ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -119,6 +121,8 @@ const customerMenuItems = [
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
+  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon },
+  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon },
   { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
