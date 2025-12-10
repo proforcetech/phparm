@@ -1,16 +1,24 @@
 <template>
   <div>
     <div class="mb-6">
-      <div class="flex items-center gap-4">
-        <Button variant="ghost" @click="$router.push('/vehicles')">
-          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-        </Button>
-        <div>
-          <h1 class="text-2xl font-bold text-gray-900">Vehicle Details</h1>
-          <p class="mt-1 text-sm text-gray-500">View vehicle information</p>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <Button variant="ghost" @click="$router.push('/vehicles')">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </Button>
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Vehicle Details</h1>
+            <p class="mt-1 text-sm text-gray-500">View vehicle information</p>
+          </div>
         </div>
+        <Button v-if="vehicle" @click="$router.push(`/vehicles/${route.params.id}/edit`)">
+          <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Edit Vehicle
+        </Button>
       </div>
     </div>
 

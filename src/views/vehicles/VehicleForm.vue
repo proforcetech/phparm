@@ -120,7 +120,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
-import { getVehicle, createVehicle, decodeVin } from '@/services/vehicle.service'
+import { getVehicle, createVehicle, updateVehicle, decodeVin } from '@/services/vehicle.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -217,9 +217,13 @@ async function save() {
 
   try {
     if (isEditing.value) {
-      // TODO: Add update functionality when API endpoint is available
-      error.value = 'Update functionality not yet implemented'
-      return
+      await updateVehicle(form.customer_id, route.params.id, form)
+      success.value = 'Vehicle updated successfully!'
+      toast.success('Vehicle updated successfully!')
+
+      setTimeout(() => {
+        router.push('/vehicles')
+      }, 1500)
     } else {
       await createVehicle(form)
       success.value = 'Vehicle created successfully!'
