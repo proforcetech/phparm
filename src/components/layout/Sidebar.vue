@@ -58,6 +58,8 @@ import {
   ChartBarIcon,
   Cog6ToothIcon,
   ClockIcon,
+  CreditCardIcon,
+  ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({

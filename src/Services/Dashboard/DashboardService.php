@@ -228,9 +228,10 @@ class DashboardService
                 $bindings['customer_id'] = $options['customer_id'];
             }
 
-            $sql = 'SELECT st.name AS label, COALESCE(SUM(e.grand_total), 0) AS total '
-                . 'FROM estimates e '
-                . 'JOIN service_types st ON st.id = e.service_type_id '
+            $sql = 'SELECT st.name AS label, COALESCE(SUM(ej.total), 0) AS total '
+                . 'FROM estimate_jobs ej '
+                . 'JOIN estimates e ON e.id = ej.estimate_id '
+                . 'JOIN service_types st ON st.id = ej.service_type_id '
                 . 'WHERE e.created_at BETWEEN :start AND :end' . $customerFilter . ' '
                 . 'GROUP BY st.name '
                 . 'ORDER BY total DESC '
