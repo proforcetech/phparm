@@ -6,6 +6,9 @@
  * This configuration integrates the FixItForUs CMS with the main application
  */
 
+// Get the main database config to reuse
+$mainDbConfig = require __DIR__ . '/database.php';
+
 return [
     // CMS base paths
     'paths' => [
@@ -18,15 +21,8 @@ return [
         'assets' => __DIR__ . '/../cms-php/assets',
     ],
 
-    // Database configuration (inherits from main app)
-    'database' => [
-        'host' => env('DB_HOST', 'localhost'),
-        'port' => env('DB_PORT', '3306'),
-        'database' => env('DB_DATABASE', 'phparm'),
-        'username' => env('DB_USERNAME', 'root'),
-        'password' => env('DB_PASSWORD', ''),
-        'charset' => 'utf8mb4',
-    ],
+    // Database configuration (reuses main app's database config)
+    'database' => $mainDbConfig,
 
     // URL routing configuration
     'routes' => [
