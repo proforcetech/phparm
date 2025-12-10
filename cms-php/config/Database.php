@@ -36,8 +36,10 @@ class Database
     {
         $this->host = $_ENV['DB_HOST'] ?? 'localhost';
         $this->port = $_ENV['DB_PORT'] ?? '3306';
-        $this->dbname = $_ENV['DB_NAME'] ?? 'fixitforus_cms';
-        $this->username = $_ENV['DB_USER'] ?? 'root';
+        // Use DB_DATABASE to match main application's environment variable naming
+        $this->dbname = $_ENV['DB_DATABASE'] ?? $_ENV['DB_NAME'] ?? 'fixitforus_cms';
+        // Use DB_USERNAME to match main application's environment variable naming
+        $this->username = $_ENV['DB_USERNAME'] ?? $_ENV['DB_USER'] ?? 'root';
         $this->password = $_ENV['DB_PASSWORD'] ?? '';
         $this->charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
     }
