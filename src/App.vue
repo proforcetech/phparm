@@ -1,20 +1,20 @@
 <template>
   <div id="app" class="min-h-screen">
     <!-- Guest routes (login, register, etc.) - no layout -->
-    <router-view v-if="isGuestRoute" />
+    <router-view v-if="isGuestRoute" :key="route.fullPath" />
 
     <!-- Customer portal routes - use CustomerLayout -->
     <CustomerLayout v-else-if="isCustomerRoute">
-      <router-view />
+      <router-view :key="route.fullPath" />
     </CustomerLayout>
 
     <!-- Admin/Staff routes - use AdminLayout -->
     <AdminLayout v-else-if="isAuthenticated">
-      <router-view />
+      <router-view :key="route.fullPath" />
     </AdminLayout>
 
     <!-- Fallback for unauthenticated users -->
-    <router-view v-else />
+    <router-view v-else :key="route.fullPath" />
   </div>
 </template>
 
