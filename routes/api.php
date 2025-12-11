@@ -1679,4 +1679,272 @@ return Response::json([
             return Response::json($data);
         });
     });
+
+    // CMS Management routes (Admin/Manager for full access, Technician for content editing)
+    $router->group([Middleware::auth()], function (Router $router) use ($connection) {
+
+        $cmsAuthBridge = new \App\Services\CMS\CMSAuthBridge();
+        $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge);
+
+        // CMS Dashboard
+        $router->get('/api/cms/dashboard', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->dashboard($user);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        // CMS Pages
+        $router->get('/api/cms/pages', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $filters = [
+                    'status' => $request->queryParam('status'),
+                    'search' => $request->queryParam('search'),
+                ];
+                $data = $cmsController->listPages($user, $filters);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->get('/api/cms/pages/form-options', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->getPageFormOptions($user);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->get('/api/cms/pages/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->getPage($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Page not found');
+                }
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/pages', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->createPage($user, $request->body());
+                return Response::created($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->put('/api/cms/pages/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->updatePage($user, $id, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->delete('/api/cms/pages/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $cmsController->deletePage($user, $id);
+                return Response::noContent();
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        // CMS Components
+        $router->get('/api/cms/components', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $filters = [
+                    'type' => $request->queryParam('type'),
+                    'search' => $request->queryParam('search'),
+                ];
+                $data = $cmsController->listComponents($user, $filters);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->get('/api/cms/components/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->getComponent($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Component not found');
+                }
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/components', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->createComponent($user, $request->body());
+                return Response::created($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->put('/api/cms/components/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->updateComponent($user, $id, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->delete('/api/cms/components/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $cmsController->deleteComponent($user, $id);
+                return Response::noContent();
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/components/{id}/duplicate', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->duplicateComponent($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Component not found');
+                }
+                return Response::created($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        // CMS Templates
+        $router->get('/api/cms/templates', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $filters = [
+                    'active' => $request->queryParam('active'),
+                    'search' => $request->queryParam('search'),
+                ];
+                $data = $cmsController->listTemplates($user, $filters);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->get('/api/cms/templates/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->getTemplate($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Template not found');
+                }
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/templates', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->createTemplate($user, $request->body());
+                return Response::created($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->put('/api/cms/templates/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsController->updateTemplate($user, $id, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $cmsController->deleteTemplate($user, $id);
+                return Response::noContent();
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        // CMS Settings (Admin only)
+        $router->get('/api/cms/settings', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->getSettings($user);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->put('/api/cms/settings', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->updateSettings($user, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        // CMS Cache Management
+        $router->get('/api/cms/cache', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->getCacheStats($user);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/cache/clear', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $type = $request->body()['type'] ?? null;
+                $data = $cmsController->clearCache($user, $type);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+    });
 };

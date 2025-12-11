@@ -230,6 +230,67 @@ const routes = [
     component: () => import('@/views/settings/SettingsPage.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
+  // CMS Routes
+  {
+    path: '/cms',
+    name: 'CMSDashboard',
+    component: () => import('@/views/cms/CMSDashboard.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/pages',
+    name: 'CMSPageList',
+    component: () => import('@/views/cms/CMSPageList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/pages/create',
+    name: 'CMSPageCreate',
+    component: () => import('@/views/cms/CMSPageForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/pages/:id',
+    name: 'CMSPageEdit',
+    component: () => import('@/views/cms/CMSPageForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/components',
+    name: 'CMSComponentList',
+    component: () => import('@/views/cms/CMSComponentList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/components/create',
+    name: 'CMSComponentCreate',
+    component: () => import('@/views/cms/CMSComponentForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/components/:id',
+    name: 'CMSComponentEdit',
+    component: () => import('@/views/cms/CMSComponentForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/templates',
+    name: 'CMSTemplateList',
+    component: () => import('@/views/cms/CMSTemplateList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/templates/create',
+    name: 'CMSTemplateCreate',
+    component: () => import('@/views/cms/CMSTemplateForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/templates/:id',
+    name: 'CMSTemplateEdit',
+    component: () => import('@/views/cms/CMSTemplateForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
   {
     path: '/portal',
     name: 'CustomerPortal',
