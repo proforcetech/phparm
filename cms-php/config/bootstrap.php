@@ -19,7 +19,29 @@ define('CMS_ASSETS', CMS_ROOT . '/assets');
 define('CMS_INCLUDES', CMS_ROOT . '/includes');
 
 // Load environment variables
-loadEnv(CMS_ROOT . '/.env');
+// When integrated with the main phparm application, use its env() function
+// Otherwise, load CMS-specific .env file
+if (function_exists('env') && isset($GLOBALS['env'])) {
+    // Integrated mode: populate $_ENV from main app's environment
+    // This ensures CMS Database class can read the values
+    $envVars = [
+        'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DB_CHARSET',
+        'APP_ENV', 'APP_DEBUG', 'APP_URL', 'APP_SECRET',
+        'CACHE_ENABLED', 'CACHE_DRIVER', 'CACHE_TTL',
+        'SESSION_LIFETIME', 'SESSION_NAME', 'ADMIN_PATH'
+    ];
+
+    foreach ($envVars as $var) {
+        $value = env($var);
+        if ($value !== null) {
+            $_ENV[$var] = $value;
+            putenv("$var=$value");
+        }
+    }
+} else {
+    // Standalone mode: load CMS .env file
+    loadEnv(CMS_ROOT . '/.env');
+}
 
 // Set display errors based on debug mode
 $debugMode = $_ENV['APP_DEBUG'] ?? 'false';
