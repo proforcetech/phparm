@@ -6,10 +6,7 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
-USE `phparm`
-CHARACTER SET utf8mb4
-COLLATE utf8mb4_unicode_ci;
-
+USE `phparm`;
 
 -- Drop existing tables (in reverse dependency order)
 DROP TABLE IF EXISTS `cms_activity_log`;
