@@ -60,6 +60,10 @@ import {
   ClockIcon,
   CreditCardIcon,
   ShieldCheckIcon,
+  GlobeAltIcon,
+  DocumentDuplicateIcon,
+  RectangleGroupIcon,
+  Squares2X2Icon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -105,6 +109,11 @@ const adminMenuItems = [
   { path: '/inventory', label: 'Inventory', icon: CubeIcon },
   { path: '/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
   { path: '/reports', label: 'Reports', icon: ChartBarIcon },
+  // CMS Section
+  { path: '/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
+  { path: '/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
+  { path: '/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
+  { path: '/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
   { path: '/settings', label: 'Settings', icon: Cog6ToothIcon },
 ]
 
@@ -144,6 +153,10 @@ function isActive(path) {
   }
   if (path === '/inventory') {
     return route.path === '/inventory'
+  }
+  // Handle CMS routes - exact match for /cms, startsWith for others
+  if (path === '/cms') {
+    return route.path === '/cms'
   }
   return route.path.startsWith(path)
 }
