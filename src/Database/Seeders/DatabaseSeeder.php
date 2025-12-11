@@ -22,6 +22,13 @@ class DatabaseSeeder
         $this->seedServiceTypes();
         $this->seedSettings();
         $this->seedDemoCustomers();
+        $this->seedCMS();
+    }
+
+    private function seedCMS(): void
+    {
+        $cmsSeeder = new CMSSeeder($this->connection);
+        $cmsSeeder->seed();
     }
 
     private function seedVehicleMaster(): void
