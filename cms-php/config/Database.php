@@ -43,7 +43,8 @@ class Database
         $this->username = $_ENV['DB_USERNAME'] ?? $_ENV['DB_USER'] ?? 'root';
         $this->password = $_ENV['DB_PASSWORD'] ?? '';
         $this->charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
-        $this->prefix = $_ENV['CMS_TABLE_PREFIX'] ?? 'cms_';
+        // CMS tables are now unprefixed by default; allow optional override via env
+        $this->prefix = $_ENV['CMS_TABLE_PREFIX'] ?? '';
     }
 
     /**
