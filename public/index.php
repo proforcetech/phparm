@@ -30,7 +30,8 @@ if (!$isApiRequest && !$isHealthCheck) {
 }
 
 // Route CMS admin requests directly to the CMS admin front controller
-if (!$isApiRequest && ($normalizedPath === '/admin' || str_starts_with($normalizedPath, '/cms-php/admin'))) {
+if (!$isApiRequest && ($normalizedPath === '/admin' || str_starts_with($normalizedPath, '/admin/') ||
+    str_starts_with($normalizedPath, '/cms/admin') || str_starts_with($normalizedPath, '/cms-php/admin'))) {
     require __DIR__ . '/../cms-php/admin.php';
     return;
 }
