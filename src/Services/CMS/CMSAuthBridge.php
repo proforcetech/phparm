@@ -28,10 +28,22 @@ class CMSAuthBridge
     public function hasCMSAccess(?User $user): bool
     {
         if ($user === null) {
+            error_log('CMSAuthBridge: User is null');
             return false;
         }
 
-        return isset(self::ROLE_MAP[$user->role]) && self::ROLE_MAP[$user->role] !== null;
+        // Safely get the role, handling uninitialized typed properties
+        $role = $this->getUserRole($user);
+
+        if ($role === null) {
+            error_log('CMSAuthBridge: User role is not set or empty');
+            return false;
+        }
+
+        $hasAccess = isset(self::ROLE_MAP[$role]) && self::ROLE_MAP[$role] !== null;
+        error_log("CMSAuthBridge: Checking access for role '{$role}' - Result: " . ($hasAccess ? 'granted' : 'denied'));
+
+        return $hasAccess;
     }
 
     /**
@@ -39,11 +51,32 @@ class CMSAuthBridge
      */
     public function getCMSRole(?User $user): ?string
     {
+        $role = $this->getUserRole($user);
+        if ($role === null) {
+            return null;
+        }
+
+        return self::ROLE_MAP[$role] ?? null;
+    }
+
+    /**
+     * Safely get the user's role, handling uninitialized typed properties
+     */
+    private function getUserRole(?User $user): ?string
+    {
         if ($user === null) {
             return null;
         }
 
-        return self::ROLE_MAP[$user->role] ?? null;
+        try {
+            // Try to access the role property
+            // This might throw an Error if the typed property is uninitialized
+            $role = $user->role;
+            return is_string($role) && $role !== '' ? $role : null;
+        } catch (\Error $e) {
+            error_log('CMSAuthBridge: Error accessing user role - ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**
