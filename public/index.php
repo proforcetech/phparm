@@ -16,30 +16,17 @@ $normalizedPath = '/' . ltrim($requestUri, '/');
 $isApiRequest = str_starts_with($normalizedPath, '/api');
 $isHealthCheck = $normalizedPath === '/health';
 
-// Serve CMS assets directly if requested
+// Serve public assets directly if requested
 if (!$isApiRequest && !$isHealthCheck) {
-    $cmsRoot = realpath(__DIR__ . '/../cms-php');
-    $assetPath = $cmsRoot ? realpath($cmsRoot . $requestUri) : false;
+    $publicRoot = realpath(__DIR__);
+    $assetPath = $publicRoot ? realpath($publicRoot . $requestUri) : false;
 
-    if ($cmsRoot && $assetPath && str_starts_with($assetPath, $cmsRoot) && is_file($assetPath)) {
+    if ($publicRoot && $assetPath && str_starts_with($assetPath, $publicRoot) && is_file($assetPath)) {
         $mimeType = mime_content_type($assetPath) ?: 'application/octet-stream';
         header('Content-Type: ' . $mimeType);
         readfile($assetPath);
         return;
     }
-}
-
-// Route CMS admin requests directly to the CMS admin front controller
-if (!$isApiRequest && ($normalizedPath === '/admin' || str_starts_with($normalizedPath, '/admin/') ||
-    str_starts_with($normalizedPath, '/cms/admin') || str_starts_with($normalizedPath, '/cms-php/admin'))) {
-    require __DIR__ . '/../cms-php/admin.php';
-    return;
-}
-
-// All other non-API requests are handled by the CMS front-end
-if (!$isApiRequest && !$isHealthCheck) {
-    require __DIR__ . '/../cms-php/index.php';
-    return;
 }
 
 // Bootstrap already loaded above, continue with API routing
