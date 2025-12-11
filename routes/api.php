@@ -1772,14 +1772,15 @@ return Response::json([
     });
 
     // CMS Management routes (Admin/Manager for full access, Technician for content editing)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController, $cmsCacheService) {
 
         $cmsAuthBridge = new \App\Services\CMS\CMSAuthBridge();
         $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge, $cmsCacheService);
 
         // CMS Dashboard
-        $router->get('/api/cms/dashboard', function (Request $request) use ($cmsController) {
+        $router->get('/api/cms/dashboard', function (Request $request) use ($cmsController, $cmsAuthBridge) {
             $user = $request->getAttribute('user');
+            $cmsAuthBridge->initializeCMSSession($user);
             try {
                 $data = $cmsController->dashboard($user);
                 return Response::json($data);
@@ -2015,8 +2016,9 @@ return Response::json([
         });
 
         // CMS Templates
-        $router->get('/api/cms/templates', function (Request $request) use ($cmsController) {
+        $router->get('/api/cms/templates', function (Request $request) use ($cmsController, $cmsAuthBridge) {
             $user = $request->getAttribute('user');
+            $cmsAuthBridge->initializeCMSSession($user);
             try {
                 $filters = [
                     'active' => $request->queryParam('active'),
@@ -2029,8 +2031,9 @@ return Response::json([
             }
         });
 
-        $router->get('/api/cms/templates/{id}', function (Request $request) use ($cmsController) {
+        $router->get('/api/cms/templates/{id}', function (Request $request) use ($cmsController, $cmsAuthBridge) {
             $user = $request->getAttribute('user');
+            $cmsAuthBridge->initializeCMSSession($user);
             $id = (int) $request->getAttribute('id');
             try {
                 $data = $cmsController->getTemplate($user, $id);
@@ -2043,8 +2046,9 @@ return Response::json([
             }
         });
 
-        $router->post('/api/cms/templates', function (Request $request) use ($cmsController) {
+        $router->post('/api/cms/templates', function (Request $request) use ($cmsController, $cmsAuthBridge) {
             $user = $request->getAttribute('user');
+            $cmsAuthBridge->initializeCMSSession($user);
             try {
                 $data = $cmsController->createTemplate($user, $request->body());
                 return Response::created($data);
@@ -2053,8 +2057,9 @@ return Response::json([
             }
         });
 
-        $router->put('/api/cms/templates/{id}', function (Request $request) use ($cmsController) {
+        $router->put('/api/cms/templates/{id}', function (Request $request) use ($cmsController, $cmsAuthBridge) {
             $user = $request->getAttribute('user');
+            $cmsAuthBridge->initializeCMSSession($user);
             $id = (int) $request->getAttribute('id');
             try {
                 $data = $cmsController->updateTemplate($user, $id, $request->body());
@@ -2064,8 +2069,9 @@ return Response::json([
             }
         });
 
-        $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cmsController) {
+        $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cmsController, $cmsAuthBridge) {
             $user = $request->getAttribute('user');
+            $cmsAuthBridge->initializeCMSSession($user);
             $id = (int) $request->getAttribute('id');
             try {
                 $cmsController->deleteTemplate($user, $id);
