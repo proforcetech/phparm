@@ -1,0 +1,227 @@
+<?php
+
+namespace App\CMS\Controllers;
+
+use App\CMS\Models\Page;
+use App\Database\Connection;
+use App\Models\User;
+use App\Support\Auth\AccessGate;
+use DateTimeImmutable;
+use PDO;
+
+class PageController
+{
+    private Connection $connection;
+    private AccessGate $gate;
+
+    public function __construct(Connection $connection, AccessGate $gate)
+    {
+        $this->connection = $connection;
+        $this->gate = $gate;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    public function index(User $user, array $filters = []): array
+    {
+        $this->gate->assert($user, 'cms.pages.view');
+
+        $where = [];
+        $params = [];
+
+        if (!empty($filters['status'])) {
+            $where[] = 'status = :status';
+            $params['status'] = $filters['status'];
+        }
+
+        if (!empty($filters['search'])) {
+            $where[] = '(title LIKE :search OR slug LIKE :search)';
+            $params['search'] = '%' . $filters['search'] . '%';
+        }
+
+        $limit = isset($filters['limit']) ? max(1, (int) $filters['limit']) : 50;
+        $offset = isset($filters['offset']) ? max(0, (int) $filters['offset']) : 0;
+
+        $sql = 'SELECT * FROM cms_pages';
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY COALESCE(publish_start_at, published_at) DESC, id DESC LIMIT :limit OFFSET :offset';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue('offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_map(fn (array $row) => $this->mapPage($row)->toArray(), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function show(User $user, int $id): ?array
+    {
+        $this->gate->assert($user, 'cms.pages.view');
+
+        $page = $this->find($id);
+
+        return $page?->toArray();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function store(User $user, array $data): array
+    {
+        $this->gate->assert($user, 'cms.pages.create');
+
+        $payload = $this->preparePayload($data, true);
+
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO cms_pages (title, slug, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+        );
+
+        $stmt->execute($payload);
+
+        return $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>|null
+     */
+    public function update(User $user, int $id, array $data): ?array
+    {
+        $this->gate->assert($user, 'cms.pages.update');
+
+        $existing = $this->find($id);
+        if ($existing === null) {
+            return null;
+        }
+
+        $payload = $this->preparePayload($data, false, $existing);
+        $payload['id'] = $id;
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE cms_pages SET title = :title, slug = :slug, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
+            . 'WHERE id = :id'
+        );
+
+        $stmt->execute($payload);
+
+        return $this->find($id)?->toArray();
+    }
+
+    public function destroy(User $user, int $id): bool
+    {
+        $this->gate->assert($user, 'cms.pages.delete');
+
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM cms_pages WHERE id = :id');
+
+        return $stmt->execute(['id' => $id]);
+    }
+
+    /**
+     * Public retrieval of a published page by slug.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function publishedPage(string $slug): ?array
+    {
+        $sql = 'SELECT * FROM cms_pages WHERE slug = :slug AND status = "published" '
+            . 'AND (publish_start_at IS NULL OR publish_start_at <= NOW()) '
+            . 'AND (publish_end_at IS NULL OR publish_end_at >= NOW()) '
+            . 'ORDER BY published_at DESC LIMIT 1';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute(['slug' => $slug]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            return null;
+        }
+
+        return $this->mapPage($row)->toArray();
+    }
+
+    private function find(int $id): ?Page
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM cms_pages WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            return null;
+        }
+
+        return $this->mapPage($row);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function mapPage(array $row): Page
+    {
+        return new Page([
+            'id' => (int) $row['id'],
+            'title' => (string) $row['title'],
+            'slug' => (string) $row['slug'],
+            'status' => (string) $row['status'],
+            'meta_title' => $row['meta_title'] ?? null,
+            'meta_description' => $row['meta_description'] ?? null,
+            'meta_keywords' => $row['meta_keywords'] ?? null,
+            'summary' => $row['summary'] ?? null,
+            'content' => $row['content'] ?? null,
+            'publish_start_at' => $row['publish_start_at'] ?? null,
+            'publish_end_at' => $row['publish_end_at'] ?? null,
+            'published_at' => $row['published_at'] ?? null,
+            'created_at' => $row['created_at'] ?? null,
+            'updated_at' => $row['updated_at'] ?? null,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function preparePayload(array $data, bool $isCreate = true, ?Page $existing = null): array
+    {
+        $title = $data['title'] ?? $existing?->title ?? 'Untitled Page';
+        $slugSource = $data['slug'] ?? $title;
+        $status = $data['status'] ?? $existing?->status ?? 'draft';
+        $publishedAt = $data['published_at'] ?? $existing?->published_at ?? null;
+
+        if ($status === 'published' && $publishedAt === null) {
+            $publishedAt = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+        }
+
+        return [
+            'title' => (string) $title,
+            'slug' => $this->slugify((string) $slugSource),
+            'status' => (string) $status,
+            'meta_title' => $data['meta_title'] ?? $existing?->meta_title,
+            'meta_description' => $data['meta_description'] ?? $existing?->meta_description,
+            'meta_keywords' => $data['meta_keywords'] ?? $existing?->meta_keywords,
+            'summary' => $data['summary'] ?? $existing?->summary,
+            'content' => $data['content'] ?? $existing?->content,
+            'publish_start_at' => $data['publish_start_at'] ?? $existing?->publish_start_at,
+            'publish_end_at' => $data['publish_end_at'] ?? $existing?->publish_end_at,
+            'published_at' => $publishedAt,
+        ];
+    }
+
+    private function slugify(string $value): string
+    {
+        $value = strtolower(trim($value));
+        $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
+        return trim($value ?: uniqid('page-'), '-');
+    }
+}

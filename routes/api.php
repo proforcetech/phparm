@@ -9,6 +9,9 @@ use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
+use App\CMS\Controllers\MediaController;
+use App\CMS\Controllers\MenuController;
+use App\CMS\Controllers\PageController;
 
 /**
  * API Routes Definition
@@ -427,9 +430,26 @@ return Response::json([
     // Initialize AccessGate for protected routes
     $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
 
+    // CMS controllers reuse the same gate and connection
+    $cmsPageController = new PageController($connection, $gate);
+    $cmsMenuController = new MenuController($connection, $gate);
+    $cmsMediaController = new MediaController($connection, $gate);
+
     // Shared settings repository with seeded defaults
     $settingsRepository = new \App\Support\SettingsRepository($connection);
     $settingsRepository->seedDefaults($config['settings']['defaults']);
+
+    // Public CMS content delivery endpoints
+    $router->get('/cms/page/{slug}', function (Request $request) use ($cmsPageController) {
+        $slug = (string) $request->getAttribute('slug');
+        $page = $cmsPageController->publishedPage($slug);
+
+        if ($page === null) {
+            return Response::notFound('Page not found');
+        }
+
+        return Response::json($page);
+    });
 
     // Dashboard routes (authenticated)
     $router->group([Middleware::auth()], function (Router $router) use ($config, $connection, $gate, $settingsRepository) {
@@ -1681,7 +1701,7 @@ return Response::json([
     });
 
     // CMS Management routes (Admin/Manager for full access, Technician for content editing)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController) {
 
         $cmsAuthBridge = new \App\Services\CMS\CMSAuthBridge();
         $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge);
@@ -1698,74 +1718,154 @@ return Response::json([
         });
 
         // CMS Pages
-        $router->get('/api/cms/pages', function (Request $request) use ($cmsController) {
+        $router->get('/api/cms/pages', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
-            try {
-                $filters = [
-                    'status' => $request->queryParam('status'),
-                    'search' => $request->queryParam('search'),
-                ];
-                $data = $cmsController->listPages($user, $filters);
-                return Response::json($data);
-            } catch (\RuntimeException $e) {
-                return Response::forbidden($e->getMessage());
-            }
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'search' => $request->queryParam('search'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $cmsPageController->index($user, $filters);
+            return Response::json($data);
         });
 
-        $router->get('/api/cms/pages/form-options', function (Request $request) use ($cmsController) {
-            $user = $request->getAttribute('user');
-            try {
-                $data = $cmsController->getPageFormOptions($user);
-                return Response::json($data);
-            } catch (\RuntimeException $e) {
-                return Response::forbidden($e->getMessage());
-            }
-        });
-
-        $router->get('/api/cms/pages/{id}', function (Request $request) use ($cmsController) {
+        $router->get('/api/cms/pages/{id}', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
-            try {
-                $data = $cmsController->getPage($user, $id);
-                if ($data === null) {
-                    return Response::notFound('Page not found');
-                }
-                return Response::json($data);
-            } catch (\RuntimeException $e) {
-                return Response::forbidden($e->getMessage());
+            $data = $cmsPageController->show($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
             }
+
+            return Response::json($data);
         });
 
-        $router->post('/api/cms/pages', function (Request $request) use ($cmsController) {
+        $router->post('/api/cms/pages', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
-            try {
-                $data = $cmsController->createPage($user, $request->body());
-                return Response::created($data);
-            } catch (\RuntimeException $e) {
-                return Response::forbidden($e->getMessage());
-            }
+            $data = $cmsPageController->store($user, $request->body());
+            return Response::created($data);
         });
 
-        $router->put('/api/cms/pages/{id}', function (Request $request) use ($cmsController) {
+        $router->put('/api/cms/pages/{id}', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
-            try {
-                $data = $cmsController->updatePage($user, $id, $request->body());
-                return Response::json($data);
-            } catch (\RuntimeException $e) {
-                return Response::forbidden($e->getMessage());
+            $data = $cmsPageController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
             }
+
+            return Response::json($data);
         });
 
-        $router->delete('/api/cms/pages/{id}', function (Request $request) use ($cmsController) {
+        $router->delete('/api/cms/pages/{id}', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
-            try {
-                $cmsController->deletePage($user, $id);
-                return Response::noContent();
-            } catch (\RuntimeException $e) {
-                return Response::forbidden($e->getMessage());
+
+            $cmsPageController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // CMS Menus
+        $router->get('/api/cms/menus', function (Request $request) use ($cmsMenuController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+            ];
+
+            $data = $cmsMenuController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/cms/menus/{id}', function (Request $request) use ($cmsMenuController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsMenuController->show($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Menu not found');
             }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/menus', function (Request $request) use ($cmsMenuController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMenuController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/cms/menus/{id}', function (Request $request) use ($cmsMenuController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsMenuController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::notFound('Menu not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/cms/menus/{id}', function (Request $request) use ($cmsMenuController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $cmsMenuController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // CMS Media Library
+        $router->get('/api/cms/media', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'search' => $request->queryParam('search'),
+            ];
+
+            $data = $cmsMediaController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/cms/media/{id}', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsMediaController->show($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Media not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/cms/media/{id}', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsMediaController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::notFound('Media not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/cms/media/{id}', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $cmsMediaController->destroy($user, $id);
+            return Response::noContent();
         });
 
         // CMS Components
