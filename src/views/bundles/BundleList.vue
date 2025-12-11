@@ -88,8 +88,14 @@
       </div>
     </Card>
 
-    <Modal v-model="showDelete" title="Delete bundle?" @confirm="deleteBundle">
+    <Modal v-model="showDelete" title="Delete bundle?">
       <p class="text-sm text-gray-600">This will remove the bundle and its items. This action cannot be undone.</p>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="secondary" @click="showDelete = false">Cancel</Button>
+          <Button variant="danger" @click="deleteBundle">Delete</Button>
+        </div>
+      </template>
     </Modal>
   </div>
 </template>
