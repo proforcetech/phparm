@@ -6,6 +6,7 @@ use App\CMS\Models\Media;
 use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Services\CMS\CMSCacheService;
 use DateTimeImmutable;
 use PDO;
 
@@ -13,11 +14,13 @@ class MediaController
 {
     private Connection $connection;
     private AccessGate $gate;
+    private ?CMSCacheService $cache;
 
-    public function __construct(Connection $connection, AccessGate $gate)
+    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null)
     {
         $this->connection = $connection;
         $this->gate = $gate;
+        $this->cache = $cache;
     }
 
     /**
@@ -81,7 +84,11 @@ class MediaController
         );
         $stmt->execute($payload);
 
-        return $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+        $media = $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+
+        $this->invalidateCache($media['slug'] ?? '');
+
+        return $media;
     }
 
     /**
@@ -97,6 +104,7 @@ class MediaController
             return null;
         }
 
+        $existingSlug = $existing->slug;
         $payload = $this->preparePayload($data, false, $existing);
         $payload['id'] = $id;
 
@@ -106,6 +114,11 @@ class MediaController
         );
         $stmt->execute($payload);
 
+        $this->invalidateCache($payload['slug']);
+        if ($payload['slug'] !== $existingSlug) {
+            $this->invalidateCache($existingSlug);
+        }
+
         return $this->find($id)?->toArray();
     }
 
@@ -113,9 +126,17 @@ class MediaController
     {
         $this->gate->assert($user, 'cms.media.delete');
 
+        $media = $this->find($id)?->toArray();
+
         $stmt = $this->connection->pdo()->prepare('DELETE FROM cms_media WHERE id = :id');
 
-        return $stmt->execute(['id' => $id]);
+        $deleted = $stmt->execute(['id' => $id]);
+
+        if ($deleted && $media !== null) {
+            $this->invalidateCache($media['slug'] ?? '');
+        }
+
+        return $deleted;
     }
 
     /**
@@ -196,6 +217,15 @@ class MediaController
             'status' => (string) $status,
             'published_at' => $publishedAt,
         ];
+    }
+
+    private function invalidateCache(string $slug): void
+    {
+        if ($slug === '') {
+            return;
+        }
+
+        $this->cache?->forgetPrefix('media:' . $this->slugify($slug));
     }
 
     private function slugify(string $value): string

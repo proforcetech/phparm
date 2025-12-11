@@ -10,11 +10,27 @@ use App\CMS\CMSBootstrap;
 use App\Support\Http\Request;
 use App\Support\Http\Response;
 use App\Support\Http\Router;
+use App\Services\CMS\CMSCacheService;
 use CMS\Controllers\AdminController;
 use CMS\Controllers\PageController;
 
 return function (Router $router, array $config, $connection) {
     $cmsConfig = $config['cms'] ?? [];
+    $cmsCache = new CMSCacheService($cmsConfig);
+
+    $localeResolver = function (Request $request): string {
+        $locale = $request->queryParam('locale');
+        if (!empty($locale)) {
+            return (string) $locale;
+        }
+
+        $acceptLanguage = $request->header('ACCEPT-LANGUAGE');
+        if (!empty($acceptLanguage)) {
+            return explode(',', (string) $acceptLanguage)[0];
+        }
+
+        return 'en';
+    };
 
     // Initialize CMS
     $cmsBootstrap = new CMSBootstrap($cmsConfig);
@@ -24,31 +40,67 @@ return function (Router $router, array $config, $connection) {
     // These routes handle the front-end website pages
 
     // Homepage
-    $router->get('/cms', function (Request $request) {
+    $router->get('/cms', function (Request $request) use ($cmsCache, $localeResolver) {
+        $locale = $localeResolver($request);
+        $cacheKey = $cmsCache->buildKey('page', 'home', $locale, 'html');
+
+        if ($cached = $cmsCache->get($cacheKey)) {
+            return Response::html((string) $cached);
+        }
+
         $controller = new PageController();
         ob_start();
         $controller->renderHome();
         $content = ob_get_clean();
+
+        if ($cmsCache->isEnabled()) {
+            $cmsCache->set($cacheKey, $content);
+        }
+
         return Response::html($content);
     });
 
     // Sitemap
-    $router->get('/cms/sitemap.xml', function (Request $request) {
+    $router->get('/cms/sitemap.xml', function (Request $request) use ($cmsCache, $localeResolver) {
+        $locale = $localeResolver($request);
+        $cacheKey = $cmsCache->buildKey('sitemap', 'index', $locale, 'xml');
+
+        if ($cached = $cmsCache->get($cacheKey)) {
+            return Response::make((string) $cached, 200, ['Content-Type' => 'application/xml']);
+        }
+
         $controller = new PageController();
         ob_start();
         $controller->renderSitemap();
         $content = ob_get_clean();
+
+        if ($cmsCache->isEnabled()) {
+            $cmsCache->set($cacheKey, $content);
+        }
+
         return Response::make($content, 200, ['Content-Type' => 'application/xml']);
     });
 
     // Dynamic page rendering by slug
-    $router->get('/cms/{slug}', function (Request $request) {
+    $router->get('/cms/{slug}', function (Request $request) use ($cmsCache, $localeResolver) {
         $controller = new PageController();
         $slug = $request->getAttribute('slug');
+        $locale = $localeResolver($request);
+        $cacheKey = $cmsCache->buildKey('page', (string) $slug, $locale, 'html');
+
+        if ($cached = $cmsCache->get($cacheKey)) {
+            return Response::html((string) $cached);
+        }
+
         ob_start();
         try {
             $controller->render($slug);
             $content = ob_get_clean();
+
+            if ($cmsCache->isEnabled()) {
+                $cmsCache->set($cacheKey, $content);
+            }
+
             return Response::html($content);
         } catch (\Exception $e) {
             ob_end_clean();

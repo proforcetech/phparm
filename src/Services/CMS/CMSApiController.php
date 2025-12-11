@@ -5,6 +5,7 @@ namespace App\Services\CMS;
 use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Services\CMS\CMSCacheService;
 use PDO;
 
 /**
@@ -18,12 +19,14 @@ class CMSApiController
     private Connection $connection;
     private CMSAuthBridge $authBridge;
     private string $tablePrefix;
+    private ?CMSCacheService $cacheService;
 
-    public function __construct(Connection $connection, CMSAuthBridge $authBridge)
+    public function __construct(Connection $connection, CMSAuthBridge $authBridge, ?CMSCacheService $cacheService = null)
     {
         $this->connection = $connection;
         $this->authBridge = $authBridge;
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
+        $this->cacheService = $cacheService;
     }
 
     /**
@@ -819,6 +822,8 @@ class CMSApiController
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("DELETE FROM {$this->table('cache')} WHERE cache_key LIKE :key");
         $stmt->execute(['key' => '%page_' . $slug . '%']);
+
+        $this->cacheService?->forgetPrefix('page:' . $slug);
     }
 
     private function invalidateComponentCache(string $slug): void
@@ -830,6 +835,8 @@ class CMSApiController
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("DELETE FROM {$this->table('cache')} WHERE cache_key LIKE :key");
         $stmt->execute(['key' => '%component_' . $slug . '%']);
+
+        $this->cacheService?->forgetPrefix('component:' . $slug);
     }
 
     private function invalidateTemplateCache(string $slug): void
@@ -841,5 +848,7 @@ class CMSApiController
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("DELETE FROM {$this->table('cache')} WHERE cache_key LIKE :key");
         $stmt->execute(['key' => '%template_' . $slug . '%']);
+
+        $this->cacheService?->forgetPrefix('template:' . $slug);
     }
 }

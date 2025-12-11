@@ -123,6 +123,13 @@ Add these to your `.env` file:
 # CMS Configuration
 CMS_CACHE_ENABLED=true
 CMS_CACHE_TTL=3600
+CMS_CACHE_DRIVER=file # file or redis
+CMS_CACHE_PATH=/path/to/project/storage/cms-cache
+CMS_CACHE_REDIS_HOST=127.0.0.1
+CMS_CACHE_REDIS_PORT=6379
+CMS_CACHE_REDIS_PASSWORD=
+CMS_CACHE_REDIS_DB=0
+CMS_CACHE_PREFIX=cms:
 ```
 
 The CMS uses the same database connection as the main application (configured via `DB_HOST`, `DB_NAME`, etc.).

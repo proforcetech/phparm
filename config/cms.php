@@ -17,7 +17,7 @@ return [
         'models' => __DIR__ . '/../cms-php/models',
         'controllers' => __DIR__ . '/../cms-php/controllers',
         'views' => __DIR__ . '/../cms-php/views',
-        'cache' => __DIR__ . '/../cms-php/cache',
+        'cache' => env('CMS_CACHE_PATH', __DIR__ . '/../storage/cms-cache'),
         'assets' => __DIR__ . '/../cms-php/assets',
     ],
 
@@ -46,7 +46,14 @@ return [
     'cache' => [
         'enabled' => env('CMS_CACHE_ENABLED', true),
         'ttl' => env('CMS_CACHE_TTL', 3600), // 1 hour default
-        'driver' => 'file', // file or database
+        'driver' => env('CMS_CACHE_DRIVER', 'file'), // file or redis
+        'redis' => [
+            'host' => env('CMS_CACHE_REDIS_HOST', '127.0.0.1'),
+            'port' => env('CMS_CACHE_REDIS_PORT', 6379),
+            'password' => env('CMS_CACHE_REDIS_PASSWORD', null),
+            'database' => env('CMS_CACHE_REDIS_DB', 0),
+            'prefix' => env('CMS_CACHE_PREFIX', 'cms:'),
+        ],
     ],
 
     // Debug mode
