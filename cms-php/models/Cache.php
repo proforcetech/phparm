@@ -12,7 +12,7 @@ use CMS\Config\Database;
 class Cache
 {
     private Database $db;
-    private string $table = 'cache';
+    private string $table;
     private string $cacheDir;
     private bool $enabled;
     private string $driver;
@@ -28,6 +28,7 @@ class Cache
     public function __construct()
     {
         $this->db = Database::getInstance();
+        $this->table = $this->db->prefix('cache');
         $this->cacheDir = $_ENV['FILE_CACHE_DIR'] ?? CMS_CACHE;
         $this->enabled = ($_ENV['CACHE_ENABLED'] ?? 'true') === 'true';
         $this->driver = $_ENV['CACHE_DRIVER'] ?? 'file';

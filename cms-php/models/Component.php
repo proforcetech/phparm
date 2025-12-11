@@ -12,7 +12,7 @@ use CMS\Config\Database;
 class Component
 {
     private Database $db;
-    private string $table = 'components';
+    private string $table;
 
     // Component types
     public const TYPE_HEADER = 'header';
@@ -25,6 +25,7 @@ class Component
     public function __construct()
     {
         $this->db = Database::getInstance();
+        $this->table = $this->db->prefix('components');
     }
 
     /**

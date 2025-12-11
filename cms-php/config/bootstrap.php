@@ -28,7 +28,8 @@ if (function_exists('env') && isset($GLOBALS['env'])) {
         'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DB_CHARSET',
         'APP_ENV', 'APP_DEBUG', 'APP_URL', 'APP_SECRET',
         'CACHE_ENABLED', 'CACHE_DRIVER', 'CACHE_TTL',
-        'SESSION_LIFETIME', 'SESSION_NAME', 'ADMIN_PATH'
+        'SESSION_LIFETIME', 'SESSION_NAME', 'ADMIN_PATH',
+        'CMS_TABLE_PREFIX'
     ];
 
     foreach ($envVars as $var) {

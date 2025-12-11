@@ -12,11 +12,12 @@ use CMS\Config\Database;
 class Template
 {
     private Database $db;
-    private string $table = 'templates';
+    private string $table;
 
     public function __construct()
     {
         $this->db = Database::getInstance();
+        $this->table = $this->db->prefix('templates');
     }
 
     /**
