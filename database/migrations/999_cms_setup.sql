@@ -226,57 +226,17 @@ ALTER TABLE `cms_activity_log`
     ADD CONSTRAINT `cms_fk_activity_log_user` FOREIGN KEY (`user_id`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
 
 -- =============================================
--- Insert default admin user
--- Password: admin123 (CHANGE IN PRODUCTION!)
+-- Seed data is now handled by PHP seeders
+-- See: src/Database/Seeders/CMSSeeder.php
+-- Run: php bin/seed.php
 -- =============================================
-INSERT INTO `cms_users` (`username`, `email`, `password_hash`, `role`, `is_active`) VALUES
-('admin', 'admin@fixitforus.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1);
 
--- =============================================
--- Insert default settings
--- =============================================
-INSERT INTO `cms_settings` (`setting_key`, `setting_value`, `setting_type`, `description`, `is_public`) VALUES
-('site_name', 'FixItForUs', 'string', 'Site name displayed in header and title', 1),
-('site_tagline', 'Mobile Auto Repair Services', 'string', 'Site tagline/description', 1),
-('default_header_component', 'main-header', 'string', 'Default header component slug', 0),
-('default_footer_component', 'main-footer', 'string', 'Default footer component slug', 0),
-('default_template', 'default', 'string', 'Default page template slug', 0),
-('cache_enabled', '1', 'boolean', 'Enable/disable caching', 0),
-('cache_ttl', '3600', 'integer', 'Default cache TTL in seconds', 0),
-('maintenance_mode', '0', 'boolean', 'Enable maintenance mode', 0),
-('google_analytics_id', '', 'string', 'Google Analytics tracking ID', 0),
-('contact_phone', '(616) 200-7121', 'string', 'Contact phone number', 1),
-('contact_email', 'info@fixitforus.com', 'string', 'Contact email address', 1);
-
--- =============================================
--- Insert default template
--- =============================================
-INSERT INTO `cms_templates` (`name`, `slug`, `description`, `structure`, `is_active`) VALUES
-('Default', 'default', 'Default page template with header, content, and footer', '<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{{meta_description}}">
-    <meta name="keywords" content="{{meta_keywords}}">
-    <title>{{title}} | FixItForUs</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>{{default_css}}</style>
-    <style>{{custom_css}}</style>
-</head>
-<body>
-    {{header}}
-    <main>
-        {{breadcrumbs}}
-        {{content}}
-    </main>
-    {{footer}}
-    <script>{{default_js}}</script>
-    <script>{{custom_js}}</script>
-</body>
-</html>', 1);
+-- Default seed data includes:
+-- - Default CMS admin user (admin@fixitforus.com / admin123)
+-- - CMS settings (site_name, contact info, cache settings)
+-- - Default and Landing page templates
+-- - Main header and footer components
+-- - Sample pages (home, services, about, contact)
 
 -- =============================================
 -- Create event to clean expired cache (optional)
@@ -292,4 +252,4 @@ INSERT INTO `cms_templates` (`name`, `slug`, `description`, `structure`, `is_act
 -- DELIMITER ;
 -- SET GLOBAL event_scheduler = ON;
 
-SELECT 'Schema created successfully!' AS status;
+SELECT 'CMS schema created successfully! Run php bin/seed.php to seed data.' AS status;
