@@ -12,7 +12,7 @@ use CMS\Config\Database;
 class User
 {
     private Database $db;
-    private string $table = 'users';
+    private string $table;
 
     // User roles
     public const ROLE_ADMIN = 'admin';
@@ -22,6 +22,7 @@ class User
     public function __construct()
     {
         $this->db = Database::getInstance();
+        $this->table = $this->db->prefix('users');
     }
 
     /**

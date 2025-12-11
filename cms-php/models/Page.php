@@ -12,11 +12,18 @@ use CMS\Config\Database;
 class Page
 {
     private Database $db;
-    private string $table = 'pages';
+    private string $table;
+    private string $templatesTable;
+    private string $componentsTable;
+    private string $pageComponentsTable;
 
     public function __construct()
     {
         $this->db = Database::getInstance();
+        $this->table = $this->db->prefix('pages');
+        $this->templatesTable = $this->db->prefix('templates');
+        $this->componentsTable = $this->db->prefix('components');
+        $this->pageComponentsTable = $this->db->prefix('page_components');
     }
 
     /**
@@ -26,7 +33,7 @@ class Page
     {
         $sql = "SELECT p.*, t.name as template_name
                 FROM {$this->table} p
-                LEFT JOIN templates t ON p.template_id = t.id";
+                LEFT JOIN {$this->templatesTable} t ON p.template_id = t.id";
         if ($publishedOnly) {
             $sql .= " WHERE p.is_published = 1";
         }
@@ -50,7 +57,7 @@ class Page
 
         $sql = "SELECT p.*, t.name as template_name
                 FROM {$this->table} p
-                LEFT JOIN templates t ON p.template_id = t.id";
+                LEFT JOIN {$this->templatesTable} t ON p.template_id = t.id";
         if ($publishedOnly) {
             $sql .= " WHERE p.is_published = 1";
         }
@@ -75,7 +82,7 @@ class Page
         $sql = "SELECT p.*, t.name as template_name, t.structure as template_structure,
                        t.default_css, t.default_js
                 FROM {$this->table} p
-                LEFT JOIN templates t ON p.template_id = t.id
+                LEFT JOIN {$this->templatesTable} t ON p.template_id = t.id
                 WHERE p.id = ?";
         return $this->db->queryOne($sql, [$id]);
     }
@@ -88,7 +95,7 @@ class Page
         $sql = "SELECT p.*, t.name as template_name, t.structure as template_structure,
                        t.default_css, t.default_js
                 FROM {$this->table} p
-                LEFT JOIN templates t ON p.template_id = t.id
+                LEFT JOIN {$this->templatesTable} t ON p.template_id = t.id
                 WHERE p.slug = ?";
         return $this->db->queryOne($sql, [$slug]);
     }
@@ -103,9 +110,9 @@ class Page
                        hc.content as header_content, hc.css as header_css, hc.javascript as header_js,
                        fc.content as footer_content, fc.css as footer_css, fc.javascript as footer_js
                 FROM {$this->table} p
-                LEFT JOIN templates t ON p.template_id = t.id
-                LEFT JOIN components hc ON p.header_component_id = hc.id AND hc.is_active = 1
-                LEFT JOIN components fc ON p.footer_component_id = fc.id AND fc.is_active = 1
+                LEFT JOIN {$this->templatesTable} t ON p.template_id = t.id
+                LEFT JOIN {$this->componentsTable} hc ON p.header_component_id = hc.id AND hc.is_active = 1
+                LEFT JOIN {$this->componentsTable} fc ON p.footer_component_id = fc.id AND fc.is_active = 1
                 WHERE p.slug = ? AND p.is_published = 1";
         return $this->db->queryOne($sql, [$slug]);
     }
@@ -329,8 +336,8 @@ class Page
     public function getPageComponents(int $pageId): array
     {
         $sql = "SELECT c.*, pc.position, pc.sort_order
-                FROM page_components pc
-                JOIN components c ON pc.component_id = c.id
+                FROM {$this->pageComponentsTable} pc
+                JOIN {$this->componentsTable} c ON pc.component_id = c.id
                 WHERE pc.page_id = ? AND c.is_active = 1
                 ORDER BY pc.position, pc.sort_order";
         return $this->db->query($sql, [$pageId]);
@@ -341,7 +348,7 @@ class Page
      */
     public function attachComponent(int $pageId, int $componentId, string $position = 'content', int $sortOrder = 0): bool
     {
-        $sql = "INSERT INTO page_components (page_id, component_id, position, sort_order)
+        $sql = "INSERT INTO {$this->pageComponentsTable} (page_id, component_id, position, sort_order)
                 VALUES (?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE sort_order = ?";
         return $this->db->execute($sql, [$pageId, $componentId, $position, $sortOrder, $sortOrder]) > 0;
@@ -352,7 +359,7 @@ class Page
      */
     public function detachComponent(int $pageId, int $componentId, string $position = 'content'): bool
     {
-        $sql = "DELETE FROM page_components WHERE page_id = ? AND component_id = ? AND position = ?";
+        $sql = "DELETE FROM {$this->pageComponentsTable} WHERE page_id = ? AND component_id = ? AND position = ?";
         return $this->db->execute($sql, [$pageId, $componentId, $position]) > 0;
     }
 
@@ -363,7 +370,7 @@ class Page
     {
         $sql = "SELECT p.*, t.name as template_name
                 FROM {$this->table} p
-                LEFT JOIN templates t ON p.template_id = t.id
+                LEFT JOIN {$this->templatesTable} t ON p.template_id = t.id
                 WHERE (p.title LIKE ? OR p.content LIKE ? OR p.slug LIKE ?)";
         if ($publishedOnly) {
             $sql .= " AND p.is_published = 1";

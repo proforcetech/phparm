@@ -12,7 +12,7 @@ use CMS\Config\Database;
 class Setting
 {
     private Database $db;
-    private string $table = 'settings';
+    private string $table;
     private static array $cache = [];
 
     // Setting types
@@ -25,6 +25,7 @@ class Setting
     public function __construct()
     {
         $this->db = Database::getInstance();
+        $this->table = $this->db->prefix('settings');
     }
 
     /**

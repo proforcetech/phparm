@@ -20,6 +20,7 @@ class Database
     private string $username;
     private string $password;
     private string $charset;
+    private string $prefix;
 
     /**
      * Private constructor for singleton pattern
@@ -42,6 +43,15 @@ class Database
         $this->username = $_ENV['DB_USERNAME'] ?? $_ENV['DB_USER'] ?? 'root';
         $this->password = $_ENV['DB_PASSWORD'] ?? '';
         $this->charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
+        $this->prefix = $_ENV['CMS_TABLE_PREFIX'] ?? 'cms_';
+    }
+
+    /**
+     * Add table prefix to table name
+     */
+    public function prefix(string $table): string
+    {
+        return $this->prefix . $table;
     }
 
     /**
