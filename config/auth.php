@@ -33,7 +33,9 @@ return [
                 'users.view', 'users.invite', 'users.update',
                 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*',
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
-                'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*'
+                'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*',
+                // Full CMS access (matches admin for CMS operations)
+                'cms.*'
             ],
         ],
         'technician' => [
@@ -41,7 +43,13 @@ return [
             'description' => 'Work estimates, inspections, jobs, and time tracking',
             'permissions' => [
                 'customers.view', 'vehicles.view', 'estimates.view', 'estimates.update',
-                'inspections.*', 'time.*', 'appointments.view', 'service_types.view'
+                'inspections.*', 'time.*', 'appointments.view', 'service_types.view',
+                // CMS content editing (no administrative settings)
+                'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete',
+                'cms.menus.view', 'cms.menus.create', 'cms.menus.update', 'cms.menus.delete',
+                'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete',
+                'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete',
+                'cms.templates.view'
             ],
         ],
         'customer' => [
