@@ -123,10 +123,13 @@ function loadEnv(string $path): void
 
 /**
  * Get environment variable with default
+ * Only define if not already defined by main application
  */
-function env(string $key, $default = null)
-{
-    return $_ENV[$key] ?? getenv($key) ?: $default;
+if (!function_exists('env')) {
+    function env(string $key, $default = null)
+    {
+        return $_ENV[$key] ?? getenv($key) ?: $default;
+    }
 }
 
 /**
