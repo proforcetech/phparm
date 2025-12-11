@@ -361,3 +361,25 @@ CREATE TABLE inspection_templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inspection_s_
+
+CREATE TABLE `cms_components` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(100) NOT NULL UNIQUE,
+    `slug` VARCHAR(100) NOT NULL UNIQUE,
+    `type` ENUM('header', 'footer', 'navigation', 'sidebar', 'widget', 'custom') NOT NULL DEFAULT 'custom',
+    `description` TEXT NULL,
+    `content` LONGTEXT NOT NULL,
+    `css` TEXT NULL,
+    `javascript` TEXT NULL,
+    `is_active` TINYINT(1) DEFAULT 1,
+    `cache_ttl` INT UNSIGNED DEFAULT 3600 COMMENT 'Cache time-to-live in seconds',
+    `created_by` INT UNSIGNED NULL,
+    `updated_by` INT UNSIGNED NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_slug` (`slug`),
+    INDEX `idx_type` (`type`),
+    INDEX `idx_is_active` (`is_active`),
+    INDEX `idx_created_by` (`created_by`),
+    INDEX `idx_updated_by` (`updated_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
