@@ -2,7 +2,17 @@
 CREATE TABLE roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
-    description VARCHAR(255) NULL
+    description VARCHAR(255) NULL,
+    UNIQUE KEY unique_role_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE role_permissions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    role VARCHAR(50) NOT NULL,
+    permission VARCHAR(120) NOT NULL,
+    created_at TIMESTAMP NULL,
+    UNIQUE KEY role_permission_unique (role, permission),
+    INDEX idx_role_permissions_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE users (
@@ -82,7 +92,9 @@ CREATE TABLE service_types (
     active TINYINT(1) DEFAULT 1,
     display_order INT DEFAULT 0,
     created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL
+    updated_at TIMESTAMP NULL,
+    UNIQUE KEY uniq_service_types_name (name),
+    UNIQUE KEY uniq_service_types_alias (alias)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_items (
@@ -137,7 +149,9 @@ CREATE TABLE estimate_jobs (
     tax DECIMAL(12,2) DEFAULT 0,
     total DECIMAL(12,2) DEFAULT 0,
     INDEX idx_estimate_job_estimate (estimate_id),
-    CONSTRAINT fk_estimate_job_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
+    INDEX idx_estimate_jobs_service_type (service_type_id),
+    CONSTRAINT fk_estimate_job_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
+    CONSTRAINT fk_estimate_jobs_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimate_items (
@@ -171,9 +185,11 @@ CREATE TABLE invoices (
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_invoice_customer (customer_id),
+    INDEX idx_invoices_service_type (service_type_id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_invoice_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
-    CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
+    CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
+    CONSTRAINT fk_invoices_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE invoice_items (
