@@ -28,37 +28,31 @@
         <div v-if="bundles.length === 0" class="py-10 text-center text-gray-500">No bundles found.</div>
 
         <div class="hidden md:block mt-4">
-          <Table>
-            <thead>
-              <tr>
-                <th class="text-left">Name</th>
-                <th class="text-left">Service Type</th>
-                <th class="text-left">Items</th>
-                <th class="text-left">Sort Order</th>
-                <th class="text-left">Status</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="bundle in bundles" :key="bundle.id">
-                <td class="py-3">
-                  <div class="font-medium text-gray-900">{{ bundle.name }}</div>
-                  <div class="text-sm text-gray-500">{{ bundle.description || 'No description' }}</div>
-                </td>
-                <td class="text-sm text-gray-700">{{ bundle.service_type_name || '—' }}</td>
-                <td class="text-sm text-gray-700">{{ bundle.item_count ?? 0 }}</td>
-                <td class="text-sm text-gray-700">{{ bundle.sort_order }}</td>
-                <td>
-                  <Badge :variant="bundle.is_active ? 'success' : 'secondary'">{{ bundle.is_active ? 'Active' : 'Inactive' }}</Badge>
-                </td>
-                <td class="text-right">
-                  <div class="flex justify-end gap-2">
-                    <Button size="sm" variant="secondary" @click="editBundle(bundle.id)">Edit</Button>
-                    <Button size="sm" variant="danger" @click="confirmDelete(bundle)">Delete</Button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
+          <Table :columns="columns" :data="bundles" :loading="loading" hoverable>
+            <template #cell(name)="{ row }">
+              <div class="py-3">
+                <div class="font-medium text-gray-900">{{ row.name }}</div>
+                <div class="text-sm text-gray-500">{{ row.description || 'No description' }}</div>
+              </div>
+            </template>
+            <template #cell(service_type_name)="{ value }">
+              <span class="text-sm text-gray-700">{{ value || '—' }}</span>
+            </template>
+            <template #cell(item_count)="{ value }">
+              <span class="text-sm text-gray-700">{{ value ?? 0 }}</span>
+            </template>
+            <template #cell(sort_order)="{ value }">
+              <span class="text-sm text-gray-700">{{ value }}</span>
+            </template>
+            <template #cell(is_active)="{ value }">
+              <Badge :variant="value ? 'success' : 'secondary'">{{ value ? 'Active' : 'Inactive' }}</Badge>
+            </template>
+            <template #actions="{ row }">
+              <div class="flex justify-end gap-2">
+                <Button size="sm" variant="secondary" @click="editBundle(row.id)">Edit</Button>
+                <Button size="sm" variant="danger" @click="confirmDelete(row)">Delete</Button>
+              </div>
+            </template>
           </Table>
         </div>
 
@@ -122,6 +116,14 @@ const filters = reactive({
   query: '',
   activeOnly: true,
 })
+
+const columns = [
+  { key: 'name', label: 'Name' },
+  { key: 'service_type_name', label: 'Service Type' },
+  { key: 'item_count', label: 'Items' },
+  { key: 'sort_order', label: 'Sort Order' },
+  { key: 'is_active', label: 'Status' },
+]
 
 const loadBundles = async () => {
   loading.value = true
