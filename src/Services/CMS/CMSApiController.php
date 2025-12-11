@@ -23,7 +23,7 @@ class CMSApiController
     {
         $this->connection = $connection;
         $this->authBridge = $authBridge;
-        $this->tablePrefix = env('CMS_TABLE_PREFIX', '');
+        $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
     }
 
     /**
