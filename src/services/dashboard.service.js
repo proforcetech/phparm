@@ -5,7 +5,7 @@ export default {
    * Get dashboard statistics
    */
   async getStats() {
-    const response = await api.get('/dashboard/stats')
+    const response = await api.get('/dashboard')
     return response.data
   },
 
