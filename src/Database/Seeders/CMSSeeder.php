@@ -24,7 +24,7 @@ class CMSSeeder
     public function __construct(Connection $connection)
     {
         $this->connection = $connection;
-        $this->tablePrefix = env('CMS_TABLE_PREFIX', '');
+        $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
     }
 
     /**
