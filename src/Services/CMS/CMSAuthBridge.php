@@ -72,7 +72,12 @@ class CMSAuthBridge
             // Try to access the role property
             // This might throw an Error if the typed property is uninitialized
             $role = $user->role;
-            return is_string($role) && $role !== '' ? $role : null;
+            if (!is_string($role) || $role === '') {
+                return null;
+            }
+
+            // Normalize casing/spacing so role checks remain stable across sources
+            return strtolower(trim($role));
         } catch (\Error $e) {
             error_log('CMSAuthBridge: Error accessing user role - ' . $e->getMessage());
             return null;
@@ -116,9 +121,9 @@ class CMSAuthBridge
      * Initialize CMS session variables from phparm user
      * This bridges the phparm JWT auth to CMS session-based auth
      */
-    public function initializeCMSSession(User $user): void
+    public function initializeCMSSession(?User $user): void
     {
-        if (!$this->hasCMSAccess($user)) {
+        if ($user === null || !$this->hasCMSAccess($user)) {
             return;
         }
 
