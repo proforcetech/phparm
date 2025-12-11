@@ -256,6 +256,24 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cms/menus',
+    name: 'CMSMenuList',
+    component: () => import('@/views/cms/CMSMenuList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/menus/create',
+    name: 'CMSMenuCreate',
+    component: () => import('@/views/cms/CMSMenuForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cms/menus/:id',
+    name: 'CMSMenuEdit',
+    component: () => import('@/views/cms/CMSMenuForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cms/components',
     name: 'CMSComponentList',
     component: () => import('@/views/cms/CMSComponentList.vue'),

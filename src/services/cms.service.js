@@ -64,10 +64,70 @@ export default {
   },
 
   /**
+   * Publish a page
+   */
+  async publishPage(id) {
+    const response = await api.post(`/cms/pages/${id}/publish`)
+    return response.data
+  },
+
+  /**
    * Delete a page
    */
   async deletePage(id) {
     const response = await api.delete(`/cms/pages/${id}`)
+    return response.data
+  },
+
+  // ================================================
+  // Menus
+  // ================================================
+
+  /**
+   * Get all CMS menus
+   */
+  async getMenus(params = {}) {
+    const response = await api.get('/cms/menus', { params })
+    return response.data
+  },
+
+  /**
+   * Get a single menu by ID
+   */
+  async getMenu(id) {
+    const response = await api.get(`/cms/menus/${id}`)
+    return response.data
+  },
+
+  /**
+   * Create a new menu
+   */
+  async createMenu(data) {
+    const response = await api.post('/cms/menus', data)
+    return response.data
+  },
+
+  /**
+   * Update an existing menu
+   */
+  async updateMenu(id, data) {
+    const response = await api.put(`/cms/menus/${id}`, data)
+    return response.data
+  },
+
+  /**
+   * Delete a menu
+   */
+  async deleteMenu(id) {
+    const response = await api.delete(`/cms/menus/${id}`)
+    return response.data
+  },
+
+  /**
+   * Publish a menu
+   */
+  async publishMenu(id) {
+    const response = await api.post(`/cms/menus/${id}/publish`)
     return response.data
   },
 

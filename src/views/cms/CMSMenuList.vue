@@ -1,26 +1,23 @@
 <template>
   <div>
-    <!-- Page Header -->
     <div class="mb-8 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">CMS Pages</h1>
-        <p class="mt-1 text-sm text-gray-500">Manage your website pages</p>
+        <h1 class="text-2xl font-bold text-gray-900">CMS Menus</h1>
+        <p class="mt-1 text-sm text-gray-500">Manage navigation menus and publish updates</p>
       </div>
-      <Button @click="$router.push('/cms/pages/create')">
+      <Button @click="$router.push('/cms/menus/create')">
         <PlusIcon class="h-5 w-5 mr-2" />
-        New Page
+        New Menu
       </Button>
     </div>
 
-    <!-- Filters -->
     <Card class="mb-6">
-      <div class="flex flex-wrap gap-4">
+      <div class="flex flex-wrap gap-4 items-end">
         <div class="flex-1 min-w-[200px]">
-          <input
+          <Input
             v-model="filters.search"
-            type="text"
-            placeholder="Search pages..."
-            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            placeholder="Search menus..."
+            class="w-full"
             @input="debouncedSearch"
           />
         </div>
@@ -28,7 +25,7 @@
           <select
             v-model="filters.status"
             class="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            @change="loadPages"
+            @change="loadMenus"
           >
             <option value="">All Status</option>
             <option value="published">Published</option>
@@ -38,25 +35,20 @@
       </div>
     </Card>
 
-    <!-- Loading State -->
     <div v-if="loading" class="flex justify-center py-12">
-      <Loading size="xl" text="Loading pages..." />
+      <Loading size="xl" text="Loading menus..." />
     </div>
 
-    <!-- Error State -->
-    <Alert v-else-if="error" variant="danger" class="mb-6">
-      {{ error }}
-    </Alert>
+    <Alert v-else-if="error" variant="danger" class="mb-6">{{ error }}</Alert>
 
-    <!-- Pages Table -->
     <Card v-else>
-      <div v-if="pages.length === 0" class="text-center py-12 text-gray-500">
+      <div v-if="menus.length === 0" class="text-center py-12 text-gray-500">
         <DocumentDuplicateIcon class="h-12 w-12 mx-auto mb-4 text-gray-400" />
-        <p class="text-lg font-medium">No pages found</p>
-        <p class="text-sm mt-1">Get started by creating your first page.</p>
-        <Button class="mt-4" @click="$router.push('/cms/pages/create')">
+        <p class="text-lg font-medium">No menus found</p>
+        <p class="text-sm mt-1">Create your first navigation menu to get started.</p>
+        <Button class="mt-4" @click="$router.push('/cms/menus/create')">
           <PlusIcon class="h-5 w-5 mr-2" />
-          Create Page
+          Create Menu
         </Button>
       </div>
 
@@ -64,70 +56,54 @@
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Title
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Slug
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Template
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Updated
-              </th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
+              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr
-              v-for="page in pages"
-              :key="page.id"
+              v-for="menu in menus"
+              :key="menu.id"
               class="hover:bg-gray-50 cursor-pointer"
-              @click="$router.push(`/cms/pages/${page.id}`)"
+              @click="$router.push(`/cms/menus/${menu.id}`)"
             >
               <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm font-medium text-gray-900">{{ page.title }}</div>
+                <div class="text-sm font-medium text-gray-900">{{ menu.name }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-500">/{{ page.slug }}</div>
+                <div class="text-sm text-gray-500">{{ menu.location || '—' }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm text-gray-500">{{ page.template_name || 'None' }}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <Badge :variant="page.is_published ? 'success' : 'warning'">
-                  {{ page.is_published ? 'Published' : 'Draft' }}
+                <Badge :variant="menu.is_published ? 'success' : 'warning'">
+                  {{ menu.is_published ? 'Published' : 'Draft' }}
                 </Badge>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ formatDate(page.updated_at) }}
+                {{ formatDate(menu.updated_at) }}
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                 <div class="flex items-center justify-end gap-2" @click.stop>
                   <Button
                     variant="secondary"
                     size="sm"
-                    @click="togglePublish(page)"
+                    @click="togglePublish(menu)"
                   >
-                    {{ page.is_published ? 'Unpublish' : 'Publish' }}
+                    {{ menu.is_published ? 'Unpublish' : 'Publish' }}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    @click="$router.push(`/cms/pages/${page.id}`)"
+                    @click="$router.push(`/cms/menus/${menu.id}`)"
                   >
                     <PencilIcon class="h-4 w-4" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    @click="confirmDelete(page)"
+                    @click="confirmDelete(menu)"
                   >
                     <TrashIcon class="h-4 w-4 text-red-500" />
                   </Button>
@@ -139,16 +115,15 @@
       </div>
     </Card>
 
-    <!-- Delete Confirmation Modal -->
-    <Modal v-model="showDeleteModal" title="Delete Page">
+    <Modal v-model="showDeleteModal" title="Delete Menu">
       <p class="text-gray-600">
-        Are you sure you want to delete the page "<strong>{{ pageToDelete?.title }}</strong>"?
+        Are you sure you want to delete the menu "<strong>{{ menuToDelete?.name }}</strong>"?
         This action cannot be undone.
       </p>
       <template #footer>
         <div class="flex justify-end gap-3">
           <Button variant="outline" @click="showDeleteModal = false">Cancel</Button>
-          <Button variant="danger" @click="deletePage" :disabled="deleting">
+          <Button variant="danger" :disabled="deleting" @click="deleteMenu">
             {{ deleting ? 'Deleting...' : 'Delete' }}
           </Button>
         </div>
@@ -165,7 +140,8 @@ import Badge from '@/components/ui/Badge.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
 import Modal from '@/components/ui/Modal.vue'
-import { useCmsPageStore } from '@/stores/cmsPages'
+import Input from '@/components/ui/Input.vue'
+import { useCmsMenuStore } from '@/stores/cmsMenus'
 import { useToast } from '@/stores/toast'
 import {
   PlusIcon,
@@ -174,11 +150,11 @@ import {
   DocumentDuplicateIcon,
 } from '@heroicons/vue/24/outline'
 
-const pageStore = useCmsPageStore()
+const menuStore = useCmsMenuStore()
 const toast = useToast()
 
-const loading = computed(() => pageStore.loading)
-const pages = computed(() => pageStore.pages)
+const loading = computed(() => menuStore.loading)
+const menus = computed(() => menuStore.menus)
 const error = ref(null)
 const filters = ref({
   search: '',
@@ -186,67 +162,67 @@ const filters = ref({
 })
 
 const showDeleteModal = ref(false)
-const pageToDelete = ref(null)
+const menuToDelete = ref(null)
 const deleting = ref(false)
 
 let searchTimeout = null
 
 onMounted(async () => {
-  await loadPages()
+  await loadMenus()
 })
 
-async function loadPages() {
+async function loadMenus() {
   try {
     error.value = null
-    await pageStore.fetchPages(filters.value)
+    await menuStore.fetchMenus(filters.value)
   } catch (err) {
-    console.error('Failed to load pages:', err)
-    error.value = err.response?.data?.message || 'Failed to load pages'
+    console.error('Failed to load menus:', err)
+    error.value = err.response?.data?.message || 'Failed to load menus'
   }
 }
 
 function debouncedSearch() {
   if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    loadPages()
+    loadMenus()
   }, 300)
 }
 
-function confirmDelete(page) {
-  pageToDelete.value = page
+function confirmDelete(menu) {
+  menuToDelete.value = menu
   showDeleteModal.value = true
 }
 
-async function deletePage() {
-  if (!pageToDelete.value) return
+async function deleteMenu() {
+  if (!menuToDelete.value) return
 
   try {
     deleting.value = true
-    await pageStore.deletePage(pageToDelete.value.id)
-    toast.success('Page deleted')
+    await menuStore.deleteMenu(menuToDelete.value.id)
+    toast.success('Menu deleted')
     showDeleteModal.value = false
-    pageToDelete.value = null
-    await loadPages()
+    menuToDelete.value = null
+    await loadMenus()
   } catch (err) {
-    console.error('Failed to delete page:', err)
-    error.value = err.response?.data?.message || 'Failed to delete page'
+    console.error('Failed to delete menu:', err)
+    error.value = err.response?.data?.message || 'Failed to delete menu'
     toast.error(error.value)
   } finally {
     deleting.value = false
   }
 }
 
-async function togglePublish(page) {
+async function togglePublish(menu) {
   try {
     error.value = null
-    if (page.is_published) {
-      await pageStore.updatePage(page.id, { ...page, is_published: false })
-      toast.info('Page moved to drafts')
+    if (menu.is_published) {
+      await menuStore.updateMenu(menu.id, { ...menu, is_published: false })
+      toast.info('Menu moved to drafts')
     } else {
-      await pageStore.publishPage(page.id)
-      toast.success('Page published')
+      await menuStore.publishMenu(menu.id)
+      toast.success('Menu published')
     }
-    await loadPages()
+    await loadMenus()
   } catch (err) {
     console.error('Failed to update publish status:', err)
     error.value = err.response?.data?.message || 'Failed to update publish status'
