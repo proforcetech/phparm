@@ -68,7 +68,6 @@ DELETE FROM customer_vehicles WHERE id IN (2001, 2002);
 DELETE FROM customers WHERE id IN (1001, 1002);
 
 -- Demo customers
--- Demo customers
 DELETE FROM customers WHERE id IN (1001, 1002);
 INSERT INTO customers (id, first_name, last_name, business_name, email, phone, street, city, state, postal_code, country, is_commercial, tax_exempt, notes, external_reference, created_at, updated_at) VALUES
     (1001, 'Jane', 'Driver', NULL, 'jane.driver@example.com', '+155555501', '123 Maple St', 'Springfield', 'IL', '62701', 'USA', 0, 0, 'Prefers Saturday appointments', 'CUST-JANE', NOW(), NOW()),
@@ -121,9 +120,5 @@ INSERT INTO time_entries (id, technician_id, estimate_job_id, started_at, ended_
     (5001, 3, 3102, DATE_SUB(NOW(), INTERVAL 2 HOUR), DATE_SUB(NOW(), INTERVAL 90 MINUTE), 30.0, 40.7128, -74.0060, 40.7128, -74.0060, 0, 'Travel and setup for mobile oil change');
 
 SET FOREIGN_KEY_CHECKS = @OLD_FOREIGN_KEY_CHECKS;
-
-DELETE FROM time_entries WHERE id IN (5001);
-INSERT INTO time_entries (id, technician_id, estimate_job_id, started_at, ended_at, duration_minutes, start_latitude, start_longitude, end_latitude, end_longitude, manual_override, notes) VALUES
-    (5001, 3, 3102, DATE_SUB(NOW(), INTERVAL 2 HOUR), DATE_SUB(NOW(), INTERVAL 90 MINUTE), 30.0, 40.7128, -74.0060, 40.7128, -74.0060, 0, 'Travel and setup for mobile oil change');
 
 COMMIT;
