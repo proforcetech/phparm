@@ -42,10 +42,10 @@ class Setting
      */
     public function getPublic(): array
     {
-        $sql = "SELECT setting_key, setting_value, setting_type
+        $sql = "SELECT key value, type
                 FROM {$this->table}
                 WHERE is_public = 1
-                ORDER BY setting_key";
+                ORDER BY key";
         return $this->db->query($sql);
     }
 
@@ -59,14 +59,14 @@ class Setting
             return self::$cache[$key];
         }
 
-        $sql = "SELECT setting_value, setting_type FROM {$this->table} WHERE setting_key = ?";
+        $sql = "SELECT value, type FROM {$this->table} WHERE key = ?";
         $result = $this->db->queryOne($sql, [$key]);
 
         if (!$result) {
             return $default;
         }
 
-        $value = $this->castValue($result['setting_value'], $result['setting_type']);
+        $value = $this->castValue($result['value'], $result['type']);
         self::$cache[$key] = $value;
 
         return $value;
@@ -79,17 +79,17 @@ class Setting
     {
         // Check if setting exists
         $existing = $this->db->queryOne(
-            "SELECT id, setting_type FROM {$this->table} WHERE setting_key = ?",
+            "SELECT id, type FROM {$this->table} WHERE key = ?",
             [$key]
         );
 
         if ($existing) {
             // Update existing
-            $fields = ['setting_value = ?'];
-            $params = [$this->serializeValue($value, $type ?? $existing['setting_type'])];
+            $fields = ['value = ?'];
+            $params = [$this->serializeValue($value, $type ?? $existing['type'])];
 
             if ($type !== null) {
-                $fields[] = 'setting_type = ?';
+                $fields[] = 'type = ?';
                 $params[] = $type;
             }
 
@@ -104,11 +104,11 @@ class Setting
             }
 
             $params[] = $key;
-            $sql = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE setting_key = ?";
+            $sql = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE key = ?";
         } else {
             // Insert new
             $sql = "INSERT INTO {$this->table}
-                    (setting_key, setting_value, setting_type, description, is_public)
+                    (key, value, type, description, is_public)
                     VALUES (?, ?, ?, ?, ?)";
             $params = [
                 $key,
@@ -134,7 +134,7 @@ class Setting
      */
     public function delete(string $key): bool
     {
-        $sql = "DELETE FROM {$this->table} WHERE setting_key = ?";
+        $sql = "DELETE FROM {$this->table} WHERE key = ?";
         $result = $this->db->execute($sql, [$key]) > 0;
 
         // Remove from cache
@@ -155,15 +155,15 @@ class Setting
         }
 
         $placeholders = str_repeat('?,', count($keys) - 1) . '?';
-        $sql = "SELECT setting_key, setting_value, setting_type
+        $sql = "SELECT key, value, type
                 FROM {$this->table}
-                WHERE setting_key IN ({$placeholders})";
+                WHERE key IN ({$placeholders})";
 
         $results = $this->db->query($sql, $keys);
         $settings = [];
 
         foreach ($results as $row) {
-            $settings[$row['setting_key']] = $this->castValue($row['setting_value'], $row['setting_type']);
+            $settings[$row['key']] = $this->castValue($row['value'], $row['type']);
         }
 
         return $settings;
@@ -272,7 +272,7 @@ class Setting
         ];
 
         foreach ($all as $setting) {
-            $key = $setting['setting_key'];
+            $key = $setting['key'];
 
             if (strpos($key, 'site_') === 0) {
                 $grouped['site'][] = $setting;
