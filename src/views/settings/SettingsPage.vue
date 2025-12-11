@@ -64,11 +64,11 @@
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700">Estimate Terms</label>
-              <Textarea v-model="form.terms.estimates" rows="4" placeholder="Terms shown on estimates" class="mt-1" />
+              <Textarea v-model="form.terms.estimates" :rows="4" placeholder="Terms shown on estimates" class="mt-1" />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Invoice Terms</label>
-              <Textarea v-model="form.terms.invoices" rows="4" placeholder="Terms shown on invoices" class="mt-1" />
+              <Textarea v-model="form.terms.invoices" :rows="4" placeholder="Terms shown on invoices" class="mt-1" />
             </div>
           </div>
         </Card>
@@ -233,7 +233,7 @@
             <label class="block text-sm font-medium text-gray-700">PartsTech Markup Tiers (JSON)</label>
             <Textarea
               v-model="form.integrations.partsTechMarkup"
-              rows="3"
+              :rows="3"
               placeholder='[{"threshold":0,"markup":0.2}]'
               class="mt-1"
             />

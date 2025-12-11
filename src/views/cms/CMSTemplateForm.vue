@@ -84,20 +84,17 @@
               </div>
             </template>
 
-            <Alert v-if="showPlaceholders" variant="info" class="mb-4">
-              <div class="text-sm">
-                <p class="font-medium mb-2">Available placeholders:</p>
-                <ul class="list-disc list-inside space-y-1">
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{header}}' }}</code> - Header component</li>
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{content}}' }}</code> - Page content</li>
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{footer}}' }}</code> - Footer component</li>
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{title}}' }}</code> - Page title</li>
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{meta_description}}' }}</code> - Meta description</li>
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{custom_css}}' }}</code> - Page custom CSS</li>
-                  <li><code class="bg-gray-100 px-1 rounded">{{ '{{custom_js}}' }}</code> - Page custom JavaScript</li>
-                </ul>
-              </div>
-            </Alert>
+              <Alert v-if="showPlaceholders" variant="info" class="mb-4">
+                <div class="text-sm">
+                  <p class="font-medium mb-2">Available placeholders:</p>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li v-for="placeholder in placeholders" :key="placeholder.token" class="flex items-center gap-2">
+                      <code class="bg-gray-100 px-1 rounded">{{ placeholder.token }}</code>
+                      <span>- {{ placeholder.label }}</span>
+                    </li>
+                  </ul>
+                </div>
+              </Alert>
 
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">HTML Structure *</label>
@@ -106,20 +103,7 @@
                 rows="20"
                 required
                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                placeholder="<!DOCTYPE html>
-<html>
-<head>
-    <title>{{title}}</title>
-    <meta name='description' content='{{meta_description}}'>
-    <style>{{custom_css}}</style>
-</head>
-<body>
-    {{header}}
-    <main>{{content}}</main>
-    {{footer}}
-    <script>{{custom_js}}</script>
-</body>
-</html>"
+                :placeholder="structurePlaceholder"
               ></textarea>
             </div>
           </Card>
@@ -244,6 +228,33 @@ const form = ref({
   default_js: '',
   is_active: true,
 })
+
+const structurePlaceholder = [
+  '<!DOCTYPE html>',
+  '<html>',
+  '<head>',
+  '    <title>{{title}}</title>',
+  '    <meta name="description" content="{{meta_description}}">',
+  '    <style>{{custom_css}}</style>',
+  '</head>',
+  '<body>',
+  '    {{header}}',
+  '    <main>{{content}}</main>',
+  '    {{footer}}',
+  '    <script>{{custom_js}}<\\/script>',
+  '</body>',
+  '</html>',
+].join('\n')
+
+const placeholders = [
+  { token: '{{header}}', label: 'Header component' },
+  { token: '{{content}}', label: 'Page content' },
+  { token: '{{footer}}', label: 'Footer component' },
+  { token: '{{title}}', label: 'Page title' },
+  { token: '{{meta_description}}', label: 'Meta description' },
+  { token: '{{custom_css}}', label: 'Page custom CSS' },
+  { token: '{{custom_js}}', label: 'Page custom JavaScript' },
+]
 
 onMounted(async () => {
   await loadData()

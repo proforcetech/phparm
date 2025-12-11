@@ -189,13 +189,13 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, useSlots } from 'vue'
 import Loading from './Loading.vue'
 
 const props = defineProps({
   columns: {
     type: Array,
-    required: true,
+    default: () => [],
     // Format: [{ key: 'id', label: 'ID', sortable: true }, ...]
   },
   data: {
@@ -235,6 +235,8 @@ const props = defineProps({
     default: 1,
   },
 })
+
+const slots = useSlots()
 
 const emit = defineEmits([
   'row-click',
@@ -349,9 +351,9 @@ function nextPage() {
 
 // Utilities
 const columnCount = computed(() => {
-  let count = props.columns.length
+  let count = props.columns?.length ?? 0
   if (props.selectable) count++
-  if (props.$slots?.actions) count++
+  if (slots.actions) count++
   return count
 })
 
