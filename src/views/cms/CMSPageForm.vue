@@ -29,6 +29,11 @@
 
     <!-- Form -->
     <form v-else @submit.prevent="savePage">
+      <Alert v-if="validationErrors.length" variant="warning" class="mb-4">
+        <ul class="list-disc pl-5">
+          <li v-for="message in validationErrors" :key="message">{{ message }}</li>
+        </ul>
+      </Alert>
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
@@ -164,6 +169,16 @@
                 <Button type="submit" class="w-full" :disabled="saving">
                   {{ saving ? 'Saving...' : (isEditing ? 'Update Page' : 'Create Page') }}
                 </Button>
+                <Button
+                  v-if="!form.is_published"
+                  type="button"
+                  class="w-full mt-3"
+                  variant="secondary"
+                  :disabled="saving"
+                  @click="publishPage"
+                >
+                  {{ saving ? 'Publishing...' : 'Save & Publish' }}
+                </Button>
               </div>
             </div>
           </Card>
@@ -268,41 +283,32 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
 import cmsService from '@/services/cms.service'
+import { useCmsPageStore } from '@/stores/cmsPages'
+import { useToast } from '@/stores/toast'
 import { ArrowLeftIcon } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
 const router = useRouter()
+const pageStore = useCmsPageStore()
+const toast = useToast()
 
 const loading = ref(true)
 const saving = ref(false)
 const error = ref(null)
+const validationErrors = ref([])
 
 const pageId = computed(() => route.params.id)
 const isEditing = computed(() => !!pageId.value && pageId.value !== 'create')
+const draftKey = computed(() => pageId.value || 'new')
 
-const form = ref({
-  title: '',
-  slug: '',
-  content: '',
-  meta_description: '',
-  meta_keywords: '',
-  template_id: null,
-  header_component_id: null,
-  footer_component_id: null,
-  custom_css: '',
-  custom_js: '',
-  parent_id: null,
-  sort_order: 0,
-  cache_ttl: 3600,
-  is_published: false,
-})
+const form = ref(createDefaultForm())
 
 const options = ref({
   templates: [],
@@ -321,6 +327,29 @@ onMounted(async () => {
   await loadData()
 })
 
+watch(form, (value) => {
+  pageStore.setDraft(draftKey.value, value)
+}, { deep: true })
+
+function createDefaultForm() {
+  return {
+    title: '',
+    slug: '',
+    content: '',
+    meta_description: '',
+    meta_keywords: '',
+    template_id: null,
+    header_component_id: null,
+    footer_component_id: null,
+    custom_css: '',
+    custom_js: '',
+    parent_id: null,
+    sort_order: 0,
+    cache_ttl: 3600,
+    is_published: false,
+  }
+}
+
 async function loadData() {
   try {
     loading.value = true
@@ -332,22 +361,19 @@ async function loadData() {
 
     // Load page if editing
     if (isEditing.value) {
-      const pageData = await cmsService.getPage(pageId.value)
+      const pageData = await pageStore.fetchPage(pageId.value)
+      const draft = pageStore.drafts[draftKey.value]
       form.value = {
-        title: pageData.title || '',
-        slug: pageData.slug || '',
-        content: pageData.content || '',
-        meta_description: pageData.meta_description || '',
-        meta_keywords: pageData.meta_keywords || '',
-        template_id: pageData.template_id || null,
-        header_component_id: pageData.header_component_id || null,
-        footer_component_id: pageData.footer_component_id || null,
-        custom_css: pageData.custom_css || '',
-        custom_js: pageData.custom_js || '',
-        parent_id: pageData.parent_id || null,
-        sort_order: pageData.sort_order || 0,
-        cache_ttl: pageData.cache_ttl || 3600,
-        is_published: !!pageData.is_published,
+        ...createDefaultForm(),
+        ...pageData,
+        ...(draft || {}),
+        is_published: !!(draft?.is_published ?? pageData?.is_published),
+      }
+    } else {
+      const draft = pageStore.drafts[draftKey.value]
+      form.value = {
+        ...createDefaultForm(),
+        ...(draft || {}),
       }
     }
   } catch (err) {
@@ -370,24 +396,74 @@ function generateSlug() {
   form.value.slug = slug
 }
 
+function validateForm() {
+  const errors = []
+  if (!form.value.title) errors.push('Title is required')
+  if (!form.value.slug) errors.push('Slug is required')
+  return errors
+}
+
 async function savePage() {
   try {
     saving.value = true
     error.value = null
+    validationErrors.value = validateForm()
+
+    if (validationErrors.value.length) {
+      throw new Error(validationErrors.value.join(', '))
+    }
 
     if (isEditing.value) {
-      await cmsService.updatePage(pageId.value, form.value)
+      await pageStore.updatePage(pageId.value, form.value)
+      toast.success('Page updated')
     } else {
-      const newPage = await cmsService.createPage(form.value)
+      const newPage = await pageStore.createPage(form.value)
+      toast.success('Page created')
       router.push(`/cms/pages/${newPage.id}`)
       return
     }
 
-    // Reload data to get fresh state
+    pageStore.clearDraft(draftKey.value)
     await loadData()
   } catch (err) {
     console.error('Failed to save page:', err)
-    error.value = err.response?.data?.message || 'Failed to save page'
+    error.value = err.response?.data?.message || err.message || 'Failed to save page'
+    if (!validationErrors.value.length) {
+      validationErrors.value = [error.value]
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+async function publishPage() {
+  try {
+    saving.value = true
+    error.value = null
+    validationErrors.value = validateForm()
+
+    if (validationErrors.value.length) {
+      throw new Error(validationErrors.value.join(', '))
+    }
+
+    if (isEditing.value) {
+      await pageStore.publishPage(pageId.value)
+      toast.success('Page published')
+    } else {
+      const newPage = await pageStore.createPage({ ...form.value, is_published: true })
+      toast.success('Page created and published')
+      router.push(`/cms/pages/${newPage.id}`)
+      return
+    }
+
+    pageStore.clearDraft(draftKey.value)
+    await loadData()
+  } catch (err) {
+    console.error('Failed to publish page:', err)
+    error.value = err.response?.data?.message || err.message || 'Failed to publish page'
+    if (!validationErrors.value.length) {
+      validationErrors.value = [error.value]
+    }
   } finally {
     saving.value = false
   }
