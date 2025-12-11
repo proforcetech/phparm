@@ -5,6 +5,9 @@
  * Handles API requests and delegates front-end rendering to the CMS
  */
 
+// Load application bootstrap first (needed for CMS integration)
+$config = require __DIR__ . '/../bootstrap.php';
+
 // Determine if this request should be handled by the CMS front-end
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $normalizedPath = '/' . ltrim($requestUri, '/');
@@ -38,8 +41,7 @@ if (!$isApiRequest && !$isHealthCheck) {
     return;
 }
 
-$config = require __DIR__ . '/../bootstrap.php';
-
+// Bootstrap already loaded above, continue with API routing
 use App\Database\Connection;
 use App\Support\Http\Request;
 use App\Support\Http\Router;
