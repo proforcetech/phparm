@@ -7,6 +7,9 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
 USE `phparm`;
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_unicode_ci;
+
 
 -- Drop existing tables (in reverse dependency order)
 DROP TABLE IF EXISTS `cms_activity_log`;
@@ -196,31 +199,31 @@ CREATE TABLE `cms_activity_log` (
 
 -- Components foreign keys
 ALTER TABLE `cms_components`
-    ADD CONSTRAINT `fk_components_created_by` FOREIGN KEY (`created_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_components_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
+    ADD CONSTRAINT `cms_fk_components_created_by` FOREIGN KEY (`created_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_components_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
 
 -- Templates foreign keys
 ALTER TABLE `cms_templates`
-    ADD CONSTRAINT `fk_templates_created_by` FOREIGN KEY (`created_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_templates_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
+    ADD CONSTRAINT `cms_fk_templates_created_by` FOREIGN KEY (`created_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_templates_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
 
 -- Pages foreign keys
 ALTER TABLE `cms_pages`
-    ADD CONSTRAINT `fk_pages_template` FOREIGN KEY (`template_id`) REFERENCES `cms_templates`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_pages_header` FOREIGN KEY (`header_component_id`) REFERENCES `cms_components`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_pages_footer` FOREIGN KEY (`footer_component_id`) REFERENCES `cms_components`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_pages_parent` FOREIGN KEY (`parent_id`) REFERENCES `cms_pages`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_pages_created_by` FOREIGN KEY (`created_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL,
-    ADD CONSTRAINT `fk_pages_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
+    ADD CONSTRAINT `cms_fk_pages_template` FOREIGN KEY (`template_id`) REFERENCES `cms_templates`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_pages_header` FOREIGN KEY (`header_component_id`) REFERENCES `cms_components`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_pages_footer` FOREIGN KEY (`footer_component_id`) REFERENCES `cms_components`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_pages_parent` FOREIGN KEY (`parent_id`) REFERENCES `cms_pages`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_pages_created_by` FOREIGN KEY (`created_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `cms_fk_pages_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
 
 -- Page components foreign keys
 ALTER TABLE `cms_page_components`
-    ADD CONSTRAINT `fk_page_components_page` FOREIGN KEY (`page_id`) REFERENCES `cms_pages`(`id`) ON DELETE CASCADE,
-    ADD CONSTRAINT `fk_page_components_component` FOREIGN KEY (`component_id`) REFERENCES `cms_components`(`id`) ON DELETE CASCADE;
+    ADD CONSTRAINT `cms_fk_page_components_page` FOREIGN KEY (`page_id`) REFERENCES `cms_pages`(`id`) ON DELETE CASCADE,
+    ADD CONSTRAINT `cms_fk_page_components_component` FOREIGN KEY (`component_id`) REFERENCES `cms_components`(`id`) ON DELETE CASCADE;
 
 -- Activity log foreign keys
 ALTER TABLE `cms_activity_log`
-    ADD CONSTRAINT `fk_activity_log_user` FOREIGN KEY (`user_id`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
+    ADD CONSTRAINT `cms_fk_activity_log_user` FOREIGN KEY (`user_id`) REFERENCES `cms_users`(`id`) ON DELETE SET NULL;
 
 -- =============================================
 -- Insert default admin user
