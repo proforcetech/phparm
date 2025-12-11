@@ -6,6 +6,7 @@ use App\CMS\Models\Page;
 use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Services\CMS\CMSCacheService;
 use DateTimeImmutable;
 use PDO;
 
@@ -13,11 +14,13 @@ class PageController
 {
     private Connection $connection;
     private AccessGate $gate;
+    private ?CMSCacheService $cache;
 
-    public function __construct(Connection $connection, AccessGate $gate)
+    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null)
     {
         $this->connection = $connection;
         $this->gate = $gate;
+        $this->cache = $cache;
     }
 
     /**
@@ -90,7 +93,11 @@ class PageController
 
         $stmt->execute($payload);
 
-        return $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+        $page = $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+
+        $this->invalidateCache($page['slug'] ?? '');
+
+        return $page;
     }
 
     /**
@@ -106,6 +113,7 @@ class PageController
             return null;
         }
 
+        $existingSlug = $existing->slug;
         $payload = $this->preparePayload($data, false, $existing);
         $payload['id'] = $id;
 
@@ -117,6 +125,11 @@ class PageController
 
         $stmt->execute($payload);
 
+        $this->invalidateCache($payload['slug']);
+        if ($payload['slug'] !== $existingSlug) {
+            $this->invalidateCache($existingSlug);
+        }
+
         return $this->find($id)?->toArray();
     }
 
@@ -124,9 +137,17 @@ class PageController
     {
         $this->gate->assert($user, 'cms.pages.delete');
 
+        $page = $this->find($id)?->toArray();
+
         $stmt = $this->connection->pdo()->prepare('DELETE FROM cms_pages WHERE id = :id');
 
-        return $stmt->execute(['id' => $id]);
+        $deleted = $stmt->execute(['id' => $id]);
+
+        if ($deleted && $page !== null) {
+            $this->invalidateCache($page['slug'] ?? '');
+        }
+
+        return $deleted;
     }
 
     /**
@@ -216,6 +237,15 @@ class PageController
             'publish_end_at' => $data['publish_end_at'] ?? $existing?->publish_end_at,
             'published_at' => $publishedAt,
         ];
+    }
+
+    private function invalidateCache(string $slug): void
+    {
+        if ($slug === '') {
+            return;
+        }
+
+        $this->cache?->forgetPrefix('page:' . $this->slugify($slug));
     }
 
     private function slugify(string $value): string

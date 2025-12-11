@@ -6,6 +6,7 @@ use App\CMS\Models\Menu;
 use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Services\CMS\CMSCacheService;
 use DateTimeImmutable;
 use PDO;
 
@@ -13,11 +14,13 @@ class MenuController
 {
     private Connection $connection;
     private AccessGate $gate;
+    private ?CMSCacheService $cache;
 
-    public function __construct(Connection $connection, AccessGate $gate)
+    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null)
     {
         $this->connection = $connection;
         $this->gate = $gate;
+        $this->cache = $cache;
     }
 
     /**
@@ -77,7 +80,11 @@ class MenuController
 
         $stmt->execute($payload);
 
-        return $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+        $menu = $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
+
+        $this->invalidateCache($menu['slug'] ?? '');
+
+        return $menu;
     }
 
     /**
@@ -93,6 +100,7 @@ class MenuController
             return null;
         }
 
+        $existingSlug = $existing->slug;
         $payload = $this->preparePayload($data, false, $existing);
         $payload['id'] = $id;
 
@@ -104,6 +112,11 @@ class MenuController
 
         $stmt->execute($payload);
 
+        $this->invalidateCache($payload['slug']);
+        if ($payload['slug'] !== $existingSlug) {
+            $this->invalidateCache($existingSlug);
+        }
+
         return $this->find($id)?->toArray();
     }
 
@@ -111,9 +124,17 @@ class MenuController
     {
         $this->gate->assert($user, 'cms.menus.delete');
 
+        $menu = $this->find($id)?->toArray();
+
         $stmt = $this->connection->pdo()->prepare('DELETE FROM cms_menus WHERE id = :id');
 
-        return $stmt->execute(['id' => $id]);
+        $deleted = $stmt->execute(['id' => $id]);
+
+        if ($deleted && $menu !== null) {
+            $this->invalidateCache($menu['slug'] ?? '');
+        }
+
+        return $deleted;
     }
 
     /**
@@ -197,6 +218,15 @@ class MenuController
             'meta_description' => $data['meta_description'] ?? $existing?->meta_description,
             'published_at' => $publishedAt,
         ];
+    }
+
+    private function invalidateCache(string $slug): void
+    {
+        if ($slug === '') {
+            return;
+        }
+
+        $this->cache?->forgetPrefix('menu:' . $this->slugify($slug));
     }
 
     private function slugify(string $value): string

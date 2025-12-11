@@ -12,6 +12,7 @@ use App\Support\Webhooks\WebhookDispatcher;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
 use App\CMS\Controllers\PageController;
+use App\Services\CMS\CMSCacheService;
 
 /**
  * API Routes Definition
@@ -430,25 +431,95 @@ return Response::json([
     // Initialize AccessGate for protected routes
     $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
 
+    $cmsCacheService = new CMSCacheService($config['cms'] ?? []);
     // CMS controllers reuse the same gate and connection
-    $cmsPageController = new PageController($connection, $gate);
-    $cmsMenuController = new MenuController($connection, $gate);
-    $cmsMediaController = new MediaController($connection, $gate);
+    $cmsPageController = new PageController($connection, $gate, $cmsCacheService);
+    $cmsMenuController = new MenuController($connection, $gate, $cmsCacheService);
+    $cmsMediaController = new MediaController($connection, $gate, $cmsCacheService);
+
+    $resolveLocale = function (Request $request): string {
+        $locale = $request->queryParam('locale');
+        if (!empty($locale)) {
+            return (string) $locale;
+        }
+
+        $acceptLanguage = $request->header('ACCEPT-LANGUAGE');
+        if (!empty($acceptLanguage)) {
+            return explode(',', (string) $acceptLanguage)[0];
+        }
+
+        return 'en';
+    };
 
     // Shared settings repository with seeded defaults
     $settingsRepository = new \App\Support\SettingsRepository($connection);
     $settingsRepository->seedDefaults($config['settings']['defaults']);
 
     // Public CMS content delivery endpoints
-    $router->get('/cms/page/{slug}', function (Request $request) use ($cmsPageController) {
+    $router->get('/cms/page/{slug}', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
+        $locale = $resolveLocale($request);
+        $cacheKey = $cmsCacheService->buildKey('page', $slug, $locale, 'json');
+
+        if ($cached = $cmsCacheService->get($cacheKey)) {
+            return Response::json($cached);
+        }
+
         $page = $cmsPageController->publishedPage($slug);
 
         if ($page === null) {
             return Response::notFound('Page not found');
         }
 
+        if ($cmsCacheService->isEnabled()) {
+            $cmsCacheService->set($cacheKey, $page, $cmsCacheService->defaultTtl());
+        }
+
         return Response::json($page);
+    });
+
+    $router->get('/cms/menu/{slug}', function (Request $request) use ($cmsMenuController, $cmsCacheService, $resolveLocale) {
+        $slug = (string) $request->getAttribute('slug');
+        $locale = $resolveLocale($request);
+        $cacheKey = $cmsCacheService->buildKey('menu', $slug, $locale, 'json');
+
+        if ($cached = $cmsCacheService->get($cacheKey)) {
+            return Response::json($cached);
+        }
+
+        $menu = $cmsMenuController->publishedMenu($slug);
+
+        if ($menu === null) {
+            return Response::notFound('Menu not found');
+        }
+
+        if ($cmsCacheService->isEnabled()) {
+            $cmsCacheService->set($cacheKey, $menu, $cmsCacheService->defaultTtl());
+        }
+
+        return Response::json($menu);
+    });
+
+    $router->get('/cms/media/{slug}', function (Request $request) use ($cmsMediaController, $cmsCacheService, $resolveLocale) {
+        $slug = (string) $request->getAttribute('slug');
+        $locale = $resolveLocale($request);
+        $cacheKey = $cmsCacheService->buildKey('media', $slug, $locale, 'json');
+
+        if ($cached = $cmsCacheService->get($cacheKey)) {
+            return Response::json($cached);
+        }
+
+        $media = $cmsMediaController->publishedMedia($slug);
+
+        if ($media === null) {
+            return Response::notFound('Media not found');
+        }
+
+        if ($cmsCacheService->isEnabled()) {
+            $cmsCacheService->set($cacheKey, $media, $cmsCacheService->defaultTtl());
+        }
+
+        return Response::json($media);
     });
 
     // Dashboard routes (authenticated)
@@ -1704,7 +1775,7 @@ return Response::json([
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController) {
 
         $cmsAuthBridge = new \App\Services\CMS\CMSAuthBridge();
-        $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge);
+        $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge, $cmsCacheService);
 
         // CMS Dashboard
         $router->get('/api/cms/dashboard', function (Request $request) use ($cmsController) {
