@@ -71,7 +71,7 @@ return function (Router $router, array $config, $connection) {
         ];
     };
 
-    $recaptchaVerifier = function (): RecaptchaVerifier use ($recaptchaConfigLoader) {
+    $recaptchaVerifier = function () use ($recaptchaConfigLoader): RecaptchaVerifier {
         $recaptchaConfig = $recaptchaConfigLoader();
 
         return new RecaptchaVerifier(
