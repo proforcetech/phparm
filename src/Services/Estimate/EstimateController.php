@@ -11,11 +11,13 @@ class EstimateController
 {
     private EstimateRepository $repository;
     private AccessGate $gate;
+    private EstimateEditorService $editor;
 
-    public function __construct(EstimateRepository $repository, AccessGate $gate)
+    public function __construct(EstimateRepository $repository, AccessGate $gate, EstimateEditorService $editor)
     {
         $this->repository = $repository;
         $this->gate = $gate;
+        $this->editor = $editor;
     }
 
     /**
@@ -105,6 +107,35 @@ class EstimateController
     }
 
     /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function store(User $user, array $payload): array
+    {
+        $this->assertCreateAccess($user);
+
+        $estimate = $this->editor->create($payload, $user->id);
+
+        return $estimate->toArray();
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function update(User $user, int $estimateId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $updated = $this->editor->update($estimateId, $payload, $user->id);
+        if ($updated === null) {
+            throw new InvalidArgumentException('Estimate not found');
+        }
+
+        return $updated->toArray();
+    }
+
+    /**
      * @param array<string, mixed> $params
      * @return array<string, mixed>
      */
@@ -127,6 +158,15 @@ class EstimateController
     private function assertManageAccess(User $user): void
     {
         $this->gate->assert($user, 'estimates.update');
+    }
+
+    private function assertCreateAccess(User $user): void
+    {
+        if ($this->gate->can($user, 'estimates.create') || $this->gate->can($user, 'estimates.update')) {
+            return;
+        }
+
+        throw new UnauthorizedException('User lacks permission to create estimates.');
     }
 
     private function assertViewAccess(User $user): void

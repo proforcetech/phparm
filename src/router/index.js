@@ -66,7 +66,12 @@ const routes = [
     path: '/cp/estimates/create',
     name: 'EstimateCreate',
     component: () => import('@/views/estimates/EstimateCreate.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: {
+      requiresAuth: true,
+      requiresStaff: true,
+      // Technicians are explicitly allowed to create estimates alongside managers and admins
+      allowedRoles: ['admin', 'manager', 'technician'],
+    },
   },
   {
     path: '/cp/estimates/:id',
@@ -410,6 +415,13 @@ router.beforeEach(async (to, from, next) => {
   // Check if route requires staff access
   if (to.meta.requiresStaff && !authStore.isStaff) {
     return next('/portal')
+  }
+
+  if (Array.isArray(to.meta.allowedRoles) && authStore.user) {
+    const { role } = authStore.user
+    if (!to.meta.allowedRoles.includes(role)) {
+      return next('/cp/dashboard')
+    }
   }
 
   // Check if route requires customer access
