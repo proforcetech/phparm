@@ -6,15 +6,21 @@ class RecaptchaVerifier
 {
     private ?string $secretKey;
     private float $scoreThreshold;
+    private bool $enabled;
 
-    public function __construct(?string $secretKey, float $scoreThreshold = 0.5)
+    public function __construct(?string $secretKey, float $scoreThreshold = 0.5, bool $enabled = true)
     {
         $this->secretKey = $secretKey;
         $this->scoreThreshold = $scoreThreshold;
+        $this->enabled = $enabled;
     }
 
     public function verify(?string $token): bool
     {
+        if (!$this->enabled) {
+            return true;
+        }
+
         if ($token === null || $token === '') {
             return false;
         }

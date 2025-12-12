@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 let recaptchaScriptPromise
 
@@ -29,18 +29,19 @@ function loadRecaptcha(siteKey) {
 }
 
 export function useRecaptcha(siteKey) {
+  const siteKeyRef = typeof siteKey === 'string' ? ref(siteKey) : siteKey
   const recaptchaContainer = ref(null)
   const widgetId = ref(null)
   const token = ref(null)
 
   const renderRecaptcha = async () => {
-    const grecaptcha = await loadRecaptcha(siteKey)
+    const grecaptcha = await loadRecaptcha(siteKeyRef?.value)
     if (!grecaptcha || !recaptchaContainer.value || widgetId.value !== null) {
       return
     }
 
     widgetId.value = grecaptcha.render(recaptchaContainer.value, {
-      sitekey: siteKey,
+      sitekey: siteKeyRef?.value,
       callback: (value) => {
         token.value = value
       },
@@ -60,6 +61,16 @@ export function useRecaptcha(siteKey) {
   onMounted(() => {
     renderRecaptcha()
   })
+
+  watch(
+    siteKeyRef,
+    () => {
+      resetRecaptcha()
+      widgetId.value = null
+      renderRecaptcha()
+    },
+    { immediate: false }
+  )
 
   onBeforeUnmount(() => {
     resetRecaptcha()
