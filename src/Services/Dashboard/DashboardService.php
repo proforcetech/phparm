@@ -48,7 +48,7 @@ class DashboardService
 
             $pdo = $this->connection->pdo();
             $response = new KpiResponse();
-            $bindings = [
+            $baseBindings = [
                 'start' => $startUtc->format('Y-m-d H:i:s'),
                 'end' => $endUtc->format('Y-m-d H:i:s'),
             ];
@@ -56,22 +56,30 @@ class DashboardService
             $customerFilter = '';
             if (isset($options['customer_id'])) {
                 $customerFilter = ' AND customer_id = :customer_id';
-                $bindings['customer_id'] = $options['customer_id'];
+                $baseBindings['customer_id'] = $options['customer_id'];
             }
 
+            $technicianId = isset($options['technician_id']) ? (int) $options['technician_id'] : null;
+            $technicianFilter = $technicianId !== null ? ' AND technician_id = :technician_id' : '';
+            $invoiceJoin = $technicianId !== null ? ' LEFT JOIN estimates e ON e.id = i.estimate_id' : '';
+
             $estimateStmt = $pdo->prepare(
-                'SELECT status, COUNT(*) AS total FROM estimates WHERE created_at BETWEEN :start AND :end' . $customerFilter . ' GROUP BY status'
+                'SELECT status, COUNT(*) AS total FROM estimates WHERE created_at BETWEEN :start AND :end'
+                . $customerFilter . $technicianFilter . ' GROUP BY status'
             );
-            $estimateStmt->execute($bindings);
+            $estimateStmt->execute($this->withTechnician($baseBindings, $technicianId));
             foreach ($estimateStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $response->estimateStatusCounts[$row['status']] = (int) $row['total'];
             }
 
             $invoiceStmt = $pdo->prepare(
-                'SELECT SUM(total) AS total, AVG(total) AS average, SUM(amount_paid) AS paid, SUM(balance_due) AS outstanding '
-                . 'FROM invoices WHERE issue_date BETWEEN :start AND :end' . $customerFilter
+                'SELECT SUM(i.total) AS total, AVG(i.total) AS average, SUM(i.amount_paid) AS paid, SUM(i.balance_due) AS outstanding '
+                . 'FROM invoices i' . $invoiceJoin . ' WHERE i.issue_date BETWEEN :start AND :end'
+                . str_replace('customer_id', 'i.customer_id', $customerFilter)
+                . ($invoiceJoin !== '' ? ' AND e.technician_id = :technician_id' : '')
             );
-            $invoiceStmt->execute($bindings);
+            $invoiceBindings = $invoiceJoin !== '' ? $this->withTechnician($baseBindings, $technicianId) : $baseBindings;
+            $invoiceStmt->execute($invoiceBindings);
             $invoiceRow = $invoiceStmt->fetch(PDO::FETCH_ASSOC) ?: [];
             $response->invoiceTotals = [
                 'total' => (float) ($invoiceRow['total'] ?? 0),
@@ -81,15 +89,18 @@ class DashboardService
             ];
 
             $estimateTaxStmt = $pdo->prepare(
-                'SELECT SUM(tax) AS total_tax FROM estimates WHERE created_at BETWEEN :start AND :end' . $customerFilter
+                'SELECT SUM(tax) AS total_tax FROM estimates WHERE created_at BETWEEN :start AND :end'
+                . $customerFilter . $technicianFilter
             );
-            $estimateTaxStmt->execute($bindings);
+            $estimateTaxStmt->execute($this->withTechnician($baseBindings, $technicianId));
             $estimateTax = (float) ($estimateTaxStmt->fetchColumn() ?: 0);
 
             $invoiceTaxStmt = $pdo->prepare(
-                'SELECT SUM(tax) AS total_tax FROM invoices WHERE issue_date BETWEEN :start AND :end' . $customerFilter
+                'SELECT SUM(i.tax) AS total_tax FROM invoices i' . $invoiceJoin . ' WHERE i.issue_date BETWEEN :start AND :end'
+                . str_replace('customer_id', 'i.customer_id', $customerFilter)
+                . ($invoiceJoin !== '' ? ' AND e.technician_id = :technician_id' : '')
             );
-            $invoiceTaxStmt->execute($bindings);
+            $invoiceTaxStmt->execute($invoiceBindings);
             $invoiceTax = (float) ($invoiceTaxStmt->fetchColumn() ?: 0);
 
             $response->taxTotals = [
@@ -100,15 +111,16 @@ class DashboardService
             $warrantyStmt = $pdo->prepare(
                 'SELECT status, COUNT(*) AS total FROM warranty_claims WHERE created_at BETWEEN :start AND :end' . $customerFilter . ' GROUP BY status'
             );
-            $warrantyStmt->execute($bindings);
+            $warrantyStmt->execute($baseBindings);
             foreach ($warrantyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $response->warrantyCounts[$row['status']] = (int) $row['total'];
             }
 
             $appointmentStmt = $pdo->prepare(
-                'SELECT status, COUNT(*) AS total FROM appointments WHERE start_time BETWEEN :start AND :end' . $customerFilter . ' GROUP BY status'
+                'SELECT status, COUNT(*) AS total FROM appointments WHERE start_time BETWEEN :start AND :end'
+                . $customerFilter . $technicianFilter . ' GROUP BY status'
             );
-            $appointmentStmt->execute($bindings);
+            $appointmentStmt->execute($this->withTechnician($baseBindings, $technicianId));
             foreach ($appointmentStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $response->appointmentCounts[$row['status']] = (int) $row['total'];
             }
@@ -133,15 +145,18 @@ class DashboardService
             ];
 
             $pendingInvoiceStmt = $pdo->prepare(
-                'SELECT COUNT(*) FROM invoices WHERE status IN ("pending", "sent", "partial")'
+                'SELECT COUNT(*) FROM invoices i' . $invoiceJoin . ' WHERE i.status IN ("pending", "sent", "partial")'
+                . ($invoiceJoin !== '' ? ' AND e.technician_id = :technician_id' : '')
             );
-            $pendingInvoiceStmt->execute();
+            $pendingBindings = $invoiceJoin !== '' ? $this->withTechnician([], $technicianId) : [];
+            $pendingInvoiceStmt->execute($pendingBindings);
             $pendingInvoices = (int) ($pendingInvoiceStmt->fetchColumn() ?: 0);
 
             $appointmentsTodayStmt = $pdo->prepare(
                 'SELECT COUNT(*) FROM appointments WHERE start_time BETWEEN :start AND :end'
+                . ($technicianId !== null ? ' AND technician_id = :technician_id' : '')
             );
-            $appointmentsTodayStmt->execute($todayBindings);
+            $appointmentsTodayStmt->execute($this->withTechnician($todayBindings, $technicianId));
             $appointmentsToday = (int) ($appointmentsTodayStmt->fetchColumn() ?: 0);
 
             $response->summary = [
@@ -186,8 +201,29 @@ class DashboardService
                 $categories[] = $month->format('Y-m');
             }
 
-            $invoices = $this->aggregateMonthly('invoices', 'total', 'issue_date', $start, $end, $options, $categories, $timezone);
-            $estimates = $this->aggregateMonthly('estimates', 'grand_total', 'created_at', $start, $end, $options, $categories, $timezone);
+            $invoices = $this->aggregateMonthly(
+                'invoices i',
+                'i.total',
+                'i.issue_date',
+                $start,
+                $end,
+                $options,
+                $categories,
+                $timezone,
+                'e.technician_id',
+                'LEFT JOIN estimates e ON e.id = i.estimate_id'
+            );
+            $estimates = $this->aggregateMonthly(
+                'estimates',
+                'grand_total',
+                'created_at',
+                $start,
+                $end,
+                $options,
+                $categories,
+                $timezone,
+                'technician_id'
+            );
 
             return [
                 new ChartSeries('Invoices', $invoices, $categories),
@@ -226,6 +262,11 @@ class DashboardService
             if (isset($options['customer_id'])) {
                 $customerFilter = ' AND e.customer_id = :customer_id';
                 $bindings['customer_id'] = $options['customer_id'];
+            }
+
+            if (isset($options['technician_id'])) {
+                $bindings['technician_id'] = (int) $options['technician_id'];
+                $customerFilter .= ' AND e.technician_id = :technician_id';
             }
 
             $sql = 'SELECT st.name AS label, COALESCE(SUM(ej.total), 0) AS total '
@@ -268,7 +309,9 @@ class DashboardService
         DateTimeInterface $end,
         array $options,
         array $categories,
-        string $timezone
+        string $timezone,
+        string $technicianColumn = '',
+        string $joinClause = ''
     ): array {
         $pdo = $this->connection->pdo();
         [$startUtc, $endUtc] = $this->normalizeRange($start, $end, $timezone, true);
@@ -277,24 +320,43 @@ class DashboardService
             'end' => $endUtc->format('Y-m-t'),
         ];
 
+        $tableParts = preg_split('/\s+/', trim($table)) ?: [];
+        $tableAlias = count($tableParts) > 1 ? $tableParts[count($tableParts) - 1] : null;
+        $customerColumn = ($tableAlias !== null ? $tableAlias . '.' : '') . 'customer_id';
+
         $customerFilter = '';
         if (isset($options['customer_id'])) {
-            $customerFilter = ' AND customer_id = :customer_id';
+            $customerFilter = ' AND ' . $customerColumn . ' = :customer_id';
             $bindings['customer_id'] = $options['customer_id'];
         }
 
+        $technicianFilter = '';
+        if ($technicianColumn !== '' && isset($options['technician_id'])) {
+            $technicianFilter = ' AND ' . $technicianColumn . ' = :technician_id';
+            $bindings['technician_id'] = (int) $options['technician_id'];
+        }
+
+        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?: '';
+        $dateBucket = $driver === 'sqlite'
+            ? sprintf("strftime('%%Y-%%m', %s)", $dateColumn)
+            : sprintf('DATE_FORMAT(CONVERT_TZ(%s, "UTC", :tz), "%%Y-%%m")', $dateColumn);
+
         $sql = sprintf(
-            'SELECT DATE_FORMAT(CONVERT_TZ(%s, "UTC", :tz), "%%Y-%%m") AS bucket, SUM(%s) AS total FROM %s '
-            . 'WHERE %s BETWEEN :start AND :end%s GROUP BY bucket',
-            $dateColumn,
+            'SELECT %s AS bucket, SUM(%s) AS total FROM %s %s'
+            . 'WHERE %s BETWEEN :start AND :end%s%s GROUP BY bucket',
+            $dateBucket,
             $amountColumn,
             $table,
+            $joinClause !== '' ? $joinClause . ' ' : '',
             $dateColumn,
-            $customerFilter
+            $customerFilter,
+            $technicianFilter
         );
 
         $stmt = $pdo->prepare($sql);
-        $stmt->bindValue(':tz', $timezone);
+        if ($driver !== 'sqlite') {
+            $stmt->bindValue(':tz', $timezone);
+        }
         foreach ($bindings as $key => $value) {
             $stmt->bindValue(':' . $key, $value);
         }
@@ -307,6 +369,19 @@ class DashboardService
         }
 
         return $series;
+    }
+
+    /**
+     * @param array<string, mixed> $bindings
+     * @return array<string, mixed>
+     */
+    private function withTechnician(array $bindings, ?int $technicianId): array
+    {
+        if ($technicianId !== null) {
+            $bindings['technician_id'] = $technicianId;
+        }
+
+        return $bindings;
     }
 
     public function resolvePreset(string $preset, string $timezone = 'UTC', ?DateTimeInterface $now = null): array
@@ -364,6 +439,10 @@ class DashboardService
     {
         if ($role === 'customer' && !isset($options['customer_id'])) {
             throw new InvalidArgumentException('Customer scoped dashboard requests require customer_id.');
+        }
+
+        if ($role === 'technician' && !isset($options['technician_id'])) {
+            throw new InvalidArgumentException('Technician scoped dashboard requests require technician_id.');
         }
     }
 
@@ -442,7 +521,7 @@ class DashboardService
     {
         return match ($role) {
             'customer' => ['estimates', 'invoices', 'appointments', 'warranty', 'charts'],
-            'technician' => ['appointments', 'estimates', 'warranty', 'charts'],
+            'technician' => ['appointments', 'estimates', 'invoices', 'warranty', 'charts'],
             default => ['estimates', 'invoices', 'tax', 'warranty', 'appointments', 'inventory', 'charts'],
         };
     }

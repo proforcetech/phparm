@@ -181,19 +181,26 @@ class InvoiceService
     {
         $clauses = [];
         $bindings = [];
+        $joins = '';
 
         if (!empty($filters['status']) && in_array($filters['status'], $this->allowedStatuses, true)) {
-            $clauses[] = 'status = :status';
+            $clauses[] = 'invoices.status = :status';
             $bindings['status'] = $filters['status'];
         }
 
         if (!empty($filters['customer_id'])) {
-            $clauses[] = 'customer_id = :customer_id';
+            $clauses[] = 'invoices.customer_id = :customer_id';
             $bindings['customer_id'] = (int) $filters['customer_id'];
         }
 
+        if (!empty($filters['technician_id'])) {
+            $joins = ' LEFT JOIN estimates e ON e.id = invoices.estimate_id';
+            $clauses[] = 'e.technician_id = :technician_id';
+            $bindings['technician_id'] = (int) $filters['technician_id'];
+        }
+
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-        $sql = 'SELECT * FROM invoices ' . $where . ' ORDER BY issue_date DESC, id DESC LIMIT :limit OFFSET :offset';
+        $sql = 'SELECT invoices.* FROM invoices' . $joins . ' ' . $where . ' ORDER BY invoices.issue_date DESC, invoices.id DESC LIMIT :limit OFFSET :offset';
         $stmt = $this->connection->pdo()->prepare($sql);
 
         foreach ($bindings as $key => $value) {

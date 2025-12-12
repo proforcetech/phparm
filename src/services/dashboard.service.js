@@ -4,17 +4,17 @@ export default {
   /**
    * Get dashboard statistics
    */
-  async getStats() {
-    const response = await api.get('/dashboard')
+  async getStats(params = {}) {
+    const response = await api.get('/dashboard', { params })
     return response.data
   },
 
   /**
    * Get recent invoices
    */
-  async getRecentInvoices(limit = 5) {
+  async getRecentInvoices(limit = 5, params = {}) {
     const response = await api.get('/invoices', {
-      params: { limit, sort: '-created_at' }
+      params: { limit, sort: '-created_at', ...params }
     })
     return response.data
   },
@@ -22,9 +22,9 @@ export default {
   /**
    * Get recent appointments
    */
-  async getRecentAppointments(limit = 5) {
+  async getRecentAppointments(limit = 5, params = {}) {
     const response = await api.get('/appointments', {
-      params: { limit, sort: 'scheduled_date' }
+      params: { limit, sort: 'scheduled_date', ...params }
     })
     return response.data
   },
