@@ -142,6 +142,10 @@ class EstimateEditorService
             throw new InvalidArgumentException('Estimate must include at least one job.');
         }
 
+        if (isset($payload['is_mobile']) && !in_array($payload['is_mobile'], [0, 1, true, false], true)) {
+            throw new InvalidArgumentException('Invalid value for mobile flag.');
+        }
+
         foreach ($payload['jobs'] as $job) {
             if (empty($job['title'])) {
                 throw new InvalidArgumentException('Estimate jobs require a title.');
@@ -159,8 +163,8 @@ class EstimateEditorService
     private function insertEstimate(array $payload, string $status): int
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimates (number, customer_id, vehicle_id, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, subtotal, tax, grand_total, created_at, updated_at)
-            VALUES (:number, :customer_id, :vehicle_id, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, 0, 0, 0, NOW(), NOW())
+            INSERT INTO estimates (number, customer_id, vehicle_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, subtotal, tax, grand_total, created_at, updated_at)
+            VALUES (:number, :customer_id, :vehicle_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, 0, 0, 0, NOW(), NOW())
         SQL);
 
         $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
@@ -169,6 +173,7 @@ class EstimateEditorService
             'number' => $payload['number'] ?? $this->generateNumber(),
             'customer_id' => (int) $payload['customer_id'],
             'vehicle_id' => (int) $payload['vehicle_id'],
+            'is_mobile' => (int) (!empty($payload['is_mobile'])),
             'technician_id' => $payload['technician_id'] ?? null,
             'expiration_date' => $expirationDate,
             'status' => $status,
@@ -191,6 +196,7 @@ class EstimateEditorService
             UPDATE estimates SET
                 customer_id = :customer_id,
                 vehicle_id = :vehicle_id,
+                is_mobile = :is_mobile,
                 technician_id = :technician_id,
                 expiration_date = :expiration_date,
                 status = COALESCE(:status, status),
@@ -209,6 +215,7 @@ class EstimateEditorService
         $stmt->execute([
             'customer_id' => (int) $payload['customer_id'],
             'vehicle_id' => (int) $payload['vehicle_id'],
+            'is_mobile' => (int) (!empty($payload['is_mobile'])),
             'technician_id' => $payload['technician_id'] ?? null,
             'expiration_date' => $expirationDate,
             'status' => $status,
@@ -370,6 +377,7 @@ class EstimateEditorService
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
+            'is_mobile' => (bool) $row['is_mobile'],
             'status' => (string) $row['status'],
             'technician_id' => $row['technician_id'] !== null ? (int) $row['technician_id'] : null,
             'expiration_date' => $row['expiration_date'],

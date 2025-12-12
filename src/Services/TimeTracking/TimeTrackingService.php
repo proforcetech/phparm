@@ -31,7 +31,9 @@ class TimeTrackingService
             throw new InvalidArgumentException('Technician already has an active timer.');
         }
 
+        $isMobile = $this->isMobileJob($estimateJobId);
         $normalizedLocation = $this->normalizeLocation($location);
+        $this->assertLocationIfMobile($isMobile, $normalizedLocation, 'start');
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, start_latitude, start_longitude, start_accuracy, start_altitude, start_speed, start_heading, start_recorded_at, start_source, start_error, manual_override, created_at, updated_at) '
@@ -53,6 +55,9 @@ class TimeTrackingService
 
         $entryId = (int) $this->connection->pdo()->lastInsertId();
         $entry = $this->find($entryId);
+        if ($entry !== null) {
+            $entry->is_mobile = $isMobile;
+        }
         $this->log($technicianId, 'time.start', $entryId, $entry?->toArray() ?? []);
 
         return $entry ?? new TimeEntry(['id' => $entryId]);
@@ -103,7 +108,7 @@ class TimeTrackingService
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
-        $sql = 'SELECT te.*, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
+        $sql = 'SELECT te.*, e.is_mobile, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
             . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin, ru.name AS reviewer_name ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
@@ -116,7 +121,11 @@ class TimeTrackingService
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
 
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = array_map(static function (array $row) {
+            $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+            return $row;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
         $entries = array_map(static fn (array $row) => new TimeEntry($row), $rows);
         $adjustments = $this->fetchAdjustments(array_map(static fn (TimeEntry $entry) => $entry->id, $entries));
 
@@ -172,6 +181,9 @@ class TimeTrackingService
             'Estimate #',
             'Customer',
             'Vehicle VIN',
+            'Mobile Repair',
+            'Start Location',
+            'End Location',
             'Started At',
             'Ended At',
             'Duration (minutes)',
@@ -202,6 +214,13 @@ class TimeTrackingService
                 $row['estimate_number'] ?? null,
                 $row['customer_name'] ?? null,
                 $row['vehicle_vin'] ?? null,
+                !empty($row['is_mobile']) ? 'Yes' : 'No',
+                ($row['start_latitude'] ?? null) && ($row['start_longitude'] ?? null)
+                    ? ($row['start_latitude'] . ', ' . $row['start_longitude'])
+                    : null,
+                ($row['end_latitude'] ?? null) && ($row['end_longitude'] ?? null)
+                    ? ($row['end_latitude'] . ', ' . $row['end_longitude'])
+                    : null,
                 $row['started_at'] ?? null,
                 $row['ended_at'] ?? null,
                 $row['duration_minutes'] ?? null,
@@ -236,7 +255,9 @@ class TimeTrackingService
         $startedAt = new DateTimeImmutable($entry->started_at);
         $minutes = ($endedAt->getTimestamp() - $startedAt->getTimestamp()) / 60;
 
+        $isMobile = $this->isMobileJob($entry->estimate_job_id);
         $endLocation = $this->normalizeLocation($location);
+        $this->assertLocationIfMobile($isMobile, $endLocation, 'stop');
 
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE time_entries SET ended_at = :ended_at, end_latitude = :lat, end_longitude = :lng, end_accuracy = :accuracy, '
@@ -259,6 +280,9 @@ class TimeTrackingService
         ]);
 
         $updated = $this->find($entryId);
+        if ($updated !== null) {
+            $updated->is_mobile = $isMobile;
+        }
         $this->log($actorId, 'time.stop', $entryId, [
             'duration_minutes' => $minutes,
         ]);
@@ -489,28 +513,61 @@ class TimeTrackingService
 
     public function find(int $entryId): ?TimeEntry
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM time_entries WHERE id = :id');
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT te.*, e.is_mobile FROM time_entries te '
+            . 'LEFT JOIN estimate_jobs ej ON ej.id = te.estimate_job_id '
+            . 'LEFT JOIN estimates e ON e.id = ej.estimate_id '
+            . 'WHERE te.id = :id'
+        );
         $stmt->execute(['id' => $entryId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        return $row === false ? null : new TimeEntry($row);
+        if ($row === false) {
+            return null;
+        }
+
+        $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+        return new TimeEntry($row);
     }
 
     public function fetchOpenEntry(int $technicianId): ?TimeEntry
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM time_entries WHERE technician_id = :tech AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1');
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT te.*, e.is_mobile FROM time_entries te '
+            . 'LEFT JOIN estimate_jobs ej ON ej.id = te.estimate_job_id '
+            . 'LEFT JOIN estimates e ON e.id = ej.estimate_id '
+            . 'WHERE te.technician_id = :tech AND te.ended_at IS NULL ORDER BY te.started_at DESC LIMIT 1'
+        );
         $stmt->execute(['tech' => $technicianId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        return $row === false ? null : new TimeEntry($row);
+        if ($row === false) {
+            return null;
+        }
+
+        $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+        return new TimeEntry($row);
     }
 
     public function entriesForTechnician(int $technicianId): array
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM time_entries WHERE technician_id = :tech ORDER BY started_at DESC');
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT te.*, e.is_mobile FROM time_entries te '
+            . 'LEFT JOIN estimate_jobs ej ON ej.id = te.estimate_job_id '
+            . 'LEFT JOIN estimates e ON e.id = ej.estimate_id '
+            . 'WHERE te.technician_id = :tech ORDER BY te.started_at DESC'
+        );
         $stmt->execute(['tech' => $technicianId]);
 
-        return array_map(static fn (array $row) => new TimeEntry($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+        $rows = array_map(static function (array $row) {
+            $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+            return $row;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+        return array_map(static fn (array $row) => new TimeEntry($row), $rows);
     }
 
     /**
@@ -575,6 +632,33 @@ class TimeTrackingService
             'new_notes' => $after['notes'],
             'new_override' => $after['manual_override'],
         ]);
+    }
+
+    private function isMobileJob(?int $estimateJobId): bool
+    {
+        if ($estimateJobId === null) {
+            return false;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT e.is_mobile FROM estimate_jobs ej JOIN estimates e ON e.id = ej.estimate_id WHERE ej.id = :job_id LIMIT 1'
+        );
+        $stmt->execute(['job_id' => $estimateJobId]);
+
+        $result = $stmt->fetchColumn();
+
+        return $result !== false ? (bool) $result : false;
+    }
+
+    private function assertLocationIfMobile(bool $isMobile, array $location, string $stage): void
+    {
+        if (!$isMobile) {
+            return;
+        }
+
+        if ($location['lat'] === null || $location['lng'] === null) {
+            throw new InvalidArgumentException('Location is required to ' . $stage . ' mobile repairs.');
+        }
     }
 
     /**

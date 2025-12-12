@@ -26,9 +26,12 @@
               <p class="text-sm text-gray-500">Created {{ formatDate(estimate.created_at) }}</p>
             </div>
           </div>
-          <Badge :variant="getStatusVariant(estimate.status)" size="lg">
-            {{ formatStatus(estimate.status) }}
-          </Badge>
+          <div class="flex items-center gap-2">
+            <Badge v-if="estimate.is_mobile" variant="warning" size="lg">Mobile repair</Badge>
+            <Badge :variant="getStatusVariant(estimate.status)" size="lg">
+              {{ formatStatus(estimate.status) }}
+            </Badge>
+          </div>
         </div>
 
         <!-- Actions -->

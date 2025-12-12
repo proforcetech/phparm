@@ -47,6 +47,7 @@ class InvoiceService
             $invoiceId = $this->insertInvoice([
                 'customer_id' => $estimate->customer_id,
                 'vehicle_id' => $estimate->vehicle_id,
+                'is_mobile' => $estimate->is_mobile,
                 'number' => $this->generateInvoiceNumber(),
                 'status' => 'pending',
                 'estimate_id' => $estimateId,
@@ -94,6 +95,7 @@ class InvoiceService
             $invoiceId = $this->insertInvoice([
                 'customer_id' => $payload['customer_id'],
                 'vehicle_id' => $payload['vehicle_id'] ?? null,
+                'is_mobile' => !empty($payload['is_mobile']),
                 'number' => $payload['number'],
                 'status' => 'pending',
                 'estimate_id' => $payload['estimate_id'] ?? null,
@@ -211,7 +213,11 @@ class InvoiceService
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
 
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = array_map(static function ($row) {
+            $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+            return $row;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
         return array_map(static fn ($row) => new Invoice($row), $rows);
     }
@@ -232,6 +238,8 @@ class InvoiceService
         if (!$row) {
             return null;
         }
+
+        $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
 
         $invoice = new Invoice($row);
         if ($this->isPublicTokenExpired($invoice)) {
@@ -347,12 +355,13 @@ class InvoiceService
     private function insertInvoice(array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoices (customer_id, vehicle_id, number, status, estimate_id, issue_date, due_date, notes, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
-            . 'VALUES (:customer_id, :vehicle_id, :number, :status, :estimate_id, :issue_date, :due_date, :notes, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
+            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, issue_date, due_date, notes, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
+            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :issue_date, :due_date, :notes, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'],
             'vehicle_id' => $payload['vehicle_id'] ?? null,
+            'is_mobile' => !empty($payload['is_mobile']) ? 1 : 0,
             'number' => $payload['number'],
             'status' => $payload['status'],
             'estimate_id' => $payload['estimate_id'] ?? null,
@@ -455,7 +464,13 @@ class InvoiceService
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        return $row ? new Invoice($row) : null;
+        if (!$row) {
+            return null;
+        }
+
+        $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+        return new Invoice($row);
     }
 
     private function fetchEstimate(int $id): ?Estimate
@@ -464,7 +479,13 @@ class InvoiceService
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        return $row ? new Estimate($row) : null;
+        if (!$row) {
+            return null;
+        }
+
+        $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+        return new Estimate($row);
     }
 
     private function generateInvoiceNumber(): string

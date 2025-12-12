@@ -16,12 +16,15 @@
             <p class="text-xl font-semibold text-gray-900">
               {{ portal.active_entry ? `Started ${formatTime(portal.active_entry.started_at)}` : 'No active timer' }}
             </p>
+            <p v-if="portal.active_entry?.is_mobile" class="text-xs text-amber-700">Mobile repair — location required on stop.</p>
           </div>
           <div class="flex gap-2">
             <Button v-if="!portal.active_entry" :loading="saving" @click="startTimer">Start</Button>
             <Button v-else variant="danger" :loading="saving" @click="stopTimer">Stop</Button>
           </div>
         </div>
+
+        <p v-if="locationError" class="text-sm text-red-600">{{ locationError }}</p>
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
@@ -54,6 +57,7 @@
             <Card v-for="job in portal.jobs" :key="job.id" class="border border-gray-200">
               <p class="font-semibold text-gray-900">{{ job.title }}</p>
               <p class="text-xs text-gray-600">Estimate {{ job.estimate_number }}</p>
+              <p v-if="job.is_mobile" class="text-[11px] font-medium text-amber-700">Mobile repair</p>
               <p class="text-xs text-gray-500">Customer: {{ job.customer_name }}</p>
               <p class="text-xs text-gray-500">Vehicle: {{ job.vehicle_vin || '—' }}</p>
             </Card>
@@ -96,6 +100,7 @@ import timeTrackingService from '@/services/time-tracking.service'
 const portal = reactive({ jobs: [], history: [], totals: {}, active_entry: null })
 const selectedJobId = ref('')
 const saving = ref(false)
+const locationError = ref('')
 
 function formatTime(value) {
   if (!value) return '—'
@@ -125,10 +130,50 @@ async function loadPortal() {
   }
 }
 
+async function captureLocation() {
+  locationError.value = ''
+
+  if (!navigator.geolocation) {
+    locationError.value = 'Geolocation is not supported in this browser.'
+    return null
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          altitude: position.coords.altitude,
+          speed: position.coords.speed,
+          heading: position.coords.heading,
+          recorded_at: new Date(position.timestamp).toISOString(),
+          source: 'browser_geolocation',
+        })
+      },
+      (error) => {
+        locationError.value = error.message || 'Unable to capture location.'
+        resolve(null)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  })
+}
+
 async function startTimer() {
+  locationError.value = ''
   saving.value = true
   try {
-    await timeTrackingService.start({ estimate_job_id: selectedJobId.value || null })
+    let location = null
+    const selectedJob = portal.jobs.find((job) => String(job.id) === String(selectedJobId.value))
+    if (selectedJob?.is_mobile) {
+      location = await captureLocation()
+      if (!location) return
+    }
+
+    await timeTrackingService.start({ estimate_job_id: selectedJobId.value ? Number(selectedJobId.value) : null, location })
+    locationError.value = ''
     await loadPortal()
   } finally {
     saving.value = false
@@ -137,9 +182,18 @@ async function startTimer() {
 
 async function stopTimer() {
   if (!portal.active_entry) return
+  locationError.value = ''
   saving.value = true
   try {
-    await timeTrackingService.stop(portal.active_entry.id, {})
+    let location = null
+    if (portal.active_entry?.is_mobile) {
+      location = await captureLocation()
+      if (!location) return
+    }
+
+    const payload = location ? { location } : {}
+    await timeTrackingService.stop(portal.active_entry.id, payload)
+    locationError.value = ''
     await loadPortal()
   } finally {
     saving.value = false

@@ -67,6 +67,18 @@
                 required
               />
             </div>
+
+            <div class="mt-2 flex flex-wrap gap-4 text-sm text-gray-700">
+              <label class="inline-flex items-center gap-2">
+                <input v-model="form.is_mobile" type="radio" :value="false" class="h-4 w-4 text-indigo-600" />
+                In shop
+              </label>
+              <label class="inline-flex items-center gap-2">
+                <input v-model="form.is_mobile" type="radio" :value="true" class="h-4 w-4 text-indigo-600" />
+                Mobile repair
+              </label>
+              <span class="text-xs text-gray-500">Mobile invoices require location capture on time entries.</span>
+            </div>
           </Card>
 
           <!-- Line Items -->
@@ -285,6 +297,7 @@ const vehicles = ref([])
 const form = reactive({
   customer_id: '',
   vehicle_id: '',
+  is_mobile: false,
   invoice_date: new Date().toISOString().split('T')[0],
   due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   status: 'draft',

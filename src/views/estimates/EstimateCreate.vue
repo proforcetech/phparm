@@ -54,6 +54,20 @@
               </div>
 
               <div>
+                <label class="block text-sm font-medium text-gray-700">Repair Type</label>
+                <div class="mt-2 flex flex-wrap gap-3 text-sm text-gray-700">
+                  <label class="inline-flex items-center gap-2">
+                    <input v-model="form.is_mobile" type="radio" :value="false" class="h-4 w-4 text-indigo-600" />
+                    In shop
+                  </label>
+                  <label class="inline-flex items-center gap-2">
+                    <input v-model="form.is_mobile" type="radio" :value="true" class="h-4 w-4 text-indigo-600" />
+                    Mobile (location required for time tracking)
+                  </label>
+                </div>
+              </div>
+
+              <div>
                 <label class="block text-sm font-medium text-gray-700">Technician ID</label>
                 <Input
                   v-model.number="form.technician_id"
@@ -289,6 +303,7 @@ const today = new Date().toISOString().substring(0, 10)
 const form = reactive({
   customer_id: null,
   vehicle_id: null,
+  is_mobile: false,
   technician_id: null,
   expiration_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10),
   subtotal: 0,
@@ -321,7 +336,7 @@ async function loadEstimate() {
   try {
     loading.value = true
     const response = await estimateService.getEstimate(route.params.id)
-    Object.assign(form, response.data)
+    Object.assign(form, response.data, { is_mobile: !!response.data.is_mobile })
   } catch (error) {
     console.error('Failed to load estimate:', error)
     toast.error('Failed to load estimate')
@@ -354,6 +369,7 @@ async function saveEstimate() {
       const data = {
         customer_id: parseInt(form.customer_id),
         vehicle_id: parseInt(form.vehicle_id),
+        is_mobile: !!form.is_mobile,
         technician_id: form.technician_id ? parseInt(form.technician_id) : null,
         expiration_date: form.expiration_date || null,
         subtotal: parseFloat(form.subtotal),

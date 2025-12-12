@@ -33,6 +33,7 @@ class TimeEntry extends BaseModel
     public ?string $end_source = null;
     public ?string $end_error = null;
     public bool $manual_override = false;
+    public ?bool $is_mobile = null;
     public ?string $notes = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;

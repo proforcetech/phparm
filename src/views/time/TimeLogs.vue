@@ -64,6 +64,16 @@
             <span class="font-semibold text-gray-900">{{ Number(value ?? 0).toFixed(2) }} mins</span>
           </template>
 
+          <template #cell(location)="{ row }">
+            <div class="text-xs text-gray-700">
+              <div v-if="row.is_mobile">
+                <div>Start: {{ formatLocation(row.start_latitude, row.start_longitude) }}</div>
+                <div>End: {{ row.ended_at ? formatLocation(row.end_latitude, row.end_longitude) : '—' }}</div>
+              </div>
+              <div v-else class="text-gray-500">In-shop</div>
+            </div>
+          </template>
+
           <template #cell(status)="{ value, row }">
             <div class="flex items-center gap-2">
               <Badge :variant="statusVariant(value)" size="sm">{{ statusLabel(value) }}</Badge>
@@ -120,6 +130,11 @@
             <div class="text-xs text-gray-600">Start: {{ formatDate(row.started_at) }}</div>
             <div class="text-xs text-gray-600">
               End: <span :class="row.ended_at ? '' : 'text-amber-700'">{{ row.ended_at ? formatDate(row.ended_at) : 'Active' }}</span>
+            </div>
+            <div class="text-xs text-gray-600">
+              Location:
+              <span v-if="row.is_mobile">{{ formatLocation(row.start_latitude, row.start_longitude) }} → {{ row.ended_at ? formatLocation(row.end_latitude, row.end_longitude) : '—' }}</span>
+              <span v-else>In-shop</span>
             </div>
           </div>
           <div class="mt-2 space-y-1 text-xs text-gray-600">
@@ -278,6 +293,7 @@ const columns = [
   { key: 'technician', label: 'Technician' },
   { key: 'window', label: 'Window' },
   { key: 'duration_minutes', label: 'Duration' },
+  { key: 'location', label: 'Location' },
   { key: 'status', label: 'Status' },
   { key: 'context', label: 'Context' },
   { key: 'manual_override', label: 'Source' },
@@ -322,6 +338,11 @@ function statusVariant(value) {
 function statusLabel(value) {
   if (!value) return 'Unknown'
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function formatLocation(lat, lng) {
+  if (lat == null || lng == null) return '—'
+  return `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
 }
 
 let debounceTimer

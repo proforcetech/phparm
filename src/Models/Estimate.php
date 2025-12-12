@@ -8,6 +8,7 @@ class Estimate extends BaseModel
     public string $number;
     public int $customer_id;
     public int $vehicle_id;
+    public bool $is_mobile = false;
     public string $status;
     public ?int $technician_id = null;
     public ?string $expiration_date = null;
