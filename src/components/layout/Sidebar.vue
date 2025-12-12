@@ -97,31 +97,31 @@ onBeforeUnmount(() => {
 
 // Admin menu items
 const adminMenuItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/invoices', label: 'Invoices', icon: DocumentTextIcon },
-  { path: '/estimates', label: 'Estimates', icon: DocumentTextIcon },
-  { path: '/appointments', label: 'Appointments', icon: CalendarIcon },
-  { path: '/time-logs', label: 'Time Logs', icon: ClockIcon },
-  { path: '/customers', label: 'Customers', icon: UserGroupIcon },
-  { path: '/vehicles', label: 'Vehicles', icon: TruckIcon },
-  { path: '/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
-  { path: '/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
-  { path: '/inventory', label: 'Inventory', icon: CubeIcon },
-  { path: '/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
-  { path: '/reports', label: 'Reports', icon: ChartBarIcon },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
+  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
+  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
+  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
+  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
+  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
   // CMS Section
-  { path: '/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
-  { path: '/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
-  { path: '/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
-  { path: '/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
-  { path: '/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
+  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
+  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
+  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
+  { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
 ]
 
 const technicianMenuItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/my-time', label: 'My Time', icon: ClockIcon },
-  { path: '/time-logs', label: 'Time Logs', icon: ClockIcon },
-  { path: '/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/my-time', label: 'My Time', icon: ClockIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
 ]
 
 // Customer menu items
@@ -148,15 +148,15 @@ const menuItems = computed(() => {
 })
 
 function isActive(path) {
-  if (path === '/dashboard' || path === '/portal') {
+  if (path === '/cp/dashboard' || path === '/portal') {
     return route.path === path
   }
-  if (path === '/inventory') {
-    return route.path === '/inventory'
+  if (path === '/cp/inventory') {
+    return route.path === '/cp/inventory'
   }
-  // Handle CMS routes - exact match for /cms, startsWith for others
-  if (path === '/cms') {
-    return route.path === '/cms'
+  // Handle CMS routes - exact match for /cp/cms, startsWith for others
+  if (path === '/cp/cms') {
+    return route.path === '/cp/cms'
   }
   return route.path.startsWith(path)
 }

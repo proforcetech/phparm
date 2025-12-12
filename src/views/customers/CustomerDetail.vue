@@ -2,7 +2,7 @@
   <div>
     <div class="mb-6">
       <div class="flex items-center gap-4">
-        <Button variant="ghost" @click="$router.push('/customers')">
+        <Button variant="ghost" @click="$router.push('/cp/customers')">
           <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
@@ -88,7 +88,7 @@ const loadCustomer = async () => {
 
 onMounted(() => {
   if (!route.params.id) {
-    router.push('/customers')
+    router.push('/cp/customers')
     return
   }
   loadCustomer()

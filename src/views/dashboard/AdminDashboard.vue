@@ -139,7 +139,7 @@
               <h3 class="text-lg font-medium text-gray-900">Inventory Alerts</h3>
               <p class="text-sm text-gray-500">Low and out-of-stock items that need attention</p>
             </div>
-            <Button variant="outline" @click="$router.push('/inventory/alerts')">
+            <Button variant="outline" @click="$router.push('/cp/inventory/alerts')">
               View alerts
             </Button>
           </div>
@@ -319,7 +319,7 @@
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Button
             variant="outline"
-            @click="$router.push('/invoices/create')"
+            @click="$router.push('/cp/invoices/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -330,7 +330,7 @@
 
           <Button
             variant="outline"
-            @click="$router.push('/appointments/create')"
+            @click="$router.push('/cp/appointments/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -341,7 +341,7 @@
 
           <Button
             variant="outline"
-            @click="$router.push('/customers/create')"
+            @click="$router.push('/cp/customers/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -352,7 +352,7 @@
 
           <Button
             variant="outline"
-            @click="$router.push('/vehicles/create')"
+            @click="$router.push('/cp/vehicles/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">

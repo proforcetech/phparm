@@ -136,7 +136,7 @@ const form = reactive({
   items: [],
 })
 
-const goBack = () => router.push('/bundles')
+const goBack = () => router.push('/cp/bundles')
 
 const addItem = () => {
   form.items.push({

@@ -5,7 +5,7 @@
         <h1 class="text-2xl font-bold text-gray-900">Preset Bundles</h1>
         <p class="mt-1 text-sm text-gray-500">Create reusable groups of line items for faster estimate building.</p>
       </div>
-      <Button @click="$router.push('/bundles/create')">New Bundle</Button>
+      <Button @click="$router.push('/cp/bundles/create')">New Bundle</Button>
     </div>
 
     <Card>

@@ -138,7 +138,7 @@ async function save() {
     }
 
     setTimeout(() => {
-      router.push('/vehicle-master')
+      router.push('/cp/vehicle-master')
     }, 1500)
   } catch (err) {
     error.value = err.response?.data?.message || 'Failed to save vehicle'
@@ -150,6 +150,6 @@ async function save() {
 }
 
 function goBack() {
-  router.push('/vehicle-master')
+  router.push('/cp/vehicle-master')
 }
 </script>

@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="mb-8 flex items-center gap-4">
-      <Button variant="ghost" @click="$router.push('/cms/menus')">
+      <Button variant="ghost" @click="$router.push('/cp/cms/menus')">
         <ArrowLeftIcon class="h-5 w-5" />
       </Button>
       <div>

@@ -5,7 +5,7 @@
         <div class="flex">
           <!-- Logo -->
           <div class="flex-shrink-0 flex items-center">
-            <router-link to="/dashboard" class="text-xl font-bold text-primary-600">
+            <router-link to="/cp/dashboard" class="text-xl font-bold text-primary-600">
               Auto Repair Shop
             </router-link>
           </div>
@@ -74,7 +74,7 @@
                 </router-link>
                 <router-link
                   v-if="isAdmin"
-                  to="/settings"
+                  to="/cp/settings"
                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   role="menuitem"
                   @click="userMenuOpen = false"

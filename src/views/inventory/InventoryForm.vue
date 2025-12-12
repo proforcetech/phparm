@@ -116,7 +116,7 @@ const form = reactive({
   notes: '',
 })
 
-const goBack = () => router.push('/inventory')
+const goBack = () => router.push('/cp/inventory')
 
 const loadItem = async () => {
   const id = route.params.id

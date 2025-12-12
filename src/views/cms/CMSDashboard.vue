@@ -107,7 +107,7 @@
           <div class="grid grid-cols-2 gap-4">
             <Button
               variant="outline"
-              @click="$router.push('/cms/pages/create')"
+              @click="$router.push('/cp/cms/pages/create')"
               class="justify-center"
             >
               <PlusIcon class="h-5 w-5 mr-2" />
@@ -115,7 +115,7 @@
             </Button>
             <Button
               variant="outline"
-              @click="$router.push('/cms/components/create')"
+              @click="$router.push('/cp/cms/components/create')"
               class="justify-center"
             >
               <PlusIcon class="h-5 w-5 mr-2" />
@@ -123,7 +123,7 @@
             </Button>
             <Button
               variant="outline"
-              @click="$router.push('/cms/templates/create')"
+              @click="$router.push('/cp/cms/templates/create')"
               class="justify-center"
             >
               <PlusIcon class="h-5 w-5 mr-2" />

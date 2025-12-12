@@ -5,7 +5,7 @@
         <h1 class="text-2xl font-bold text-gray-900">Inventory Alerts</h1>
         <p class="mt-1 text-sm text-gray-500">Track low and out-of-stock items from the dashboard</p>
       </div>
-      <Button variant="outline" @click="$router.push('/inventory')">
+      <Button variant="outline" @click="$router.push('/cp/inventory')">
         Back to inventory
       </Button>
     </div>
