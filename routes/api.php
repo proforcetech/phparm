@@ -864,34 +864,76 @@ return Response::json([
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
 
         $router->get('/api/dashboard', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
             $params = [
                 'start' => $request->queryParam('start'),
                 'end' => $request->queryParam('end'),
                 'timezone' => $request->queryParam('timezone', 'UTC'),
+                'role' => $user?->role,
             ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
 
             $data = $dashboardController->handleKpis($params);
             return Response::json($data);
         });
 
         $router->get('/api/dashboard/charts', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
             $params = [
                 'start' => $request->queryParam('start'),
                 'end' => $request->queryParam('end'),
                 'timezone' => $request->queryParam('timezone', 'UTC'),
+                'role' => $user?->role,
             ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
 
             $data = $dashboardController->handleMonthlyTrends($params);
             return Response::json($data);
         });
 
         $router->get('/api/dashboard/charts/service-types', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
             $params = [
                 'start' => $request->queryParam('start'),
                 'end' => $request->queryParam('end'),
                 'timezone' => $request->queryParam('timezone', 'UTC'),
                 'limit' => $request->queryParam('limit', 10),
+                'role' => $user?->role,
             ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
 
             $data = $dashboardController->handleServiceTypeBreakdown($params);
             return Response::json($data);
@@ -1521,6 +1563,12 @@ return Response::json([
                 'limit' => $request->queryParam('limit'),
                 'offset' => $request->queryParam('offset'),
             ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $filters['customer_id'] = $user->customer_id;
+            } elseif ($user?->role === 'technician') {
+                $filters['technician_id'] = $user->id;
+            }
             $data = $invoiceController->index($user, $filters);
             return Response::json($data);
         });
@@ -1628,6 +1676,10 @@ return Response::json([
                 'technician_id' => $request->queryParam('technician_id'),
                 'date' => $request->queryParam('date'),
             ];
+
+            if ($user?->role === 'technician') {
+                $filters['technician_id'] = $user->id;
+            }
             $data = $appointmentController->index($user, $filters);
             return Response::json($data);
         });

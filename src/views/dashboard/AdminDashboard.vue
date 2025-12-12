@@ -367,7 +367,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
@@ -377,8 +377,10 @@ import Loading from '@/components/ui/Loading.vue'
 import LineChart from '@/components/charts/LineChart.vue'
 import DoughnutChart from '@/components/charts/DoughnutChart.vue'
 import dashboardService from '@/services/dashboard.service'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const error = ref(null)
@@ -400,6 +402,9 @@ const inventoryAlerts = ref({ counts: { out_of_stock: 0, low_stock: 0 }, items: 
 const revenueChartData = ref({ labels: [], datasets: [] })
 const serviceTypeChartData = ref({ labels: [], datasets: [] })
 
+const technicianId = computed(() => (authStore.user?.role === 'technician' ? authStore.user.id : null))
+const technicianParams = computed(() => (technicianId.value ? { technician_id: technicianId.value } : {}))
+
 onMounted(async () => {
   await loadDashboardData()
 })
@@ -416,18 +421,20 @@ async function loadDashboardData() {
 
     // Load all dashboard data in parallel
     const [statsData, invoicesData, appointmentsData, lowStockData, trendsData, serviceTypesData] = await Promise.all([
-      dashboardService.getStats().catch(() => ({})),
-      dashboardService.getRecentInvoices().catch(() => []),
-      dashboardService.getRecentAppointments().catch(() => []),
+      dashboardService.getStats(technicianParams.value).catch(() => ({})),
+      dashboardService.getRecentInvoices(5, technicianParams.value).catch(() => []),
+      dashboardService.getRecentAppointments(5, technicianParams.value).catch(() => []),
       dashboardService.getInventoryLowStockTile().catch(() => null),
       dashboardService.getMonthlyTrendsChart({
         start: startDate.toISOString().split('T')[0],
-        end: endDate.toISOString().split('T')[0]
+        end: endDate.toISOString().split('T')[0],
+        ...technicianParams.value,
       }).catch(() => []),
       dashboardService.getServiceTypeChart({
         start: startDate.toISOString().split('T')[0],
         end: endDate.toISOString().split('T')[0],
-        limit: 8
+        limit: 8,
+        ...technicianParams.value,
       }).catch(() => ({ label: '', data: [], categories: [] })),
     ])
 
