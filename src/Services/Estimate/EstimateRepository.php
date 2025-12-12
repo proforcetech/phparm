@@ -253,7 +253,7 @@ class EstimateRepository
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
-            'is_mobile' => (bool) $row['is_mobile'],
+            'is_mobile' => (bool) ($row['is_mobile'] ?? false),
             'status' => (string) $row['status'],
             'technician_id' => $row['technician_id'] !== null ? (int) $row['technician_id'] : null,
             'expiration_date' => $row['expiration_date'],
