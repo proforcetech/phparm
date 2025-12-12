@@ -49,6 +49,7 @@ return [
                 'cms.menus.view', 'cms.menus.create', 'cms.menus.update', 'cms.menus.delete',
                 'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete',
                 'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete',
+                'cms.dashboard.view',
                 'cms.templates.view'
             ],
         ],

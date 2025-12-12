@@ -20,11 +20,13 @@ class CMSApiController
     private CMSAuthBridge $authBridge;
     private string $tablePrefix;
     private ?CMSCacheService $cacheService;
+    private AccessGate $gate;
 
-    public function __construct(Connection $connection, CMSAuthBridge $authBridge, ?CMSCacheService $cacheService = null)
+    public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null)
     {
         $this->connection = $connection;
         $this->authBridge = $authBridge;
+        $this->gate = $gate;
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
         $this->cacheService = $cacheService;
     }
@@ -47,6 +49,7 @@ class CMSApiController
     public function dashboard(?User $user): array
     {
         $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.dashboard.view');
 
         $pdo = $this->connection->pdo();
 
@@ -463,6 +466,7 @@ class CMSApiController
     public function listTemplates(?User $user, array $filters = []): array
     {
         $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.templates.view');
 
         $pdo = $this->connection->pdo();
         $where = [];
@@ -501,6 +505,7 @@ class CMSApiController
     public function getTemplate(?User $user, int $id): ?array
     {
         $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.templates.view');
 
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("SELECT * FROM {$this->table('templates')} WHERE id = :id");
@@ -515,6 +520,7 @@ class CMSApiController
     public function createTemplate(?User $user, array $data): array
     {
         $this->requireAdminAccess($user);
+        $this->gate->assert($user, 'cms.templates.create');
 
         $pdo = $this->connection->pdo();
 
@@ -556,6 +562,7 @@ class CMSApiController
     public function updateTemplate(?User $user, int $id, array $data): array
     {
         $this->requireAdminAccess($user);
+        $this->gate->assert($user, 'cms.templates.update');
 
         $pdo = $this->connection->pdo();
 
@@ -597,6 +604,7 @@ class CMSApiController
     public function deleteTemplate(?User $user, int $id): bool
     {
         $this->requireAdminAccess($user);
+        $this->gate->assert($user, 'cms.templates.delete');
 
         $pdo = $this->connection->pdo();
 
