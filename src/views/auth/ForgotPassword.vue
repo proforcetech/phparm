@@ -30,6 +30,10 @@
         </div>
 
         <div>
+          <div class="flex justify-center">
+            <div ref="recaptchaContainer"></div>
+          </div>
+
           <button
             type="submit"
             :disabled="loading"
@@ -93,6 +97,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRecaptcha } from '@/composables/useRecaptcha'
 
 const authStore = useAuthStore()
 
@@ -100,18 +105,30 @@ const email = ref('')
 const loading = ref(false)
 const error = ref(null)
 const success = ref(false)
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
 
 async function handleSubmit() {
   loading.value = true
   error.value = null
 
   try {
-    await authStore.requestPasswordReset(email.value)
+    if (!recaptchaSiteKey) {
+      throw new Error('reCAPTCHA is not configured')
+    }
+
+    if (!recaptchaToken.value) {
+      throw new Error('Please complete the reCAPTCHA challenge.')
+    }
+
+    await authStore.requestPasswordReset(email.value, recaptchaToken.value)
     success.value = true
   } catch (err) {
-    error.value = err.response?.data?.message || 'Failed to send reset email. Please try again.'
+    error.value =
+      err.response?.data?.message || err.message || 'Failed to send reset email. Please try again.'
   } finally {
     loading.value = false
+    resetRecaptcha()
   }
 }
 

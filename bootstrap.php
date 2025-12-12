@@ -20,6 +20,7 @@ $config = [
     'auth' => require __DIR__ . '/config/auth.php',
     'appointments' => require __DIR__ . '/config/appointments.php',
     'cms' => require __DIR__ . '/config/cms.php',
+    'recaptcha' => require __DIR__ . '/config/recaptcha.php',
 ];
 
 return $config;
