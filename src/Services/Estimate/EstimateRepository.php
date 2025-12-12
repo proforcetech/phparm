@@ -171,8 +171,8 @@ class EstimateRepository
             $serviceTypeId = $this->determinePrimaryServiceTypeId($estimateId);
 
             $insert = $pdo->prepare(<<<SQL
-                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
-                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
+                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, is_mobile, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
+                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :is_mobile, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
             SQL);
 
             $total = $estimate->grand_total;
@@ -181,6 +181,7 @@ class EstimateRepository
                 'customer_id' => $estimate->customer_id,
                 'service_type_id' => $serviceTypeId,
                 'vehicle_id' => $estimate->vehicle_id,
+                'is_mobile' => $estimate->is_mobile ? 1 : 0,
                 'estimate_id' => $estimate->id,
                 'status' => 'pending',
                 'issue_date' => $issueDate,
@@ -252,6 +253,7 @@ class EstimateRepository
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
+            'is_mobile' => (bool) $row['is_mobile'],
             'status' => (string) $row['status'],
             'technician_id' => $row['technician_id'] !== null ? (int) $row['technician_id'] : null,
             'expiration_date' => $row['expiration_date'],

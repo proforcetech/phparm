@@ -28,6 +28,7 @@
           <div>
             <h1 class="text-2xl font-bold text-gray-900">Invoice #{{ invoice.invoice_number }}</h1>
             <div class="mt-1 flex items-center gap-2">
+              <Badge v-if="invoice.is_mobile" variant="warning">Mobile repair</Badge>
               <Badge :variant="getStatusVariant(invoice.status)">
                 {{ invoice.status }}
               </Badge>

@@ -10,6 +10,7 @@ class Invoice extends BaseModel
     public ?int $service_type_id = null;
     public ?int $vehicle_id = null;
     public ?int $estimate_id = null;
+    public bool $is_mobile = false;
     public string $status;
     public string $issue_date;
     public ?string $due_date = null;
