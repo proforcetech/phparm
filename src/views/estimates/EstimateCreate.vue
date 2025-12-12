@@ -3,7 +3,7 @@
     <!-- Page Header -->
     <div class="mb-6">
       <div class="flex items-center gap-4 mb-2">
-        <Button variant="ghost" @click="$router.push('/estimates')">
+        <Button variant="ghost" @click="$router.push('/cp/estimates')">
           <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
@@ -252,7 +252,7 @@
               <Button
                 variant="outline"
                 class="w-full"
-                @click="$router.push('/estimates')"
+                @click="$router.push('/cp/estimates')"
                 :disabled="saving"
               >
                 Cancel
@@ -325,7 +325,7 @@ async function loadEstimate() {
   } catch (error) {
     console.error('Failed to load estimate:', error)
     toast.error('Failed to load estimate')
-    router.push('/estimates')
+    router.push('/cp/estimates')
   } finally {
     loading.value = false
   }
@@ -375,7 +375,7 @@ async function saveEstimate() {
     if (response.data?.id) {
       router.push(`/estimates/${response.data.id}`)
     } else {
-      router.push('/estimates')
+      router.push('/cp/estimates')
     }
   } catch (error) {
     console.error('Failed to save estimate:', error)

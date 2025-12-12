@@ -3,7 +3,7 @@
     <!-- Page Header -->
     <div class="mb-6">
       <div class="flex items-center gap-4 mb-2">
-        <Button variant="ghost" @click="$router.push('/invoices')">
+        <Button variant="ghost" @click="$router.push('/cp/invoices')">
           <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
@@ -250,7 +250,7 @@
               <Button
                 variant="ghost"
                 class="w-full"
-                @click="$router.push('/invoices')"
+                @click="$router.push('/cp/invoices')"
               >
                 Cancel
               </Button>

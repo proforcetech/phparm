@@ -162,9 +162,9 @@ const loadItems = async () => {
   }
 }
 
-const goToCreate = () => router.push('/inventory/create')
+const goToCreate = () => router.push('/cp/inventory/create')
 const editItem = (id) => router.push(`/inventory/${id}/edit`)
-const goToAlerts = () => router.push('/inventory/alerts')
+const goToAlerts = () => router.push('/cp/inventory/alerts')
 
 const nextPage = () => {
   if (!hasNextPage.value) return

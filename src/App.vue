@@ -35,7 +35,7 @@ onMounted(() => {
 
 // Determine which layout to use based on route
 const isGuestRoute = computed(() => {
-  const guestRoutes = ['/login', '/customer-login', '/register', '/forgot-password']
+  const guestRoutes = ['/login', '/customer-login', '/forgot-password']
   return guestRoutes.some(guestRoute => route.path.startsWith(guestRoute)) || route.path.startsWith('/reset-password')
 })
 

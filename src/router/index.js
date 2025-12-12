@@ -27,284 +27,284 @@ const routes = [
     meta: { guest: true },
   },
   {
-    path: '/register',
+    path: '/cp/register',
     name: 'Register',
     component: () => import('@/views/auth/Register.vue'),
     meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
-    path: '/dashboard',
+    path: '/cp/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/dashboard/AdminDashboard.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/invoices',
+    path: '/cp/invoices',
     name: 'InvoiceList',
     component: () => import('@/views/invoices/InvoiceList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/invoices/:id',
+    path: '/cp/invoices/:id',
     name: 'InvoiceDetail',
     component: () => import('@/views/invoices/InvoiceDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/invoices/create',
+    path: '/cp/invoices/create',
     name: 'InvoiceCreate',
     component: () => import('@/views/invoices/InvoiceCreate.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/estimates',
+    path: '/cp/estimates',
     name: 'EstimateList',
     component: () => import('@/views/estimates/EstimateList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/estimates/create',
+    path: '/cp/estimates/create',
     name: 'EstimateCreate',
     component: () => import('@/views/estimates/EstimateCreate.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/estimates/:id',
+    path: '/cp/estimates/:id',
     name: 'EstimateDetail',
     component: () => import('@/views/estimates/EstimateDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/estimates/:id/edit',
+    path: '/cp/estimates/:id/edit',
     name: 'EstimateEdit',
     component: () => import('@/views/estimates/EstimateCreate.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/bundles',
+    path: '/cp/bundles',
     name: 'BundleList',
     component: () => import('@/views/bundles/BundleList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/bundles/create',
+    path: '/cp/bundles/create',
     name: 'BundleCreate',
     component: () => import('@/views/bundles/BundleForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/bundles/:id/edit',
+    path: '/cp/bundles/:id/edit',
     name: 'BundleEdit',
     component: () => import('@/views/bundles/BundleForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/appointments',
+    path: '/cp/appointments',
     name: 'AppointmentList',
     component: () => import('@/views/appointments/AppointmentList.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/appointments/calendar',
+    path: '/cp/appointments/calendar',
     name: 'AppointmentCalendar',
     component: () => import('@/views/appointments/AppointmentCalendar.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/time-logs',
+    path: '/cp/time-logs',
     name: 'TimeLogs',
     component: () => import('@/views/time/TimeLogs.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/my-time',
+    path: '/cp/my-time',
     name: 'TechnicianTime',
     component: () => import('@/views/time/TechnicianPortal.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/appointments/create',
+    path: '/cp/appointments/create',
     name: 'AppointmentBook',
     component: () => import('@/views/appointments/AppointmentBook.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/appointments/availability-settings',
+    path: '/cp/appointments/availability-settings',
     name: 'AvailabilitySettings',
     component: () => import('@/views/appointments/AvailabilitySettings.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/customers',
+    path: '/cp/customers',
     name: 'CustomerList',
     component: () => import('@/views/customers/CustomerList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/customers/:id',
+    path: '/cp/customers/:id',
     name: 'CustomerDetail',
     component: () => import('@/views/customers/CustomerDetail.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicle-master',
+    path: '/cp/vehicle-master',
     name: 'VehicleMasterList',
     component: () => import('@/views/vehicle-master/VehicleMasterList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicle-master/create',
+    path: '/cp/vehicle-master/create',
     name: 'VehicleMasterCreate',
     component: () => import('@/views/vehicle-master/VehicleMasterForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicle-master/:id/edit',
+    path: '/cp/vehicle-master/:id/edit',
     name: 'VehicleMasterEdit',
     component: () => import('@/views/vehicle-master/VehicleMasterForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicles',
+    path: '/cp/vehicles',
     name: 'VehicleList',
     component: () => import('@/views/vehicles/VehicleList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicles/create',
+    path: '/cp/vehicles/create',
     name: 'VehicleCreate',
     component: () => import('@/views/vehicles/VehicleForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicles/:id/edit',
+    path: '/cp/vehicles/:id/edit',
     name: 'VehicleEdit',
     component: () => import('@/views/vehicles/VehicleForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/vehicles/:id',
+    path: '/cp/vehicles/:id',
     name: 'VehicleDetail',
     component: () => import('@/views/vehicles/VehicleDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/inventory',
+    path: '/cp/inventory',
     name: 'InventoryList',
     component: () => import('@/views/inventory/InventoryList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/inventory/create',
+    path: '/cp/inventory/create',
     name: 'InventoryCreate',
     component: () => import('@/views/inventory/InventoryForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/inventory/:id/edit',
+    path: '/cp/inventory/:id/edit',
     name: 'InventoryEdit',
     component: () => import('@/views/inventory/InventoryForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/inventory/alerts',
+    path: '/cp/inventory/alerts',
     name: 'InventoryAlerts',
     component: () => import('@/views/inventory/InventoryAlerts.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/financial/entries',
+    path: '/cp/financial/entries',
     name: 'FinancialEntries',
     component: () => import('@/views/financial/FinancialEntries.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/reports',
+    path: '/cp/reports',
     name: 'FinancialReports',
     component: () => import('@/views/financial/Reports.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/settings',
+    path: '/cp/settings',
     name: 'Settings',
     component: () => import('@/views/settings/SettingsPage.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   // CMS Routes
   {
-    path: '/cms',
+    path: '/cp/cms',
     name: 'CMSDashboard',
     component: () => import('@/views/cms/CMSDashboard.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/pages',
+    path: '/cp/cms/pages',
     name: 'CMSPageList',
     component: () => import('@/views/cms/CMSPageList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/pages/create',
+    path: '/cp/cms/pages/create',
     name: 'CMSPageCreate',
     component: () => import('@/views/cms/CMSPageForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/pages/:id',
+    path: '/cp/cms/pages/:id',
     name: 'CMSPageEdit',
     component: () => import('@/views/cms/CMSPageForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/menus',
+    path: '/cp/cms/menus',
     name: 'CMSMenuList',
     component: () => import('@/views/cms/CMSMenuList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/menus/create',
+    path: '/cp/cms/menus/create',
     name: 'CMSMenuCreate',
     component: () => import('@/views/cms/CMSMenuForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/menus/:id',
+    path: '/cp/cms/menus/:id',
     name: 'CMSMenuEdit',
     component: () => import('@/views/cms/CMSMenuForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/components',
+    path: '/cp/cms/components',
     name: 'CMSComponentList',
     component: () => import('@/views/cms/CMSComponentList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/components/create',
+    path: '/cp/cms/components/create',
     name: 'CMSComponentCreate',
     component: () => import('@/views/cms/CMSComponentForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/components/:id',
+    path: '/cp/cms/components/:id',
     name: 'CMSComponentEdit',
     component: () => import('@/views/cms/CMSComponentForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/templates',
+    path: '/cp/cms/templates',
     name: 'CMSTemplateList',
     component: () => import('@/views/cms/CMSTemplateList.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/templates/create',
+    path: '/cp/cms/templates/create',
     name: 'CMSTemplateCreate',
     component: () => import('@/views/cms/CMSTemplateForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
-    path: '/cms/templates/:id',
+    path: '/cp/cms/templates/:id',
     name: 'CMSTemplateEdit',
     component: () => import('@/views/cms/CMSTemplateForm.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
@@ -404,7 +404,7 @@ router.beforeEach(async (to, from, next) => {
     if (authStore.isCustomer) {
       return next('/portal')
     }
-    return next('/dashboard')
+    return next('/cp/dashboard')
   }
 
   // Check if route requires staff access
@@ -415,7 +415,7 @@ router.beforeEach(async (to, from, next) => {
   // Check if route requires customer access
   if (to.meta.requiresCustomer) {
     if (!authStore.isCustomer) {
-      return next('/dashboard')
+      return next('/cp/dashboard')
     }
 
     if (!authStore.portalReady) {
@@ -430,7 +430,7 @@ router.beforeEach(async (to, from, next) => {
 
   // Check if route requires admin access
   if (to.meta.requiresAdmin && !authStore.isAdmin) {
-    return next('/dashboard')
+    return next('/cp/dashboard')
   }
 
   next()

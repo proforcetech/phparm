@@ -3,7 +3,7 @@
     <!-- Page Header -->
     <div class="mb-8">
       <div class="flex items-center gap-4">
-        <Button variant="ghost" @click="$router.push('/cms/components')">
+        <Button variant="ghost" @click="$router.push('/cp/cms/components')">
           <ArrowLeftIcon class="h-5 w-5" />
         </Button>
         <div>

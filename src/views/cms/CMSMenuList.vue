@@ -5,7 +5,7 @@
         <h1 class="text-2xl font-bold text-gray-900">CMS Menus</h1>
         <p class="mt-1 text-sm text-gray-500">Manage navigation menus and publish updates</p>
       </div>
-      <Button @click="$router.push('/cms/menus/create')">
+      <Button @click="$router.push('/cp/cms/menus/create')">
         <PlusIcon class="h-5 w-5 mr-2" />
         New Menu
       </Button>
@@ -46,7 +46,7 @@
         <DocumentDuplicateIcon class="h-12 w-12 mx-auto mb-4 text-gray-400" />
         <p class="text-lg font-medium">No menus found</p>
         <p class="text-sm mt-1">Create your first navigation menu to get started.</p>
-        <Button class="mt-4" @click="$router.push('/cms/menus/create')">
+        <Button class="mt-4" @click="$router.push('/cp/cms/menus/create')">
           <PlusIcon class="h-5 w-5 mr-2" />
           Create Menu
         </Button>

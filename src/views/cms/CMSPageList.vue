@@ -6,7 +6,7 @@
         <h1 class="text-2xl font-bold text-gray-900">CMS Pages</h1>
         <p class="mt-1 text-sm text-gray-500">Manage your website pages</p>
       </div>
-      <Button @click="$router.push('/cms/pages/create')">
+      <Button @click="$router.push('/cp/cms/pages/create')">
         <PlusIcon class="h-5 w-5 mr-2" />
         New Page
       </Button>
@@ -54,7 +54,7 @@
         <DocumentDuplicateIcon class="h-12 w-12 mx-auto mb-4 text-gray-400" />
         <p class="text-lg font-medium">No pages found</p>
         <p class="text-sm mt-1">Get started by creating your first page.</p>
-        <Button class="mt-4" @click="$router.push('/cms/pages/create')">
+        <Button class="mt-4" @click="$router.push('/cp/cms/pages/create')">
           <PlusIcon class="h-5 w-5 mr-2" />
           Create Page
         </Button>

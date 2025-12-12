@@ -6,13 +6,13 @@
         <p class="mt-1 text-sm text-gray-500">Manage vehicles in customer garages</p>
       </div>
       <div class="flex gap-3">
-        <Button variant="secondary" @click="$router.push('/vehicle-master')">
+        <Button variant="secondary" @click="$router.push('/cp/vehicle-master')">
           <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
           </svg>
           Vehicle Database
         </Button>
-        <Button @click="$router.push('/vehicles/create')">
+        <Button @click="$router.push('/cp/vehicles/create')">
           <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>

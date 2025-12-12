@@ -93,11 +93,11 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         // Redirect based on role
-        if (data.user.role === 'customer') {
-          router.push('/portal')
-        } else {
-          router.push('/dashboard')
-        }
+      if (data.user.role === 'customer') {
+        router.push('/portal')
+      } else {
+        router.push('/cp/dashboard')
+      }
 
         return data
       }
@@ -145,11 +145,11 @@ export const useAuthStore = defineStore('auth', () => {
           localStorage.removeItem('portal_nonce')
         }
 
-        if (data.user.role === 'customer') {
-          router.push('/portal')
-        } else {
-          router.push('/dashboard')
-        }
+      if (data.user.role === 'customer') {
+        router.push('/portal')
+      } else {
+        router.push('/cp/dashboard')
+      }
       }
 
       return data

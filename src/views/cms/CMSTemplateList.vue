@@ -6,7 +6,7 @@
         <h1 class="text-2xl font-bold text-gray-900">CMS Templates</h1>
         <p class="mt-1 text-sm text-gray-500">Manage page layout templates</p>
       </div>
-      <Button @click="$router.push('/cms/templates/create')">
+      <Button @click="$router.push('/cp/cms/templates/create')">
         <PlusIcon class="h-5 w-5 mr-2" />
         New Template
       </Button>
@@ -54,7 +54,7 @@
         <RectangleGroupIcon class="h-12 w-12 mx-auto mb-4 text-gray-400" />
         <p class="text-lg font-medium text-gray-900">No templates found</p>
         <p class="text-sm mt-1 text-gray-500">Get started by creating your first template.</p>
-        <Button class="mt-4" @click="$router.push('/cms/templates/create')">
+        <Button class="mt-4" @click="$router.push('/cp/cms/templates/create')">
           <PlusIcon class="h-5 w-5 mr-2" />
           Create Template
         </Button>
