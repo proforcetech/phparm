@@ -31,7 +31,7 @@
 
         <div>
           <div class="flex justify-center">
-            <div ref="recaptchaContainer"></div>
+            <div v-if="recaptchaEnabled" ref="recaptchaContainer"></div>
           </div>
 
           <button
@@ -95,8 +95,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { securityService } from '@/services/security.service'
 import { useRecaptcha } from '@/composables/useRecaptcha'
 
 const authStore = useAuthStore()
@@ -105,23 +106,39 @@ const email = ref('')
 const loading = ref(false)
 const error = ref(null)
 const success = ref(false)
-const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+const recaptchaEnabled = ref(false)
+const recaptchaSiteKey = ref('')
 const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
+
+onMounted(async () => {
+  try {
+    const settings = await securityService.getRecaptchaSettings()
+    recaptchaEnabled.value = !!settings.enabled
+    recaptchaSiteKey.value = settings.site_key || ''
+  } catch (err) {
+    recaptchaEnabled.value = false
+    recaptchaSiteKey.value = ''
+    console.error('Failed to load reCAPTCHA settings', err)
+  }
+})
 
 async function handleSubmit() {
   loading.value = true
   error.value = null
 
   try {
-    if (!recaptchaSiteKey) {
-      throw new Error('reCAPTCHA is not configured')
+    if (recaptchaEnabled.value) {
+      if (!recaptchaSiteKey.value) {
+        throw new Error('reCAPTCHA is not configured')
+      }
+
+      if (!recaptchaToken.value) {
+        throw new Error('Please complete the reCAPTCHA challenge.')
+      }
     }
 
-    if (!recaptchaToken.value) {
-      throw new Error('Please complete the reCAPTCHA challenge.')
-    }
-
-    await authStore.requestPasswordReset(email.value, recaptchaToken.value)
+    const token = recaptchaEnabled.value ? recaptchaToken.value : null
+    await authStore.requestPasswordReset(email.value, token)
     success.value = true
   } catch (err) {
     error.value =

@@ -1,7 +1,8 @@
 <?php
 
 return [
-    'site_key' => env('RECAPTCHA_SITE_KEY'),
-    'secret_key' => env('RECAPTCHA_SECRET_KEY'),
-    'score_threshold' => (float) env('RECAPTCHA_THRESHOLD', 0.5),
+    'enabled' => false,
+    'site_key' => null,
+    'secret_key' => null,
+    'score_threshold' => 0.5,
 ];
