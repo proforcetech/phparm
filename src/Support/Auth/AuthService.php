@@ -235,7 +235,7 @@ class AuthService
         return $row ? new User($row) : null;
     }
 
-    private function findUserById(int $id): User
+    public function findUserById(int $id): User
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
         $stmt->execute(['id' => $id]);

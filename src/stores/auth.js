@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
   const loading = ref(false)
   const error = ref(null)
+  const pendingChallenge = ref(null)
 
   const isAuthenticated = computed(() => !!token.value)
   const isCustomer = computed(() => user.value?.role === 'customer')
@@ -64,6 +65,14 @@ export const useAuthStore = defineStore('auth', () => {
         ? await authService.customerLogin(email, password, recaptchaToken)
         : await authService.login(email, password, recaptchaToken)
 
+      if (data.status === '2fa_required') {
+        pendingChallenge.value = {
+          token: data.challenge_token,
+          isCustomer: isCustomerLogin,
+        }
+        return data
+      }
+
       if (data.token && data.user) {
         token.value = data.token
         user.value = data.user
@@ -94,6 +103,58 @@ export const useAuthStore = defineStore('auth', () => {
       }
     } catch (err) {
       error.value = err.response?.data?.message || 'Login failed'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function verifyTwoFactor(code) {
+    if (!pendingChallenge.value) {
+      throw new Error('No pending two-factor challenge')
+    }
+
+    loading.value = true
+    error.value = null
+
+    try {
+      const data = await authService.verifyTwoFactor(
+        pendingChallenge.value.token,
+        code,
+        pendingChallenge.value.isCustomer
+      )
+
+      pendingChallenge.value = null
+
+      if (data.token && data.user) {
+        token.value = data.token
+        user.value = data.user
+
+        localStorage.setItem('auth_token', data.token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+
+        if (data.api_base) {
+          portalConfig.value.apiBase = data.api_base
+        }
+
+        if (data.user.role === 'customer' && data.nonce) {
+          portalConfig.value.nonce = data.nonce
+          localStorage.setItem('portal_nonce', data.nonce)
+        } else {
+          portalConfig.value.nonce = null
+          localStorage.removeItem('portal_nonce')
+        }
+
+        if (data.user.role === 'customer') {
+          router.push('/portal')
+        } else {
+          router.push('/dashboard')
+        }
+      }
+
+      return data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Two-factor verification failed'
       throw err
     } finally {
       loading.value = false
@@ -228,6 +289,7 @@ export const useAuthStore = defineStore('auth', () => {
     portalConfig,
     loading,
     error,
+    pendingChallenge,
     isAuthenticated,
     isCustomer,
     isStaff,
@@ -242,5 +304,6 @@ export const useAuthStore = defineStore('auth', () => {
     requestPasswordReset,
     resetPassword,
     updateProfile,
+    verifyTwoFactor,
   }
 })

@@ -10,6 +10,7 @@ use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
 use App\Support\Security\RecaptchaVerifier;
+use App\Support\Auth\TotpService;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
 use App\CMS\Controllers\PageController;
@@ -52,6 +53,8 @@ return function (Router $router, array $config, $connection) {
         $recaptchaConfig['secret_key'] ?? null,
         (float) ($recaptchaConfig['score_threshold'] ?? 0.5)
     );
+
+    $totpService = new TotpService();
 
     // Apply global rate limiting (60 requests per minute per IP+path)
     $router->middleware(Middleware::throttle(60, 60));
@@ -96,7 +99,7 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Authentication routes (public) - with strict rate limiting (5 attempts per minute)
-    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier) {
+    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier, $totpService) {
         $email = $request->input('email');
         $password = $request->input('password');
         $recaptchaToken = $request->input('recaptcha_token');
@@ -119,6 +122,22 @@ return function (Router $router, array $config, $connection) {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
+
+        if ($user->two_factor_enabled && $user->two_factor_secret) {
+            $challengeToken = bin2hex(random_bytes(32));
+            $_SESSION['2fa_challenges'][$challengeToken] = [
+                'user_id' => $user->id,
+                'type' => 'totp',
+                'expires_at' => time() + 300,
+            ];
+
+            return Response::json([
+                'status' => '2fa_required',
+                'challenge_token' => $challengeToken,
+                'message' => 'Two-factor authentication required',
+            ]);
+        }
+
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
 
@@ -136,7 +155,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier) {
+    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier, $totpService) {
         $email = $request->input('email');
         $password = $request->input('password');
         $recaptchaToken = $request->input('recaptcha_token');
@@ -160,11 +179,119 @@ return function (Router $router, array $config, $connection) {
             session_start();
         }
 
+        if ($user->two_factor_enabled && $user->two_factor_secret) {
+            $challengeToken = bin2hex(random_bytes(32));
+            $_SESSION['2fa_challenges'][$challengeToken] = [
+                'user_id' => $user->id,
+                'type' => 'totp',
+                'expires_at' => time() + 300,
+            ];
+
+            return Response::json([
+                'status' => '2fa_required',
+                'challenge_token' => $challengeToken,
+                'message' => 'Two-factor authentication required',
+            ]);
+        }
+
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
 
         // Generate JWT tokens
+        $accessToken = $jwtService->generateToken($user);
+        $refreshToken = $jwtService->generateRefreshToken($user);
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $jwtService->getTokenTtl(),
+            'token_type' => 'Bearer',
+            'nonce' => $_SESSION['portal_nonce'],
+            'api_base' => '/api',
+            'message' => 'Login successful',
+        ]);
+    })->middleware(Middleware::throttleStrict(5, 60));
+
+    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
+        $challengeToken = $request->input('challenge_token');
+        $code = $request->input('code');
+
+        if (!$challengeToken || !$code) {
+            return Response::badRequest('Challenge token and code are required');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $challenge = $_SESSION['2fa_challenges'][$challengeToken] ?? null;
+        if (!$challenge || ($challenge['expires_at'] ?? 0) < time()) {
+            return Response::unauthorized('Two-factor challenge has expired');
+        }
+
+        try {
+            $user = $authService->findUserById((int) $challenge['user_id']);
+        } catch (\Throwable $e) {
+            return Response::unauthorized('Invalid challenge state');
+        }
+
+        if (!$user->two_factor_secret || !$totpService->verifyCode($user->two_factor_secret, (string) $code)) {
+            return Response::unauthorized('Invalid authentication code');
+        }
+
+        unset($_SESSION['2fa_challenges'][$challengeToken]);
+
+        $_SESSION['user_id'] = $user->id;
+        $_SESSION['user'] = $user->toArray();
+
+        $accessToken = $jwtService->generateToken($user);
+        $refreshToken = $jwtService->generateRefreshToken($user);
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $jwtService->getTokenTtl(),
+            'token_type' => 'Bearer',
+            'message' => 'Login successful',
+        ]);
+    })->middleware(Middleware::throttleStrict(5, 60));
+
+    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
+        $challengeToken = $request->input('challenge_token');
+        $code = $request->input('code');
+
+        if (!$challengeToken || !$code) {
+            return Response::badRequest('Challenge token and code are required');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $challenge = $_SESSION['2fa_challenges'][$challengeToken] ?? null;
+        if (!$challenge || ($challenge['expires_at'] ?? 0) < time()) {
+            return Response::unauthorized('Two-factor challenge has expired');
+        }
+
+        try {
+            $user = $authService->findUserById((int) $challenge['user_id']);
+        } catch (\Throwable $e) {
+            return Response::unauthorized('Invalid challenge state');
+        }
+
+        if (!$user->two_factor_secret || !$totpService->verifyCode($user->two_factor_secret, (string) $code)) {
+            return Response::unauthorized('Invalid authentication code');
+        }
+
+        unset($_SESSION['2fa_challenges'][$challengeToken]);
+
+        $_SESSION['user_id'] = $user->id;
+        $_SESSION['user'] = $user->toArray();
+        $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
 
