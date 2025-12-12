@@ -50,6 +50,9 @@ return function (Router $router, array $config, $connection) {
         $jwtConfig['refresh_ttl'] ?? 604800
     );
 
+    // Ensure all authenticated routes share the same JWT validator instance
+    Middleware::setJwtService($jwtService);
+
     $settingsRepository = new \App\Support\SettingsRepository($connection);
     $settingsRepository->seedDefaults($config['settings']['defaults']);
 
