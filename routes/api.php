@@ -50,11 +50,36 @@ return function (Router $router, array $config, $connection) {
         $jwtConfig['refresh_ttl'] ?? 604800
     );
 
-    $recaptchaConfig = $config['recaptcha'] ?? [];
-    $recaptchaVerifier = new RecaptchaVerifier(
-        $recaptchaConfig['secret_key'] ?? null,
-        (float) ($recaptchaConfig['score_threshold'] ?? 0.5)
-    );
+    $settingsRepository = new \App\Support\SettingsRepository($connection);
+    $settingsRepository->seedDefaults($config['settings']['defaults']);
+
+    $recaptchaConfigLoader = function () use ($settingsRepository, $config): array {
+        return [
+            'enabled' => (bool) $settingsRepository->get(
+                'integrations.recaptcha.enabled',
+                $config['recaptcha']['enabled'] ?? false
+            ),
+            'site_key' => $settingsRepository->get('integrations.recaptcha.site_key', $config['recaptcha']['site_key'] ?? null),
+            'secret_key' => $settingsRepository->get(
+                'integrations.recaptcha.secret_key',
+                $config['recaptcha']['secret_key'] ?? null
+            ),
+            'score_threshold' => (float) $settingsRepository->get(
+                'integrations.recaptcha.score_threshold',
+                $config['recaptcha']['score_threshold'] ?? 0.5
+            ),
+        ];
+    };
+
+    $recaptchaVerifier = function () use ($recaptchaConfigLoader): RecaptchaVerifier {
+        $recaptchaConfig = $recaptchaConfigLoader();
+
+        return new RecaptchaVerifier(
+            $recaptchaConfig['secret_key'] ?? null,
+            (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
+            $recaptchaConfig['enabled'] ?? false
+        );
+    };
 
     $totpService = new TotpService();
 
@@ -95,6 +120,16 @@ return function (Router $router, array $config, $connection) {
 
     $paymentConfig = require __DIR__ . '/../config/payments.php';
 
+    // Public security configuration
+    $router->get('/api/public/security/recaptcha', function () use ($recaptchaConfigLoader) {
+        $recaptchaConfig = $recaptchaConfigLoader();
+        return Response::json([
+            'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
+            'site_key' => $recaptchaConfig['site_key'] ?? null,
+            'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
+        ]);
+    });
+
     // API info (public)
     $router->get('/', function () {
         return Response::json([
@@ -129,6 +164,7 @@ return function (Router $router, array $config, $connection) {
         $identifier = (string) ($email ?? 'unknown');
         $ip = LoginRateLimiter::clientIp($request);
 
+        $verifier = $recaptchaVerifier();
         $preCheck = $loginLimiter->check($identifier, $ip);
         if (!$preCheck->allowed) {
             $message = $preCheck->locked
@@ -139,7 +175,7 @@ return function (Router $router, array $config, $connection) {
         }
 
         if ($preCheck->captchaRequired) {
-            if (!$recaptchaVerifier->verify($recaptchaToken)) {
+            if (!$verifier->verify($recaptchaToken)) {
                 $result = $loginLimiter->recordFailure($identifier, $ip);
 
                 return Response::json(
@@ -147,7 +183,7 @@ return function (Router $router, array $config, $connection) {
                     429
                 );
             }
-        } elseif ($recaptchaToken && !$recaptchaVerifier->verify($recaptchaToken)) {
+        } elseif ($recaptchaToken && !$verifier->verify($recaptchaToken)) {
             return Response::badRequest('reCAPTCHA validation failed');
         }
 
@@ -222,6 +258,7 @@ return function (Router $router, array $config, $connection) {
         $identifier = (string) ($email ?? 'unknown');
         $ip = LoginRateLimiter::clientIp($request);
 
+        $verifier = $recaptchaVerifier();
         $preCheck = $loginLimiter->check($identifier, $ip);
         if (!$preCheck->allowed) {
             $message = $preCheck->locked
@@ -232,7 +269,7 @@ return function (Router $router, array $config, $connection) {
         }
 
         if ($preCheck->captchaRequired) {
-            if (!$recaptchaVerifier->verify($recaptchaToken)) {
+            if (!$verifier->verify($recaptchaToken)) {
                 $result = $loginLimiter->recordFailure($identifier, $ip);
 
                 return Response::json(
@@ -240,7 +277,7 @@ return function (Router $router, array $config, $connection) {
                     429
                 );
             }
-        } elseif ($recaptchaToken && !$recaptchaVerifier->verify($recaptchaToken)) {
+        } elseif ($recaptchaToken && !$verifier->verify($recaptchaToken)) {
             return Response::badRequest('reCAPTCHA validation failed');
         }
 
@@ -446,6 +483,7 @@ return function (Router $router, array $config, $connection) {
         $identifier = (string) ($email ?? 'unknown');
         $ip = LoginRateLimiter::clientIp($request);
 
+        $verifier = $recaptchaVerifier();
         $preCheck = $loginLimiter->check($identifier, $ip);
         if (!$preCheck->allowed) {
             $message = $preCheck->locked
@@ -456,7 +494,7 @@ return function (Router $router, array $config, $connection) {
         }
 
         if ($preCheck->captchaRequired) {
-            if (!$recaptchaVerifier->verify($recaptchaToken)) {
+            if (!$verifier->verify($recaptchaToken)) {
                 $result = $loginLimiter->recordFailure($identifier, $ip);
 
                 return Response::json(
@@ -464,7 +502,7 @@ return function (Router $router, array $config, $connection) {
                     429
                 );
             }
-        } elseif ($recaptchaToken && !$recaptchaVerifier->verify($recaptchaToken)) {
+        } elseif ($recaptchaToken && !$verifier->verify($recaptchaToken)) {
             return Response::badRequest('reCAPTCHA validation failed');
         }
 
@@ -748,10 +786,6 @@ return Response::json([
 
         return 'en';
     };
-
-    // Shared settings repository with seeded defaults
-    $settingsRepository = new \App\Support\SettingsRepository($connection);
-    $settingsRepository->seedDefaults($config['settings']['defaults']);
 
     // Public CMS content delivery endpoints
     $router->get('/cms/page/{slug}', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
