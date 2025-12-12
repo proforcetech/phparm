@@ -1063,7 +1063,7 @@ return Response::json([
     });
 
     // Service Type routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $serviceTypeController = new \App\Services\ServiceType\ServiceTypeController(
             new \App\Services\ServiceType\ServiceTypeRepository($connection),
