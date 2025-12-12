@@ -855,7 +855,7 @@ return Response::json([
     });
 
     // Dashboard routes (authenticated)
-    $router->group([Middleware::auth()], function (Router $router) use ($config, $connection, $gate, $settingsRepository) {
+    $router->group([Middleware::auth()], function (Router $router) use ($config, $connection, $gate, $settingsRepository, $auditLogger) {
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
