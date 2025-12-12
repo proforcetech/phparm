@@ -86,7 +86,7 @@
 
         <div>
           <div class="flex justify-center">
-            <div ref="recaptchaContainer"></div>
+            <div v-if="recaptchaEnabled" ref="recaptchaContainer"></div>
           </div>
 
           <button
@@ -116,8 +116,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { securityService } from '@/services/security.service'
 import { useRecaptcha } from '@/composables/useRecaptcha'
 
 const authStore = useAuthStore()
@@ -132,30 +133,46 @@ const code = ref('')
 
 const loading = ref(false)
 const error = ref(null)
-const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+const recaptchaEnabled = ref(false)
+const recaptchaSiteKey = ref('')
 const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
 
 const isVerifying = computed(() => !!authStore.pendingChallenge)
+
+onMounted(async () => {
+  try {
+    const settings = await securityService.getRecaptchaSettings()
+    recaptchaEnabled.value = !!settings.enabled
+    recaptchaSiteKey.value = settings.site_key || ''
+  } catch (err) {
+    recaptchaEnabled.value = false
+    recaptchaSiteKey.value = ''
+    console.error('Failed to load reCAPTCHA settings', err)
+  }
+})
 
 async function handleLogin() {
   loading.value = true
   error.value = null
 
   try {
-    if (!recaptchaSiteKey) {
-      throw new Error('reCAPTCHA is not configured')
-    }
-
     if (isVerifying.value) {
       await authStore.verifyTwoFactor(code.value)
       return
     }
 
-    if (!recaptchaToken.value) {
-      throw new Error('Please complete the reCAPTCHA challenge.')
+    if (recaptchaEnabled.value) {
+      if (!recaptchaSiteKey.value) {
+        throw new Error('reCAPTCHA is not configured')
+      }
+
+      if (!recaptchaToken.value) {
+        throw new Error('Please complete the reCAPTCHA challenge.')
+      }
     }
 
-    const result = await authStore.login(form.value.email, form.value.password, true, recaptchaToken.value) // true = customer login
+    const token = recaptchaEnabled.value ? recaptchaToken.value : null
+    const result = await authStore.login(form.value.email, form.value.password, true, token) // true = customer login
 
     if (result?.status === '2fa_required') {
       return

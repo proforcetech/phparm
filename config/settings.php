@@ -206,6 +206,12 @@ return [
             'description' => 'reCAPTCHA secret key for server-side verification.',
             'value' => null,
         ],
+        'integrations.recaptcha.enabled' => [
+            'group' => 'integrations',
+            'type' => 'boolean',
+            'description' => 'Enable reCAPTCHA verification for public forms and authentication flows.',
+            'value' => false,
+        ],
         'integrations.recaptcha.score_threshold' => [
             'group' => 'integrations',
             'type' => 'float',

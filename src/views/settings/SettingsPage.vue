@@ -196,6 +196,15 @@
         <Card>
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Integrations</h2>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-center space-x-2 md:col-span-2">
+              <input
+                id="recaptcha-enabled"
+                v-model="form.security.recaptchaEnabled"
+                type="checkbox"
+                class="h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+              <label for="recaptcha-enabled" class="block text-sm font-medium text-gray-700">Enable reCAPTCHA</label>
+            </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">reCAPTCHA Site Key</label>
               <Input v-model="form.security.recaptchaSiteKey" placeholder="site key" class="mt-1" />
@@ -282,7 +291,7 @@ const form = reactive({
     paypalClientSecret: '',
     paypalWebhook: '',
   },
-  security: { recaptchaSiteKey: '', recaptchaSecretKey: '' },
+  security: { recaptchaEnabled: false, recaptchaSiteKey: '', recaptchaSecretKey: '' },
   integrations: {
     zohoClientId: '',
     zohoClientSecret: '',
@@ -346,6 +355,7 @@ const hydrate = async () => {
     form.payments.paypalClientSecret = getSetting(settings, 'integrations.paypal.client_secret', '')
     form.payments.paypalWebhook = getSetting(settings, 'integrations.paypal.webhook_id', '')
 
+    form.security.recaptchaEnabled = !!getSetting(settings, 'integrations.recaptcha.enabled', false)
     form.security.recaptchaSiteKey = getSetting(settings, 'integrations.recaptcha.site_key', '')
     form.security.recaptchaSecretKey = getSetting(settings, 'integrations.recaptcha.secret_key', '')
 
@@ -423,6 +433,7 @@ const save = async () => {
     'integrations.paypal.client_id': form.payments.paypalClientId,
     'integrations.paypal.client_secret': form.payments.paypalClientSecret,
     'integrations.paypal.webhook_id': form.payments.paypalWebhook,
+    'integrations.recaptcha.enabled': !!form.security.recaptchaEnabled,
     'integrations.recaptcha.site_key': form.security.recaptchaSiteKey,
     'integrations.recaptcha.secret_key': form.security.recaptchaSecretKey,
     'integrations.zoho.client_id': form.integrations.zohoClientId,
