@@ -4,16 +4,16 @@ export const authService = {
   /**
    * Staff login
    */
-  async login(email, password) {
-    const response = await api.post('/auth/login', { email, password })
+  async login(email, password, recaptchaToken = null) {
+    const response = await api.post('/auth/login', { email, password, recaptcha_token: recaptchaToken })
     return response.data
   },
 
   /**
    * Customer login
    */
-  async customerLogin(email, password) {
-    const response = await api.post('/auth/customer-login', { email, password })
+  async customerLogin(email, password, recaptchaToken = null) {
+    const response = await api.post('/auth/customer-login', { email, password, recaptcha_token: recaptchaToken })
     return response.data
   },
 
@@ -36,8 +36,8 @@ export const authService = {
   /**
    * Request password reset
    */
-  async requestPasswordReset(email) {
-    const response = await api.post('/auth/password-reset', { email })
+  async requestPasswordReset(email, recaptchaToken = null) {
+    const response = await api.post('/auth/forgot-password', { email, recaptcha_token: recaptchaToken })
     return response.data
   },
 
@@ -45,7 +45,7 @@ export const authService = {
    * Reset password with token
    */
   async resetPassword(token, password) {
-    const response = await api.post('/auth/password-reset/confirm', { token, password })
+    const response = await api.post('/auth/reset-password', { token, password })
     return response.data
   },
 

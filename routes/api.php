@@ -9,6 +9,7 @@ use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
+use App\Support\Security\RecaptchaVerifier;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
 use App\CMS\Controllers\PageController;
@@ -44,6 +45,12 @@ return function (Router $router, array $config, $connection) {
         $jwtConfig['secret'] ?? 'default-secret-key-change-in-production',
         $jwtConfig['ttl'] ?? 3600,
         $jwtConfig['refresh_ttl'] ?? 604800
+    );
+
+    $recaptchaConfig = $config['recaptcha'] ?? [];
+    $recaptchaVerifier = new RecaptchaVerifier(
+        $recaptchaConfig['secret_key'] ?? null,
+        (float) ($recaptchaConfig['score_threshold'] ?? 0.5)
     );
 
     // Apply global rate limiting (60 requests per minute per IP+path)
@@ -89,12 +96,17 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Authentication routes (public) - with strict rate limiting (5 attempts per minute)
-    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService) {
+    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier) {
         $email = $request->input('email');
         $password = $request->input('password');
+        $recaptchaToken = $request->input('recaptcha_token');
 
         if (!$email || !$password) {
             return Response::badRequest('Email and password required');
+        }
+
+        if (!$recaptchaVerifier->verify($recaptchaToken)) {
+            return Response::badRequest('reCAPTCHA validation failed');
         }
 
         $user = $authService->staffLogin((string) $email, (string) $password);
@@ -124,12 +136,17 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService) {
+    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier) {
         $email = $request->input('email');
         $password = $request->input('password');
+        $recaptchaToken = $request->input('recaptcha_token');
 
         if (!$email || !$password) {
             return Response::badRequest('Email and password required');
+        }
+
+        if (!$recaptchaVerifier->verify($recaptchaToken)) {
+            return Response::badRequest('reCAPTCHA validation failed');
         }
 
         $user = $authService->customerPortalLogin((string) $email, (string) $password);
@@ -200,11 +217,16 @@ return function (Router $router, array $config, $connection) {
     })->middleware(Middleware::auth());
 
     // Password reset request (forgot password)
-    $router->post('/api/auth/forgot-password', function (Request $request) use ($authService, $connection, $authConfig) {
+    $router->post('/api/auth/forgot-password', function (Request $request) use ($authService, $connection, $authConfig, $recaptchaVerifier) {
         $email = $request->input('email');
+        $recaptchaToken = $request->input('recaptcha_token');
 
         if (!$email) {
             return Response::badRequest('Email is required');
+        }
+
+        if (!$recaptchaVerifier->verify($recaptchaToken)) {
+            return Response::badRequest('reCAPTCHA validation failed');
         }
 
         $token = $authService->requestPasswordReset((string) $email);

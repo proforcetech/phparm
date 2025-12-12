@@ -282,6 +282,21 @@ Each gateway requires:
 3. Configuring webhook endpoints
 4. Testing with sandbox/test mode
 
+### reCAPTCHA Configuration
+
+Public authentication forms use Google reCAPTCHA for abuse prevention. Configure the following variables in your `.env` files:
+
+```bash
+RECAPTCHA_SITE_KEY="your_public_site_key"
+RECAPTCHA_SECRET_KEY="your_private_secret"
+RECAPTCHA_THRESHOLD=0.5
+VITE_RECAPTCHA_SITE_KEY="your_public_site_key" # exposed to the frontend
+```
+
+- `RECAPTCHA_SITE_KEY` / `VITE_RECAPTCHA_SITE_KEY`: the site key from the reCAPTCHA admin console (the Vite-prefixed copy is required for the Vue app to render the widget).
+- `RECAPTCHA_SECRET_KEY`: secret key used for server-side verification.
+- `RECAPTCHA_THRESHOLD`: minimum acceptable score (0–1) for v3/invisible challenges; defaults to `0.5`.
+
 ### Email Configuration
 
 For development, use [Mailtrap.io](https://mailtrap.io) for email testing:

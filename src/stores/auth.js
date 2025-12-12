@@ -55,14 +55,14 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * Login user
    */
-  async function login(email, password, isCustomerLogin = false) {
+  async function login(email, password, isCustomerLogin = false, recaptchaToken = null) {
     loading.value = true
     error.value = null
 
     try {
       const data = isCustomerLogin
-        ? await authService.customerLogin(email, password)
-        : await authService.login(email, password)
+        ? await authService.customerLogin(email, password, recaptchaToken)
+        : await authService.login(email, password, recaptchaToken)
 
       if (data.token && data.user) {
         token.value = data.token
@@ -140,12 +140,12 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * Request password reset
    */
-  async function requestPasswordReset(email) {
+  async function requestPasswordReset(email, recaptchaToken = null) {
     loading.value = true
     error.value = null
 
     try {
-      const data = await authService.requestPasswordReset(email)
+      const data = await authService.requestPasswordReset(email, recaptchaToken)
       return data
     } catch (err) {
       error.value = err.response?.data?.message || 'Password reset request failed'

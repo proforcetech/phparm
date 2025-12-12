@@ -206,6 +206,12 @@ return [
             'description' => 'reCAPTCHA secret key for server-side verification.',
             'value' => null,
         ],
+        'integrations.recaptcha.score_threshold' => [
+            'group' => 'integrations',
+            'type' => 'float',
+            'description' => 'Minimum acceptable reCAPTCHA score (0.0 - 1.0) before processing public forms.',
+            'value' => 0.5,
+        ],
         'integrations.partstech.api_base' => [
             'group' => 'integrations',
             'type' => 'string',
