@@ -969,7 +969,7 @@ return Response::json([
     });
 
     // Customer routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $customerRepository = new \App\Services\Customer\CustomerRepository($connection);
         $customerController = new \App\Services\Customer\CustomerController($customerRepository, $gate);
@@ -1332,8 +1332,9 @@ return Response::json([
             $gate
         );
 
-        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection);
-        $estimateController = new \App\Services\Estimate\EstimateController($estimateRepository, $gate);
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $estimateController = new \App\Services\Estimate\EstimateController($estimateRepository, $gate, $estimateEditor);
 
         $router->get('/api/bundles', function (Request $request) use ($bundleController) {
             $user = $request->getAttribute('user');

@@ -42,7 +42,7 @@ return [
             'label' => 'Technician',
             'description' => 'Work estimates, inspections, jobs, and time tracking',
             'permissions' => [
-                'customers.view', 'vehicles.view', 'estimates.view', 'estimates.update',
+                'customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update',
                 'inspections.*', 'time.*', 'appointments.view', 'service_types.view',
                 // CMS content editing (no administrative settings)
                 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete',
