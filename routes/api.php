@@ -4,12 +4,14 @@ use App\Support\Http\Router;
 use App\Support\Http\Request;
 use App\Support\Http\Response;
 use App\Support\Http\Middleware;
+use App\Support\Http\RateLimiter;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
 use App\Support\Security\RecaptchaVerifier;
+use App\Support\Security\LoginRateLimiter;
 use App\Support\Auth\TotpService;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
@@ -56,6 +58,20 @@ return function (Router $router, array $config, $connection) {
 
     $totpService = new TotpService();
 
+    $securityConfig = require __DIR__ . '/../config/security.php';
+    $auditConfig = require __DIR__ . '/../config/audit.php';
+    $auditLogger = new AuditLogger($connection, $auditConfig);
+    $rateLimiter = new RateLimiter(__DIR__ . '/../storage/temp/ratelimits');
+    $loginLimiter = new LoginRateLimiter(
+        $rateLimiter,
+        $securityConfig['auth_rate_limiting'] ?? [],
+        $auditLogger
+    );
+
+    $rateLimitResponse = function (\App\Support\Security\LoginRateLimitResult $result, string $message, int $status = 429, string $error = 'rate_limited') {
+        return Response::json($result->toPayload($message, $error), $status);
+    };
+
     // Apply global rate limiting (60 requests per minute per IP+path)
     $router->middleware(Middleware::throttle(60, 60));
 
@@ -98,25 +114,62 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    // Authentication routes (public) - with strict rate limiting (5 attempts per minute)
-    $router->post('/api/auth/login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier, $totpService) {
+    // Authentication routes (public) - with adaptive rate limiting
+    $router->post('/api/auth/login', function (Request $request) use (
+        $authService,
+        $jwtService,
+        $recaptchaVerifier,
+        $totpService,
+        $loginLimiter,
+        $rateLimitResponse
+    ) {
         $email = $request->input('email');
         $password = $request->input('password');
         $recaptchaToken = $request->input('recaptcha_token');
+        $identifier = (string) ($email ?? 'unknown');
+        $ip = LoginRateLimiter::clientIp($request);
 
-        if (!$email || !$password) {
-            return Response::badRequest('Email and password required');
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many login attempts. Please wait before retrying.';
+
+            return $rateLimitResponse($preCheck, $message);
         }
 
-        if (!$recaptchaVerifier->verify($recaptchaToken)) {
+        if ($preCheck->captchaRequired) {
+            if (!$recaptchaVerifier->verify($recaptchaToken)) {
+                $result = $loginLimiter->recordFailure($identifier, $ip);
+
+                return Response::json(
+                    $result->toPayload('Captcha verification required before attempting to login again.'),
+                    429
+                );
+            }
+        } elseif ($recaptchaToken && !$recaptchaVerifier->verify($recaptchaToken)) {
             return Response::badRequest('reCAPTCHA validation failed');
+        }
+
+        if (!$email || !$password) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Email and password required', 'validation_error'), 400);
         }
 
         $user = $authService->staffLogin((string) $email, (string) $password);
 
         if ($user === null) {
-            return Response::unauthorized('Invalid credentials');
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            $message = $result->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Invalid credentials';
+            $status = $result->locked || $result->cooldown ? 429 : 401;
+            $error = $result->locked || $result->cooldown ? 'rate_limited' : 'invalid_credentials';
+
+            return Response::json($result->toPayload($message, $error), $status);
         }
+
+        $loginLimiter->recordSuccess($identifier, $ip);
 
         // Start session for backwards compatibility
         if (session_status() === PHP_SESSION_NONE) {
@@ -153,26 +206,63 @@ return function (Router $router, array $config, $connection) {
             'token_type' => 'Bearer',
             'message' => 'Login successful',
         ]);
-    })->middleware(Middleware::throttleStrict(5, 60));
+    });
 
-    $router->post('/api/auth/customer-login', function (Request $request) use ($authService, $jwtService, $recaptchaVerifier, $totpService) {
+    $router->post('/api/auth/customer-login', function (Request $request) use (
+        $authService,
+        $jwtService,
+        $recaptchaVerifier,
+        $totpService,
+        $loginLimiter,
+        $rateLimitResponse
+    ) {
         $email = $request->input('email');
         $password = $request->input('password');
         $recaptchaToken = $request->input('recaptcha_token');
+        $identifier = (string) ($email ?? 'unknown');
+        $ip = LoginRateLimiter::clientIp($request);
 
-        if (!$email || !$password) {
-            return Response::badRequest('Email and password required');
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many login attempts. Please wait before retrying.';
+
+            return $rateLimitResponse($preCheck, $message);
         }
 
-        if (!$recaptchaVerifier->verify($recaptchaToken)) {
+        if ($preCheck->captchaRequired) {
+            if (!$recaptchaVerifier->verify($recaptchaToken)) {
+                $result = $loginLimiter->recordFailure($identifier, $ip);
+
+                return Response::json(
+                    $result->toPayload('Captcha verification required before attempting to login again.'),
+                    429
+                );
+            }
+        } elseif ($recaptchaToken && !$recaptchaVerifier->verify($recaptchaToken)) {
             return Response::badRequest('reCAPTCHA validation failed');
+        }
+
+        if (!$email || !$password) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Email and password required', 'validation_error'), 400);
         }
 
         $user = $authService->customerPortalLogin((string) $email, (string) $password);
 
         if ($user === null) {
-            return Response::unauthorized('Invalid credentials');
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            $message = $result->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Invalid credentials';
+            $status = $result->locked || $result->cooldown ? 429 : 401;
+            $error = $result->locked || $result->cooldown ? 'rate_limited' : 'invalid_credentials';
+
+            return Response::json($result->toPayload($message, $error), $status);
         }
+
+        $loginLimiter->recordSuccess($identifier, $ip);
 
         // Start session for backwards compatibility
         if (session_status() === PHP_SESSION_NONE) {
@@ -212,7 +302,7 @@ return function (Router $router, array $config, $connection) {
             'api_base' => '/api',
             'message' => 'Login successful',
         ]);
-    })->middleware(Middleware::throttleStrict(5, 60));
+    });
 
     $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
         $challengeToken = $request->input('challenge_token');
@@ -344,16 +434,43 @@ return function (Router $router, array $config, $connection) {
     })->middleware(Middleware::auth());
 
     // Password reset request (forgot password)
-    $router->post('/api/auth/forgot-password', function (Request $request) use ($authService, $connection, $authConfig, $recaptchaVerifier) {
+    $router->post('/api/auth/forgot-password', function (Request $request) use (
+        $authService,
+        $connection,
+        $authConfig,
+        $recaptchaVerifier,
+        $loginLimiter
+    ) {
         $email = $request->input('email');
         $recaptchaToken = $request->input('recaptcha_token');
+        $identifier = (string) ($email ?? 'unknown');
+        $ip = LoginRateLimiter::clientIp($request);
 
-        if (!$email) {
-            return Response::badRequest('Email is required');
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many password reset attempts. Please wait before retrying.';
+
+            return Response::json($preCheck->toPayload($message), 429);
         }
 
-        if (!$recaptchaVerifier->verify($recaptchaToken)) {
+        if ($preCheck->captchaRequired) {
+            if (!$recaptchaVerifier->verify($recaptchaToken)) {
+                $result = $loginLimiter->recordFailure($identifier, $ip);
+
+                return Response::json(
+                    $result->toPayload('Captcha verification required before continuing.'),
+                    429
+                );
+            }
+        } elseif ($recaptchaToken && !$recaptchaVerifier->verify($recaptchaToken)) {
             return Response::badRequest('reCAPTCHA validation failed');
+        }
+
+        if (!$email) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Email is required', 'validation_error'), 400);
         }
 
         $token = $authService->requestPasswordReset((string) $email);
@@ -383,44 +500,76 @@ return function (Router $router, array $config, $connection) {
             }
         }
 
+        $loginLimiter->recordSuccess($identifier, $ip);
+
         // Always return success to prevent email enumeration
         return Response::json(['message' => 'If an account exists, a password reset link has been sent']);
-    })->middleware(Middleware::throttleStrict(3, 60));
+    });
 
     // Reset password with token
-    $router->post('/api/auth/reset-password', function (Request $request) use ($authService) {
+    $router->post('/api/auth/reset-password', function (Request $request) use ($authService, $loginLimiter) {
         $token = $request->input('token');
         $password = $request->input('password');
+        $identifier = 'reset-token:' . (string) ($token ?? 'none');
+        $ip = LoginRateLimiter::clientIp($request);
+
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many password reset attempts. Please wait before retrying.';
+
+            return Response::json($preCheck->toPayload($message), 429);
+        }
 
         if (!$token || !$password) {
-            return Response::badRequest('Token and password are required');
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Token and password are required', 'validation_error'), 400);
         }
 
         $success = $authService->resetPassword((string) $token, (string) $password);
 
         if (!$success) {
-            return Response::badRequest('Invalid or expired token');
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Invalid or expired token', 'invalid_token'), 400);
         }
 
+        $loginLimiter->recordSuccess($identifier, $ip);
+
         return Response::json(['message' => 'Password reset successfully']);
-    })->middleware(Middleware::throttleStrict(5, 60));
+    });
 
     // Verify email with token
-    $router->post('/api/auth/verify-email', function (Request $request) use ($authService) {
+    $router->post('/api/auth/verify-email', function (Request $request) use ($authService, $loginLimiter) {
         $token = $request->input('token');
+        $identifier = 'verify-token:' . (string) ($token ?? 'none');
+        $ip = LoginRateLimiter::clientIp($request);
+
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many verification attempts. Please wait before retrying.';
+
+            return Response::json($preCheck->toPayload($message), 429);
+        }
 
         if (!$token) {
-            return Response::badRequest('Token is required');
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Token is required', 'validation_error'), 400);
         }
 
         $success = $authService->verifyEmail((string) $token);
 
         if (!$success) {
-            return Response::badRequest('Invalid or expired verification token');
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Invalid or expired verification token', 'invalid_token'), 400);
         }
 
+        $loginLimiter->recordSuccess($identifier, $ip);
+
         return Response::json(['message' => 'Email verified successfully']);
-    })->middleware(Middleware::throttleStrict(10, 60));
+    });
 
     // Resend verification email
     $router->post('/api/auth/resend-verification', function (Request $request) use ($authService, $connection, $authConfig) {
@@ -460,9 +609,9 @@ return function (Router $router, array $config, $connection) {
             return Response::serverError('Failed to send verification email');
         }
 
-return Response::json(['message' => 'Verification email has been sent']);
-})->middleware(Middleware::auth())
-  ->middleware(Middleware::throttleStrict(3, 60));
+        return Response::json(['message' => 'Verification email has been sent']);
+    })->middleware(Middleware::auth())
+      ->middleware(Middleware::throttleStrict(3, 60));
 
     $router->get('/api/customer-portal/bootstrap', function (Request $request) {
         $user = $request->getAttribute('user');
@@ -712,10 +861,9 @@ return Response::json([
         });
 
         // PartsTech integration
-        $auditConfig = require __DIR__ . '/../config/audit.php';
         $partsTechService = new \App\Services\Integrations\PartsTechService(
             $settingsRepository,
-            new \App\Support\Audit\AuditLogger($connection, $auditConfig)
+            $auditLogger
         );
 
         $router->post('/api/partstech/vin', function (Request $request) use ($partsTechService) {
