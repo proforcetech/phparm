@@ -76,6 +76,10 @@ class TechnicianPortalService
         $weekMinutes = 0;
 
         foreach ($history as $entry) {
+            if (($entry['status'] ?? 'approved') !== 'approved') {
+                continue;
+            }
+
             $startedAt = new \DateTimeImmutable($entry['started_at']);
             $minutes = (float) ($entry['duration_minutes'] ?? 0);
 

@@ -64,6 +64,15 @@
             <span class="font-semibold text-gray-900">{{ Number(value ?? 0).toFixed(2) }} mins</span>
           </template>
 
+          <template #cell(status)="{ value, row }">
+            <div class="flex items-center gap-2">
+              <Badge :variant="statusVariant(value)" size="sm">{{ statusLabel(value) }}</Badge>
+              <span v-if="row.reviewed_at" class="text-xs text-gray-500">
+                {{ row.reviewer_name || `User #${row.reviewed_by}` }}
+              </span>
+            </div>
+          </template>
+
           <template #cell(context)="{ row }">
             <div class="text-sm text-gray-800">
               <div class="text-xs text-gray-500">Estimate: {{ row.estimate_number || '—' }}</div>
@@ -101,7 +110,10 @@
               <p class="text-base font-semibold text-gray-900">{{ row.technician_name || `Tech #${row.technician_id}` }}</p>
               <p class="text-xs text-gray-600">Job: {{ row.job_title || 'Unassigned' }}</p>
             </div>
-            <Badge :variant="row.manual_override ? 'warning' : 'secondary'">{{ row.manual_override ? 'Manual' : 'Timer' }}</Badge>
+            <div class="flex flex-col items-end gap-1">
+              <Badge :variant="row.manual_override ? 'warning' : 'secondary'">{{ row.manual_override ? 'Manual' : 'Timer' }}</Badge>
+              <Badge :variant="statusVariant(row.status)" size="sm">{{ statusLabel(row.status) }}</Badge>
+            </div>
           </div>
           <div class="mt-2 text-sm text-gray-800">
             <div class="font-semibold">{{ Number(row.duration_minutes ?? 0).toFixed(2) }} mins</div>
@@ -132,6 +144,7 @@
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card>
         <h3 class="text-lg font-semibold text-gray-900">Add manual entry</h3>
+        <p class="mt-1 text-sm text-gray-600">Manual submissions default to pending until reviewed.</p>
         <form class="mt-4 space-y-3" @submit.prevent="submitManual">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input v-model="manualForm.technician_id" label="Technician ID" required />
@@ -165,6 +178,41 @@
           <Badge v-if="selectedEntry" variant="secondary">ID {{ selectedEntry.id }}</Badge>
         </div>
         <p class="mt-1 text-sm text-gray-600">Click a row to load it into the editor.</p>
+
+        <div v-if="selectedEntry" class="mt-3 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <Badge :variant="statusVariant(selectedEntry.status)" size="sm" rounded>
+                {{ statusLabel(selectedEntry.status) }}
+              </Badge>
+              <Badge v-if="selectedEntry.manual_override" variant="warning" size="sm">Manual</Badge>
+            </div>
+            <span v-if="selectedEntry.reviewed_at" class="text-xs text-gray-600">
+              {{ selectedEntry.reviewer_name || `User #${selectedEntry.reviewed_by}` }} · {{ formatDate(selectedEntry.reviewed_at) }}
+            </span>
+          </div>
+          <p class="text-xs text-gray-600">
+            {{
+              selectedEntry.status === 'pending'
+                ? 'Pending entries are excluded from billable totals until approval.'
+                : selectedEntry.review_notes || 'Reviewed'
+            }}
+          </p>
+          <div v-if="selectedEntry.status === 'pending'" class="space-y-2 pt-1">
+            <textarea
+              v-model="reviewNotes"
+              class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              rows="2"
+              placeholder="Review notes (optional)"
+            />
+            <div class="flex flex-wrap gap-2">
+              <Button variant="primary" size="sm" :loading="reviewing" @click="() => review('approved')">Approve</Button>
+              <Button variant="danger" size="sm" :loading="reviewing" @click="() => review('rejected')">Reject</Button>
+            </div>
+          </div>
+          <p v-else-if="selectedEntry.review_notes" class="text-xs text-gray-600">Notes: {{ selectedEntry.review_notes }}</p>
+          <p v-if="reviewError" class="text-sm text-red-600">{{ reviewError }}</p>
+        </div>
 
         <form class="mt-4 space-y-3" @submit.prevent="submitUpdate">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -230,6 +278,7 @@ const columns = [
   { key: 'technician', label: 'Technician' },
   { key: 'window', label: 'Window' },
   { key: 'duration_minutes', label: 'Duration' },
+  { key: 'status', label: 'Status' },
   { key: 'context', label: 'Context' },
   { key: 'manual_override', label: 'Source' },
   { key: 'adjustments', label: 'Adjustments' },
@@ -255,9 +304,24 @@ const editForm = reactive({
   reason: '',
 })
 
+const reviewNotes = ref('')
+const reviewError = ref('')
+const reviewing = ref(false)
+
 function formatDate(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString()
+}
+
+function statusVariant(value) {
+  if (value === 'pending') return 'warning'
+  if (value === 'rejected') return 'danger'
+  return 'success'
+}
+
+function statusLabel(value) {
+  if (!value) return 'Unknown'
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 let debounceTimer
@@ -277,6 +341,12 @@ async function refresh() {
     entries.value = response.data
     total.value = response.pagination.total
     currentPage.value = Math.floor(response.pagination.offset / response.pagination.limit) + 1
+    if (selectedEntry.value) {
+      const updated = response.data.find((entry) => entry.id === selectedEntry.value.id)
+      if (updated) {
+        selectEntry(updated)
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -296,6 +366,8 @@ function selectEntry(row) {
   editForm.notes = row.notes || ''
   editForm.manual_override = row.manual_override
   editForm.reason = ''
+  reviewNotes.value = ''
+  reviewError.value = ''
 }
 
 async function submitManual() {
@@ -347,6 +419,26 @@ async function submitUpdate() {
     editError.value = error.response?.data?.message || 'Unable to update entry'
   } finally {
     savingEdit.value = false
+  }
+}
+
+async function review(decision) {
+  if (!selectedEntry.value) return
+  reviewError.value = ''
+  reviewing.value = true
+  try {
+    const payload = reviewNotes.value ? { notes: reviewNotes.value } : {}
+    if (decision === 'approved') {
+      await timeTrackingService.approve(selectedEntry.value.id, payload)
+    } else {
+      await timeTrackingService.reject(selectedEntry.value.id, payload)
+    }
+    reviewNotes.value = ''
+    await refresh()
+  } catch (error) {
+    reviewError.value = error.response?.data?.message || 'Unable to update status'
+  } finally {
+    reviewing.value = false
   }
 }
 

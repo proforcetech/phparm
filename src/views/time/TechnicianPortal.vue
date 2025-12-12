@@ -41,6 +41,7 @@
             <p>{{ Number(portal.totals.today_minutes || 0).toFixed(2) }} minutes</p>
             <p class="font-semibold mt-2">This week</p>
             <p>{{ Number(portal.totals.week_minutes || 0).toFixed(2) }} minutes</p>
+            <p class="mt-2 text-[11px] text-gray-500">Pending manual entries are excluded until approved.</p>
           </div>
         </div>
 
@@ -70,9 +71,12 @@
                 <p class="text-sm font-semibold text-gray-900">{{ formatTime(entry.started_at) }}</p>
                 <p class="text-xs text-gray-500">{{ entry.ended_at ? formatTime(entry.ended_at) : 'Active' }}</p>
               </div>
-              <Badge :variant="entry.manual_override ? 'warning' : 'secondary'">
-                {{ entry.manual_override ? 'Manual' : 'Timer' }}
-              </Badge>
+              <div class="flex flex-col items-end gap-1">
+                <Badge :variant="entry.manual_override ? 'warning' : 'secondary'">
+                  {{ entry.manual_override ? 'Manual' : 'Timer' }}
+                </Badge>
+                <Badge :variant="statusVariant(entry.status)" size="sm">{{ statusLabel(entry.status) }}</Badge>
+              </div>
             </div>
             <p class="text-xs text-gray-500">Duration: {{ Number(entry.duration_minutes || 0).toFixed(2) }} mins</p>
           </li>
@@ -97,6 +101,17 @@ function formatTime(value) {
   if (!value) return '—'
   const date = new Date(value)
   return date.toLocaleString()
+}
+
+function statusVariant(value) {
+  if (value === 'pending') return 'warning'
+  if (value === 'rejected') return 'danger'
+  return 'success'
+}
+
+function statusLabel(value) {
+  if (!value) return 'Unknown'
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 async function loadPortal() {

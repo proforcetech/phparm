@@ -10,6 +10,10 @@ class TimeEntry extends BaseModel
     public string $started_at;
     public ?string $ended_at = null;
     public ?float $duration_minutes = null;
+    public string $status = 'approved';
+    public ?int $reviewed_by = null;
+    public ?string $reviewed_at = null;
+    public ?string $review_notes = null;
     public ?float $start_latitude = null;
     public ?float $start_longitude = null;
     public ?float $start_accuracy = null;

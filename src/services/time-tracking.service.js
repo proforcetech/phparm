@@ -26,6 +26,16 @@ export default {
     return response.data
   },
 
+  async approve(id, payload = {}) {
+    const response = await api.post(`/time-tracking/${id}/approve`, payload)
+    return response.data
+  },
+
+  async reject(id, payload = {}) {
+    const response = await api.post(`/time-tracking/${id}/reject`, payload)
+    return response.data
+  },
+
   async technicianJobs() {
     const response = await api.get('/time-tracking/technician/jobs')
     return response.data

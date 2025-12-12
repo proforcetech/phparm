@@ -66,6 +66,7 @@ class TimeTrackingService
     {
         $baseSql = 'FROM time_entries te '
             . 'LEFT JOIN users u ON u.id = te.technician_id '
+            . 'LEFT JOIN users ru ON ru.id = te.reviewed_by '
             . 'LEFT JOIN estimate_jobs ej ON ej.id = te.estimate_job_id '
             . 'LEFT JOIN estimates e ON e.id = ej.estimate_id '
             . 'LEFT JOIN customers c ON c.id = e.customer_id '
@@ -93,12 +94,17 @@ class TimeTrackingService
             $params['search'] = '%' . $filters['search'] . '%';
         }
 
+        if (!empty($filters['status'])) {
+            $baseSql .= ' AND te.status = :status';
+            $params['status'] = $filters['status'];
+        }
+
         $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
         $sql = 'SELECT te.*, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
-            . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
+            . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin, ru.name AS reviewer_name ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($params as $key => $value) {
@@ -128,6 +134,7 @@ class TimeTrackingService
             $row['estimate_number'] = $meta['estimate_number'] ?? null;
             $row['customer_name'] = $meta['customer_name'] ?? null;
             $row['vehicle_vin'] = $meta['vehicle_vin'] ?? null;
+            $row['reviewer_name'] = $meta['reviewer_name'] ?? null;
             $row['adjustments'] = $adjustments[$entry->id] ?? [];
             $data[] = $row;
         }
@@ -168,6 +175,10 @@ class TimeTrackingService
             'Started At',
             'Ended At',
             'Duration (minutes)',
+            'Status',
+            'Reviewed By',
+            'Reviewed At',
+            'Review Notes',
             'Manual Override',
             'Notes',
             'Adjustments',
@@ -194,6 +205,10 @@ class TimeTrackingService
                 $row['started_at'] ?? null,
                 $row['ended_at'] ?? null,
                 $row['duration_minutes'] ?? null,
+                $row['status'] ?? null,
+                $row['reviewer_name'] ?? null,
+                $row['reviewed_at'] ?? null,
+                $row['review_notes'] ?? null,
                 ($row['manual_override'] ?? false) ? 'Yes' : 'No',
                 $row['notes'] ?? null,
                 implode(' | ', $adjustmentNotes),
@@ -270,7 +285,8 @@ class TimeTrackingService
         }
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, ended_at, duration_minutes, manual_override, notes, created_at, updated_at) VALUES (:technician_id, :estimate_job_id, :started_at, :ended_at, :minutes, :override, :notes, NOW(), NOW())'
+            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, ended_at, duration_minutes, status, reviewed_by, reviewed_at, review_notes, manual_override, notes, created_at, updated_at) VALUES '
+            . '(:technician_id, :estimate_job_id, :started_at, :ended_at, :minutes, :status, :reviewed_by, :reviewed_at, :review_notes, :override, :notes, NOW(), NOW())'
         );
         $stmt->execute([
             'technician_id' => $technicianId,
@@ -278,6 +294,10 @@ class TimeTrackingService
             'started_at' => $start->format('Y-m-d H:i:s'),
             'ended_at' => $end->format('Y-m-d H:i:s'),
             'minutes' => $minutes,
+            'status' => 'pending',
+            'reviewed_by' => null,
+            'reviewed_at' => null,
+            'review_notes' => null,
             'override' => $override ? 1 : 0,
             'notes' => $notes,
         ]);
@@ -289,6 +309,7 @@ class TimeTrackingService
             $actorId ?? $technicianId,
             $reason,
             [
+                'status' => null,
                 'started_at' => null,
                 'ended_at' => null,
                 'duration_minutes' => null,
@@ -297,6 +318,7 @@ class TimeTrackingService
                 'manual_override' => null,
             ],
             [
+                'status' => 'pending',
                 'started_at' => $start->format('Y-m-d H:i:s'),
                 'ended_at' => $end->format('Y-m-d H:i:s'),
                 'duration_minutes' => $minutes,
@@ -350,12 +372,24 @@ class TimeTrackingService
         $notes = $data['notes'] ?? $entry->notes;
         $override = $data['manual_override'] ?? $entry->manual_override;
 
+        $status = $entry->status ?? 'approved';
+        $reviewedBy = $entry->reviewed_by;
+        $reviewedAt = $entry->reviewed_at;
+        $reviewNotes = $entry->review_notes;
+
+        if ($override) {
+            $status = 'pending';
+            $reviewedBy = null;
+            $reviewedAt = null;
+            $reviewNotes = null;
+        }
+
         $start = new DateTimeImmutable($startedAt);
         $end = $endedAt !== null ? new DateTimeImmutable($endedAt) : null;
         $minutes = $end !== null ? max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60) : null;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, notes = :notes, manual_override = :override, updated_at = NOW() WHERE id = :id'
+            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
         );
 
         $stmt->execute([
@@ -366,10 +400,14 @@ class TimeTrackingService
             'estimate_job_id' => $estimateJobId,
             'notes' => $notes,
             'override' => $override ? 1 : 0,
+            'status' => $status,
+            'reviewed_by' => $reviewedBy,
+            'reviewed_at' => $reviewedAt,
+            'review_notes' => $reviewNotes,
         ]);
 
         $updated = $this->find($entryId);
-        $this->log($actorId, 'time.update', $entryId, ['duration_minutes' => $minutes]);
+        $this->log($actorId, 'time.update', $entryId, ['duration_minutes' => $minutes, 'status' => $status]);
         $this->recordAdjustment(
             $entryId,
             $actorId,
@@ -381,6 +419,7 @@ class TimeTrackingService
                 'estimate_job_id' => $entry->estimate_job_id,
                 'notes' => $entry->notes,
                 'manual_override' => $entry->manual_override,
+                'status' => $entry->status,
             ],
             [
                 'started_at' => $start->format('Y-m-d H:i:s'),
@@ -389,8 +428,61 @@ class TimeTrackingService
                 'estimate_job_id' => $estimateJobId,
                 'notes' => $notes,
                 'manual_override' => (bool) $override,
+                'status' => $status,
             ]
         );
+
+        return $updated;
+    }
+
+    public function review(int $entryId, int $actorId, string $decision, ?string $notes = null): ?TimeEntry
+    {
+        $entry = $this->find($entryId);
+        if ($entry === null) {
+            return null;
+        }
+
+        if (!in_array($decision, ['approved', 'rejected'], true)) {
+            throw new InvalidArgumentException('Invalid review status');
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE time_entries SET status = :status, reviewed_by = :reviewed_by, reviewed_at = NOW(), review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
+        );
+
+        $stmt->execute([
+            'id' => $entryId,
+            'status' => $decision,
+            'reviewed_by' => $actorId,
+            'review_notes' => $notes,
+        ]);
+
+        $this->recordAdjustment(
+            $entryId,
+            $actorId,
+            $notes ?? ucfirst($decision) . ' manual entry',
+            [
+                'started_at' => $entry->started_at,
+                'ended_at' => $entry->ended_at,
+                'duration_minutes' => $entry->duration_minutes,
+                'estimate_job_id' => $entry->estimate_job_id,
+                'notes' => $entry->notes,
+                'manual_override' => $entry->manual_override,
+                'status' => $entry->status,
+            ],
+            [
+                'started_at' => $entry->started_at,
+                'ended_at' => $entry->ended_at,
+                'duration_minutes' => $entry->duration_minutes,
+                'estimate_job_id' => $entry->estimate_job_id,
+                'notes' => $entry->notes,
+                'manual_override' => $entry->manual_override,
+                'status' => $decision,
+            ]
+        );
+
+        $updated = $this->find($entryId);
+        $this->log($actorId, 'time.review', $entryId, ['status' => $decision, 'notes' => $notes]);
 
         return $updated;
     }
@@ -460,20 +552,22 @@ class TimeTrackingService
     private function recordAdjustment(int $entryId, int $actorId, string $reason, array $before, array $after): void
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_started_at, previous_ended_at, previous_duration_minutes, previous_estimate_job_id, previous_notes, previous_manual_override, new_started_at, new_ended_at, new_duration_minutes, new_estimate_job_id, new_notes, new_manual_override) '
-            . 'VALUES (:entry_id, :actor_id, :reason, :prev_start, :prev_end, :prev_minutes, :prev_job, :prev_notes, :prev_override, :new_start, :new_end, :new_minutes, :new_job, :new_notes, :new_override)'
+            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_status, previous_started_at, previous_ended_at, previous_duration_minutes, previous_estimate_job_id, previous_notes, previous_manual_override, new_status, new_started_at, new_ended_at, new_duration_minutes, new_estimate_job_id, new_notes, new_manual_override) '
+            . 'VALUES (:entry_id, :actor_id, :reason, :prev_status, :prev_start, :prev_end, :prev_minutes, :prev_job, :prev_notes, :prev_override, :new_status, :new_start, :new_end, :new_minutes, :new_job, :new_notes, :new_override)'
         );
 
         $stmt->execute([
             'entry_id' => $entryId,
             'actor_id' => $actorId,
             'reason' => $reason,
+            'prev_status' => $before['status'] ?? null,
             'prev_start' => $before['started_at'],
             'prev_end' => $before['ended_at'],
             'prev_minutes' => $before['duration_minutes'],
             'prev_job' => $before['estimate_job_id'],
             'prev_notes' => $before['notes'],
             'prev_override' => $before['manual_override'],
+            'new_status' => $after['status'] ?? null,
             'new_start' => $after['started_at'],
             'new_end' => $after['ended_at'],
             'new_minutes' => $after['duration_minutes'],
