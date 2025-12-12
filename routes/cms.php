@@ -18,6 +18,36 @@ return function (Router $router, array $config, $connection) {
     $cmsConfig = $config['cms'] ?? [];
     $cmsCache = new CMSCacheService($cmsConfig);
 
+    $reservedPrefixes = [
+        'api',
+        'health',
+        'cp',
+        'cms',
+        'cms/assets',
+        'assets',
+        'static',
+        'storage',
+        'build',
+        'js',
+        'css',
+        'img',
+        'images',
+    ];
+
+    $isReservedPath = static function (string $path) use ($reservedPrefixes): bool {
+        $normalized = ltrim(strtolower($path), '/');
+
+        foreach ($reservedPrefixes as $prefix) {
+            $normalizedPrefix = ltrim(strtolower($prefix), '/');
+
+            if ($normalized === $normalizedPrefix || str_starts_with($normalized, $normalizedPrefix . '/')) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     $localeResolver = function (Request $request): string {
         $locale = $request->queryParam('locale');
         if (!empty($locale)) {
@@ -40,7 +70,7 @@ return function (Router $router, array $config, $connection) {
     // These routes handle the front-end website pages
 
     // Homepage
-    $router->get('/cms', function (Request $request) use ($cmsCache, $localeResolver) {
+    $router->get('/', function (Request $request) use ($cmsCache, $localeResolver) {
         $locale = $localeResolver($request);
         $cacheKey = $cmsCache->buildKey('page', 'home', $locale, 'html');
 
@@ -61,7 +91,7 @@ return function (Router $router, array $config, $connection) {
     });
 
     // Sitemap
-    $router->get('/cms/sitemap.xml', function (Request $request) use ($cmsCache, $localeResolver) {
+    $router->get('/sitemap.xml', function (Request $request) use ($cmsCache, $localeResolver) {
         $locale = $localeResolver($request);
         $cacheKey = $cmsCache->buildKey('sitemap', 'index', $locale, 'xml');
 
@@ -79,33 +109,6 @@ return function (Router $router, array $config, $connection) {
         }
 
         return Response::make($content, 200, ['Content-Type' => 'application/xml']);
-    });
-
-    // Dynamic page rendering by slug
-    $router->get('/cms/{slug}', function (Request $request) use ($cmsCache, $localeResolver) {
-        $controller = new PageController();
-        $slug = $request->getAttribute('slug');
-        $locale = $localeResolver($request);
-        $cacheKey = $cmsCache->buildKey('page', (string) $slug, $locale, 'html');
-
-        if ($cached = $cmsCache->get($cacheKey)) {
-            return Response::html((string) $cached);
-        }
-
-        ob_start();
-        try {
-            $controller->render($slug);
-            $content = ob_get_clean();
-
-            if ($cmsCache->isEnabled()) {
-                $cmsCache->set($cacheKey, $content);
-            }
-
-            return Response::html($content);
-        } catch (\Exception $e) {
-            ob_end_clean();
-            return Response::notFound('Page not found: ' . e($e->getMessage()));
-        }
     });
 
     // Admin CMS Routes
@@ -432,5 +435,38 @@ return function (Router $router, array $config, $connection) {
         $content = file_get_contents($assetPath);
 
         return Response::make($content, 200, ['Content-Type' => $contentType]);
+    });
+
+    // Dynamic page rendering by slug (root-level)
+    $router->get('/{path:.+}', function (Request $request) use ($cmsCache, $localeResolver, $isReservedPath) {
+        if ($isReservedPath($request->path())) {
+            return Response::notFound('Route not found');
+        }
+
+        $controller = new PageController();
+        $path = (string) $request->getAttribute('path');
+        $slug = ltrim($path, '/');
+        $slugWithLeadingSlash = '/' . $slug;
+        $locale = $localeResolver($request);
+        $cacheKey = $cmsCache->buildKey('page', $slugWithLeadingSlash, $locale, 'html');
+
+        if ($cached = $cmsCache->get($cacheKey)) {
+            return Response::html((string) $cached);
+        }
+
+        ob_start();
+        try {
+            $controller->render($slug);
+            $content = ob_get_clean();
+
+            if ($cmsCache->isEnabled()) {
+                $cmsCache->set($cacheKey, $content);
+            }
+
+            return Response::html($content);
+        } catch (\Exception $e) {
+            ob_end_clean();
+            return Response::notFound('Page not found: ' . e($e->getMessage()));
+        }
     });
 };

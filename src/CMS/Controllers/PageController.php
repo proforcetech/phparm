@@ -157,13 +157,14 @@ class PageController
      */
     public function publishedPage(string $slug): ?array
     {
+        $lookupSlug = $this->normalizedSlug($slug);
         $sql = 'SELECT * FROM cms_pages WHERE slug = :slug AND status = "published" '
             . 'AND (publish_start_at IS NULL OR publish_start_at <= NOW()) '
             . 'AND (publish_end_at IS NULL OR publish_end_at >= NOW()) '
             . 'ORDER BY published_at DESC LIMIT 1';
 
         $stmt = $this->connection->pdo()->prepare($sql);
-        $stmt->execute(['slug' => $slug]);
+        $stmt->execute(['slug' => $lookupSlug]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($row === false) {
@@ -241,11 +242,13 @@ class PageController
 
     private function invalidateCache(string $slug): void
     {
-        if ($slug === '') {
+        $normalizedSlug = $this->normalizedSlug($slug);
+
+        if ($normalizedSlug === '') {
             return;
         }
 
-        $this->cache?->forgetPrefix('page:' . $this->slugify($slug));
+        $this->cache?->forgetPrefix('page:' . $this->slugify($normalizedSlug));
     }
 
     private function slugify(string $value): string
@@ -253,5 +256,12 @@ class PageController
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
         return trim($value ?: uniqid('page-'), '-');
+    }
+
+    private function normalizedSlug(string $slug): string
+    {
+        $trimmed = trim($slug);
+
+        return ltrim($trimmed, '/');
     }
 }

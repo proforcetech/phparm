@@ -54,7 +54,7 @@ class CMSCacheService
     {
         return $this->prefix . implode(':', [
             $type,
-            $this->normalize($slug),
+            $this->normalizeSlug($slug),
             $this->normalize($locale),
             $format,
         ]);
@@ -144,9 +144,25 @@ class CMSCacheService
         }
     }
 
-    private function normalize(string $value): string
+    private function normalize(string $value, string $default = 'default'): string
     {
-        return strtolower(trim($value !== '' ? $value : 'default'));
+        $trimmed = trim($value);
+
+        return strtolower($trimmed !== '' ? $trimmed : $default);
+    }
+
+    private function normalizeSlug(string $slug): string
+    {
+        $trimmed = trim($slug);
+
+        if ($trimmed === '') {
+            return 'home';
+        }
+
+        $hasPathSeparator = str_contains($trimmed, '/') || str_starts_with($trimmed, '/');
+        $normalized = $hasPathSeparator ? '/' . ltrim($trimmed, '/') : $trimmed;
+
+        return $this->normalize($normalized, 'home');
     }
 
     private function serialize(mixed $value): string
