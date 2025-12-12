@@ -1802,6 +1802,17 @@ return Response::json([
             return Response::json($data);
         });
 
+        // Form options for page editor (templates, components, parent pages)
+        $router->get('/api/cms/pages/form-options', function (Request $request) use ($cmsController) {
+            $user = $request->getAttribute('user');
+            try {
+                $data = $cmsController->getPageFormOptions($user);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
         $router->get('/api/cms/pages/{id}', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
