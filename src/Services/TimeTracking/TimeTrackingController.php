@@ -146,6 +146,48 @@ class TimeTrackingController
     }
 
     /**
+     * Approve time entry
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function approve(User $user, int $id, array $data): array
+    {
+        if (!$this->gate->can($user, 'time_tracking.update')) {
+            throw new UnauthorizedException('Cannot review time entries');
+        }
+
+        $entry = $this->service->review($id, $user->id, 'approved', $data['notes'] ?? null);
+
+        if ($entry === null) {
+            throw new InvalidArgumentException('Time entry not found');
+        }
+
+        return $entry->toArray();
+    }
+
+    /**
+     * Reject time entry
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function reject(User $user, int $id, array $data): array
+    {
+        if (!$this->gate->can($user, 'time_tracking.update')) {
+            throw new UnauthorizedException('Cannot review time entries');
+        }
+
+        $entry = $this->service->review($id, $user->id, 'rejected', $data['notes'] ?? null);
+
+        if ($entry === null) {
+            throw new InvalidArgumentException('Time entry not found');
+        }
+
+        return $entry->toArray();
+    }
+
+    /**
      * Technician portal - assigned jobs
      *
      * @return array<int, array<string, mixed>>

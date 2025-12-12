@@ -2070,6 +2070,20 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->post('/api/time-tracking/{id}/approve', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $timeController->approve($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/time-tracking/{id}/reject', function (Request $request) use ($timeController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $timeController->reject($user, $id, $request->body());
+            return Response::json($data);
+        });
+
         $router->get('/api/time-tracking/technician/jobs', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->assignedJobs($user);
