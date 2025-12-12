@@ -14,18 +14,16 @@ use Throwable;
 class EstimateRepository
 {
     public const ALLOWED_STATUSES = [
-        'draft',
         'pending',
         'sent',
         'approved',
-        'declined',
+        'rejected',
         'expired',
-        'needs_reapproval',
         'converted',
     ];
 
     private const STATUS_ALIASES = [
-        'rejected' => 'declined',
+        'declined' => 'rejected',
     ];
 
     private Connection $connection;

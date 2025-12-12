@@ -68,6 +68,7 @@
                 <Input
                   v-model="form.expiration_date"
                   type="date"
+                  :min="today"
                   class="mt-1"
                 />
               </div>
@@ -283,12 +284,13 @@ const toast = useToast()
 
 const loading = ref(false)
 const saving = ref(false)
+const today = new Date().toISOString().substring(0, 10)
 
 const form = reactive({
   customer_id: null,
   vehicle_id: null,
   technician_id: null,
-  expiration_date: '',
+  expiration_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10),
   subtotal: 0,
   tax: 0,
   call_out_fee: 0,
@@ -297,16 +299,14 @@ const form = reactive({
   grand_total: 0,
   customer_notes: '',
   internal_notes: '',
-  status: 'draft'
+  status: 'pending'
 })
 
 const statusOptions = [
-  { value: 'draft', label: 'Draft' },
   { value: 'sent', label: 'Sent' },
+  { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
-  { value: 'declined', label: 'Declined' },
-  { value: 'expired', label: 'Expired' },
-  { value: 'needs_reapproval', label: 'Needs Reapproval' }
+  { value: 'rejected', label: 'Rejected' }
 ]
 
 const isEditing = computed(() => !!route.params.id)
@@ -345,22 +345,27 @@ async function saveEstimate() {
   try {
     saving.value = true
 
-    // Prepare data
-    const data = {
-      customer_id: parseInt(form.customer_id),
-      vehicle_id: parseInt(form.vehicle_id),
-      technician_id: form.technician_id ? parseInt(form.technician_id) : null,
-      expiration_date: form.expiration_date || null,
-      subtotal: parseFloat(form.subtotal),
-      tax: parseFloat(form.tax) || 0,
-      call_out_fee: parseFloat(form.call_out_fee) || 0,
-      mileage_total: parseFloat(form.mileage_total) || 0,
-      discounts: parseFloat(form.discounts) || 0,
-      grand_total: parseFloat(form.grand_total),
-      customer_notes: form.customer_notes || null,
-      internal_notes: form.internal_notes || null,
-      status: form.status || 'draft'
+    if (form.expiration_date && form.expiration_date < today) {
+      toast.error('Expiration date cannot be in the past')
+      return
     }
+
+    // Prepare data
+      const data = {
+        customer_id: parseInt(form.customer_id),
+        vehicle_id: parseInt(form.vehicle_id),
+        technician_id: form.technician_id ? parseInt(form.technician_id) : null,
+        expiration_date: form.expiration_date || null,
+        subtotal: parseFloat(form.subtotal),
+        tax: parseFloat(form.tax) || 0,
+        call_out_fee: parseFloat(form.call_out_fee) || 0,
+        mileage_total: parseFloat(form.mileage_total) || 0,
+        discounts: parseFloat(form.discounts) || 0,
+        grand_total: parseFloat(form.grand_total),
+        customer_notes: form.customer_notes || null,
+        internal_notes: form.internal_notes || null,
+        status: form.status || 'pending'
+      }
 
     let response
     if (isEditing.value) {

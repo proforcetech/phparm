@@ -129,6 +129,15 @@ class EstimateEditorService
             }
         }
 
+        $expiration = $payload['expiration_date'] ?? null;
+        if ($expiration !== null && $expiration !== '') {
+            $timestamp = strtotime((string) $expiration);
+            $startOfDay = strtotime('today');
+            if ($timestamp === false || $timestamp < $startOfDay) {
+                throw new InvalidArgumentException('Expiration date cannot be in the past.');
+            }
+        }
+
         if (!is_array($payload['jobs']) || $payload['jobs'] === []) {
             throw new InvalidArgumentException('Estimate must include at least one job.');
         }
@@ -154,12 +163,14 @@ class EstimateEditorService
             VALUES (:number, :customer_id, :vehicle_id, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, 0, 0, 0, NOW(), NOW())
         SQL);
 
+        $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
+
         $stmt->execute([
             'number' => $payload['number'] ?? $this->generateNumber(),
             'customer_id' => (int) $payload['customer_id'],
             'vehicle_id' => (int) $payload['vehicle_id'],
             'technician_id' => $payload['technician_id'] ?? null,
-            'expiration_date' => $payload['expiration_date'] ?? null,
+            'expiration_date' => $expirationDate,
             'status' => $status,
             'internal_notes' => $payload['internal_notes'] ?? null,
             'customer_notes' => $payload['customer_notes'] ?? null,
@@ -192,12 +203,14 @@ class EstimateEditorService
             WHERE id = :id
         SQL;
 
+        $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
+
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute([
             'customer_id' => (int) $payload['customer_id'],
             'vehicle_id' => (int) $payload['vehicle_id'],
             'technician_id' => $payload['technician_id'] ?? null,
-            'expiration_date' => $payload['expiration_date'] ?? null,
+            'expiration_date' => $expirationDate,
             'status' => $status,
             'internal_notes' => $payload['internal_notes'] ?? null,
             'customer_notes' => $payload['customer_notes'] ?? null,
@@ -392,7 +405,7 @@ class EstimateEditorService
      */
     private function determineStatusForCreate(array $payload): string
     {
-        $candidate = $payload['status'] ?? 'draft';
+        $candidate = $payload['status'] ?? 'pending';
         $normalized = EstimateRepository::normalizeStatus($candidate);
         if (!in_array($normalized, EstimateRepository::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid estimate status value.');
@@ -406,27 +419,19 @@ class EstimateEditorService
      */
     private function determineStatusForUpdate(Estimate $existing, array $payload): ?string
     {
-        if (array_key_exists('status', $payload)) {
-            if ($payload['status'] === null) {
-                return null;
-            }
-
-            $normalized = EstimateRepository::normalizeStatus((string) $payload['status']);
-            if (!in_array($normalized, EstimateRepository::ALLOWED_STATUSES, true)) {
-                throw new InvalidArgumentException('Invalid estimate status value.');
-            }
-
-            if ($existing->status === 'approved' && $normalized === 'approved') {
-                return 'needs_reapproval';
-            }
-
-            return $normalized;
+        if (!array_key_exists('status', $payload)) {
+            return null;
         }
 
-        if ($existing->status === 'approved') {
-            return 'needs_reapproval';
+        if ($payload['status'] === null) {
+            return null;
         }
 
-        return null;
+        $normalized = EstimateRepository::normalizeStatus((string) $payload['status']);
+        if (!in_array($normalized, EstimateRepository::ALLOWED_STATUSES, true)) {
+            throw new InvalidArgumentException('Invalid estimate status value.');
+        }
+
+        return $normalized;
     }
 }
