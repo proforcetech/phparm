@@ -52,13 +52,13 @@ class CMSApiController
 
         // Get page counts
         $pageCount = $pdo->query("SELECT COUNT(*) FROM {$this->table('pages')}")->fetchColumn();
-        $publishedCount = $pdo->query("SELECT COUNT(*) FROM {$this->table('pages')} WHERE is_published = 1")->fetchColumn();
+        $publishedCount = $pdo->query("SELECT COUNT(*) FROM {$this->table('pages')} WHERE status = 'published'")->fetchColumn();
         $componentCount = $pdo->query("SELECT COUNT(*) FROM {$this->table('components')}")->fetchColumn();
         $templateCount = $pdo->query("SELECT COUNT(*) FROM {$this->table('templates')}")->fetchColumn();
 
         // Get recent pages
         $recentPages = $pdo->query("
-            SELECT id, title, slug, is_published, updated_at
+            SELECT id, title, slug, status, updated_at
             FROM {$this->table('pages')}
             ORDER BY updated_at DESC
             LIMIT 5
