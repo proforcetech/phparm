@@ -49,7 +49,6 @@ class CMSApiController
     public function dashboard(?User $user): array
     {
         $this->requireAccess($user);
-        $this->gate->assert($user, 'cms.dashboard.view');
 
         $pdo = $this->connection->pdo();
 
@@ -466,7 +465,6 @@ class CMSApiController
     public function listTemplates(?User $user, array $filters = []): array
     {
         $this->requireAccess($user);
-        $this->gate->assert($user, 'cms.templates.view');
 
         $pdo = $this->connection->pdo();
         $where = [];
@@ -505,7 +503,6 @@ class CMSApiController
     public function getTemplate(?User $user, int $id): ?array
     {
         $this->requireAccess($user);
-        $this->gate->assert($user, 'cms.templates.view');
 
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("SELECT * FROM {$this->table('templates')} WHERE id = :id");
