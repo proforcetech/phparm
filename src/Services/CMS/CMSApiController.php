@@ -783,6 +783,8 @@ class CMSApiController
         if (!$this->authBridge->hasCMSAccess($user)) {
             throw new \RuntimeException('CMS access denied');
         }
+        // Initialize CMS session after successful access check
+        $this->authBridge->initializeCMSSession($user);
     }
 
     private function requireEditAccess(?User $user): void
@@ -790,6 +792,8 @@ class CMSApiController
         if (!$this->authBridge->canEditContent($user)) {
             throw new \RuntimeException('CMS edit access denied');
         }
+        // Initialize CMS session after successful access check
+        $this->authBridge->initializeCMSSession($user);
     }
 
     private function requireAdminAccess(?User $user): void
@@ -797,6 +801,8 @@ class CMSApiController
         if (!$this->authBridge->isCMSAdmin($user)) {
             throw new \RuntimeException('CMS admin access denied');
         }
+        // Initialize CMS session after successful access check
+        $this->authBridge->initializeCMSSession($user);
     }
 
     // ================================================
