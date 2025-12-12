@@ -34,18 +34,18 @@
         <!-- Actions -->
         <div class="flex gap-2 mt-4">
           <Button
-            v-if="estimate.status === 'draft' || estimate.status === 'needs_reapproval'"
+            v-if="['pending', 'sent'].includes(estimate.status)"
             variant="primary"
             @click="approveEstimate"
           >
             Approve
           </Button>
           <Button
-            v-if="estimate.status === 'sent' || estimate.status === 'draft'"
+            v-if="['pending', 'sent'].includes(estimate.status)"
             variant="danger"
             @click="declineEstimate"
           >
-            Decline
+            Reject
           </Button>
           <Button
             v-if="estimate.status === 'approved'"
@@ -54,14 +54,7 @@
             Convert to Invoice
           </Button>
           <Button
-            v-if="estimate.status === 'approved'"
-            variant="outline"
-            @click="requestReapproval"
-          >
-            Request Reapproval
-          </Button>
-          <Button
-            v-if="['draft', 'sent'].includes(estimate.status)"
+            v-if="['pending', 'sent'].includes(estimate.status)"
             variant="outline"
             @click="expireEstimate"
           >
@@ -279,15 +272,15 @@ async function approveEstimate() {
 }
 
 async function declineEstimate() {
-  if (!confirm('Are you sure you want to decline this estimate?')) return
+  if (!confirm('Are you sure you want to reject this estimate?')) return
 
   try {
     await estimateService.declineEstimate(estimate.value.id)
-    toast.success('Estimate declined')
+    toast.success('Estimate rejected')
     loadEstimate()
   } catch (err) {
-    console.error('Failed to decline estimate:', err)
-    toast.error(err.response?.data?.message || 'Failed to decline estimate')
+    console.error('Failed to reject estimate:', err)
+    toast.error(err.response?.data?.message || 'Failed to reject estimate')
   }
 }
 
@@ -340,12 +333,11 @@ async function confirmConvert() {
 
 function getStatusVariant(status) {
   const variants = {
-    draft: 'default',
     sent: 'info',
+    pending: 'default',
     approved: 'success',
-    declined: 'danger',
+    rejected: 'danger',
     expired: 'warning',
-    needs_reapproval: 'warning',
     converted: 'success'
   }
   return variants[status?.toLowerCase()] || 'default'

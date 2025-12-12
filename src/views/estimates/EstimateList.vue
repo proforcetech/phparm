@@ -230,12 +230,11 @@ const columns = [
 
 const statusOptions = [
   { value: '', label: 'All Statuses' },
-  { value: 'draft', label: 'Draft' },
+  { value: 'pending', label: 'Pending' },
   { value: 'sent', label: 'Sent' },
   { value: 'approved', label: 'Approved' },
-  { value: 'declined', label: 'Declined' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'expired', label: 'Expired' },
-  { value: 'needs_reapproval', label: 'Needs Reapproval' },
   { value: 'converted', label: 'Converted' }
 ]
 
@@ -331,12 +330,11 @@ async function confirmConvert() {
 
 function getStatusVariant(status) {
   const variants = {
-    draft: 'default',
+    pending: 'default',
     sent: 'info',
     approved: 'success',
-    declined: 'danger',
+    rejected: 'danger',
     expired: 'warning',
-    needs_reapproval: 'warning',
     converted: 'success'
   }
   return variants[status?.toLowerCase()] || 'default'
