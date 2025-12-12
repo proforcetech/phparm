@@ -17,6 +17,12 @@ export const authService = {
     return response.data
   },
 
+  async verifyTwoFactor(challengeToken, code, isCustomer = false) {
+    const endpoint = isCustomer ? '/auth/customer-verify-2fa' : '/auth/verify-2fa'
+    const response = await api.post(endpoint, { challenge_token: challengeToken, code })
+    return response.data
+  },
+
   /**
    * Logout
    */

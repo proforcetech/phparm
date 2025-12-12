@@ -15,7 +15,7 @@
           <p class="text-sm text-red-800">{{ error }}</p>
         </div>
 
-        <div class="rounded-md shadow-sm -space-y-px">
+        <div v-if="!isVerifying" class="rounded-md shadow-sm -space-y-px">
           <div>
             <label for="email" class="sr-only">Email address</label>
             <input
@@ -27,6 +27,7 @@
               required
               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
               placeholder="Email address"
+              :disabled="loading"
             />
           </div>
           <div>
@@ -40,11 +41,29 @@
               required
               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
               placeholder="Password"
+              :disabled="loading"
             />
           </div>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div v-else class="space-y-2">
+          <label for="code" class="block text-sm font-medium text-gray-700">Authentication code</label>
+          <input
+            id="code"
+            v-model="code"
+            name="code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            required
+            class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+            placeholder="Enter 6-digit code"
+            :disabled="loading"
+          />
+          <p class="text-xs text-gray-500">Open your authenticator app to retrieve the current code.</p>
+        </div>
+
+        <div v-if="!isVerifying" class="flex items-center justify-between">
           <div class="flex items-center">
             <input
               id="remember-me"
@@ -97,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRecaptcha } from '@/composables/useRecaptcha'
 
@@ -109,10 +128,14 @@ const form = ref({
   remember: false,
 })
 
+const code = ref('')
+
 const loading = ref(false)
 const error = ref(null)
 const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
 const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
+
+const isVerifying = computed(() => !!authStore.pendingChallenge)
 
 async function handleLogin() {
   loading.value = true
@@ -123,11 +146,20 @@ async function handleLogin() {
       throw new Error('reCAPTCHA is not configured')
     }
 
+    if (isVerifying.value) {
+      await authStore.verifyTwoFactor(code.value)
+      return
+    }
+
     if (!recaptchaToken.value) {
       throw new Error('Please complete the reCAPTCHA challenge.')
     }
 
-    await authStore.login(form.value.email, form.value.password, true, recaptchaToken.value) // true = customer login
+    const result = await authStore.login(form.value.email, form.value.password, true, recaptchaToken.value) // true = customer login
+
+    if (result?.status === '2fa_required') {
+      return
+    }
   } catch (err) {
     error.value =
       err.response?.data?.message || err.message || 'Invalid credentials. Please check your email and password.'
