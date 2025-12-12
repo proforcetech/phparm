@@ -2106,7 +2106,7 @@ return Response::json([
     });
 
     // CMS Management routes (Admin/Manager for full access, Technician for content editing)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController, $cmsCacheService) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController, $cmsCacheService, $gate) {
 
         $cmsAuthBridge = new \App\Services\CMS\CMSAuthBridge();
         $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge, $gate, $cmsCacheService);
