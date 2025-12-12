@@ -2109,7 +2109,7 @@ return Response::json([
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController, $cmsCacheService) {
 
         $cmsAuthBridge = new \App\Services\CMS\CMSAuthBridge();
-        $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge, $cmsCacheService);
+        $cmsController = new \App\Services\CMS\CMSApiController($connection, $cmsAuthBridge, $gate, $cmsCacheService);
 
         // CMS Dashboard
         $router->get('/api/cms/dashboard', function (Request $request) use ($cmsController) {
