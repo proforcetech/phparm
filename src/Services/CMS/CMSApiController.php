@@ -48,7 +48,8 @@ class CMSApiController
      */
     public function dashboard(?User $user): array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.dashboard.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
 
@@ -88,7 +89,8 @@ class CMSApiController
      */
     public function listPages(?User $user, array $filters = []): array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.pages.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
         $where = [];
@@ -130,7 +132,8 @@ class CMSApiController
      */
     public function getPage(?User $user, int $id): ?array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.pages.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("
@@ -281,7 +284,8 @@ class CMSApiController
      */
     public function listComponents(?User $user, array $filters = []): array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.components.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
         $where = [];
@@ -319,7 +323,8 @@ class CMSApiController
      */
     public function getComponent(?User $user, int $id): ?array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, "cms.components.view");
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("SELECT * FROM {$this->table('components')} WHERE id = :id");
@@ -464,7 +469,8 @@ class CMSApiController
      */
     public function listTemplates(?User $user, array $filters = []): array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.templates.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
         $where = [];
@@ -502,7 +508,8 @@ class CMSApiController
      */
     public function getTemplate(?User $user, int $id): ?array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.templates.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("SELECT * FROM {$this->table('templates')} WHERE id = :id");
@@ -679,7 +686,8 @@ class CMSApiController
      */
     public function getCacheStats(?User $user): array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.*');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
 
@@ -747,7 +755,8 @@ class CMSApiController
      */
     public function getPageFormOptions(?User $user): array
     {
-        $this->requireAccess($user);
+        $this->gate->assert($user, 'cms.pages.view');
+        $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
 
@@ -785,27 +794,24 @@ class CMSApiController
 
     private function requireAccess(?User $user): void
     {
-        if (!$this->authBridge->hasCMSAccess($user)) {
-            throw new \RuntimeException('CMS access denied');
-        }
+        // Use AccessGate for consistent permission checking
+        $this->gate->assert($user, 'cms.dashboard.view');
         // Initialize CMS session after successful access check
         $this->authBridge->initializeCMSSession($user);
     }
 
     private function requireEditAccess(?User $user): void
     {
-        if (!$this->authBridge->canEditContent($user)) {
-            throw new \RuntimeException('CMS edit access denied');
-        }
+        // Use AccessGate for consistent permission checking
+        $this->gate->assert($user, 'cms.pages.update');
         // Initialize CMS session after successful access check
         $this->authBridge->initializeCMSSession($user);
     }
 
     private function requireAdminAccess(?User $user): void
     {
-        if (!$this->authBridge->isCMSAdmin($user)) {
-            throw new \RuntimeException('CMS admin access denied');
-        }
+        // Use AccessGate for consistent permission checking
+        $this->gate->assert($user, 'cms.*');
         // Initialize CMS session after successful access check
         $this->authBridge->initializeCMSSession($user);
     }
