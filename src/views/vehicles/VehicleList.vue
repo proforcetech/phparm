@@ -81,10 +81,11 @@
           </div>
           <div v-if="vinResult" class="rounded-md bg-gray-50 p-3 text-sm text-gray-800">
             <p class="font-semibold">{{ vinMessage }}</p>
+            <p v-if="vinSummary" class="mt-1 text-xs text-gray-600">{{ vinSummary }}</p>
             <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
               <div v-for="field in vinDetails" :key="field.label">
                 <p class="text-xs text-gray-500">{{ field.label }}</p>
-                <p class="text-sm font-medium text-gray-900">{{ field.value || '—' }}</p>
+                <p class="text-sm font-medium text-gray-900">{{ field.value }}</p>
               </div>
             </div>
           </div>
@@ -103,6 +104,7 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Table from '@/components/ui/Table.vue'
 import { decodeVin, listVehicles, validateVin } from '@/services/vehicle.service'
+import { normalizeVinData } from '@/utils/vin'
 
 const loading = ref(false)
 const vehicles = ref([])
@@ -162,22 +164,27 @@ const validate = async () => {
 const vinDetails = computed(() => {
   if (!vinResult.value) return []
 
-  const data =
-    vinResult.value.decoded ||
-    vinResult.value.basic_info ||
-    vinResult.value.vehicle ||
-    vinResult.value
+  const data = normalizeVinData(vinResult.value)
 
-  return [
-    { label: 'Year', value: data.year },
-    { label: 'Make', value: data.make },
-    { label: 'Model', value: data.model },
-    { label: 'Engine', value: data.engine },
-    { label: 'Transmission', value: data.transmission },
-    { label: 'Drive', value: data.drive },
-    { label: 'Trim', value: data.trim },
-    { label: 'Fuel', value: data.fuel_type || data.fuel || data.fuelType }
+  const fields = [
+    { key: 'vin', label: 'VIN' },
+    { key: 'year', label: 'Year' },
+    { key: 'make', label: 'Make' },
+    { key: 'model', label: 'Model' },
+    { key: 'trim', label: 'Trim' },
+    { key: 'engine', label: 'Engine' },
+    { key: 'transmission', label: 'Transmission' },
+    { key: 'drive', label: 'Drive' },
+    { key: 'fuel', label: 'Fuel' },
+    { key: 'bodyStyle', label: 'Body Style' },
+    { key: 'vehicleType', label: 'Vehicle Type' },
+    { key: 'plantCountry', label: 'Assembly' },
+    { key: 'manufacturer', label: 'Manufacturer' }
   ]
+
+  return fields
+    .map(({ key, label }) => ({ label, value: data[key] }))
+    .filter((entry) => Boolean(entry.value))
 })
 
 const vinMessage = computed(() => {
@@ -186,6 +193,15 @@ const vinMessage = computed(() => {
   if (vinResult.value.valid === true) return 'VIN is valid'
   if (vinResult.value.valid === false) return 'VIN is invalid'
   return 'VIN details'
+})
+
+const vinSummary = computed(() => {
+  if (!vinResult.value) return ''
+  const data = normalizeVinData(vinResult.value)
+  const summaryParts = [data.year, data.make, data.model].filter(Boolean)
+  const detailParts = [data.trim, data.bodyStyle, data.vehicleType].filter(Boolean)
+
+  return [summaryParts.join(' • '), detailParts.join(' · ')].filter(Boolean).join(' — ')
 })
 
 onMounted(loadVehicles)

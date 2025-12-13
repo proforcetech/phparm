@@ -249,6 +249,7 @@ import {
 import { createCustomerVehicle, updateCustomerVehicle, getCustomerVehicle } from '@/services/customer-vehicle.service'
 import { getCustomer, listCustomers } from '@/services/customer.service'
 import { useToast } from '@/stores/toast'
+import { normalizeVinData } from '@/utils/vin'
 
 const router = useRouter()
 const route = useRoute()
@@ -567,7 +568,7 @@ async function decodeVinNumber() {
   vinSuccess.value = ''
 
   try {
-    const decoded = await decodeVin(form.vin)
+    const decoded = normalizeVinData(await decodeVin(form.vin))
 
     if (decoded.year) {
       form.year = decoded.year
