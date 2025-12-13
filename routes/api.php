@@ -1256,6 +1256,8 @@ return Response::json([
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
         $inventoryController = new \App\Services\Inventory\InventoryItemController($inventoryRepository, $gate);
+        $inventoryLookupService = new \App\Services\Inventory\InventoryLookupService($connection);
+        $inventoryLookupController = new \App\Services\Inventory\InventoryLookupController($inventoryLookupService, $gate);
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
@@ -1320,6 +1322,43 @@ return Response::json([
             $id = (int) $request->getAttribute('id');
 
             $inventoryController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        $router->get('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+            $filters = [
+                'parts_supplier' => $request->queryParam('parts_supplier') === 'true',
+            ];
+
+            $data = $inventoryLookupController->index($user, $type, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+
+            $data = $inventoryLookupController->store($user, $type, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/inventory/{type:categories|vendors|locations}/{id}', function (Request $request) use ($inventoryLookupController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $inventoryLookupController->update($user, $type, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/inventory/{type:categories|vendors|locations}/{id}', function (Request $request) use ($inventoryLookupController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+            $id = (int) $request->getAttribute('id');
+
+            $inventoryLookupController->destroy($user, $type, $id);
             return Response::noContent();
         });
     });
@@ -1957,6 +1996,22 @@ return Response::json([
             $id = (int) $request->getAttribute('id');
             $data = $financialController->update($user, $id, $request->body());
             return Response::json($data);
+        });
+
+        $router->post('/api/financial/entries/{id}/attachment', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $file = $request->file('file');
+
+            $data = $financialController->uploadAttachment($user, $id, is_array($file) ? $file : []);
+            return Response::json($data);
+        });
+
+        $router->delete('/api/financial/entries/{id}/attachment', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $financialController->removeAttachment($user, $id);
+            return Response::noContent();
         });
 
         $router->delete('/api/financial/entries/{id}', function (Request $request) use ($financialController) {

@@ -176,6 +176,18 @@ class FinancialEntryService
         return $updated;
     }
 
+    public function removeReceipt(int $entryId, int $actorId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare('UPDATE financial_entries SET attachment_path = NULL WHERE id = :id');
+        $stmt->execute(['id' => $entryId]);
+        $updated = $stmt->rowCount() > 0;
+        if ($updated) {
+            $this->log('financial.attachment_removed', $entryId, $actorId);
+        }
+
+        return $updated;
+    }
+
     /**
      * @param array<string, mixed> $filters
      * @return array{data: array<int, FinancialEntry>, pagination: array<string, int>}

@@ -192,7 +192,8 @@ const loadLookup = async (type, target) => {
   lookupsLoading[type] = true
   lookupError[type] = ''
   try {
-    const data = await inventoryMetaService.list(type)
+    const params = type === 'vendors' ? { parts_supplier: true } : {}
+    const data = await inventoryMetaService.list(type, params)
     const options = data.map((item) => ({ label: item.name, value: item.name }))
     const field = lookupFieldMap[type]
     const currentValue = form[field]

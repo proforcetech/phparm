@@ -97,6 +97,54 @@ class FinancialController
     }
 
     /**
+     * Handle attachment upload
+     *
+     * @param array<string, mixed> $file
+     */
+    public function uploadAttachment(User $user, int $entryId, array $file): array
+    {
+        if (!$this->gate->can($user, 'financials.update')) {
+            throw new UnauthorizedException('Cannot update financial entries');
+        }
+
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new InvalidArgumentException('Invalid file upload');
+        }
+
+        $allowed = ['pdf', 'png', 'jpg', 'jpeg'];
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowed, true)) {
+            throw new InvalidArgumentException('Unsupported file type');
+        }
+
+        $uploadDir = dirname(__DIR__, 3) . '/public/uploads/financial';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0775, true);
+        }
+
+        $filename = sprintf('entry_%d_%s.%s', $entryId, uniqid(), $extension);
+        $destination = $uploadDir . '/' . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new InvalidArgumentException('Unable to store attachment');
+        }
+
+        $relativePath = '/uploads/financial/' . $filename;
+        $this->entries->attachReceipt($entryId, $relativePath, $user->id);
+
+        return ['path' => $relativePath];
+    }
+
+    public function removeAttachment(User $user, int $entryId): void
+    {
+        if (!$this->gate->can($user, 'financials.update')) {
+            throw new UnauthorizedException('Cannot update financial entries');
+        }
+
+        $this->entries->removeReceipt($entryId, $user->id);
+    }
+
+    /**
      * Generate financial report
      *
      * @param array<string, mixed> $params

@@ -75,6 +75,15 @@
               placeholder="Optional details"
             ></textarea>
           </div>
+          <div v-if="props.type === 'vendors'" class="flex items-center gap-2">
+            <input
+              id="partsSupplier"
+              v-model="form.is_parts_supplier"
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <label for="partsSupplier" class="text-sm text-gray-700">Parts supplier</label>
+          </div>
         </div>
       </template>
       <template #footer>
@@ -144,6 +153,7 @@ const editingItem = ref(null)
 const form = reactive({
   name: '',
   description: '',
+  is_parts_supplier: false,
 })
 
 const columns = [
@@ -167,6 +177,7 @@ const handleSearch = () => {
 const resetForm = () => {
   form.name = ''
   form.description = ''
+  form.is_parts_supplier = false
 }
 
 const loadItems = async () => {
@@ -195,6 +206,7 @@ const startEdit = (item) => {
   editingItem.value = item
   form.name = item.name
   form.description = item.description || ''
+  form.is_parts_supplier = Boolean(item.is_parts_supplier)
   showModal.value = true
 }
 
@@ -207,7 +219,10 @@ const closeModal = () => {
 const saveItem = async () => {
   saving.value = true
   try {
-    const payload = { name: form.name, description: form.description }
+  const payload = { name: form.name, description: form.description }
+  if (props.type === 'vendors') {
+    payload.is_parts_supplier = form.is_parts_supplier
+  }
     if (editingItem.value) {
       await inventoryMetaService.update(props.type, editingItem.value.id, payload)
       toast.success(`${copy.value.singular} updated`)
