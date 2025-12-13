@@ -457,11 +457,19 @@ async function loadDashboardData() {
     }
 
     // Process chart data
-    if (trendsData && trendsData.length > 0) {
-      const categories = trendsData[0]?.categories || []
+    const trendSeries = Array.isArray(trendsData)
+      ? trendsData
+      : Array.isArray(trendsData?.data)
+        ? trendsData.data
+        : []
+
+    if (trendSeries.length > 0) {
+      const categories = Array.isArray(trendsData?.categories)
+        ? trendsData.categories
+        : trendSeries[0]?.categories || []
       revenueChartData.value = {
         labels: categories.map(formatMonthLabel),
-        datasets: trendsData.map((series, index) => ({
+        datasets: trendSeries.map((series, index) => ({
           label: series.label,
           data: series.data,
           borderColor: index === 0 ? '#3B82F6' : '#10B981',
