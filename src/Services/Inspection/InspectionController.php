@@ -267,7 +267,7 @@ class InspectionController
         }
 
         // Fetch the report
-        $report = $this->completion->findById($reportId);
+        $report = $this->completion->find($reportId);
         if ($report === null) {
             throw new InvalidArgumentException('Inspection report not found');
         }
