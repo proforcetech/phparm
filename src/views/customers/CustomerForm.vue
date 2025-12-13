@@ -55,7 +55,7 @@
 
         <div>
           <label class="block text-sm font-medium text-gray-700">Notes</label>
-          <Textarea v-model="form.notes" rows="4" placeholder="Customer preferences, notes, or important details" />
+          <Textarea v-model="form.notes" :rows="4" placeholder="Customer preferences, notes, or important details" />
         </div>
 
         <div class="flex items-center gap-3">
