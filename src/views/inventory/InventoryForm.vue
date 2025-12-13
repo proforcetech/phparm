@@ -95,7 +95,14 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Sale price</label>
-            <Input v-model.number="form.sale_price" type="number" step="0.01" min="0" placeholder="25.00" />
+            <Input
+              v-model.number="form.sale_price"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="25.00"
+              helperText="Calculated as cost × (1 + markup/100). You can override this if needed."
+            />
           </div>
         </div>
 
@@ -126,7 +133,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -158,12 +165,26 @@ const form = reactive({
   notes: '',
 })
 
+const isInitializing = ref(true)
+const manualSalePrice = ref(false)
+const isAutoUpdatingSalePrice = ref(false)
+
 const categoryOptions = ref([])
 const locationOptions = ref([])
 const vendorOptions = ref([])
 const lookupsLoading = reactive({ categories: false, locations: false, vendors: false })
 const lookupError = reactive({ categories: '', locations: '', vendors: '' })
 const lookupFieldMap = { categories: 'category', locations: 'location', vendors: 'vendor' }
+
+const calculateSalePrice = () => {
+  const cost = Number(form.cost)
+  const markup = Number(form.markup ?? 0)
+
+  if (!Number.isFinite(cost)) return null
+
+  const salePrice = cost * (1 + markup / 100)
+  return Number.isFinite(salePrice) ? Number(salePrice.toFixed(2)) : null
+}
 
 const goBack = () => router.push('/cp/inventory')
 
@@ -205,6 +226,33 @@ const loadItem = async () => {
   Object.assign(form, data)
 }
 
+const updateSalePriceFromFormula = () => {
+  if (isInitializing.value || manualSalePrice.value) return
+
+  const salePrice = calculateSalePrice()
+  if (salePrice === null) return
+
+  isAutoUpdatingSalePrice.value = true
+  form.sale_price = salePrice
+  isAutoUpdatingSalePrice.value = false
+}
+
+watch(
+  () => [form.cost, form.markup],
+  () => {
+    updateSalePriceFromFormula()
+  },
+)
+
+watch(
+  () => form.sale_price,
+  (newValue) => {
+    if (isInitializing.value || isAutoUpdatingSalePrice.value) return
+
+    manualSalePrice.value = newValue !== '' && newValue !== null && newValue !== undefined
+  },
+)
+
 const save = async () => {
   saving.value = true
   error.value = ''
@@ -230,5 +278,6 @@ const save = async () => {
 onMounted(async () => {
   await loadItem()
   loadLookups()
+  isInitializing.value = false
 })
 </script>
