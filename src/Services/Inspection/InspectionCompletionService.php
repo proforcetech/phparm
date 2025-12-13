@@ -5,6 +5,7 @@ namespace App\Services\Inspection;
 use App\Database\Connection;
 use App\Models\InspectionReport;
 use App\Models\InspectionReportItem;
+use App\Models\InspectionReportMedia;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -212,6 +213,78 @@ class InspectionCompletionService
             'report_id' => $reportId,
             'signature_data' => $signatureData,
         ]);
+    }
+
+    /**
+     * Persist uploaded media metadata
+     */
+    public function attachMedia(int $reportId, string $path, string $mimeType, string $type, ?int $actorId = null): InspectionReportMedia
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            INSERT INTO inspection_report_media (report_id, type, path, mime_type, uploaded_by, created_at)
+            VALUES (:report_id, :type, :path, :mime_type, :uploaded_by, NOW())
+        SQL);
+
+        $stmt->execute([
+            'report_id' => $reportId,
+            'type' => $type,
+            'path' => $path,
+            'mime_type' => $mimeType,
+            'uploaded_by' => $actorId,
+        ]);
+
+        $mediaId = (int) $this->connection->pdo()->lastInsertId();
+
+        return new InspectionReportMedia([
+            'id' => $mediaId,
+            'report_id' => $reportId,
+            'type' => $type,
+            'path' => $path,
+            'mime_type' => $mimeType,
+            'uploaded_by' => $actorId,
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    /**
+     * @return array<int, InspectionReportMedia>
+     */
+    public function media(int $reportId): array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM inspection_report_media WHERE report_id = :report_id ORDER BY id ASC');
+        $stmt->execute(['report_id' => $reportId]);
+
+        $media = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $media[] = new InspectionReportMedia([
+                'id' => (int) $row['id'],
+                'report_id' => (int) $row['report_id'],
+                'type' => (string) $row['type'],
+                'path' => (string) $row['path'],
+                'mime_type' => (string) $row['mime_type'],
+                'uploaded_by' => $row['uploaded_by'] !== null ? (int) $row['uploaded_by'] : null,
+                'created_at' => $row['created_at'] ?? null,
+            ]);
+        }
+
+        return $media;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function detail(int $reportId): ?array
+    {
+        $report = $this->find($reportId);
+        if ($report === null) {
+            return null;
+        }
+
+        return [
+            'report' => $report->toArray(),
+            'items' => array_map(static fn ($i) => $i->toArray(), $this->viewItems($reportId)),
+            'media' => array_map(static fn ($m) => $m->toArray(), $this->media($reportId)),
+        ];
     }
 
     /**

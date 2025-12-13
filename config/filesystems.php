@@ -45,9 +45,10 @@ return [
             'disk' => 'public',
             'visibility' => 'public',
         ],
-        'logos' => 'logos',
-        'attachments' => 'attachments',
-        'signatures' => 'signatures',
-        'receipts' => 'receipts',
+        'inspections' => [
+            'folder' => 'inspections',
+            'disk' => 'public',
+            'visibility' => 'public',
+        ],
     ],
 ];

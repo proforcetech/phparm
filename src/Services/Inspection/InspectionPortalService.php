@@ -4,6 +4,7 @@ namespace App\Services\Inspection;
 
 use App\Database\Connection;
 use App\Models\InspectionReport;
+use App\Services\Inspection\InspectionCompletionService;
 use InvalidArgumentException;
 use PDO;
 
@@ -26,6 +27,18 @@ class InspectionPortalService
         $stmt->execute(['customer_id' => $customerId]);
 
         return array_map(static fn (array $row) => new InspectionReport($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function detailForCustomer(int $customerId, int $reportId): ?array
+    {
+        $this->assertOwnership($customerId, $reportId);
+
+        $completion = new InspectionCompletionService($this->connection);
+
+        return $completion->detail($reportId);
     }
 
     public function show(int $customerId, int $reportId): ?InspectionReport
