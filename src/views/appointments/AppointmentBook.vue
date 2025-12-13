@@ -16,22 +16,51 @@
 
     <Card>
       <div class="space-y-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Date</label>
-            <Input v-model="form.date" type="date" class="mt-1" @change="loadAvailability" />
+            <label class="block text-sm font-medium text-gray-700">Date *</label>
+            <Input v-model="form.date" type="date" class="mt-1" required @change="loadAvailability" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Technician (optional)</label>
-            <Input v-model="form.technician_id" type="number" min="0" class="mt-1" placeholder="Technician ID" @change="loadAvailability" />
+            <Autocomplete
+              v-model="form.technician_id"
+              label="Technician *"
+              placeholder="Search technician by name or email..."
+              :search-fn="searchTechnicians"
+              :item-value="(item) => item.id"
+              :item-label="(item) => item.name"
+              :item-subtext="(item) => item.email"
+              required
+              @select="onTechnicianSelect"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Autocomplete
+              v-model="form.customer_id"
+              label="Customer *"
+              placeholder="Search by name, email, phone, or ID..."
+              :search-fn="searchCustomers"
+              :item-value="(item) => item.id"
+              :item-label="(item) => item.name"
+              :item-subtext="(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`"
+              required
+              @select="onCustomerSelect"
+            />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Customer ID (optional)</label>
-            <Input v-model="form.customer_id" type="number" min="0" class="mt-1" placeholder="Customer" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Vehicle ID (optional)</label>
-            <Input v-model="form.vehicle_id" type="number" min="0" class="mt-1" placeholder="Vehicle" />
+            <label class="block text-sm font-medium text-gray-700">Vehicle *</label>
+            <Select
+              v-model="form.vehicle_id"
+              :options="vehicleOptions"
+              :disabled="!form.customer_id || loadingVehicles"
+              required
+              class="mt-1"
+            />
+            <p v-if="loadingVehicles" class="mt-1 text-xs text-gray-500">Loading vehicles...</p>
+            <p v-else-if="form.customer_id && vehicleOptions.length === 0" class="mt-1 text-xs text-amber-600">No vehicles found for this customer</p>
           </div>
         </div>
 
@@ -89,7 +118,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
@@ -97,17 +126,22 @@ import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Select from '@/components/ui/Select.vue'
 import Textarea from '@/components/ui/Textarea.vue'
+import Autocomplete from '@/components/ui/Autocomplete.vue'
 import appointmentService from '@/services/appointment.service'
+import technicianService from '@/services/technician.service'
+import customerService from '@/services/customer.service'
 
 const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
+const loadingVehicles = ref(false)
 const availability = reactive({ slots: [], closed: false, reason: '' })
+const vehicleOptions = ref([])
 const form = reactive({
   date: new Date().toISOString().substring(0, 10),
-  technician_id: '',
-  customer_id: '',
-  vehicle_id: '',
+  technician_id: null,
+  customer_id: null,
+  vehicle_id: null,
   status: 'scheduled',
   notes: ''
 })
@@ -177,13 +211,77 @@ const preloadFromClone = async () => {
   const response = await appointmentService.getAppointment(cloneId)
   const existing = response.data
   form.date = existing.start_time.substring(0, 10)
-  form.technician_id = existing.technician_id || ''
-  form.customer_id = existing.customer_id || ''
-  form.vehicle_id = existing.vehicle_id || ''
+  form.technician_id = existing.technician_id || null
+  form.customer_id = existing.customer_id || null
+  form.vehicle_id = existing.vehicle_id || null
   form.status = existing.status
   form.notes = existing.notes || ''
   await loadAvailability()
 }
+
+async function searchTechnicians(query) {
+  try {
+    return await technicianService.searchTechnicians(query)
+  } catch (error) {
+    console.error('Technician search failed:', error)
+    return []
+  }
+}
+
+async function searchCustomers(query) {
+  try {
+    return await customerService.searchCustomers(query)
+  } catch (error) {
+    console.error('Customer search failed:', error)
+    return []
+  }
+}
+
+function onTechnicianSelect(technician) {
+  console.log('Selected technician:', technician)
+  loadAvailability()
+}
+
+async function onCustomerSelect(customer) {
+  console.log('Selected customer:', customer)
+  await loadCustomerVehicles(customer.id)
+}
+
+async function loadCustomerVehicles(customerId) {
+  if (!customerId) {
+    vehicleOptions.value = []
+    return
+  }
+
+  loadingVehicles.value = true
+  try {
+    const vehicles = await customerService.getCustomerVehicles(customerId)
+    vehicleOptions.value = vehicles.map(v => ({
+      value: v.id,
+      label: `${v.year || ''} ${v.make || ''} ${v.model || ''} ${v.vin ? `(${v.vin.substring(0, 8)}...)` : ''}`.trim()
+    }))
+
+    // Clear vehicle selection if it's not in the new list
+    if (form.vehicle_id && !vehicleOptions.value.find(v => v.value === form.vehicle_id)) {
+      form.vehicle_id = null
+    }
+  } catch (error) {
+    console.error('Failed to load vehicles:', error)
+    vehicleOptions.value = []
+  } finally {
+    loadingVehicles.value = false
+  }
+}
+
+// Watch for customer_id changes
+watch(() => form.customer_id, (newCustomerId) => {
+  if (newCustomerId) {
+    loadCustomerVehicles(newCustomerId)
+  } else {
+    vehicleOptions.value = []
+    form.vehicle_id = null
+  }
+})
 
 onMounted(loadAvailability)
 onMounted(preloadFromClone)
