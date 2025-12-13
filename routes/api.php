@@ -1325,7 +1325,7 @@ return Response::json([
     });
 
     // Estimate routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $bundleController = new \App\Services\Estimate\BundleController(
             new \App\Services\Estimate\BundleService($connection),
