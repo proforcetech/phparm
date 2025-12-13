@@ -28,13 +28,17 @@
           <tbody class="divide-y divide-gray-200">
             <tr v-for="(row, index) in hours" :key="row.day_of_week">
               <td class="px-4 py-2 text-sm text-gray-900">{{ dayLabels[row.day_of_week] }}</td>
-              <td class="px-4 py-2"><Input v-model="row.opens_at" type="time" :disabled="row.is_closed" /></td>
-              <td class="px-4 py-2"><Input v-model="row.closes_at" type="time" :disabled="row.is_closed" /></td>
+              <td class="px-4 py-2"><Input v-model="row.opens_at" type="time" :disabled="!!row.is_closed" /></td>
+              <td class="px-4 py-2"><Input v-model="row.closes_at" type="time" :disabled="!!row.is_closed" /></td>
               <td class="px-4 py-2"><Input v-model.number="row.slot_minutes" type="number" min="5" /></td>
               <td class="px-4 py-2"><Input v-model.number="row.buffer_minutes" type="number" min="0" /></td>
               <td class="px-4 py-2">
                 <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                  <input v-model="row.is_closed" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                  <input
+                    v-model.boolean="row.is_closed"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
                   Closed
                 </label>
               </td>
@@ -85,15 +89,29 @@ const saving = ref(false)
 const hours = reactive([])
 const holidays = reactive([])
 
+const normalizeHour = (hour, index) => ({
+  day_of_week: hour.day_of_week ?? index,
+  opens_at: hour.opens_at ?? '08:00',
+  closes_at: hour.closes_at ?? '17:00',
+  slot_minutes: hour.slot_minutes ?? 30,
+  buffer_minutes: hour.buffer_minutes ?? 0,
+  is_closed: Boolean(hour.is_closed),
+})
+
 const defaultHours = () =>
-  dayLabels.map((_, index) => ({
-    day_of_week: index,
-    opens_at: '08:00',
-    closes_at: '17:00',
-    slot_minutes: 30,
-    buffer_minutes: 0,
-    is_closed: index === 0 ? 1 : 0,
-  }))
+  dayLabels.map((_, index) =>
+    normalizeHour(
+      {
+        day_of_week: index,
+        opens_at: '08:00',
+        closes_at: '17:00',
+        slot_minutes: 30,
+        buffer_minutes: 0,
+        is_closed: index === 0,
+      },
+      index,
+    ),
+  )
 
 const resetToDefaults = () => {
   hours.splice(0, hours.length, ...defaultHours())
@@ -102,14 +120,19 @@ const resetToDefaults = () => {
 const hydrate = async () => {
   const response = await appointmentService.fetchAvailabilityConfig()
   const data = response.data
-  hours.splice(0, hours.length, ...(data.hours?.length ? data.hours : defaultHours()))
+  const normalizedHours = (data.hours?.length ? data.hours : defaultHours()).map(normalizeHour)
+  hours.splice(0, hours.length, ...normalizedHours)
   holidays.splice(0, holidays.length, ...(data.holidays || []))
 }
 
 const save = async () => {
   saving.value = true
   try {
-    await appointmentService.saveAvailabilityConfig({ hours: [...hours], holidays: [...holidays] })
+    const payloadHours = hours.map((hour) => ({
+      ...hour,
+      is_closed: Number(Boolean(hour.is_closed)),
+    }))
+    await appointmentService.saveAvailabilityConfig({ hours: payloadHours, holidays: [...holidays] })
   } finally {
     saving.value = false
   }
