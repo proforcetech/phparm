@@ -4,6 +4,15 @@ export function listCustomers(params = {}) {
   return api.get('/customers', { params }).then((r) => r.data)
 }
 
+export function searchCustomers(query) {
+  return api.get('/customers', {
+    params: {
+      query,
+      limit: 10
+    }
+  }).then((r) => r.data)
+}
+
 export function getCustomer(id) {
   return api.get(`/customers/${id}`).then((r) => r.data)
 }
@@ -22,6 +31,7 @@ export function deleteCustomer(id) {
 
 const customerService = {
   listCustomers,
+  searchCustomers,
   getCustomer,
   createCustomer,
   updateCustomer,

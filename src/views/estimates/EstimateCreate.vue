@@ -32,13 +32,16 @@
             </template>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700">Customer ID *</label>
-                <Input
-                  v-model.number="form.customer_id"
-                  type="number"
-                  placeholder="Customer ID"
-                  class="mt-1"
+                <Autocomplete
+                  v-model="form.customer_id"
+                  label="Customer"
+                  placeholder="Search by name, email, phone, or ID..."
+                  :search-fn="searchCustomers"
+                  :item-value="(item) => item.id"
+                  :item-label="(item) => item.name"
+                  :item-subtext="(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`"
                   required
+                  @select="onCustomerSelect"
                 />
               </div>
 
@@ -379,7 +382,9 @@ import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import Loading from '@/components/ui/Loading.vue'
+import Autocomplete from '@/components/ui/Autocomplete.vue'
 import estimateService from '@/services/estimate.service'
+import customerService from '@/services/customer.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -554,5 +559,18 @@ function formatCurrency(amount) {
     style: 'currency',
     currency: 'USD'
   }).format(amount || 0)
+}
+
+async function searchCustomers(query) {
+  try {
+    return await customerService.searchCustomers(query)
+  } catch (error) {
+    console.error('Customer search failed:', error)
+    return []
+  }
+}
+
+function onCustomerSelect(customer) {
+  console.log('Selected customer:', customer)
 }
 </script>
