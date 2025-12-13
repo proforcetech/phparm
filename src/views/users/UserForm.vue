@@ -70,15 +70,22 @@
 
           <div class="border-t border-gray-200 pt-6">
             <h4 class="text-sm font-medium text-gray-900 mb-4">Account Status</h4>
-            <div class="space-y-3">
+            <div class="space-y-4">
               <label class="flex items-center gap-2">
                 <input v-model="form.email_verified" type="checkbox" class="h-4 w-4 text-indigo-600 rounded" />
                 <span class="text-sm text-gray-700">Email Verified</span>
               </label>
-              <label class="flex items-center gap-2">
-                <input v-model="form.two_factor_enabled" type="checkbox" class="h-4 w-4 text-indigo-600 rounded" />
-                <span class="text-sm text-gray-700">Two-Factor Authentication Enabled</span>
-              </label>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Two-Factor Authentication</label>
+                <Select
+                  v-model="form.two_factor_type"
+                  :options="twoFactorOptions"
+                />
+                <p v-if="form.two_factor_type !== 'none'" class="mt-1 text-xs text-gray-500">
+                  {{ getTwoFactorDescription(form.two_factor_type) }}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -138,7 +145,7 @@ const form = reactive({
   password: '',
   role: 'technician',
   email_verified: false,
-  two_factor_enabled: false
+  two_factor_type: 'none'
 })
 
 const errors = reactive({
@@ -153,6 +160,13 @@ const roleOptions = [
   { label: 'Manager', value: 'manager' },
   { label: 'Technician', value: 'technician' },
   { label: 'Customer', value: 'customer' }
+]
+
+const twoFactorOptions = [
+  { label: 'Disabled', value: 'none' },
+  { label: 'Authenticator App (TOTP)', value: 'totp' },
+  { label: 'SMS', value: 'sms' },
+  { label: 'Email', value: 'email' }
 ]
 
 const roleInfo = {
@@ -188,6 +202,15 @@ function getRoleDescription(role) {
 
 function getRolePermissions(role) {
   return roleInfo[role]?.permissions || []
+}
+
+function getTwoFactorDescription(type) {
+  const descriptions = {
+    totp: 'User will need an authenticator app like Google Authenticator or Authy',
+    sms: 'User will receive verification codes via SMS',
+    email: 'User will receive verification codes via email'
+  }
+  return descriptions[type] || ''
 }
 
 function validateForm() {
@@ -240,7 +263,8 @@ async function handleSubmit() {
       email: form.email,
       role: form.role,
       email_verified: form.email_verified,
-      two_factor_enabled: form.two_factor_enabled
+      two_factor_type: form.two_factor_type,
+      two_factor_enabled: form.two_factor_type !== 'none'
     }
 
     // Only include password if it's set
@@ -282,7 +306,7 @@ async function loadUser() {
       email: user.email,
       role: user.role,
       email_verified: user.email_verified,
-      two_factor_enabled: user.two_factor_enabled,
+      two_factor_type: user.two_factor_type || 'none',
       password: '' // Never load password
     })
   } catch (error) {

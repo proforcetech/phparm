@@ -64,6 +64,7 @@ import {
   DocumentDuplicateIcon,
   RectangleGroupIcon,
   Squares2X2Icon,
+  UsersIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -115,6 +116,7 @@ const adminMenuItems = [
   { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
   { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/users', label: 'Users', icon: UsersIcon },
 ]
 
 const technicianMenuItems = [

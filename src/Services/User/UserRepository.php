@@ -76,7 +76,7 @@ class UserRepository
      */
     public function list(array $filters = []): array
     {
-        $query = 'SELECT id, name, email, role, email_verified, two_factor_enabled, created_at, updated_at FROM users WHERE 1=1';
+        $query = 'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at FROM users WHERE 1=1';
         $bindings = [];
 
         if (!empty($filters['role'])) {
@@ -109,7 +109,7 @@ class UserRepository
     public function find(int $id): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, email_verified, two_factor_enabled, created_at, updated_at
+            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at
              FROM users
              WHERE id = :id'
         );
@@ -129,7 +129,7 @@ class UserRepository
     public function findByEmail(string $email): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, email_verified, two_factor_enabled, created_at, updated_at
+            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at
              FROM users
              WHERE email = :email'
         );
@@ -151,8 +151,8 @@ class UserRepository
     public function create(array $data): User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, email_verified, two_factor_enabled, created_at, updated_at)
-             VALUES (:name, :email, :password, :role, :email_verified, :two_factor_enabled, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at)
+             VALUES (:name, :email, :password, :role, :email_verified, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
         );
 
         $stmt->execute([
@@ -162,6 +162,7 @@ class UserRepository
             'role' => $data['role'] ?? 'customer',
             'email_verified' => $data['email_verified'] ?? false,
             'two_factor_enabled' => $data['two_factor_enabled'] ?? false,
+            'two_factor_type' => $data['two_factor_type'] ?? 'none',
         ]);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
@@ -206,6 +207,11 @@ class UserRepository
         if (isset($data['two_factor_enabled'])) {
             $fields[] = 'two_factor_enabled = :two_factor_enabled';
             $bindings['two_factor_enabled'] = $data['two_factor_enabled'];
+        }
+
+        if (isset($data['two_factor_type'])) {
+            $fields[] = 'two_factor_type = :two_factor_type';
+            $bindings['two_factor_type'] = $data['two_factor_type'];
         }
 
         if (empty($fields)) {
