@@ -67,6 +67,7 @@ class UserController
             'role' => $u->role,
             'email_verified' => $u->email_verified,
             'two_factor_enabled' => $u->two_factor_enabled,
+            'two_factor_type' => $u->two_factor_type ?? 'none',
             'created_at' => $u->created_at,
             'updated_at' => $u->updated_at,
         ], $users);
@@ -95,6 +96,7 @@ class UserController
             'role' => $targetUser->role,
             'email_verified' => $targetUser->email_verified,
             'two_factor_enabled' => $targetUser->two_factor_enabled,
+            'two_factor_type' => $targetUser->two_factor_type ?? 'none',
             'created_at' => $targetUser->created_at,
             'updated_at' => $targetUser->updated_at,
         ];
@@ -152,6 +154,7 @@ class UserController
             'role' => $newUser->role,
             'email_verified' => $newUser->email_verified,
             'two_factor_enabled' => $newUser->two_factor_enabled,
+            'two_factor_type' => $newUser->two_factor_type ?? 'none',
             'created_at' => $newUser->created_at,
             'updated_at' => $newUser->updated_at,
         ];
@@ -206,6 +209,7 @@ class UserController
             'role' => $updatedUser->role,
             'email_verified' => $updatedUser->email_verified,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
+            'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
         ];
@@ -258,6 +262,7 @@ class UserController
             'role' => $updatedUser->role,
             'email_verified' => $updatedUser->email_verified,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
+            'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
         ];
@@ -292,6 +297,7 @@ class UserController
             'role' => $updatedUser->role,
             'email_verified' => $updatedUser->email_verified,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
+            'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
         ];

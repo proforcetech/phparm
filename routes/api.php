@@ -1704,6 +1704,12 @@ return Response::json([
         $gate
     );
 
+    // Role controller for role management
+    $roleController = new \App\Services\Role\RoleController(
+        new \App\Services\Role\RoleRepository($connection),
+        $gate
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -1713,7 +1719,7 @@ return Response::json([
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -1847,6 +1853,50 @@ return Response::json([
             $body = $request->body();
             $required = $body['required'] ?? false;
             $data = $userController->require2FA($user, $id, $required);
+            return Response::json($data);
+        });
+
+        // Role management routes
+        $router->get('/api/roles', function (Request $request) use ($roleController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'query' => $request->queryParam('query'),
+                'include_system' => $request->queryParam('include_system') !== 'false',
+            ];
+            $data = $roleController->listRoles($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/roles/{id}', function (Request $request) use ($roleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $roleController->getRole($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/roles', function (Request $request) use ($roleController) {
+            $user = $request->getAttribute('user');
+            $data = $roleController->createRole($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/roles/{id}', function (Request $request) use ($roleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $roleController->updateRole($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/roles/{id}', function (Request $request) use ($roleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $roleController->deleteRole($user, $id);
+            return Response::noContent();
+        });
+
+        $router->get('/api/permissions', function (Request $request) use ($roleController) {
+            $user = $request->getAttribute('user');
+            $data = $roleController->getAvailablePermissions($user);
             return Response::json($data);
         });
     });
