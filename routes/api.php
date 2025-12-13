@@ -1105,7 +1105,7 @@ return Response::json([
     });
 
     // Vehicle Master routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $vehicleRepository = new \App\Services\Vehicle\VehicleMasterRepository($connection);
 
@@ -1325,7 +1325,7 @@ return Response::json([
     });
 
     // Estimate routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $bundleController = new \App\Services\Estimate\BundleController(
             new \App\Services\Estimate\BundleService($connection),

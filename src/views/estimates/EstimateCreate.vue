@@ -89,6 +89,96 @@
             </div>
           </Card>
 
+          <!-- Line Items -->
+          <Card>
+            <template #header>
+              <h3 class="text-lg font-medium text-gray-900">Line Items</h3>
+            </template>
+
+            <div class="space-y-4">
+              <div
+                v-for="(item, index) in form.line_items"
+                :key="index"
+                class="border border-gray-200 rounded-lg p-4"
+              >
+                <div class="grid grid-cols-12 gap-3">
+                  <div class="col-span-12 md:col-span-5">
+                    <Input
+                      v-model="item.description"
+                      placeholder="Service or part description"
+                      label="Description"
+                      required
+                    />
+                  </div>
+
+                  <div class="col-span-4 md:col-span-2">
+                    <Input
+                      v-model.number="item.quantity"
+                      type="number"
+                      label="Quantity"
+                      min="1"
+                      step="1"
+                      required
+                      @input="calculateGrandTotal"
+                    />
+                  </div>
+
+                  <div class="col-span-4 md:col-span-2">
+                    <Input
+                      v-model.number="item.unit_price"
+                      type="number"
+                      label="Unit Price"
+                      min="0"
+                      step="0.01"
+                      required
+                      @input="calculateGrandTotal"
+                    />
+                  </div>
+
+                  <div class="col-span-4 md:col-span-2 flex items-end">
+                    <div>
+                      <p class="text-xs text-gray-500">Amount</p>
+                      <p class="text-sm font-semibold">{{ formatCurrency(item.quantity * item.unit_price) }}</p>
+                    </div>
+                  </div>
+
+                  <div class="col-span-12 md:col-span-1 flex items-end justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      @click="removeLineItem(index)"
+                      :disabled="form.line_items.length === 1"
+                    >
+                      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </Button>
+                  </div>
+                </div>
+
+                <div class="mt-3">
+                  <Textarea
+                    v-model="item.notes"
+                    placeholder="Additional notes (optional)"
+                    :rows="2"
+                  />
+                </div>
+              </div>
+
+              <Button variant="outline" @click="addLineItem" class="w-full">
+                <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Line Item
+              </Button>
+            </div>
+          </Card>
+
           <!-- Pricing -->
           <Card>
             <template #header>
@@ -98,14 +188,14 @@
               <div>
                 <label class="block text-sm font-medium text-gray-700">Subtotal *</label>
                 <Input
-                  v-model.number="form.subtotal"
+                  :model-value="form.subtotal"
                   type="number"
                   step="0.01"
                   min="0"
                   placeholder="0.00"
-                  class="mt-1"
+                  class="mt-1 bg-gray-50"
                   required
-                  @input="calculateGrandTotal"
+                  readonly
                 />
               </div>
 
@@ -184,7 +274,7 @@
                 <label class="block text-sm font-medium text-gray-700">Customer Notes</label>
                 <Textarea
                   v-model="form.customer_notes"
-                  rows="3"
+                  :rows="3"
                   placeholder="Notes visible to customer"
                   class="mt-1"
                 />
@@ -194,7 +284,7 @@
                 <label class="block text-sm font-medium text-gray-700">Internal Notes</label>
                 <Textarea
                   v-model="form.internal_notes"
-                  rows="3"
+                  :rows="3"
                   placeholder="Internal notes (not visible to customer)"
                   class="mt-1"
                 />
@@ -314,7 +404,15 @@ const form = reactive({
   grand_total: 0,
   customer_notes: '',
   internal_notes: '',
-  status: 'pending'
+  status: 'pending',
+  line_items: [
+    {
+      description: '',
+      quantity: 1,
+      unit_price: 0,
+      notes: ''
+    }
+  ]
 })
 
 const statusOptions = [
@@ -332,11 +430,45 @@ onMounted(() => {
   }
 })
 
+function addLineItem() {
+  form.line_items.push({
+    description: '',
+    quantity: 1,
+    unit_price: 0,
+    notes: ''
+  })
+}
+
+function removeLineItem(index) {
+  if (form.line_items.length > 1) {
+    form.line_items.splice(index, 1)
+    calculateGrandTotal()
+  }
+}
+
 async function loadEstimate() {
   try {
     loading.value = true
     const response = await estimateService.getEstimate(route.params.id)
-    Object.assign(form, response.data, { is_mobile: !!response.data.is_mobile })
+    Object.assign(form, response.data, {
+      is_mobile: !!response.data.is_mobile,
+      line_items: response.data.line_items?.length
+        ? response.data.line_items.map(item => ({
+            description: item.description || '',
+            quantity: Number(item.quantity) || 1,
+            unit_price: Number(item.unit_price) || 0,
+            notes: item.notes || ''
+          }))
+        : [
+            {
+              description: '',
+              quantity: 1,
+              unit_price: 0,
+              notes: ''
+            }
+          ]
+    })
+    calculateGrandTotal()
   } catch (error) {
     console.error('Failed to load estimate:', error)
     toast.error('Failed to load estimate')
@@ -347,12 +479,17 @@ async function loadEstimate() {
 }
 
 function calculateGrandTotal() {
-  const subtotal = parseFloat(form.subtotal) || 0
+  const subtotal = form.line_items.reduce((sum, item) => {
+    const quantity = Number(item.quantity) || 0
+    const unitPrice = Number(item.unit_price) || 0
+    return sum + quantity * unitPrice
+  }, 0)
   const tax = parseFloat(form.tax) || 0
   const callOutFee = parseFloat(form.call_out_fee) || 0
   const mileageTotal = parseFloat(form.mileage_total) || 0
   const discounts = parseFloat(form.discounts) || 0
 
+  form.subtotal = subtotal
   form.grand_total = subtotal + tax + callOutFee + mileageTotal - discounts
 }
 
@@ -380,7 +517,13 @@ async function saveEstimate() {
         grand_total: parseFloat(form.grand_total),
         customer_notes: form.customer_notes || null,
         internal_notes: form.internal_notes || null,
-        status: form.status || 'pending'
+        status: form.status || 'pending',
+        line_items: form.line_items.map(item => ({
+          description: item.description,
+          quantity: Number(item.quantity) || 0,
+          unit_price: Number(item.unit_price) || 0,
+          notes: item.notes || null
+        }))
       }
 
     let response

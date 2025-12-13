@@ -35,7 +35,7 @@
           </div>
           <div class="md:col-span-2">
             <label class="block text-sm font-medium text-gray-700">Description</label>
-            <Textarea v-model="form.description" rows="3" placeholder="Optional description for the bundle" />
+            <Textarea v-model="form.description" :rows="3" placeholder="Optional description for the bundle" />
           </div>
           <div class="flex items-center gap-2 md:col-span-2">
             <input v-model="form.is_active" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />

@@ -315,7 +315,7 @@
           v-model="paymentForm.notes"
           label="Notes"
           placeholder="Optional notes..."
-          rows="3"
+          :rows="3"
         />
       </div>
 
