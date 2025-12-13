@@ -80,8 +80,13 @@
             <Button class="flex-1" variant="secondary" :loading="vinLoading" @click="validate">Validate</Button>
           </div>
           <div v-if="vinResult" class="rounded-md bg-gray-50 p-3 text-sm text-gray-800">
-            <p class="font-semibold">{{ vinResult.message || 'VIN details' }}</p>
-            <pre class="mt-2 whitespace-pre-wrap text-xs text-gray-700">{{ pretty(vinResult.decoded || vinResult) }}</pre>
+            <p class="font-semibold">{{ vinMessage }}</p>
+            <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+              <div v-for="field in vinDetails" :key="field.label">
+                <p class="text-xs text-gray-500">{{ field.label }}</p>
+                <p class="text-sm font-medium text-gray-900">{{ field.value || '—' }}</p>
+              </div>
+            </div>
           </div>
         </div>
       </Card>
@@ -90,7 +95,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -154,7 +159,34 @@ const validate = async () => {
   }
 }
 
-const pretty = (value) => JSON.stringify(value, null, 2)
+const vinDetails = computed(() => {
+  if (!vinResult.value) return []
+
+  const data =
+    vinResult.value.decoded ||
+    vinResult.value.basic_info ||
+    vinResult.value.vehicle ||
+    vinResult.value
+
+  return [
+    { label: 'Year', value: data.year },
+    { label: 'Make', value: data.make },
+    { label: 'Model', value: data.model },
+    { label: 'Engine', value: data.engine },
+    { label: 'Transmission', value: data.transmission },
+    { label: 'Drive', value: data.drive },
+    { label: 'Trim', value: data.trim },
+    { label: 'Fuel', value: data.fuel_type || data.fuel || data.fuelType }
+  ]
+})
+
+const vinMessage = computed(() => {
+  if (!vinResult.value) return ''
+  if (vinResult.value.message) return vinResult.value.message
+  if (vinResult.value.valid === true) return 'VIN is valid'
+  if (vinResult.value.valid === false) return 'VIN is invalid'
+  return 'VIN details'
+})
 
 onMounted(loadVehicles)
 </script>
