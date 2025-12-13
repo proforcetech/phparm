@@ -150,7 +150,7 @@
                   <Textarea
                     v-model="item.notes"
                     placeholder="Additional notes (optional)"
-                    rows="2"
+                    :rows="2"
                   />
                 </div>
               </div>
@@ -171,7 +171,7 @@
                 v-model="form.notes"
                 label="Notes"
                 placeholder="Additional notes for the invoice..."
-                rows="4"
+                :rows="4"
               />
 
               <Textarea
