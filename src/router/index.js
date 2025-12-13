@@ -200,6 +200,27 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/inventory/categories',
+    name: 'InventoryCategories',
+    component: () => import('@/views/inventory/InventoryLookupManager.vue'),
+    props: { type: 'categories' },
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/inventory/vendors',
+    name: 'InventoryVendors',
+    component: () => import('@/views/inventory/InventoryLookupManager.vue'),
+    props: { type: 'vendors' },
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/inventory/locations',
+    name: 'InventoryLocations',
+    component: () => import('@/views/inventory/InventoryLookupManager.vue'),
+    props: { type: 'locations' },
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/inventory/create',
     name: 'InventoryCreate',
     component: () => import('@/views/inventory/InventoryForm.vue'),

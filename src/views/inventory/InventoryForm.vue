@@ -20,16 +20,55 @@
             <Input v-model="form.sku" placeholder="SKU-1234" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Category</label>
-            <Input v-model="form.category" placeholder="Brakes" />
+            <div class="flex items-center justify-between text-sm font-medium text-gray-700">
+              <span>Category</span>
+              <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/categories">Manage</RouterLink>
+            </div>
+            <Select
+              v-model="form.category"
+              :options="categoryOptions"
+              placeholder="Select a category"
+              :disabled="lookupsLoading.categories"
+            />
+            <div v-if="lookupsLoading.categories" class="mt-1 flex items-center gap-2 text-xs text-gray-500">
+              <Loading size="sm" />
+              <span>Loading categories...</span>
+            </div>
+            <p v-else-if="lookupError.categories" class="mt-1 text-xs text-red-600">{{ lookupError.categories }}</p>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Location</label>
-            <Input v-model="form.location" placeholder="Aisle 3" />
+            <div class="flex items-center justify-between text-sm font-medium text-gray-700">
+              <span>Location</span>
+              <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/locations">Manage</RouterLink>
+            </div>
+            <Select
+              v-model="form.location"
+              :options="locationOptions"
+              placeholder="Select a location"
+              :disabled="lookupsLoading.locations"
+            />
+            <div v-if="lookupsLoading.locations" class="mt-1 flex items-center gap-2 text-xs text-gray-500">
+              <Loading size="sm" />
+              <span>Loading locations...</span>
+            </div>
+            <p v-else-if="lookupError.locations" class="mt-1 text-xs text-red-600">{{ lookupError.locations }}</p>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Vendor</label>
-            <Input v-model="form.vendor" placeholder="ACME Parts" />
+            <div class="flex items-center justify-between text-sm font-medium text-gray-700">
+              <span>Vendor</span>
+              <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/vendors">Manage</RouterLink>
+            </div>
+            <Select
+              v-model="form.vendor"
+              :options="vendorOptions"
+              placeholder="Select a vendor"
+              :disabled="lookupsLoading.vendors"
+            />
+            <div v-if="lookupsLoading.vendors" class="mt-1 flex items-center gap-2 text-xs text-gray-500">
+              <Loading size="sm" />
+              <span>Loading vendors...</span>
+            </div>
+            <p v-else-if="lookupError.vendors" class="mt-1 text-xs text-red-600">{{ lookupError.vendors }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Reorder quantity</label>
@@ -92,6 +131,9 @@ import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
+import Loading from '@/components/ui/Loading.vue'
+import Select from '@/components/ui/Select.vue'
+import inventoryMetaService from '@/services/inventory-meta.service'
 import inventoryService from '@/services/inventory.service'
 
 const router = useRouter()
@@ -116,7 +158,44 @@ const form = reactive({
   notes: '',
 })
 
+const categoryOptions = ref([])
+const locationOptions = ref([])
+const vendorOptions = ref([])
+const lookupsLoading = reactive({ categories: false, locations: false, vendors: false })
+const lookupError = reactive({ categories: '', locations: '', vendors: '' })
+const lookupFieldMap = { categories: 'category', locations: 'location', vendors: 'vendor' }
+
 const goBack = () => router.push('/cp/inventory')
+
+const loadLookup = async (type, target) => {
+  lookupsLoading[type] = true
+  lookupError[type] = ''
+  try {
+    const data = await inventoryMetaService.list(type)
+    const options = data.map((item) => ({ label: item.name, value: item.name }))
+    const field = lookupFieldMap[type]
+    const currentValue = form[field]
+
+    if (currentValue && !options.some((option) => option.value === currentValue)) {
+      options.push({ label: currentValue, value: currentValue })
+    }
+
+    target.value = options
+  } catch (err) {
+    console.error(err)
+    lookupError[type] = `Could not load ${type}.`
+  } finally {
+    lookupsLoading[type] = false
+  }
+}
+
+const loadLookups = async () => {
+  await Promise.all([
+    loadLookup('categories', categoryOptions),
+    loadLookup('locations', locationOptions),
+    loadLookup('vendors', vendorOptions),
+  ])
+}
 
 const loadItem = async () => {
   const id = route.params.id
@@ -148,7 +227,8 @@ const save = async () => {
   }
 }
 
-onMounted(() => {
-  loadItem()
+onMounted(async () => {
+  await loadItem()
+  loadLookups()
 })
 </script>
