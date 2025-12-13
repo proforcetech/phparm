@@ -281,6 +281,24 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/users',
+    name: 'UsersList',
+    component: () => import('@/views/users/UsersList.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager'] },
+  },
+  {
+    path: '/cp/users/create',
+    name: 'UserCreate',
+    component: () => import('@/views/users/UserForm.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager'] },
+  },
+  {
+    path: '/cp/users/:id',
+    name: 'UserEdit',
+    component: () => import('@/views/users/UserForm.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager'] },
+  },
+  {
     path: '/cp/inspections/templates',
     name: 'InspectionTemplates',
     component: () => import('@/views/inspections/TemplateManager.vue'),

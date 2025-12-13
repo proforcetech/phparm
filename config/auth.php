@@ -30,7 +30,7 @@ return [
             'label' => 'Manager',
             'description' => 'Manage shop operations, estimates, invoices, schedules, inventory',
             'permissions' => [
-                'users.view', 'users.invite', 'users.update',
+                'users.view', 'users.create', 'users.update', 'users.delete', 'users.invite',
                 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*',
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
                 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*',
