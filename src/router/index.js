@@ -152,6 +152,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/customers/:id',
+    name: 'CustomerPublicDetail',
+    component: () => import('@/views/customers/CustomerDetail.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/vehicle-master',
     name: 'VehicleMasterList',
     component: () => import('@/views/vehicle-master/VehicleMasterList.vue'),
@@ -191,7 +197,19 @@ const routes = [
     path: '/cp/vehicles/:id',
     name: 'VehicleDetail',
     component: () => import('@/views/vehicles/VehicleDetail.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/vehicles/:id',
+    name: 'VehiclePublicDetail',
+    component: () => import('@/views/vehicles/VehicleDetail.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/vehicles/:id/edit',
+    name: 'VehiclePublicEdit',
+    component: () => import('@/views/vehicles/VehicleForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
   },
   {
     path: '/cp/inventory',
