@@ -97,7 +97,7 @@ const loadCustomers = async () => {
 
 const openDetail = (row) => {
   if (!row?.id) return
-  router.push(`/customers/${row.id}`)
+  router.push(`/cp/customers/${row.id}`)
 }
 
 onMounted(loadCustomers)

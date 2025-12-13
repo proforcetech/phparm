@@ -146,6 +146,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/customers/create',
+    name: 'CustomerCreate',
+    component: () => import('@/views/customers/CustomerForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/customers/:id',
     name: 'CustomerDetail',
     component: () => import('@/views/customers/CustomerDetail.vue'),

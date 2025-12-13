@@ -87,7 +87,7 @@ const loadCustomer = async () => {
 }
 
 onMounted(() => {
-  if (!route.params.id) {
+  if (!route.params.id || route.params.id === 'create') {
     router.push('/cp/customers')
     return
   }
