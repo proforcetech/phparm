@@ -8,6 +8,8 @@
       <Button variant="secondary" @click="loadPortal">Refresh</Button>
     </div>
 
+    <p v-if="portalError" class="text-sm text-red-600">{{ portalError }}</p>
+
     <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
       <Card class="md:col-span-2 space-y-4">
         <div class="flex items-center justify-between">
@@ -101,6 +103,7 @@ const portal = reactive({ jobs: [], history: [], totals: {}, active_entry: null 
 const selectedJobId = ref('')
 const saving = ref(false)
 const locationError = ref('')
+const portalError = ref('')
 
 function formatTime(value) {
   if (!value) return '—'
@@ -120,13 +123,18 @@ function statusLabel(value) {
 }
 
 async function loadPortal() {
-  const data = await timeTrackingService.technicianPortal()
-  portal.jobs = data.jobs || []
-  portal.history = data.history || []
-  portal.totals = data.totals || {}
-  portal.active_entry = data.active_entry || null
-  if (!selectedJobId.value && portal.jobs.length > 0) {
-    selectedJobId.value = portal.jobs[0].id
+  portalError.value = ''
+  try {
+    const data = await timeTrackingService.technicianPortal()
+    portal.jobs = data.jobs || []
+    portal.history = data.history || []
+    portal.totals = data.totals || {}
+    portal.active_entry = data.active_entry || null
+    if (!selectedJobId.value && portal.jobs.length > 0) {
+      selectedJobId.value = portal.jobs[0].id
+    }
+  } catch (error) {
+    portalError.value = error.response?.data?.message || 'Unable to load your time data right now. Please try again.'
   }
 }
 
@@ -175,6 +183,8 @@ async function startTimer() {
     await timeTrackingService.start({ estimate_job_id: selectedJobId.value ? Number(selectedJobId.value) : null, location })
     locationError.value = ''
     await loadPortal()
+  } catch (error) {
+    locationError.value = error.response?.data?.message || 'Unable to start the timer.'
   } finally {
     saving.value = false
   }
@@ -195,6 +205,8 @@ async function stopTimer() {
     await timeTrackingService.stop(portal.active_entry.id, payload)
     locationError.value = ''
     await loadPortal()
+  } catch (error) {
+    locationError.value = error.response?.data?.message || 'Unable to stop the timer.'
   } finally {
     saving.value = false
   }

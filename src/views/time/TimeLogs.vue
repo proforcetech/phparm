@@ -10,6 +10,8 @@
       </div>
     </div>
 
+    <p v-if="listError" class="text-sm text-red-600">{{ listError }}</p>
+
     <Card>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-5">
         <div class="md:col-span-2">
@@ -276,6 +278,7 @@ const entries = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const perPage = 25
+const listError = ref('')
 const manualError = ref('')
 const editError = ref('')
 const savingManual = ref(false)
@@ -353,6 +356,7 @@ function debouncedRefresh() {
 
 async function refresh() {
   loading.value = true
+  listError.value = ''
   try {
     const response = await timeTrackingService.list({
       ...filters,
@@ -368,6 +372,8 @@ async function refresh() {
         selectEntry(updated)
       }
     }
+  } catch (error) {
+    listError.value = error.response?.data?.message || 'Unable to load time entries. Check your filters and try again.'
   } finally {
     loading.value = false
   }
