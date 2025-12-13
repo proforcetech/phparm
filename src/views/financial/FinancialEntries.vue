@@ -26,7 +26,19 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Category</label>
-          <input v-model="filters.category" type="text" class="mt-1 w-full border-gray-300 rounded" />
+          <select v-model="filters.category" class="mt-1 w-full border-gray-300 rounded">
+            <option value="">All</option>
+            <option v-for="option in categoryOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Vendor</label>
+          <select v-model="filters.vendor" class="mt-1 w-full border-gray-300 rounded">
+            <option value="">All</option>
+            <option v-for="option in vendorOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Start Date</label>
@@ -169,7 +181,14 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Category</label>
-            <input v-model="form.category" type="text" class="mt-1 w-full border-gray-300 rounded" />
+            <select v-model="form.category" class="mt-1 w-full border-gray-300 rounded">
+              <option value="">Select category</option>
+              <option v-for="option in categoryOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <p v-if="lookupsLoading.categories" class="mt-1 text-xs text-gray-500">Loading categories...</p>
+            <p v-else-if="lookupError.categories" class="mt-1 text-xs text-red-600">{{ lookupError.categories }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Reference</label>
@@ -181,7 +200,12 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Vendor</label>
-            <input v-model="form.vendor" type="text" class="mt-1 w-full border-gray-300 rounded" />
+            <select v-model="form.vendor" class="mt-1 w-full border-gray-300 rounded">
+              <option value="">Select vendor</option>
+              <option v-for="option in vendorOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+            <p v-if="lookupsLoading.vendors" class="mt-1 text-xs text-gray-500">Loading vendors...</p>
+            <p v-else-if="lookupError.vendors" class="mt-1 text-xs text-red-600">{{ lookupError.vendors }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Amount</label>
@@ -194,6 +218,23 @@
           <div>
             <label class="block text-sm font-medium text-gray-700">Description</label>
             <textarea v-model="form.description" class="mt-1 w-full border-gray-300 rounded" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-gray-700">Attachment</label>
+          <div class="flex flex-col gap-2">
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg"
+              @change="handleFileChange"
+            />
+            <div v-if="form.attachment_path && !removeAttachment" class="flex items-center gap-3 text-sm text-gray-700">
+              <a :href="form.attachment_path" class="text-blue-600 hover:underline" target="_blank" rel="noopener">View current file</a>
+              <button class="text-red-600 hover:underline" type="button" @click="markAttachmentRemoval">Remove</button>
+            </div>
+            <div v-else-if="removeAttachment" class="text-sm text-gray-500">Attachment will be removed</div>
+            <div v-else-if="pendingFile" class="text-sm text-gray-700">{{ pendingFile.name }}</div>
+            <p class="text-xs text-gray-500">PDF or image files only.</p>
           </div>
         </div>
         <div class="flex justify-end space-x-3">
@@ -210,6 +251,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import financialService from '@/services/financial.service'
+import inventoryMetaService from '@/services/inventory-meta.service'
 import { useToast } from '@/stores/toast'
 
 const toast = useToast()
@@ -217,9 +259,14 @@ const entries = ref([])
 const loading = ref(false)
 const showForm = ref(false)
 const hasMore = ref(false)
+const categoryOptions = ref([])
+const vendorOptions = ref([])
+const lookupsLoading = reactive({ categories: false, vendors: false })
+const lookupError = reactive({ categories: '', vendors: '' })
 const filters = reactive({
   type: '',
   category: '',
+  vendor: '',
   start_date: '',
   end_date: '',
   search: '',
@@ -237,9 +284,33 @@ const form = reactive({
   amount: 0,
   entry_date: '',
   description: '',
+  attachment_path: null,
 })
+const pendingFile = ref(null)
+const removeAttachment = ref(false)
 
 onMounted(fetchEntries)
+onMounted(loadLookups)
+
+function loadLookups() {
+  loadLookup('categories', categoryOptions)
+  loadLookup('vendors', vendorOptions)
+}
+
+async function loadLookup(type, target) {
+  lookupsLoading[type] = true
+  lookupError[type] = ''
+  try {
+    const params = type === 'vendors' ? { parts_supplier: true } : {}
+    const data = await inventoryMetaService.list(type, params)
+    target.value = data.map((item) => ({ label: item.name, value: item.name }))
+  } catch (err) {
+    console.error(err)
+    lookupError[type] = 'Unable to load options'
+  } finally {
+    lookupsLoading[type] = false
+  }
+}
 
 function fetchEntries() {
   loading.value = true
@@ -258,6 +329,7 @@ function fetchEntries() {
 function resetFilters() {
   filters.type = ''
   filters.category = ''
+  filters.vendor = ''
   filters.start_date = ''
   filters.end_date = ''
   filters.search = ''
@@ -270,9 +342,24 @@ function changePage(page) {
   fetchEntries()
 }
 
+function handleFileChange(event) {
+  const file = event.target?.files?.[0]
+  pendingFile.value = file || null
+  if (file) {
+    removeAttachment.value = false
+  }
+}
+
+function markAttachmentRemoval() {
+  removeAttachment.value = true
+  pendingFile.value = null
+}
+
 function openForm(entry = null) {
   if (entry) {
     Object.assign(form, entry)
+    pendingFile.value = null
+    removeAttachment.value = false
   } else {
     Object.assign(form, {
       id: null,
@@ -284,7 +371,10 @@ function openForm(entry = null) {
       amount: 0,
       entry_date: '',
       description: '',
+      attachment_path: null,
     })
+    pendingFile.value = null
+    removeAttachment.value = false
   }
   showForm.value = true
 }
@@ -293,16 +383,32 @@ function closeForm() {
   showForm.value = false
 }
 
-function saveEntry() {
+async function saveEntry() {
   const payload = { ...form }
-  const action = payload.id ? financialService.update(payload.id, payload) : financialService.create(payload)
-  action
-    .then(() => {
-      toast.success('Entry saved')
-      showForm.value = false
-      fetchEntries()
-    })
-    .catch(() => toast.error('Failed to save entry'))
+  try {
+    const saved = payload.id
+      ? await financialService.update(payload.id, payload)
+      : await financialService.create(payload)
+
+    const entryId = saved.id || payload.id
+
+    if (removeAttachment.value && entryId) {
+      await financialService.removeAttachment(entryId)
+      form.attachment_path = null
+    }
+
+    if (pendingFile.value && entryId) {
+      const uploaded = await financialService.uploadAttachment(entryId, pendingFile.value)
+      form.attachment_path = uploaded.path
+    }
+
+    toast.success('Entry saved')
+    showForm.value = false
+    fetchEntries()
+  } catch (err) {
+    console.error(err)
+    toast.error('Failed to save entry')
+  }
 }
 
 function confirmDelete(entry) {

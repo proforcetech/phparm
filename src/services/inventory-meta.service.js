@@ -15,8 +15,8 @@ function getEndpoint(type) {
 }
 
 export default {
-  async list(type) {
-    const response = await api.get(getEndpoint(type))
+  async list(type, params = {}) {
+    const response = await api.get(getEndpoint(type), { params })
     return response.data
   },
 
