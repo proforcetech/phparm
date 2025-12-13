@@ -5,6 +5,7 @@ namespace App\Services\TimeTracking;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
+use DateTimeImmutable;
 use InvalidArgumentException;
 
 class TimeTrackingController
@@ -35,11 +36,10 @@ class TimeTrackingController
             throw new UnauthorizedException('Cannot view time entries');
         }
 
-        $page = isset($filters['page']) ? (int) $filters['page'] : 1;
-        $perPage = isset($filters['per_page']) ? (int) $filters['per_page'] : 25;
+        [$page, $perPage, $normalizedFilters] = $this->validateAndNormalizeFilters($filters);
         $offset = ($page - 1) * $perPage;
 
-        return $this->service->list($filters, $perPage, $offset);
+        return $this->service->list($normalizedFilters, $perPage, $offset);
     }
 
     /**
@@ -214,5 +214,84 @@ class TimeTrackingController
         }
 
         return $this->portal->summary($user->id);
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     *
+     * @return array{0:int,1:int,2:array<string, mixed>}
+     */
+    private function validateAndNormalizeFilters(array $filters): array
+    {
+        $page = isset($filters['page']) ? (int) $filters['page'] : 1;
+        $perPage = isset($filters['per_page']) ? (int) $filters['per_page'] : 25;
+
+        if ($page < 1) {
+            throw new InvalidArgumentException('Page must be at least 1.');
+        }
+
+        if ($perPage < 1) {
+            throw new InvalidArgumentException('per_page must be at least 1.');
+        }
+
+        if ($perPage > 100) {
+            $perPage = 100;
+        }
+
+        $startDate = $this->normalizeDate($filters['start_date'] ?? null, 'start_date');
+        $endDate = $this->normalizeDate($filters['end_date'] ?? null, 'end_date');
+
+        if ($startDate !== null && $endDate !== null && $startDate > $endDate) {
+            throw new InvalidArgumentException('End date cannot be earlier than start date.');
+        }
+
+        $search = isset($filters['search']) ? trim((string) $filters['search']) : '';
+        if (strlen($search) > 255) {
+            $search = substr($search, 0, 255);
+        }
+
+        $normalizedFilters = [];
+        if ($search !== '') {
+            $normalizedFilters['search'] = $search;
+        }
+
+        if (isset($filters['technician_id'])) {
+            $normalizedFilters['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        if ($startDate !== null) {
+            $normalizedFilters['start_date'] = $startDate;
+        }
+
+        if ($endDate !== null) {
+            $normalizedFilters['end_date'] = $endDate;
+        }
+
+        if (isset($filters['status'])) {
+            $status = (string) $filters['status'];
+            $allowedStatuses = ['approved', 'pending', 'rejected'];
+            if (!in_array($status, $allowedStatuses, true)) {
+                throw new InvalidArgumentException('Invalid status filter.');
+            }
+            $normalizedFilters['status'] = $status;
+        }
+
+        return [$page, $perPage, $normalizedFilters];
+    }
+
+    private function normalizeDate(?string $value, string $field): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $date = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+        $isValid = $date !== false && $date->format('Y-m-d') === $value;
+
+        if (!$isValid) {
+            throw new InvalidArgumentException(sprintf('%s must be in YYYY-MM-DD format.', $field));
+        }
+
+        return $date->format('Y-m-d');
     }
 }

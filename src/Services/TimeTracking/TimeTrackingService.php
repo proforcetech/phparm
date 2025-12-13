@@ -69,6 +69,9 @@ class TimeTrackingService
      */
     public function list(array $filters = [], int $limit = 25, int $offset = 0): array
     {
+        $limit = max(1, min(100, $limit));
+        $offset = max(0, $offset);
+
         $baseSql = 'FROM time_entries te '
             . 'LEFT JOIN users u ON u.id = te.technician_id '
             . 'LEFT JOIN users ru ON ru.id = te.reviewed_by '
