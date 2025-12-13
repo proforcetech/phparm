@@ -1713,7 +1713,7 @@ return Response::json([
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
