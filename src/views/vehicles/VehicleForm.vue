@@ -468,6 +468,10 @@ async function onEngineChange() {
       transmissions.value = await getTransmissions(form.year, form.make, form.model, form.engine)
     } catch (err) {
       console.error('Failed to load transmissions:', err)
+      transmissions.value = []
+      drives.value = []
+      trims.value = []
+      toast.error('Unable to load transmissions for the selected engine. Please try again.')
     }
   }
 }

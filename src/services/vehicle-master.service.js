@@ -41,28 +41,30 @@ export function getYears() {
   return api.get('/vehicles/years').then((r) => r.data)
 }
 
+const encodeSegment = (value) => encodeURIComponent(value)
+
 export function getMakes(year) {
-  return api.get(`/vehicles/${year}/makes`).then((r) => r.data)
+  return api.get(`/vehicles/${encodeSegment(year)}/makes`).then((r) => r.data)
 }
 
 export function getModels(year, make) {
-  return api.get(`/vehicles/${year}/${make}/models`).then((r) => r.data)
+  return api.get(`/vehicles/${encodeSegment(year)}/${encodeSegment(make)}/models`).then((r) => r.data)
 }
 
 export function getEngines(year, make, model) {
-  return api.get(`/vehicles/${year}/${make}/${model}/engines`).then((r) => r.data)
+  return api.get(`/vehicles/${encodeSegment(year)}/${encodeSegment(make)}/${encodeSegment(model)}/engines`).then((r) => r.data)
 }
 
 export function getTransmissions(year, make, model, engine) {
-  return api.get(`/vehicles/${year}/${make}/${model}/${engine}/transmissions`).then((r) => r.data)
+  return api.get(`/vehicles/${encodeSegment(year)}/${encodeSegment(make)}/${encodeSegment(model)}/${encodeSegment(engine)}/transmissions`).then((r) => r.data)
 }
 
 export function getDrives(year, make, model, engine, transmission) {
-  return api.get(`/vehicles/${year}/${make}/${model}/${engine}/${transmission}/drives`).then((r) => r.data)
+  return api.get(`/vehicles/${encodeSegment(year)}/${encodeSegment(make)}/${encodeSegment(model)}/${encodeSegment(engine)}/${encodeSegment(transmission)}/drives`).then((r) => r.data)
 }
 
 export function getTrims(year, make, model, engine, transmission, drive) {
-  return api.get(`/vehicles/${year}/${make}/${model}/${engine}/${transmission}/${drive}/trims`).then((r) => r.data)
+  return api.get(`/vehicles/${encodeSegment(year)}/${encodeSegment(make)}/${encodeSegment(model)}/${encodeSegment(engine)}/${encodeSegment(transmission)}/${encodeSegment(drive)}/trims`).then((r) => r.data)
 }
 
 // VIN operations
