@@ -17,6 +17,10 @@ export function getCustomer(id) {
   return api.get(`/customers/${id}`).then((r) => r.data)
 }
 
+export function getCustomerVehicles(customerId) {
+  return api.get(`/customers/${customerId}/vehicles`).then((r) => r.data)
+}
+
 export function createCustomer(payload) {
   return api.post('/customers', payload).then((r) => r.data)
 }
@@ -33,6 +37,7 @@ const customerService = {
   listCustomers,
   searchCustomers,
   getCustomer,
+  getCustomerVehicles,
   createCustomer,
   updateCustomer,
   deleteCustomer

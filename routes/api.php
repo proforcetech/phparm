@@ -1698,6 +1698,12 @@ return Response::json([
         $gate
     );
 
+    // User controller for technician listings
+    $userController = new \App\Services\User\UserController(
+        new \App\Services\User\UserRepository($connection),
+        $gate
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -1778,6 +1784,16 @@ return Response::json([
             $id = (int) $request->getAttribute('id');
             $appointmentController->destroy($user, $id);
             return Response::noContent();
+        });
+
+        // Technician listings for appointment forms
+        $router->get('/api/technicians', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $userController->listTechnicians($user, $params);
+            return Response::json($data);
         });
     });
 
