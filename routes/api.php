@@ -1804,6 +1804,33 @@ return Response::json([
             return Response::created($data);
         });
 
+        $router->get('/api/inspections/templates/{id}', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $inspectionController->showTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->put('/api/inspections/templates/{id}', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $inspectionController->updateTemplate($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/inspections/templates/{id}', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $inspectionController->deleteTemplate($user, $id);
+            return Response::noContent();
+        });
+
+        $router->post('/api/inspections/start', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $data = $inspectionController->start($user, $request->body());
+            return Response::created($data);
+        });
+
         $router->post('/api/inspections/{id}/complete', function (Request $request) use ($inspectionController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -1811,9 +1838,31 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->post('/api/inspections/{id}/media', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $file = $request->file('media') ?? [];
+            $data = $inspectionController->uploadMedia($user, $id, $file);
+            return Response::json($data);
+        });
+
         $router->get('/api/inspections/customer', function (Request $request) use ($inspectionController) {
             $user = $request->getAttribute('user');
             $data = $inspectionController->customerList($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inspections/customer/{id}', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $inspectionController->customerShow($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inspections/{id}', function (Request $request) use ($inspectionController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $inspectionController->show($user, $id);
             return Response::json($data);
         });
 

@@ -280,6 +280,18 @@ const routes = [
     component: () => import('@/views/settings/SettingsPage.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
+  {
+    path: '/cp/inspections/templates',
+    name: 'InspectionTemplates',
+    component: () => import('@/views/inspections/TemplateManager.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/inspections/work',
+    name: 'TechnicianInspections',
+    component: () => import('@/views/inspections/TechnicianInspections.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager', 'technician'] },
+  },
   // CMS Routes
   {
     path: '/cp/cms',
@@ -387,6 +399,12 @@ const routes = [
     path: '/portal/appointments',
     name: 'CustomerAppointments',
     component: () => import('@/views/customer-portal/Appointments.vue'),
+    meta: { requiresAuth: true, requiresCustomer: true },
+  },
+  {
+    path: '/portal/inspections',
+    name: 'CustomerInspections',
+    component: () => import('@/views/customer-portal/Inspections.vue'),
     meta: { requiresAuth: true, requiresCustomer: true },
   },
   {
