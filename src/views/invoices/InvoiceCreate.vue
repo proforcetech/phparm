@@ -178,7 +178,7 @@
                 v-model="form.terms"
                 label="Terms & Conditions"
                 placeholder="Payment terms and conditions..."
-                rows="3"
+                :rows="3"
               />
             </div>
           </Card>
