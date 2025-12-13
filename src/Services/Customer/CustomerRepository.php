@@ -146,7 +146,8 @@ class CustomerRepository
         }
 
         if (!empty($filters['query'])) {
-            $clauses[] = '(name LIKE :query OR email LIKE :query OR phone LIKE :query)';
+            $clauses[] = '(id = :exact_id OR name LIKE :query OR email LIKE :query OR phone LIKE :query)';
+            $bindings['exact_id'] = is_numeric($filters['query']) ? (int) $filters['query'] : 0;
             $bindings['query'] = '%' . $filters['query'] . '%';
         }
 
