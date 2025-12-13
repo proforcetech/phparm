@@ -67,4 +67,181 @@ class UserRepository
 
         return $results;
     }
+
+    /**
+     * List all users with optional filters
+     *
+     * @param array<string, mixed> $filters
+     * @return array<int, User>
+     */
+    public function list(array $filters = []): array
+    {
+        $query = 'SELECT id, name, email, role, email_verified, two_factor_enabled, created_at, updated_at FROM users WHERE 1=1';
+        $bindings = [];
+
+        if (!empty($filters['role'])) {
+            $query .= ' AND role = :role';
+            $bindings['role'] = $filters['role'];
+        }
+
+        if (!empty($filters['query'])) {
+            $query .= ' AND (id = :exact_id OR name LIKE :query OR email LIKE :query)';
+            $bindings['exact_id'] = is_numeric($filters['query']) ? (int) $filters['query'] : 0;
+            $bindings['query'] = '%' . $filters['query'] . '%';
+        }
+
+        $query .= ' ORDER BY created_at DESC';
+
+        $stmt = $this->connection->pdo()->prepare($query);
+        $stmt->execute($bindings);
+
+        $results = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $results[] = new User($row);
+        }
+
+        return $results;
+    }
+
+    /**
+     * Find a user by ID
+     */
+    public function find(int $id): ?User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, name, email, role, email_verified, two_factor_enabled, created_at, updated_at
+             FROM users
+             WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        return new User($row);
+    }
+
+    /**
+     * Find a user by email
+     */
+    public function findByEmail(string $email): ?User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, name, email, role, email_verified, two_factor_enabled, created_at, updated_at
+             FROM users
+             WHERE email = :email'
+        );
+        $stmt->execute(['email' => $email]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        return new User($row);
+    }
+
+    /**
+     * Create a new user
+     *
+     * @param array<string, mixed> $data
+     */
+    public function create(array $data): User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO users (name, email, password, role, email_verified, two_factor_enabled, created_at, updated_at)
+             VALUES (:name, :email, :password, :role, :email_verified, :two_factor_enabled, NOW(), NOW())'
+        );
+
+        $stmt->execute([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => $data['password'], // Should be hashed before calling
+            'role' => $data['role'] ?? 'customer',
+            'email_verified' => $data['email_verified'] ?? false,
+            'two_factor_enabled' => $data['two_factor_enabled'] ?? false,
+        ]);
+
+        $id = (int) $this->connection->pdo()->lastInsertId();
+        return $this->find($id);
+    }
+
+    /**
+     * Update a user
+     *
+     * @param array<string, mixed> $data
+     */
+    public function update(int $id, array $data): User
+    {
+        $fields = [];
+        $bindings = ['id' => $id];
+
+        if (isset($data['name'])) {
+            $fields[] = 'name = :name';
+            $bindings['name'] = $data['name'];
+        }
+
+        if (isset($data['email'])) {
+            $fields[] = 'email = :email';
+            $bindings['email'] = $data['email'];
+        }
+
+        if (isset($data['password'])) {
+            $fields[] = 'password = :password';
+            $bindings['password'] = $data['password']; // Should be hashed before calling
+        }
+
+        if (isset($data['role'])) {
+            $fields[] = 'role = :role';
+            $bindings['role'] = $data['role'];
+        }
+
+        if (isset($data['email_verified'])) {
+            $fields[] = 'email_verified = :email_verified';
+            $bindings['email_verified'] = $data['email_verified'];
+        }
+
+        if (isset($data['two_factor_enabled'])) {
+            $fields[] = 'two_factor_enabled = :two_factor_enabled';
+            $bindings['two_factor_enabled'] = $data['two_factor_enabled'];
+        }
+
+        if (empty($fields)) {
+            return $this->find($id);
+        }
+
+        $fields[] = 'updated_at = NOW()';
+
+        $query = 'UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id';
+        $stmt = $this->connection->pdo()->prepare($query);
+        $stmt->execute($bindings);
+
+        return $this->find($id);
+    }
+
+    /**
+     * Delete a user
+     */
+    public function delete(int $id): bool
+    {
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM users WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Reset 2FA for a user
+     */
+    public function reset2FA(int $id): User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_recovery_codes = NULL, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+
+        return $this->find($id);
+    }
 }

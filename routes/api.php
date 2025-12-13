@@ -1795,6 +1795,60 @@ return Response::json([
             $data = $userController->listTechnicians($user, $params);
             return Response::json($data);
         });
+
+        // User management routes
+        $router->get('/api/users', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'role' => $request->queryParam('role'),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $userController->listUsers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/users/{id}', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $userController->getUser($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/users', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->createUser($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/users/{id}', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $userController->updateUser($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/users/{id}', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $userController->deleteUser($user, $id);
+            return Response::noContent();
+        });
+
+        $router->post('/api/users/{id}/reset-2fa', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $userController->reset2FA($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/{id}/require-2fa', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $required = $body['required'] ?? false;
+            $data = $userController->require2FA($user, $id, $required);
+            return Response::json($data);
+        });
     });
 
     // Inspection routes
