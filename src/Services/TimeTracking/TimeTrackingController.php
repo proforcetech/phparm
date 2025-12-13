@@ -255,8 +255,11 @@ class TimeTrackingController
             $normalizedFilters['search'] = $search;
         }
 
-        if (isset($filters['technician_id'])) {
-            $normalizedFilters['technician_id'] = (int) $filters['technician_id'];
+        if (isset($filters['technician_id']) && $filters['technician_id'] !== '' && $filters['technician_id'] !== null) {
+            $techId = (int) $filters['technician_id'];
+            if ($techId > 0) {
+                $normalizedFilters['technician_id'] = $techId;
+            }
         }
 
         if ($startDate !== null) {
