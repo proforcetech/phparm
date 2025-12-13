@@ -7,3 +7,25 @@ export function listCustomers(params = {}) {
 export function getCustomer(id) {
   return api.get(`/customers/${id}`).then((r) => r.data)
 }
+
+export function createCustomer(payload) {
+  return api.post('/customers', payload).then((r) => r.data)
+}
+
+export function updateCustomer(id, payload) {
+  return api.put(`/customers/${id}`, payload).then((r) => r.data)
+}
+
+export function deleteCustomer(id) {
+  return api.delete(`/customers/${id}`).then((r) => r.data)
+}
+
+const customerService = {
+  listCustomers,
+  getCustomer,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer
+}
+
+export default customerService
