@@ -42,7 +42,7 @@
           </div>
           <div class="md:col-span-2">
             <label class="block text-sm font-medium text-gray-700">Notes</label>
-            <Textarea v-model="form.notes" rows="2" placeholder="Add visit notes or context" />
+            <Textarea v-model="form.notes" :rows="2" placeholder="Add visit notes or context" />
           </div>
         </div>
 
