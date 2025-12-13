@@ -101,6 +101,14 @@
           Low stock alerting is enabled. Use the toggle above to triage items that need restocking.
         </div>
         <Button variant="secondary" @click="goToAlerts">View Alerts</Button>
+        <div class="pt-2 border-t border-gray-100 space-y-2">
+          <h4 class="text-sm font-semibold text-gray-900">Manage lists</h4>
+          <div class="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" @click="$router.push('/cp/inventory/categories')">Categories</Button>
+            <Button size="sm" variant="secondary" @click="$router.push('/cp/inventory/vendors')">Vendors</Button>
+            <Button size="sm" variant="secondary" @click="$router.push('/cp/inventory/locations')">Locations</Button>
+          </div>
+        </div>
       </Card>
     </div>
   </div>
