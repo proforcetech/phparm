@@ -13,8 +13,44 @@
         <!-- Customer Selection -->
         <div>
           <label class="block text-sm font-medium text-gray-700">Customer *</label>
-          <Input v-model.number="form.customer_id" type="number" required placeholder="Customer ID" />
-          <p class="mt-1 text-xs text-gray-500">Enter the customer ID who owns this vehicle</p>
+          <div class="relative mt-1">
+            <Input
+              v-model="customerQuery"
+              required
+              placeholder="Search by name, email, phone, or ID"
+              @focus="customerDropdownOpen = true"
+              @blur="closeCustomerDropdown"
+            />
+            <input v-model="form.customer_id" type="hidden" required />
+
+            <div
+              v-if="customerDropdownOpen"
+              class="absolute z-10 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg"
+            >
+              <div v-if="searchingCustomers" class="px-3 py-2 text-sm text-gray-500">Searching...</div>
+              <button
+                v-for="customer in customerResults"
+                :key="customer.id"
+                type="button"
+                class="w-full px-3 py-2 text-left hover:bg-gray-50"
+                @mousedown.prevent="selectCustomer(customer)"
+              >
+                <p class="text-sm font-medium text-gray-900">
+                  {{ customer.name || `Customer #${customer.id}` }}
+                </p>
+                <p class="text-xs text-gray-600">
+                  {{ customer.email || 'No email' }} • {{ customer.phone || 'No phone' }}
+                </p>
+              </button>
+              <div
+                v-if="!searchingCustomers && customerResults.length === 0 && customerQuery"
+                class="px-3 py-2 text-sm text-gray-500"
+              >
+                No customers found
+              </div>
+            </div>
+          </div>
+          <p class="mt-1 text-xs text-gray-500">Search for a customer by name, email, phone, or ID</p>
         </div>
 
         <!-- VIN Section -->
@@ -211,6 +247,7 @@ import {
   decodeVin
 } from '@/services/vehicle-master.service'
 import { createCustomerVehicle, updateCustomerVehicle, getCustomerVehicle } from '@/services/customer-vehicle.service'
+import { getCustomer, listCustomers } from '@/services/customer.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -231,6 +268,12 @@ const engines = ref([])
 const transmissions = ref([])
 const drives = ref([])
 const trims = ref([])
+const customerQuery = ref('')
+const customerResults = ref([])
+const customerDropdownOpen = ref(false)
+const searchingCustomers = ref(false)
+const selectedCustomer = ref(null)
+const suppressCustomerSearch = ref(false)
 
 const form = reactive({
   customer_id: null,
@@ -250,6 +293,8 @@ const form = reactive({
 
 const isEditing = computed(() => !!route.params.id)
 
+let customerSearchTimeout
+
 onMounted(async () => {
   await loadYears()
   if (isEditing.value) {
@@ -257,11 +302,93 @@ onMounted(async () => {
   }
 })
 
+watch(customerQuery, (value) => {
+  if (suppressCustomerSearch.value) {
+    suppressCustomerSearch.value = false
+    return
+  }
+
+  if (customerSearchTimeout) clearTimeout(customerSearchTimeout)
+
+  if (!value) {
+    customerResults.value = []
+    return
+  }
+
+  customerDropdownOpen.value = true
+  customerSearchTimeout = setTimeout(() => searchCustomers(value), 300)
+})
+
+watch(
+  () => form.customer_id,
+  (id) => {
+    if (!id) {
+      selectedCustomer.value = null
+      return
+    }
+
+    if (!selectedCustomer.value || selectedCustomer.value.id !== id) {
+      loadSelectedCustomer(id)
+    }
+  }
+)
+
 async function loadYears() {
   try {
     years.value = await getYears()
   } catch (err) {
     console.error('Failed to load years:', err)
+  }
+}
+
+async function searchCustomers(query) {
+  searchingCustomers.value = true
+
+  try {
+    const results = await listCustomers({ query })
+    customerResults.value = Array.isArray(results) ? results : results?.data || []
+  } catch (err) {
+    console.error('Failed to search customers:', err)
+  } finally {
+    searchingCustomers.value = false
+  }
+}
+
+function closeCustomerDropdown() {
+  setTimeout(() => {
+    customerDropdownOpen.value = false
+  }, 150)
+}
+
+function formatCustomerLabel(customer) {
+  const name = customer.name || `Customer #${customer.id}`
+  const contact = [customer.email, customer.phone].filter(Boolean).join(' • ')
+  return contact ? `${name} (${contact})` : name
+}
+
+function selectCustomer(customer) {
+  selectedCustomer.value = customer
+  form.customer_id = customer.id
+  suppressCustomerSearch.value = true
+  customerQuery.value = formatCustomerLabel(customer)
+  customerResults.value = []
+  customerDropdownOpen.value = false
+}
+
+async function loadSelectedCustomer(customerId) {
+  if (!customerId) {
+    customerQuery.value = ''
+    selectedCustomer.value = null
+    return
+  }
+
+  try {
+    const customer = await getCustomer(customerId)
+    selectedCustomer.value = customer
+    suppressCustomerSearch.value = true
+    customerQuery.value = formatCustomerLabel(customer)
+  } catch (err) {
+    console.error('Failed to load customer:', err)
   }
 }
 
@@ -392,6 +519,8 @@ async function loadVehicle() {
       notes: vehicle.notes || '',
     })
 
+    await loadSelectedCustomer(vehicle.customer_id)
+
     // Load cascade dropdowns based on loaded values
     if (form.year) await onYearChange()
     if (form.make) {
@@ -477,6 +606,12 @@ async function save() {
   saving.value = true
   error.value = ''
   success.value = ''
+
+  if (!form.customer_id) {
+    error.value = 'Please select a customer before saving.'
+    saving.value = false
+    return
+  }
 
   try {
     if (isEditing.value) {
