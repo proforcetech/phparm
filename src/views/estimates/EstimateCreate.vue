@@ -184,7 +184,7 @@
                 <label class="block text-sm font-medium text-gray-700">Customer Notes</label>
                 <Textarea
                   v-model="form.customer_notes"
-                  rows="3"
+                  :rows="3"
                   placeholder="Notes visible to customer"
                   class="mt-1"
                 />
@@ -194,7 +194,7 @@
                 <label class="block text-sm font-medium text-gray-700">Internal Notes</label>
                 <Textarea
                   v-model="form.internal_notes"
-                  rows="3"
+                  :rows="3"
                   placeholder="Internal notes (not visible to customer)"
                   class="mt-1"
                 />

@@ -156,7 +156,7 @@
               v-model="paymentForm.notes"
               label="Notes"
               placeholder="Any additional context"
-              rows="3"
+              :rows="3"
             />
 
             <Button :disabled="submitting" type="submit" class="w-full">

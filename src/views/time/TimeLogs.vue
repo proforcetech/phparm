@@ -173,7 +173,7 @@
           <textarea
             v-model="manualForm.notes"
             class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-            rows="3"
+            :rows="3"
             placeholder="Notes"
           />
           <label class="inline-flex items-center gap-2 text-sm text-gray-700">
@@ -239,7 +239,7 @@
           <textarea
             v-model="editForm.notes"
             class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-            rows="3"
+            :rows="3"
             :disabled="!selectedEntry"
             placeholder="Notes"
           />
