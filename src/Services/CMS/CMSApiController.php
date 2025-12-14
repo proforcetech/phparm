@@ -547,7 +547,6 @@ class CMSApiController
     public function createTemplate(?User $user, array $data): array
     {
         $this->requireAdminAccess($user);
-        $this->gate->assert($user, 'cms.templates.create');
 
         $pdo = $this->connection->pdo();
 
@@ -589,7 +588,6 @@ class CMSApiController
     public function updateTemplate(?User $user, int $id, array $data): array
     {
         $this->requireAdminAccess($user);
-        $this->gate->assert($user, 'cms.templates.update');
 
         $pdo = $this->connection->pdo();
 
@@ -631,7 +629,6 @@ class CMSApiController
     public function deleteTemplate(?User $user, int $id): bool
     {
         $this->requireAdminAccess($user);
-        $this->gate->assert($user, 'cms.templates.delete');
 
         $pdo = $this->connection->pdo();
 
