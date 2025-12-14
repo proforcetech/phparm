@@ -2677,17 +2677,22 @@ return Response::json([
         });
 
         // CMS Templates
-        $router->get('/api/cms/templates', function (Request $request) use ($cmsApiController) {
+$router->post('/api/cms/templates', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             try {
-                $filters = [
-                    'active' => $request->queryParam('active'),
-                    'search' => $request->queryParam('search'),
-                ];
-                $data = $cmsApiController->listTemplates($user, $filters);
-                return Response::json($data);
-            } catch (\RuntimeException $e) {
+                $data = $cmsApiController->createTemplate($user, $request->body());
+                return Response::created($data);
+            } catch (\App\Support\Auth\UnauthorizedException $e) {
+                // Only return 403 if it's actually a permission issue
                 return Response::forbidden($e->getMessage());
+            } catch (\PDOException $e) {
+                // Optional: Handle duplicate slug errors gracefully
+                if ($e->getCode() == 23000) { 
+                    return Response::json([
+                        'message' => 'A template with this name or slug already exists.'
+                    ], 409); // 409 Conflict
+                }
+                throw $e; // Let other database errors bubble up
             }
         });
 
