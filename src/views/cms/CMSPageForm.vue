@@ -69,6 +69,16 @@
               </div>
 
               <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Summary</label>
+                <textarea
+                  v-model="form.summary"
+                  :rows="2"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Brief summary of the page..."
+                ></textarea>
+              </div>
+
+              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Content</label>
                 <textarea
                   v-model="form.content"
@@ -87,6 +97,16 @@
             </template>
 
             <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Meta Title</label>
+                <input
+                  v-model="form.meta_title"
+                  type="text"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Custom title for search engines (defaults to page title)"
+                />
+              </div>
+
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Meta Description</label>
                 <textarea
@@ -107,35 +127,6 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                   placeholder="keyword1, keyword2, keyword3"
                 />
-              </div>
-            </div>
-          </Card>
-
-          <!-- Custom Code -->
-          <Card>
-            <template #header>
-              <h3 class="text-lg font-medium text-gray-900">Custom Code</h3>
-            </template>
-
-            <div class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Custom CSS</label>
-                <textarea
-                  v-model="form.custom_css"
-                  rows="5"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                  placeholder="/* Custom CSS styles */"
-                ></textarea>
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Custom JavaScript</label>
-                <textarea
-                  v-model="form.custom_js"
-                  rows="5"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                  placeholder="// Custom JavaScript code"
-                ></textarea>
               </div>
             </div>
           </Card>
@@ -183,100 +174,6 @@
               </div>
             </div>
           </Card>
-
-          <!-- Template & Components -->
-          <Card>
-            <template #header>
-              <h3 class="text-lg font-medium text-gray-900">Template & Layout</h3>
-            </template>
-
-            <div class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Template</label>
-                <select
-                  v-model="form.template_id"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option :value="null">No Template</option>
-                  <option v-for="t in options.templates" :key="t.id" :value="t.id">
-                    {{ t.name }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Header Component</label>
-                <select
-                  v-model="form.header_component_id"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option :value="null">None</option>
-                  <option v-for="c in options.header_components" :key="c.id" :value="c.id">
-                    {{ c.name }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Footer Component</label>
-                <select
-                  v-model="form.footer_component_id"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option :value="null">None</option>
-                  <option v-for="c in options.footer_components" :key="c.id" :value="c.id">
-                    {{ c.name }}
-                  </option>
-                </select>
-              </div>
-            </div>
-          </Card>
-
-          <!-- Page Settings -->
-          <Card>
-            <template #header>
-              <h3 class="text-lg font-medium text-gray-900">Page Settings</h3>
-            </template>
-
-            <div class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Parent Page</label>
-                <select
-                  v-model="form.parent_id"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option :value="null">None (Top Level)</option>
-                  <option
-                    v-for="p in filteredParentPages"
-                    :key="p.id"
-                    :value="p.id"
-                  >
-                    {{ p.title }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
-                <input
-                  v-model.number="form.sort_order"
-                  type="number"
-                  min="0"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Cache TTL (seconds)</label>
-                <input
-                  v-model.number="form.cache_ttl"
-                  type="number"
-                  min="0"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-            </div>
-          </Card>
         </div>
       </div>
     </form>
@@ -311,19 +208,6 @@ const draftKey = computed(() => pageId.value || 'new')
 
 const form = ref(createDefaultForm())
 
-const options = ref({
-  templates: [],
-  header_components: [],
-  footer_components: [],
-  parent_pages: [],
-})
-
-const filteredParentPages = computed(() => {
-  // Don't allow selecting self as parent
-  if (!isEditing.value) return options.value.parent_pages
-  return options.value.parent_pages.filter(p => p.id !== parseInt(pageId.value))
-})
-
 onMounted(async () => {
   await loadData()
 })
@@ -336,18 +220,12 @@ function createDefaultForm() {
   return {
     title: '',
     slug: '',
-    content: '',
+    status: 'draft',
+    meta_title: '',
     meta_description: '',
     meta_keywords: '',
-    template_id: null,
-    header_component_id: null,
-    footer_component_id: null,
-    custom_css: '',
-    custom_js: '',
-    parent_id: null,
-    sort_order: 0,
-    cache_ttl: 3600,
-    status: 'draft',
+    summary: '',
+    content: '',
   }
 }
 
@@ -355,10 +233,6 @@ async function loadData() {
   try {
     loading.value = true
     error.value = null
-
-    // Load form options
-    const optionsData = await cmsService.getPageFormOptions()
-    options.value = optionsData
 
     // Load page if editing
     if (isEditing.value) {

@@ -154,23 +154,9 @@ class CMSApiController
     {
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare("
-            SELECT
-                p.*,
-                t.name as template_name,
-                t.structure as template_structure,
-                t.default_css as template_css,
-                t.default_js as template_js,
-                h.content as header_content,
-                h.css as header_css,
-                h.javascript as header_js,
-                f.content as footer_content,
-                f.css as footer_css,
-                f.javascript as footer_js
-            FROM {$this->table('pages')} p
-            LEFT JOIN {$this->table('templates')} t ON p.template_id = t.id
-            LEFT JOIN {$this->table('components')} h ON p.header_component_id = h.id
-            LEFT JOIN {$this->table('components')} f ON p.footer_component_id = f.id
-            WHERE p.slug = :slug AND p.status = 'published'
+            SELECT *
+            FROM {$this->table('pages')}
+            WHERE slug = :slug AND status = 'published'
         ");
         $stmt->execute(['slug' => $slug]);
 
@@ -193,35 +179,23 @@ class CMSApiController
 
         $stmt = $pdo->prepare("
             INSERT INTO {$this->table('pages')} (
-                title, slug, content, meta_description, meta_keywords,
-                template_id, header_component_id, footer_component_id,
-                custom_css, custom_js, parent_id, sort_order, cache_ttl,
-                status, created_by, updated_by, created_at, updated_at
+                title, slug, status, meta_title, meta_description, meta_keywords,
+                summary, content, created_at, updated_at
             ) VALUES (
-                :title, :slug, :content, :meta_description, :meta_keywords,
-                :template_id, :header_component_id, :footer_component_id,
-                :custom_css, :custom_js, :parent_id, :sort_order, :cache_ttl,
-                :status, :created_by, :updated_by, NOW(), NOW()
+                :title, :slug, :status, :meta_title, :meta_description, :meta_keywords,
+                :summary, :content, NOW(), NOW()
             )
         ");
 
         $stmt->execute([
             'title' => $data['title'] ?? '',
             'slug' => $data['slug'],
-            'content' => $data['content'] ?? '',
-            'meta_description' => $data['meta_description'] ?? '',
-            'meta_keywords' => $data['meta_keywords'] ?? '',
-            'template_id' => $data['template_id'] ?: null,
-            'header_component_id' => $data['header_component_id'] ?: null,
-            'footer_component_id' => $data['footer_component_id'] ?: null,
-            'custom_css' => $data['custom_css'] ?? '',
-            'custom_js' => $data['custom_js'] ?? '',
-            'parent_id' => $data['parent_id'] ?: null,
-            'sort_order' => (int) ($data['sort_order'] ?? 0),
-            'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
             'status' => $data['status'] ?? 'draft',
-            'created_by' => $user->id,
-            'updated_by' => $user->id,
+            'meta_title' => $data['meta_title'] ?? null,
+            'meta_description' => $data['meta_description'] ?? null,
+            'meta_keywords' => $data['meta_keywords'] ?? null,
+            'summary' => $data['summary'] ?? null,
+            'content' => $data['content'] ?? '',
         ]);
 
         $id = (int) $pdo->lastInsertId();
@@ -242,19 +216,12 @@ class CMSApiController
             UPDATE {$this->table('pages')} SET
                 title = :title,
                 slug = :slug,
-                content = :content,
+                status = :status,
+                meta_title = :meta_title,
                 meta_description = :meta_description,
                 meta_keywords = :meta_keywords,
-                template_id = :template_id,
-                header_component_id = :header_component_id,
-                footer_component_id = :footer_component_id,
-                custom_css = :custom_css,
-                custom_js = :custom_js,
-                parent_id = :parent_id,
-                sort_order = :sort_order,
-                cache_ttl = :cache_ttl,
-                status = :status,
-                updated_by = :updated_by,
+                summary = :summary,
+                content = :content,
                 updated_at = NOW()
             WHERE id = :id
         ");
@@ -263,19 +230,12 @@ class CMSApiController
             'id' => $id,
             'title' => $data['title'] ?? '',
             'slug' => $data['slug'] ?? '',
-            'content' => $data['content'] ?? '',
-            'meta_description' => $data['meta_description'] ?? '',
-            'meta_keywords' => $data['meta_keywords'] ?? '',
-            'template_id' => $data['template_id'] ?: null,
-            'header_component_id' => $data['header_component_id'] ?: null,
-            'footer_component_id' => $data['footer_component_id'] ?: null,
-            'custom_css' => $data['custom_css'] ?? '',
-            'custom_js' => $data['custom_js'] ?? '',
-            'parent_id' => $data['parent_id'] ?: null,
-            'sort_order' => (int) ($data['sort_order'] ?? 0),
-            'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
             'status' => $data['status'] ?? 'draft',
-            'updated_by' => $user->id,
+            'meta_title' => $data['meta_title'] ?? null,
+            'meta_description' => $data['meta_description'] ?? null,
+            'meta_keywords' => $data['meta_keywords'] ?? null,
+            'summary' => $data['summary'] ?? null,
+            'content' => $data['content'] ?? '',
         ]);
 
         // Invalidate cache
@@ -303,14 +263,12 @@ class CMSApiController
             UPDATE {$this->table('pages')} SET
                 status = 'published',
                 published_at = COALESCE(published_at, NOW()),
-                updated_by = :updated_by,
                 updated_at = NOW()
             WHERE id = :id
         ");
 
         $stmt->execute([
             'id' => $id,
-            'updated_by' => $user->id,
         ]);
 
         // Invalidate cache

@@ -14,29 +14,20 @@
   </div>
 
   <div v-else-if="page" class="cms-page">
-    <!-- Header Component -->
-    <div v-if="page.header_content" class="cms-header" v-html="renderContent(page.header_content)"></div>
-
     <!-- Page Content -->
     <div class="cms-page-content">
       <div class="container mx-auto px-4 py-8">
         <h1 class="text-4xl font-bold mb-6">{{ page.title }}</h1>
+
+        <!-- Summary -->
+        <div v-if="page.summary" class="text-xl text-gray-600 mb-6">
+          {{ page.summary }}
+        </div>
+
+        <!-- Content -->
         <div class="prose max-w-none" v-html="renderContent(page.content)"></div>
       </div>
     </div>
-
-    <!-- Footer Component -->
-    <div v-if="page.footer_content" class="cms-footer" v-html="renderContent(page.footer_content)"></div>
-
-    <!-- Custom Styles -->
-    <component :is="'style'" v-if="customStyles">
-      {{ customStyles }}
-    </component>
-
-    <!-- Custom Scripts -->
-    <component :is="'script'" v-if="customScripts" type="text/javascript">
-      {{ customScripts }}
-    </component>
   </div>
 </template>
 
@@ -64,62 +55,6 @@ const slug = computed(() => {
   }
   // Fallback: remove leading slash from path
   return route.path.substring(1)
-})
-
-const customStyles = computed(() => {
-  if (!page.value) return ''
-
-  let styles = ''
-
-  // Template CSS
-  if (page.value.template_css) {
-    styles += page.value.template_css + '\n'
-  }
-
-  // Page custom CSS
-  if (page.value.custom_css) {
-    styles += page.value.custom_css + '\n'
-  }
-
-  // Header component CSS
-  if (page.value.header_css) {
-    styles += page.value.header_css + '\n'
-  }
-
-  // Footer component CSS
-  if (page.value.footer_css) {
-    styles += page.value.footer_css + '\n'
-  }
-
-  return styles
-})
-
-const customScripts = computed(() => {
-  if (!page.value) return ''
-
-  let scripts = ''
-
-  // Template JS
-  if (page.value.template_js) {
-    scripts += page.value.template_js + '\n'
-  }
-
-  // Page custom JS
-  if (page.value.custom_js) {
-    scripts += page.value.custom_js + '\n'
-  }
-
-  // Header component JS
-  if (page.value.header_js) {
-    scripts += page.value.header_js + '\n'
-  }
-
-  // Footer component JS
-  if (page.value.footer_js) {
-    scripts += page.value.footer_js + '\n'
-  }
-
-  return scripts
 })
 
 function renderContent(content) {
