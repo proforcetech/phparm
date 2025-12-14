@@ -490,7 +490,7 @@ router.beforeEach(async (to, from, next) => {
     if (authStore.isCustomer) {
       return next('/portal')
     }
-    return next('/cp/dashboard')
+    return next('/cp/cms')
   }
 
   // Check if route requires staff access
@@ -501,14 +501,14 @@ router.beforeEach(async (to, from, next) => {
   if (Array.isArray(to.meta.allowedRoles) && authStore.user) {
     const { role } = authStore.user
     if (!to.meta.allowedRoles.includes(role)) {
-      return next('/cp/dashboard')
+      return next('/cp/cms')
     }
   }
 
   // Check if route requires customer access
   if (to.meta.requiresCustomer) {
     if (!authStore.isCustomer) {
-      return next('/cp/dashboard')
+      return next('/cp/cms')
     }
 
     if (!authStore.portalReady) {
@@ -523,7 +523,7 @@ router.beforeEach(async (to, from, next) => {
 
   // Check if route requires admin access
   if (to.meta.requiresAdmin && !authStore.isAdmin) {
-    return next('/cp/dashboard')
+    return next('/cp/cms')
   }
 
   next()
