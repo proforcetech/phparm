@@ -154,13 +154,14 @@
                 <span class="text-sm text-gray-700">Status</span>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input
-                    v-model="form.is_published"
+                    :checked="form.status === 'published'"
                     type="checkbox"
                     class="sr-only peer"
+                    @change="form.status = $event.target.checked ? 'published' : 'draft'"
                   />
                   <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                  <span class="ml-2 text-sm font-medium" :class="form.is_published ? 'text-green-600' : 'text-gray-500'">
-                    {{ form.is_published ? 'Published' : 'Draft' }}
+                  <span class="ml-2 text-sm font-medium" :class="form.status === 'published' ? 'text-green-600' : 'text-gray-500'">
+                    {{ form.status === 'published' ? 'Published' : 'Draft' }}
                   </span>
                 </label>
               </div>
@@ -170,7 +171,7 @@
                   {{ saving ? 'Saving...' : (isEditing ? 'Update Page' : 'Create Page') }}
                 </Button>
                 <Button
-                  v-if="!form.is_published"
+                  v-if="form.status !== 'published'"
                   type="button"
                   class="w-full mt-3"
                   variant="secondary"
@@ -346,7 +347,7 @@ function createDefaultForm() {
     parent_id: null,
     sort_order: 0,
     cache_ttl: 3600,
-    is_published: false,
+    status: 'draft',
   }
 }
 
@@ -367,7 +368,6 @@ async function loadData() {
         ...createDefaultForm(),
         ...pageData,
         ...(draft || {}),
-        is_published: !!(draft?.is_published ?? pageData?.is_published),
       }
     } else {
       const draft = pageStore.drafts[draftKey.value]
@@ -450,7 +450,7 @@ async function publishPage() {
       await pageStore.publishPage(pageId.value)
       toast.success('Page published')
     } else {
-      const newPage = await pageStore.createPage({ ...form.value, is_published: true })
+      const newPage = await pageStore.createPage({ ...form.value, status: 'published' })
       toast.success('Page created and published')
       router.push(`/cp/cms/pages/${newPage.id}`)
       return

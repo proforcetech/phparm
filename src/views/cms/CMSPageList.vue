@@ -101,8 +101,8 @@
                 <div class="text-sm text-gray-500">{{ page.template_name || 'None' }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <Badge :variant="page.is_published ? 'success' : 'warning'">
-                  {{ page.is_published ? 'Published' : 'Draft' }}
+                <Badge :variant="page.status === 'published' ? 'success' : 'warning'">
+                  {{ page.status === 'published' ? 'Published' : 'Draft' }}
                 </Badge>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -115,7 +115,7 @@
                     size="sm"
                     @click="togglePublish(page)"
                   >
-                    {{ page.is_published ? 'Unpublish' : 'Publish' }}
+                    {{ page.status === 'published' ? 'Unpublish' : 'Publish' }}
                   </Button>
                   <Button
                     variant="ghost"
@@ -239,8 +239,8 @@ async function deletePage() {
 async function togglePublish(page) {
   try {
     error.value = null
-    if (page.is_published) {
-      await pageStore.updatePage(page.id, { ...page, is_published: false })
+    if (page.status === 'published') {
+      await pageStore.updatePage(page.id, { ...page, status: 'draft' })
       toast.info('Page moved to drafts')
     } else {
       await pageStore.publishPage(page.id)

@@ -168,8 +168,8 @@
                   <p class="text-sm font-medium text-gray-900 truncate">
                     {{ page.title }}
                   </p>
-                  <Badge :variant="page.is_published ? 'success' : 'warning'">
-                    {{ page.is_published ? 'Published' : 'Draft' }}
+                  <Badge :variant="page.status === 'published' ? 'success' : 'warning'">
+                    {{ page.status === 'published' ? 'Published' : 'Draft' }}
                   </Badge>
                 </div>
                 <p class="text-xs text-gray-500">
