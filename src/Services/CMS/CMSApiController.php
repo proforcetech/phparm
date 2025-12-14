@@ -389,7 +389,7 @@ class CMSApiController
             'css' => $data['css'] ?? '',
             'javascript' => $data['javascript'] ?? '',
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
-            'is_active' => isset($data['is_active']) ? 1 : 0,
+            'is_active' => !empty($data['is_active']) ? 1 : 0,
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]);
@@ -434,7 +434,7 @@ class CMSApiController
             'css' => $data['css'] ?? '',
             'javascript' => $data['javascript'] ?? '',
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
-            'is_active' => isset($data['is_active']) && $data['is_active'] ? 1 : 0,
+            'is_active' => !empty($data['is_active']) ? 1 : 0,
             'updated_by' => $user->id,
         ]);
 
@@ -573,7 +573,7 @@ class CMSApiController
             'structure' => $data['structure'] ?? '',
             'default_css' => $data['default_css'] ?? '',
             'default_js' => $data['default_js'] ?? '',
-            'is_active' => isset($data['is_active']) ? 1 : 0,
+            'is_active' => !empty($data['is_active']) ? 1 : 0,
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]);
@@ -615,7 +615,7 @@ class CMSApiController
             'structure' => $data['structure'] ?? '',
             'default_css' => $data['default_css'] ?? '',
             'default_js' => $data['default_js'] ?? '',
-            'is_active' => isset($data['is_active']) && $data['is_active'] ? 1 : 0,
+            'is_active' => !empty($data['is_active']) ? 1 : 0,
             'updated_by' => $user->id,
         ]);
 
