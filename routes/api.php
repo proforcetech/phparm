@@ -2489,6 +2489,19 @@ return Response::json([
             return Response::noContent();
         });
 
+        $router->post('/api/cms/pages/{id}/publish', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $cmsPageController->publish($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
         // CMS Menus
         $router->get('/api/cms/menus', function (Request $request) use ($cmsMenuController) {
             $user = $request->getAttribute('user');

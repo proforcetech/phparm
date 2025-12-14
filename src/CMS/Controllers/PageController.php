@@ -151,6 +151,37 @@ class PageController
     }
 
     /**
+     * Publish a page (sets status to 'published')
+     *
+     * @return array<string, mixed>|null
+     */
+    public function publish(User $user, int $id): ?array
+    {
+        $this->gate->assert($user, 'cms.pages.update');
+
+        $existing = $this->find($id);
+        if ($existing === null) {
+            return null;
+        }
+
+        $publishedAt = $existing->published_at ?? (new DateTimeImmutable())->format('Y-m-d H:i:s');
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE cms_pages SET status = :status, published_at = :published_at, updated_at = NOW() WHERE id = :id'
+        );
+
+        $stmt->execute([
+            'id' => $id,
+            'status' => 'published',
+            'published_at' => $publishedAt,
+        ]);
+
+        $this->invalidateCache($existing->slug);
+
+        return $this->find($id)?->toArray();
+    }
+
+    /**
      * Public retrieval of a published page by slug.
      *
      * @return array<string, mixed>|null
