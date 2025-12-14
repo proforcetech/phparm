@@ -39,17 +39,21 @@ class RolePermissions
     public function hasPermission(string $role, string $permission): bool
     {
         $granted = $this->permissionsFor($role);
+        error_log("RolePermissions::hasPermission - Role: {$role}, Permission: {$permission}, Granted: " . json_encode($granted));
 
         foreach ($granted as $grantedPermission) {
             if ($grantedPermission === '*') {
+                error_log("RolePermissions::hasPermission - Matched wildcard *");
                 return true;
             }
 
             if ($this->permissionMatches($grantedPermission, $permission)) {
+                error_log("RolePermissions::hasPermission - Matched: {$grantedPermission}");
                 return true;
             }
         }
 
+        error_log("RolePermissions::hasPermission - No match found, DENIED");
         return false;
     }
 
