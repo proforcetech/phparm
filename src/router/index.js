@@ -451,12 +451,13 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/login',
+    name: 'Home',
+    component: () => import('@/views/public/CMSPage.vue'),
   },
   {
     path: '/:pathMatch(.*)*',
-    name: 'NotFound',
-    component: () => import('@/views/NotFound.vue'),
+    name: 'CMSPage',
+    component: () => import('@/views/public/CMSPage.vue'),
   },
 ]
 

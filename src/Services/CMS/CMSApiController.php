@@ -148,6 +148,36 @@ class CMSApiController
     }
 
     /**
+     * Get page by slug (public access - only returns published pages)
+     */
+    public function getPageBySlug(string $slug): ?array
+    {
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare("
+            SELECT
+                p.*,
+                t.name as template_name,
+                t.structure as template_structure,
+                t.default_css as template_css,
+                t.default_js as template_js,
+                h.content as header_content,
+                h.css as header_css,
+                h.javascript as header_js,
+                f.content as footer_content,
+                f.css as footer_css,
+                f.javascript as footer_js
+            FROM {$this->table('pages')} p
+            LEFT JOIN {$this->table('templates')} t ON p.template_id = t.id
+            LEFT JOIN {$this->table('components')} h ON p.header_component_id = h.id
+            LEFT JOIN {$this->table('components')} f ON p.footer_component_id = f.id
+            WHERE p.slug = :slug AND p.is_published = 1
+        ");
+        $stmt->execute(['slug' => $slug]);
+
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    /**
      * Create page
      */
     public function createPage(?User $user, array $data): array
