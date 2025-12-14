@@ -1,5 +1,5 @@
 -- Password reset tokens
-CREATE TABLE password_resets (
+CREATE TABLE IF NOT EXISTS password_resets (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(160) NOT NULL,
     token VARCHAR(120) NOT NULL,

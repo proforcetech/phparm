@@ -1,4 +1,4 @@
-CREATE TABLE reminder_preferences (
+CREATE TABLE IF NOT EXISTS reminder_preferences (
     id INT AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
     email VARCHAR(160) NULL,

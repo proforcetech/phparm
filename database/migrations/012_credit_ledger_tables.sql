@@ -9,7 +9,7 @@ SET available_credit = GREATEST(0, credit_limit - balance),
     created_at = IFNULL(created_at, NOW()),
     updated_at = IFNULL(updated_at, NOW());
 
-CREATE TABLE credit_transactions (
+CREATE TABLE IF NOT EXISTS credit_transactions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     credit_account_id INT NOT NULL,
     customer_id INT NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE credit_transactions (
     CONSTRAINT fk_credit_transactions_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE credit_payments (
+CREATE TABLE IF NOT EXISTS credit_payments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     credit_account_id INT NOT NULL,
     customer_id INT NOT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE credit_payments (
     CONSTRAINT fk_credit_payments_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE credit_payment_reminders (
+CREATE TABLE IF NOT EXISTS credit_payment_reminders (
     id INT AUTO_INCREMENT PRIMARY KEY,
     credit_account_id INT NOT NULL,
     customer_id INT NOT NULL,

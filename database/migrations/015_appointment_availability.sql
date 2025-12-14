@@ -1,4 +1,4 @@
-CREATE TABLE availability_settings (
+CREATE TABLE IF NOT EXISTS availability_settings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     day_of_week TINYINT NULL,
     holiday_date DATE NULL,

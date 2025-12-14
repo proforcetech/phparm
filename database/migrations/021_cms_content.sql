@@ -1,7 +1,7 @@
 -- CMS content core tables
 -- Adds pages, menus, and media metadata tables
 
-CREATE TABLE IF NOT EXISTS cms_pages (
+CREATE TABLE IF NOT EXISTS IF NOT EXISTS cms_pages (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS cms_pages (
     INDEX idx_cms_pages_published_at (published_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS cms_menus (
+CREATE TABLE IF NOT EXISTS IF NOT EXISTS cms_menus (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     slug VARCHAR(150) NOT NULL UNIQUE,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS cms_menus (
     INDEX idx_cms_menus_published_at (published_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS cms_media (
+CREATE TABLE IF NOT EXISTS IF NOT EXISTS cms_media (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     file_name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,

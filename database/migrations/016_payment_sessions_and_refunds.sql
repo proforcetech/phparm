@@ -1,7 +1,7 @@
 -- Payment Sessions and Refunds Tables
 -- These tables support the payment gateway integration
 
-CREATE TABLE payment_sessions (
+CREATE TABLE IF NOT EXISTS payment_sessions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT NOT NULL,
     provider VARCHAR(40) NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE payment_sessions (
     CONSTRAINT fk_payment_session_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE refunds (
+CREATE TABLE IF NOT EXISTS refunds (
     id INT AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT NOT NULL,
     payment_reference VARCHAR(255) NOT NULL,

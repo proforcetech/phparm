@@ -9,7 +9,7 @@ ALTER TABLE reminder_campaigns
     ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at,
     MODIFY channel VARCHAR(20) NOT NULL;
 
-CREATE TABLE reminder_logs (
+CREATE TABLE IF NOT EXISTS reminder_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     campaign_id INT NOT NULL,
     preference_id INT NULL,
