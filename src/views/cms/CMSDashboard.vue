@@ -146,7 +146,7 @@
           <template #header>
             <div class="flex items-center justify-between">
               <h3 class="text-lg font-medium text-gray-900">Recent Pages</h3>
-              <router-link to="/cms/pages" class="text-sm font-medium text-primary-600 hover:text-primary-500">
+              <router-link to="/cp/cms/pages" class="text-sm font-medium text-primary-600 hover:text-primary-500">
                 View all
               </router-link>
             </div>
@@ -161,7 +161,7 @@
               v-for="page in recentPages"
               :key="page.id"
               class="py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer px-2 -mx-2 rounded"
-              @click="$router.push(`/cms/pages/${page.id}`)"
+              @click="$router.push(`/cp/cms/pages/${page.id}`)"
             >
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">

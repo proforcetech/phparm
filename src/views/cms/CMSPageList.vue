@@ -89,7 +89,7 @@
               v-for="page in pages"
               :key="page.id"
               class="hover:bg-gray-50 cursor-pointer"
-              @click="$router.push(`/cms/pages/${page.id}`)"
+              @click="$router.push(`/cp/cms/pages/${page.id}`)"
             >
               <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium text-gray-900">{{ page.title }}</div>
@@ -120,7 +120,7 @@
                   <Button
                     variant="ghost"
                     size="sm"
-                    @click="$router.push(`/cms/pages/${page.id}`)"
+                    @click="$router.push(`/cp/cms/pages/${page.id}`)"
                   >
                     <PencilIcon class="h-4 w-4" />
                   </Button>

@@ -68,7 +68,7 @@
               v-for="menu in menus"
               :key="menu.id"
               class="hover:bg-gray-50 cursor-pointer"
-              @click="$router.push(`/cms/menus/${menu.id}`)"
+              @click="$router.push(`/cp/cms/menus/${menu.id}`)"
             >
               <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium text-gray-900">{{ menu.name }}</div>
@@ -96,7 +96,7 @@
                   <Button
                     variant="ghost"
                     size="sm"
-                    @click="$router.push(`/cms/menus/${menu.id}`)"
+                    @click="$router.push(`/cp/cms/menus/${menu.id}`)"
                   >
                     <PencilIcon class="h-4 w-4" />
                   </Button>
