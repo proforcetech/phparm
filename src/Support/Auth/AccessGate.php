@@ -20,7 +20,11 @@ class AccessGate
 
     public function assert(User $user, string $permission): void
     {
-        if (!$this->can($user, $permission)) {
+        error_log("AccessGate::assert - User role: {$user->role}, Permission: {$permission}");
+        $canAccess = $this->can($user, $permission);
+        error_log("AccessGate::assert - Result: " . ($canAccess ? 'GRANTED' : 'DENIED'));
+
+        if (!$canAccess) {
             throw new UnauthorizedException('User lacks permission: ' . $permission);
         }
     }

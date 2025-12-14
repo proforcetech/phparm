@@ -531,7 +531,10 @@ class CMSApiController
      */
     public function getTemplate(?User $user, int $id): ?array
     {
+        error_log("getTemplate: User role = " . ($user->role ?? 'NULL'));
+        error_log("getTemplate: About to check cms.templates.view permission");
         $this->gate->assert($user, 'cms.templates.view');
+        error_log("getTemplate: Permission check passed");
         $this->authBridge->initializeCMSSession($user);
 
         $pdo = $this->connection->pdo();
@@ -546,7 +549,10 @@ class CMSApiController
      */
     public function createTemplate(?User $user, array $data): array
     {
+        error_log("createTemplate: User role = " . ($user->role ?? 'NULL'));
+        error_log("createTemplate: About to check admin access");
         $this->requireAdminAccess($user);
+        error_log("createTemplate: Admin access check passed");
 
         $pdo = $this->connection->pdo();
 
