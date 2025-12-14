@@ -170,7 +170,7 @@ class CMSApiController
             LEFT JOIN {$this->table('templates')} t ON p.template_id = t.id
             LEFT JOIN {$this->table('components')} h ON p.header_component_id = h.id
             LEFT JOIN {$this->table('components')} f ON p.footer_component_id = f.id
-            WHERE p.slug = :slug AND p.is_published = 1
+            WHERE p.slug = :slug AND p.status = 'published'
         ");
         $stmt->execute(['slug' => $slug]);
 
@@ -196,12 +196,12 @@ class CMSApiController
                 title, slug, content, meta_description, meta_keywords,
                 template_id, header_component_id, footer_component_id,
                 custom_css, custom_js, parent_id, sort_order, cache_ttl,
-                is_published, created_by, updated_by, created_at, updated_at
+                status, created_by, updated_by, created_at, updated_at
             ) VALUES (
                 :title, :slug, :content, :meta_description, :meta_keywords,
                 :template_id, :header_component_id, :footer_component_id,
                 :custom_css, :custom_js, :parent_id, :sort_order, :cache_ttl,
-                :is_published, :created_by, :updated_by, NOW(), NOW()
+                :status, :created_by, :updated_by, NOW(), NOW()
             )
         ");
 
@@ -219,7 +219,7 @@ class CMSApiController
             'parent_id' => $data['parent_id'] ?: null,
             'sort_order' => (int) ($data['sort_order'] ?? 0),
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
-            'is_published' => isset($data['is_published']) ? 1 : 0,
+            'status' => $data['status'] ?? 'draft',
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]);
@@ -253,7 +253,7 @@ class CMSApiController
                 parent_id = :parent_id,
                 sort_order = :sort_order,
                 cache_ttl = :cache_ttl,
-                is_published = :is_published,
+                status = :status,
                 updated_by = :updated_by,
                 updated_at = NOW()
             WHERE id = :id
@@ -274,7 +274,7 @@ class CMSApiController
             'parent_id' => $data['parent_id'] ?: null,
             'sort_order' => (int) ($data['sort_order'] ?? 0),
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
-            'is_published' => isset($data['is_published']) && $data['is_published'] ? 1 : 0,
+            'status' => $data['status'] ?? 'draft',
             'updated_by' => $user->id,
         ]);
 
@@ -285,7 +285,7 @@ class CMSApiController
     }
 
     /**
-     * Publish page (sets is_published to 1)
+     * Publish page (sets status to 'published')
      */
     public function publishPage(?User $user, int $id): array
     {
@@ -301,7 +301,8 @@ class CMSApiController
 
         $stmt = $pdo->prepare("
             UPDATE {$this->table('pages')} SET
-                is_published = 1,
+                status = 'published',
+                published_at = COALESCE(published_at, NOW()),
                 updated_by = :updated_by,
                 updated_at = NOW()
             WHERE id = :id
