@@ -419,7 +419,7 @@ async function savePage() {
     } else {
       const newPage = await pageStore.createPage(form.value)
       toast.success('Page created')
-      router.push(`/cms/pages/${newPage.id}`)
+      router.push(`/cp/cms/pages/${newPage.id}`)
       return
     }
 
@@ -452,7 +452,7 @@ async function publishPage() {
     } else {
       const newPage = await pageStore.createPage({ ...form.value, is_published: true })
       toast.success('Page created and published')
-      router.push(`/cms/pages/${newPage.id}`)
+      router.push(`/cp/cms/pages/${newPage.id}`)
       return
     }
 

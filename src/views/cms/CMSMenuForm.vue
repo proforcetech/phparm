@@ -188,7 +188,7 @@ async function saveMenu() {
     } else {
       const newMenu = await menuStore.createMenu(payload)
       toast.success('Menu created')
-      router.push(`/cms/menus/${newMenu.id}`)
+      router.push(`/cp/cms/menus/${newMenu.id}`)
       return
     }
   } catch (err) {
@@ -224,7 +224,7 @@ async function publishMenu() {
     } else {
       const newMenu = await menuStore.createMenu(payload)
       toast.success('Menu created and published')
-      router.push(`/cms/menus/${newMenu.id}`)
+      router.push(`/cp/cms/menus/${newMenu.id}`)
       return
     }
   } catch (err) {

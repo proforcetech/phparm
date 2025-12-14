@@ -307,7 +307,7 @@ async function saveTemplate() {
       await cmsService.updateTemplate(templateId.value, form.value)
     } else {
       const newTemplate = await cmsService.createTemplate(form.value)
-      router.push(`/cms/templates/${newTemplate.id}`)
+      router.push(`/cp/cms/templates/${newTemplate.id}`)
       return
     }
 

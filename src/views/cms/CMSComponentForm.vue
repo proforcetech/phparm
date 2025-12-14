@@ -288,7 +288,7 @@ async function saveComponent() {
       await cmsService.updateComponent(componentId.value, form.value)
     } else {
       const newComponent = await cmsService.createComponent(form.value)
-      router.push(`/cms/components/${newComponent.id}`)
+      router.push(`/cp/cms/components/${newComponent.id}`)
       return
     }
 

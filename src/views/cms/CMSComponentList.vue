@@ -67,7 +67,7 @@
         v-for="component in components"
         :key="component.id"
         class="hover:shadow-lg transition-shadow cursor-pointer"
-        @click="$router.push(`/cms/components/${component.id}`)"
+        @click="$router.push(`/cp/cms/components/${component.id}`)"
       >
         <div class="flex items-start justify-between">
           <div class="flex-1 min-w-0">
@@ -99,7 +99,7 @@
           <Button
             variant="ghost"
             size="sm"
-            @click="$router.push(`/cms/components/${component.id}`)"
+            @click="$router.push(`/cp/cms/components/${component.id}`)"
             title="Edit"
           >
             <PencilIcon class="h-4 w-4" />

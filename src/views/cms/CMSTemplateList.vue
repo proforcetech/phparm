@@ -66,7 +66,7 @@
         v-for="template in templates"
         :key="template.id"
         class="hover:shadow-lg transition-shadow cursor-pointer"
-        @click="$router.push(`/cms/templates/${template.id}`)"
+        @click="$router.push(`/cp/cms/templates/${template.id}`)"
       >
         <div class="flex items-start justify-between">
           <div class="flex-1 min-w-0">
@@ -96,7 +96,7 @@
           <Button
             variant="ghost"
             size="sm"
-            @click="$router.push(`/cms/templates/${template.id}`)"
+            @click="$router.push(`/cp/cms/templates/${template.id}`)"
             title="Edit"
           >
             <PencilIcon class="h-4 w-4" />
