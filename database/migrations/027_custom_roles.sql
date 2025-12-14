@@ -1,4 +1,7 @@
--- Create custom roles table
+-- Custom roles table with JSON-based permissions
+-- This supersedes the old role_permissions table with a more flexible approach
+-- System roles (admin, manager, technician, customer) are pre-populated and protected
+
 CREATE TABLE IF NOT EXISTS custom_roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,

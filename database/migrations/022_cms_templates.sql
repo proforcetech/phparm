@@ -1,7 +1,7 @@
 -- CMS templates, settings, and cache tables
 -- Adds the templates, settings, and cache tables for CMS functionality
 
-CREATE TABLE IF NOT EXISTS cms_templates (
+CREATE TABLE IF NOT EXISTS IF NOT EXISTS cms_templates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(100) NOT NULL UNIQUE,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS cms_templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- CMS settings table for configuration
-CREATE TABLE IF NOT EXISTS cms_settings (
+CREATE TABLE IF NOT EXISTS IF NOT EXISTS cms_settings (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     setting_key VARCHAR(100) NOT NULL UNIQUE,
     setting_value TEXT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS cms_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- CMS cache table for page/component caching
-CREATE TABLE IF NOT EXISTS cms_cache (
+CREATE TABLE IF NOT EXISTS IF NOT EXISTS cms_cache (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     cache_key VARCHAR(255) NOT NULL UNIQUE,
     type VARCHAR(50) NULL COMMENT 'Cache type: page, component, template, etc.',

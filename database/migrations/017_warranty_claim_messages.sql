@@ -1,4 +1,4 @@
-CREATE TABLE warranty_claim_messages (
+CREATE TABLE IF NOT EXISTS warranty_claim_messages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     claim_id INT NOT NULL,
     actor_type VARCHAR(40) NOT NULL,

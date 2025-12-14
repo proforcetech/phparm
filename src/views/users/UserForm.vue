@@ -137,7 +137,7 @@ const toast = useToast()
 
 const loading = ref(false)
 const saving = ref(false)
-const isEditMode = computed(() => route.params.id !== 'create')
+const isEditMode = computed(() => route.params.id && route.params.id !== 'create')
 
 const form = reactive({
   name: '',
