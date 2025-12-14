@@ -2677,22 +2677,17 @@ return Response::json([
         });
 
         // CMS Templates
-$router->post('/api/cms/templates', function (Request $request) use ($cmsApiController) {
+        $router->get('/api/cms/templates', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             try {
-                $data = $cmsApiController->createTemplate($user, $request->body());
-                return Response::created($data);
-            } catch (\App\Support\Auth\UnauthorizedException $e) {
-                // Only return 403 if it's actually a permission issue
+                $filters = [
+                    'active' => $request->queryParam('active'),
+                    'search' => $request->queryParam('search'),
+                ];
+                $data = $cmsApiController->listTemplates($user, $filters);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
                 return Response::forbidden($e->getMessage());
-            } catch (\PDOException $e) {
-                // Optional: Handle duplicate slug errors gracefully
-                if ($e->getCode() == 23000) { 
-                    return Response::json([
-                        'message' => 'A template with this name or slug already exists.'
-                    ], 409); // 409 Conflict
-                }
-                throw $e; // Let other database errors bubble up
             }
         });
 
@@ -2710,35 +2705,55 @@ $router->post('/api/cms/templates', function (Request $request) use ($cmsApiCont
             }
         });
 
+        // Fixed create template route
         $router->post('/api/cms/templates', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             try {
                 $data = $cmsApiController->createTemplate($user, $request->body());
                 return Response::created($data);
-            } catch (\RuntimeException $e) {
+            } catch (\App\Support\Auth\UnauthorizedException $e) {
                 return Response::forbidden($e->getMessage());
+            } catch (\PDOException $e) {
+                if ($e->getCode() == 23000) { 
+                    return Response::json([
+                        'message' => 'A template with this name or slug already exists.'
+                    ], 409); // 409 Conflict
+                }
+                throw $e;
             }
         });
 
+        // Fixed update template route
         $router->put('/api/cms/templates/{id}', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             try {
                 $data = $cmsApiController->updateTemplate($user, $id, $request->body());
                 return Response::json($data);
-            } catch (\RuntimeException $e) {
+            } catch (\App\Support\Auth\UnauthorizedException $e) {
                 return Response::forbidden($e->getMessage());
+            } catch (\PDOException $e) {
+                if ($e->getCode() == 23000) { 
+                    return Response::json([
+                        'message' => 'A template with this name or slug already exists.'
+                    ], 409);
+                }
+                throw $e;
             }
         });
 
+        // Fixed delete template route
         $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             try {
                 $cmsApiController->deleteTemplate($user, $id);
                 return Response::noContent();
-            } catch (\RuntimeException $e) {
+            } catch (\App\Support\Auth\UnauthorizedException $e) {
                 return Response::forbidden($e->getMessage());
+            } catch (\RuntimeException $e) {
+                // Catch "in use" exceptions
+                return Response::badRequest($e->getMessage());
             }
         });
 
