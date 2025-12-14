@@ -40,6 +40,14 @@ export default {
   },
 
   /**
+   * Get a published page by slug (public access)
+   */
+  async getPageBySlug(slug) {
+    const response = await api.get(`/cms/page/${slug}`)
+    return response.data
+  },
+
+  /**
    * Get form options for page editing (templates, components, etc.)
    */
   async getPageFormOptions() {
