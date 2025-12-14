@@ -285,6 +285,40 @@ class CMSApiController
     }
 
     /**
+     * Publish page (sets is_published to 1)
+     */
+    public function publishPage(?User $user, int $id): array
+    {
+        $this->requireEditAccess($user);
+
+        $pdo = $this->connection->pdo();
+
+        // Get page slug for cache invalidation
+        $page = $this->getPage($user, $id);
+        if (!$page) {
+            throw new \RuntimeException('Page not found');
+        }
+
+        $stmt = $pdo->prepare("
+            UPDATE {$this->table('pages')} SET
+                is_published = 1,
+                updated_by = :updated_by,
+                updated_at = NOW()
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            'id' => $id,
+            'updated_by' => $user->id,
+        ]);
+
+        // Invalidate cache
+        $this->invalidatePageCache($page['slug']);
+
+        return $this->getPage($user, $id);
+    }
+
+    /**
      * Delete page
      */
     public function deletePage(?User $user, int $id): bool
