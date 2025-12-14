@@ -32,10 +32,13 @@ Introduces a modern role management system with JSON-based permissions, supersed
 
 ## Idempotency
 
-All migrations use `IF NOT EXISTS` clauses to make them idempotent (safe to run multiple times):
-- `CREATE TABLE IF NOT EXISTS`
-- `CREATE INDEX IF NOT EXISTS`
-- `ADD COLUMN IF NOT EXISTS` (MySQL 8.0.29+)
+Migrations use `IF NOT EXISTS` clauses where supported:
+- `CREATE TABLE IF NOT EXISTS` - Safe to run multiple times
+- `CREATE INDEX IF NOT EXISTS` - Safe to run multiple times
+- `ALTER TABLE ADD COLUMN` - NOT idempotent, should only run once
+
+**Note**: `ADD COLUMN IF NOT EXISTS` requires MySQL 8.0.29+ and is not used for broader compatibility.
+Migrations should be run in order and tracked to avoid duplicate execution.
 
 ## Migration Order
 

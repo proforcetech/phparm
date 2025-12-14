@@ -1,5 +1,5 @@
 -- Inspection reports tables with media and signatures
-CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_reports (
+CREATE TABLE IF NOT EXISTS inspection_reports (
     id INT AUTO_INCREMENT PRIMARY KEY,
     template_id INT NOT NULL,
     customer_id INT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_reports (
     INDEX idx_inspection_report_template (template_id)
 );
 
-CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_report_items (
+CREATE TABLE IF NOT EXISTS inspection_report_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     report_id INT NOT NULL,
     template_item_id INT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_report_items (
     INDEX idx_inspection_item_report (report_id)
 );
 
-CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_report_signatures (
+CREATE TABLE IF NOT EXISTS inspection_report_signatures (
     id INT AUTO_INCREMENT PRIMARY KEY,
     report_id INT NOT NULL,
     signature_data LONGTEXT NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_report_signatures (
     INDEX idx_inspection_signature_report (report_id)
 );
 
-CREATE TABLE IF NOT EXISTS IF NOT EXISTS inspection_report_media (
+CREATE TABLE IF NOT EXISTS inspection_report_media (
     id INT AUTO_INCREMENT PRIMARY KEY,
     report_id INT NOT NULL,
     type ENUM('image', 'video') NOT NULL,
