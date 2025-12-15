@@ -297,7 +297,7 @@ class PageController
         return [
             'title' => (string) $title,
             'slug' => $this->slugify((string) $slugSource),
-            'template_id' => isset($data['template_id']) ? (int) $data['template_id'] : $existing?->template_id,
+	'template_id' => array_key_exists('template_id', $data) ? ($data['template_id'] !== null ? (int) $data['template_id'] : null) : $existing?->template_id,
             'header_component_id' => isset($data['header_component_id']) ? (int) $data['header_component_id'] : $existing?->header_component_id,
             'footer_component_id' => isset($data['footer_component_id']) ? (int) $data['footer_component_id'] : $existing?->footer_component_id,
             'custom_css' => $data['custom_css'] ?? $existing?->custom_css,
