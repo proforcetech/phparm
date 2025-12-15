@@ -487,7 +487,7 @@ class CMSApiController
     // Templates
     // ================================================
 
-    /**
+/**
      * List all templates
      */
     public function listTemplates(?User $user, array $filters = []): array
@@ -499,7 +499,8 @@ class CMSApiController
         $where = [];
         $params = [];
 
-        if (isset($filters['active'])) {
+        // FIXED: Check that active is not an empty string before filtering
+        if (isset($filters['active']) && $filters['active'] !== '') {
             $where[] = 'is_active = :active';
             $params['active'] = $filters['active'] ? 1 : 0;
         }
@@ -525,7 +526,7 @@ class CMSApiController
             'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
         ];
     }
-
+    
     /**
      * Get single template
      */
