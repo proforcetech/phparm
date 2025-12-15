@@ -86,8 +86,49 @@ class CMSRenderingService
         // Load and render dynamic components ({{component:slug}})
         $data = $this->loadDynamicComponents($template->structure, $data);
 
-        // Render the template
-        return $this->templateEngine->render($template->structure, $data);
+        // Render the template structure
+        $html = $this->templateEngine->render($template->structure, $data);
+
+        // Inject Page and Template assets (CSS/JS) automatically
+        // This ensures styles are loaded even if the template doesn't have {{custom_css}} placeholders
+        $css = "/* Template CSS */\n" . ($template->default_css ?? '') . "\n/* Page Custom CSS */\n" . ($page->custom_css ?? '');
+        $js = "/* Template JS */\n" . ($template->default_js ?? '') . "\n/* Page Custom JS */\n" . ($page->custom_js ?? '');
+
+        return $this->injectAssets($html, $css, $js);
+    }
+
+    /**
+     * Helper to inject CSS into <head> and JS before </body>
+     * * @param string $html
+     * @param string $css
+     * @param string $js
+     * @return string
+     */
+    private function injectAssets(string $html, string $css, string $js): string
+    {
+        // Inject CSS
+        if (trim($css) !== '') {
+            $styleBlock = "<style>\n" . $css . "\n</style>";
+            // Try to inject before closing head, otherwise prepend to HTML
+            if (stripos($html, '</head>') !== false) {
+                $html = str_ireplace('</head>', $styleBlock . "\n</head>", $html);
+            } else {
+                $html = $styleBlock . $html;
+            }
+        }
+
+        // Inject JS
+        if (trim($js) !== '') {
+            $scriptBlock = "<script>\n" . $js . "\n</script>";
+            // Try to inject before closing body, otherwise append to HTML
+            if (stripos($html, '</body>') !== false) {
+                $html = str_ireplace('</body>', $scriptBlock . "\n</body>", $html);
+            } else {
+                $html .= $scriptBlock;
+            }
+        }
+
+        return $html;
     }
 
     /**
@@ -201,7 +242,7 @@ class CMSRenderingService
                 $data[$placeholderKey] = $this->renderComponent($component);
             } else {
                 // Component not found, replace with empty string or comment
-                $data[$placeholderKey] = '<!-- Component "' . htmlspecialchars($slug) . '" not found -->';
+                $data[$placeholderKey] = '';
             }
         }
 
