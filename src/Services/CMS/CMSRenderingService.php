@@ -83,6 +83,9 @@ class CMSRenderingService
         // Build placeholder data
         $data = $this->buildPlaceholderData($page, $template, $header, $footer);
 
+        // Load and render dynamic components ({{component:slug}})
+        $data = $this->loadDynamicComponents($template->structure, $data);
+
         // Render the template
         return $this->templateEngine->render($template->structure, $data);
     }
@@ -153,6 +156,75 @@ class CMSRenderingService
         }
 
         return $this->mapComponent($row);
+    }
+
+    /**
+     * Load a component by slug
+     *
+     * @param string $slug
+     * @return Component|null
+     */
+    private function loadComponentBySlug(string $slug): ?Component
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM cms_components WHERE slug = :slug AND is_active = 1 LIMIT 1'
+        );
+        $stmt->execute(['slug' => $slug]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            return null;
+        }
+
+        return $this->mapComponent($row);
+    }
+
+    /**
+     * Load and render dynamic components from template
+     * Finds all {{component:slug}} placeholders and loads the components
+     *
+     * @param string $template
+     * @param array<string, string> $data
+     * @return array<string, string>
+     */
+    private function loadDynamicComponents(string $template, array $data): array
+    {
+        // Extract all component slugs from {{component:slug}} patterns
+        $componentSlugs = $this->extractComponentSlugs($template);
+
+        // Load and render each component
+        foreach ($componentSlugs as $slug) {
+            $component = $this->loadComponentBySlug($slug);
+            $placeholderKey = 'component:' . $slug;
+
+            if ($component !== null) {
+                $data[$placeholderKey] = $this->renderComponent($component);
+            } else {
+                // Component not found, replace with empty string or comment
+                $data[$placeholderKey] = '<!-- Component "' . htmlspecialchars($slug) . '" not found -->';
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Extract component slugs from template
+     * Finds all {{component:slug}} patterns
+     *
+     * @param string $template
+     * @return array<string>
+     */
+    private function extractComponentSlugs(string $template): array
+    {
+        $slugs = [];
+
+        // Match all {{component:slug}} patterns
+        if (preg_match_all('/\{\{component:([a-zA-Z0-9_-]+)\}\}/', $template, $matches)) {
+            $slugs = array_unique($matches[1]);
+        }
+
+        return $slugs;
     }
 
     /**

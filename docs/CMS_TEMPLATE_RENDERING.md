@@ -90,12 +90,73 @@ The rendering service supports these placeholders:
 | `{{slug}}` | Page URL slug |
 | `{{header}}` | Header component (HTML + CSS + JS) |
 | `{{footer}}` | Footer component (HTML + CSS + JS) |
+| `{{component:slug}}` | **Dynamic component loading** - Load any component by slug |
 | `{{breadcrumbs}}` | Auto-generated breadcrumb navigation |
 | `{{default_css}}` | Template-level CSS |
 | `{{custom_css}}` | Page-specific CSS |
 | `{{default_js}}` | Template-level JavaScript |
 | `{{custom_js}}` | Page-specific JavaScript |
 | `{{year}}` | Current year (for copyright notices) |
+
+### 3a. Dynamic Component Loading
+
+**NEW FEATURE:** You can now load any component dynamically using `{{component:slug}}` syntax!
+
+**How it works:**
+- Use `{{component:slug}}` anywhere in your template
+- The system automatically loads the component by its slug
+- Components are rendered with their CSS and JavaScript inline
+- No database fields or form selectors needed
+- Unlimited components per page
+
+**Example Template with Dynamic Components:**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>{{title}}</title>
+    <style>{{default_css}}</style>
+</head>
+<body>
+    {{header}}
+
+    <aside class="sidebar">
+        {{component:sidebar-nav}}
+        {{component:newsletter-signup}}
+    </aside>
+
+    <main>
+        {{content}}
+        {{component:call-to-action}}
+    </main>
+
+    {{footer}}
+    {{component:chat-widget}}
+</body>
+</html>
+```
+
+**Benefits:**
+- **Flexible:** Add components anywhere without changing database schema
+- **Reusable:** Create components once, use everywhere by slug
+- **Simple:** Just reference the component slug in your template
+- **Clean:** No need for additional form fields or database columns
+
+**Example Use Cases:**
+- `{{component:sidebar}}` - Sidebar navigation
+- `{{component:promo-banner}}` - Promotional banners
+- `{{component:social-share}}` - Social sharing buttons
+- `{{component:newsletter}}` - Newsletter signup forms
+- `{{component:testimonials}}` - Customer testimonials
+- `{{component:contact-form}}` - Contact forms
+- `{{component:image-gallery}}` - Photo galleries
+
+**What if a component doesn't exist?**
+If you reference a component that doesn't exist, the system will insert an HTML comment:
+```html
+<!-- Component "widget-name" not found -->
+```
+This won't break your page, but you can check the source to see which components are missing.
 
 ### 4. Create a Page
 
@@ -114,7 +175,7 @@ When a user visits a page (e.g., `/about-us`), here's what happens:
 
 1. **Load Page Data** - Fetch the page from database by slug
 2. **Load Template** - Fetch the template associated with the page
-3. **Load Components** - Fetch header and footer components
+3. **Load Fixed Components** - Fetch header and footer components (from page settings)
 4. **Build Data Array** - Combine all data into a placeholder array:
    ```php
    [
@@ -127,9 +188,10 @@ When a user visits a page (e.g., `/about-us`), here's what happens:
        // ... etc
    ]
    ```
-5. **Render Template** - Replace all placeholders in the template with actual values
-6. **Cache Result** - Cache the rendered HTML for performance
-7. **Return HTML** - Serve the complete page to the user
+5. **Load Dynamic Components** - Scan template for `{{component:slug}}` patterns and load them
+6. **Render Template** - Replace all placeholders in the template with actual values
+7. **Cache Result** - Cache the rendered HTML for performance
+8. **Return HTML** - Serve the complete page to the user
 
 ## API Endpoints
 
@@ -286,6 +348,125 @@ Visit `/cms/welcome` and you'll see the fully rendered page with:
 - SEO meta tags
 - Everything cached for fast loading
 
+### 5. Using Dynamic Components - Complete Example
+
+Let's create a complete example using dynamic components:
+
+#### Step 1: Create Widget Components
+
+**Newsletter Widget (slug: `newsletter-signup`)**
+- Type: widget
+- Content:
+```html
+<div class="newsletter-box">
+    <h3>Subscribe to Our Newsletter</h3>
+    <form action="/subscribe" method="POST">
+        <input type="email" name="email" placeholder="Your email">
+        <button type="submit">Subscribe</button>
+    </form>
+</div>
+```
+- CSS:
+```css
+.newsletter-box {
+    background: #f8f9fa;
+    padding: 2rem;
+    border-radius: 8px;
+}
+```
+
+**Social Share Widget (slug: `social-share`)**
+- Type: widget
+- Content:
+```html
+<div class="social-share">
+    <a href="#" onclick="shareOnFacebook()">Facebook</a>
+    <a href="#" onclick="shareOnTwitter()">Twitter</a>
+    <a href="#" onclick="shareOnLinkedIn()">LinkedIn</a>
+</div>
+```
+
+**Call to Action (slug: `cta-demo`)**
+- Type: widget
+- Content:
+```html
+<div class="cta-banner">
+    <h2>Ready to Get Started?</h2>
+    <p>Sign up for a free demo today!</p>
+    <a href="/demo" class="cta-button">Request Demo</a>
+</div>
+```
+
+#### Step 2: Create Template with Dynamic Components
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>{{title}} | My Company</title>
+    <meta name="description" content="{{meta_description}}">
+    <style>{{default_css}}</style>
+    <style>{{custom_css}}</style>
+</head>
+<body>
+    {{header}}
+
+    <div class="layout">
+        <aside class="sidebar">
+            {{component:newsletter-signup}}
+            {{component:social-share}}
+        </aside>
+
+        <main class="content">
+            {{breadcrumbs}}
+            {{content}}
+            {{component:cta-demo}}
+        </main>
+    </div>
+
+    {{footer}}
+    <script>{{default_js}}</script>
+    <script>{{custom_js}}</script>
+</body>
+</html>
+```
+
+#### Step 3: Create Your Page
+
+- Title: "Our Services"
+- Template: (Select the template above)
+- Header: (Select your main header)
+- Footer: (Select your main footer)
+- Content:
+```html
+<h1>Professional Services</h1>
+<p>We offer comprehensive solutions for your business needs.</p>
+<ul>
+    <li>Consulting</li>
+    <li>Development</li>
+    <li>Support</li>
+</ul>
+```
+
+#### Result
+
+When rendered, the page will automatically include:
+- Your main header (from header_component_id)
+- Newsletter signup widget in the sidebar
+- Social share buttons in the sidebar
+- Your page content in the main area
+- Call-to-action banner after the content
+- Your main footer (from footer_component_id)
+
+All without needing any database fields or form selectors for the widgets!
+
+**Key Advantages:**
+- ✅ Add `{{component:testimonials}}` to any template instantly
+- ✅ Reuse `{{component:newsletter-signup}}` across multiple templates
+- ✅ Change a widget once, updates everywhere it's used
+- ✅ No code changes needed to add new components
+- ✅ Conditionally load components in different templates
+
 ## Benefits
 
 1. **Reusability** - Create headers/footers once, use across all pages
@@ -328,6 +509,9 @@ Located at: `/src/Services/CMS/CMSRenderingService.php`
 - `renderPageContent(Page $page): ?string` - Render any page object
 - `loadTemplate(int $id): ?Template` - Load template by ID
 - `loadComponent(int $id): ?Component` - Load component by ID
+- `loadComponentBySlug(string $slug): ?Component` - Load component by slug (for dynamic loading)
+- `loadDynamicComponents(string $template, array $data): array` - Extract and load all `{{component:*}}` placeholders
+- `extractComponentSlugs(string $template): array` - Parse template for component slugs
 - `buildPlaceholderData()` - Build array of all placeholder values
 - `renderComponent(Component $component): string` - Render component with CSS/JS
 
