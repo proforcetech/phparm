@@ -69,6 +69,20 @@
               </div>
 
               <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Template</label>
+                <select
+                  v-model="form.template_id"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option :value="null">No Template</option>
+                  <option v-for="template in availableTemplates" :key="template.id" :value="template.id">
+                    {{ template.name }}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Choose a template to control the page layout</p>
+              </div>
+
+              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Summary</label>
                 <textarea
                   v-model="form.summary"
@@ -201,6 +215,7 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref(null)
 const validationErrors = ref([])
+const availableTemplates = ref([])
 
 const pageId = computed(() => route.params.id)
 const isEditing = computed(() => !!pageId.value && pageId.value !== 'create')
@@ -220,6 +235,7 @@ function createDefaultForm() {
   return {
     title: '',
     slug: '',
+    template_id: null,
     status: 'draft',
     meta_title: '',
     meta_description: '',
@@ -233,6 +249,10 @@ async function loadData() {
   try {
     loading.value = true
     error.value = null
+
+    // Load form options (templates, etc.)
+    const formOptions = await cmsService.getPageFormOptions()
+    availableTemplates.value = formOptions.templates || []
 
     // Load page if editing
     if (isEditing.value) {

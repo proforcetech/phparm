@@ -87,8 +87,8 @@ class PageController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, template_id, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :template_id, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -118,7 +118,7 @@ class PageController
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE cms_pages SET title = :title, slug = :slug, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            'UPDATE cms_pages SET title = :title, slug = :slug, template_id = :template_id, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
             . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
@@ -227,6 +227,7 @@ class PageController
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
             'slug' => (string) $row['slug'],
+            'template_id' => isset($row['template_id']) ? (int) $row['template_id'] : null,
             'status' => (string) $row['status'],
             'meta_title' => $row['meta_title'] ?? null,
             'meta_description' => $row['meta_description'] ?? null,
@@ -259,6 +260,7 @@ class PageController
         return [
             'title' => (string) $title,
             'slug' => $this->slugify((string) $slugSource),
+            'template_id' => isset($data['template_id']) ? (int) $data['template_id'] : $existing?->template_id,
             'status' => (string) $status,
             'meta_title' => $data['meta_title'] ?? $existing?->meta_title,
             'meta_description' => $data['meta_description'] ?? $existing?->meta_description,
