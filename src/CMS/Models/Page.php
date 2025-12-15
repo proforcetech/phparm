@@ -9,6 +9,7 @@ class Page extends BaseModel
     public int $id;
     public string $title;
     public string $slug;
+    public ?int $template_id = null;
     public string $status = 'draft';
     public ?string $meta_title = null;
     public ?string $meta_description = null;
