@@ -1311,6 +1311,17 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->get('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+            $filters = [
+                'parts_supplier' => $request->queryParam('parts_supplier') === 'true',
+            ];
+
+            $data = $inventoryLookupController->index($user, $type, $filters);
+            return Response::json($data);
+        });
+
         $router->get('/api/inventory/{id}', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -1339,17 +1350,6 @@ return Response::json([
 
             $inventoryController->destroy($user, $id);
             return Response::noContent();
-        });
-
-        $router->get('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
-            $user = $request->getAttribute('user');
-            $type = (string) $request->getAttribute('type');
-            $filters = [
-                'parts_supplier' => $request->queryParam('parts_supplier') === 'true',
-            ];
-
-            $data = $inventoryLookupController->index($user, $type, $filters);
-            return Response::json($data);
         });
 
         $router->post('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
