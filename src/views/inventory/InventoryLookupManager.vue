@@ -58,41 +58,53 @@
       </div>
     </Card>
 
-    <Modal v-if="showModal" @close="closeModal">
-      <template #title>{{ editingItem ? `Edit ${copy.singular}` : `New ${copy.singular}` }}</template>
-      <template #default>
-        <div class="space-y-4">
+    <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+          <h3 class="text-lg font-medium text-gray-900">
+            {{ editingItem ? `Edit ${copy.singular}` : `New ${copy.singular}` }}
+          </h3>
+          <button @click="closeModal" class="text-gray-400 hover:text-gray-500 focus:outline-none">
+            <span class="sr-only">Close</span>
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-6 py-4 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Name</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <Input v-model="form.name" required :placeholder="copy.placeholder" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
               v-model="form.description"
               rows="3"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
               placeholder="Optional details"
             ></textarea>
           </div>
-          <div v-if="props.type === 'vendors'" class="flex items-center gap-2">
+          <div v-if="props.type === 'vendors'" class="flex items-center gap-2 pt-2">
             <input
               id="partsSupplier"
               v-model="form.is_parts_supplier"
               type="checkbox"
-              class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
             <label for="partsSupplier" class="text-sm text-gray-700">Parts supplier</label>
           </div>
         </div>
-      </template>
-      <template #footer>
-        <div class="flex gap-3 justify-end">
+
+        <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3 border-t border-gray-200">
           <Button variant="secondary" @click="closeModal">Cancel</Button>
-          <Button :loading="saving" @click="saveItem">{{ editingItem ? 'Save changes' : `Create ${copy.singular}` }}</Button>
+          <Button :loading="saving" @click="saveItem">
+            {{ editingItem ? 'Save changes' : `Create ${copy.singular}` }}
+          </Button>
         </div>
-      </template>
-    </Modal>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -102,7 +114,6 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Loading from '@/components/ui/Loading.vue'
-import Modal from '@/components/ui/Modal.vue'
 import Table from '@/components/ui/Table.vue'
 import inventoryMetaService from '@/services/inventory-meta.service'
 import { useToast } from '@/stores/toast'
@@ -219,10 +230,10 @@ const closeModal = () => {
 const saveItem = async () => {
   saving.value = true
   try {
-  const payload = { name: form.name, description: form.description }
-  if (props.type === 'vendors') {
-    payload.is_parts_supplier = form.is_parts_supplier
-  }
+    const payload = { name: form.name, description: form.description }
+    if (props.type === 'vendors') {
+      payload.is_parts_supplier = form.is_parts_supplier
+    }
     if (editingItem.value) {
       await inventoryMetaService.update(props.type, editingItem.value.id, payload)
       toast.success(`${copy.value.singular} updated`)
