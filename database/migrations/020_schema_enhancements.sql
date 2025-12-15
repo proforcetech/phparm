@@ -2,10 +2,10 @@
 -- This file consolidates multiple small ALTER TABLE migrations for better maintainability
 
 -- Add reminder tracking to appointments
-ALTER TABLE appointments 
+ALTER TABLE appointments
   ADD COLUMN reminder_sent_at TIMESTAMP NULL AFTER notes;
 
-CREATE INDEX IF NOT EXISTS idx_appointments_reminder 
+CREATE INDEX idx_appointments_reminder
   ON appointments (status, scheduled_at, reminder_sent_at);
 
 -- Add mileage tracking to customer vehicles
