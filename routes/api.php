@@ -2743,7 +2743,7 @@ return Response::json([
         });
 
         // Fixed delete template route
-        $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cmsApiController) {
+$router->delete('/api/cms/templates/{id}', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             try {
@@ -2752,8 +2752,8 @@ return Response::json([
             } catch (\App\Support\Auth\UnauthorizedException $e) {
                 return Response::forbidden($e->getMessage());
             } catch (\RuntimeException $e) {
-                // Catch "in use" exceptions
-                return Response::badRequest($e->getMessage());
+                // Use Response::json to send 'message' key to match frontend expectation
+                return Response::json(['message' => $e->getMessage()], 400);
             }
         });
 
