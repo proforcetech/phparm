@@ -184,7 +184,7 @@ const calculateSalePrice = () => {
   if (isNaN(cost) || !isFinite(cost)) return null
   if (isNaN(markup) || !isFinite(markup)) return cost // If markup is invalid, price = cost
 
-  const salePrice = cost * (markup / 100) - 1
+  const salePrice = cost * (1 + markup / 100)
   return parseFloat(salePrice.toFixed(2))
 }
 
