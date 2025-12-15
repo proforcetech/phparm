@@ -1,284 +1,281 @@
 <template>
   <div>
-    <div class="mb-6 flex items-center justify-between">
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">{{ isEditing ? 'Edit Inventory Item' : 'New Inventory Item' }}</h1>
-        <p class="mt-1 text-sm text-gray-500">{{ isEditing ? 'Update pricing and stock' : 'Add a new part or supply' }}</p>
+        <h1 class="text-2xl font-bold text-gray-900">{{ copy.title }}</h1>
+        <p class="mt-1 text-sm text-gray-500">{{ copy.subtitle }}</p>
       </div>
-      <Button variant="secondary" @click="goBack">Back to list</Button>
+      <div class="flex gap-3 flex-wrap">
+        <Button variant="secondary" @click="$router.push('/cp/inventory')">Back to inventory</Button>
+        <Button @click="startCreate">
+          <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add {{ copy.singular }}
+        </Button>
+      </div>
     </div>
 
-    <Card class="max-w-5xl">
-      <form class="space-y-6" @submit.prevent="save">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <Card>
+      <div class="flex flex-col gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Name</label>
-            <Input v-model="form.name" required placeholder="Brake pads" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">SKU</label>
-            <Input v-model="form.sku" placeholder="SKU-1234" />
-          </div>
-          <div>
-            <div class="flex items-center justify-between text-sm font-medium text-gray-700">
-              <span>Category</span>
-              <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/categories">Manage</RouterLink>
-            </div>
-            <Select
-              v-model="form.category"
-              :options="categoryOptions"
-              placeholder="Select a category"
-              :disabled="lookupsLoading.categories"
-            />
-            <div v-if="lookupsLoading.categories" class="mt-1 flex items-center gap-2 text-xs text-gray-500">
-              <Loading size="sm" />
-              <span>Loading categories...</span>
-            </div>
-            <p v-else-if="lookupError.categories" class="mt-1 text-xs text-red-600">{{ lookupError.categories }}</p>
-          </div>
-          <div>
-            <div class="flex items-center justify-between text-sm font-medium text-gray-700">
-              <span>Location</span>
-              <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/locations">Manage</RouterLink>
-            </div>
-            <Select
-              v-model="form.location"
-              :options="locationOptions"
-              placeholder="Select a location"
-              :disabled="lookupsLoading.locations"
-            />
-            <div v-if="lookupsLoading.locations" class="mt-1 flex items-center gap-2 text-xs text-gray-500">
-              <Loading size="sm" />
-              <span>Loading locations...</span>
-            </div>
-            <p v-else-if="lookupError.locations" class="mt-1 text-xs text-red-600">{{ lookupError.locations }}</p>
-          </div>
-          <div>
-            <div class="flex items-center justify-between text-sm font-medium text-gray-700">
-              <span>Vendor</span>
-              <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/vendors">Manage</RouterLink>
-            </div>
-            <Select
-              v-model="form.vendor"
-              :options="vendorOptions"
-              placeholder="Select a vendor"
-              :disabled="lookupsLoading.vendors"
-            />
-            <div v-if="lookupsLoading.vendors" class="mt-1 flex items-center gap-2 text-xs text-gray-500">
-              <Loading size="sm" />
-              <span>Loading vendors...</span>
-            </div>
-            <p v-else-if="lookupError.vendors" class="mt-1 text-xs text-red-600">{{ lookupError.vendors }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Reorder quantity</label>
-            <Input v-model.number="form.reorder_quantity" type="number" min="0" placeholder="10" />
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Stock quantity</label>
-            <Input v-model.number="form.stock_quantity" type="number" min="0" placeholder="50" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Low stock threshold</label>
-            <Input v-model.number="form.low_stock_threshold" type="number" min="0" placeholder="5" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Markup (%)</label>
-            <Input v-model.number="form.markup" type="number" step="0.01" min="0" placeholder="20" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Cost</label>
-            <Input v-model.number="form.cost" type="number" step="0.01" min="0" placeholder="15.00" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Sale price</label>
+            <label class="block text-sm font-medium text-gray-700">Search</label>
             <Input
-              v-model.number="form.sale_price"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="25.00"
-              helperText="Calculated as cost × (1 + markup/100). You can override this if needed."
+              v-model="search"
+              :placeholder="`Search ${copy.plural.toLowerCase()}`"
+              @input="handleSearch"
             />
           </div>
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Notes</label>
-          <textarea
-            v-model="form.notes"
-            :rows="3"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-            placeholder="Internal notes about the part"
-          ></textarea>
+        <div class="relative">
+          <Loading v-if="loading" overlay :text="`Loading ${copy.plural.toLowerCase()}...`" />
+          <Table :columns="columns" :data="filteredItems" :loading="loading" hoverable>
+            <template #cell(name)="{ value }">
+              <div class="font-semibold text-gray-900">{{ value }}</div>
+            </template>
+            <template #cell(description)="{ value }">
+              <span class="text-sm text-gray-600">{{ value || '—' }}</span>
+            </template>
+            <template #actions="{ row }">
+              <div class="flex gap-2">
+                <Button size="sm" variant="secondary" @click="startEdit(row)">Edit</Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  :loading="deletingId === row.id"
+                  @click="deleteItem(row)">
+                  Delete
+                </Button>
+              </div>
+            </template>
+            <template #empty>
+              <p class="text-sm text-gray-500">No {{ copy.plural.toLowerCase() }} found.</p>
+            </template>
+          </Table>
+        </div>
+      </div>
+    </Card>
+
+    <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+          <h3 class="text-lg font-medium text-gray-900">
+            {{ editingItem ? `Edit ${copy.singular}` : `New ${copy.singular}` }}
+          </h3>
+          <button @click="closeModal" class="text-gray-400 hover:text-gray-500 focus:outline-none">
+            <span class="sr-only">Close</span>
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div class="px-6 py-4 space-y-4">
           <div>
-            <p class="text-sm text-gray-600">Fields marked with * are required. Pricing and stock will sync to alerts.</p>
-            <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-            <p v-if="success" class="text-sm text-green-600">{{ success }}</p>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <Input v-model="form.name" required :placeholder="copy.placeholder" />
           </div>
-          <div class="flex gap-3">
-            <Button type="button" variant="secondary" @click="goBack">Cancel</Button>
-            <Button type="submit" :loading="saving">{{ isEditing ? 'Update item' : 'Create item' }}</Button>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              v-model="form.description"
+              rows="3"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              placeholder="Optional details"
+            ></textarea>
+          </div>
+          <div v-if="props.type === 'vendors'" class="flex items-center gap-2 pt-2">
+            <input
+              id="partsSupplier"
+              v-model="form.is_parts_supplier"
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label for="partsSupplier" class="text-sm text-gray-700">Parts supplier</label>
           </div>
         </div>
-      </form>
-    </Card>
+
+        <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3 border-t border-gray-200">
+          <Button variant="secondary" @click="closeModal">Cancel</Button>
+          <Button :loading="saving" @click="saveItem">
+            {{ editingItem ? 'Save changes' : `Create ${copy.singular}` }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Loading from '@/components/ui/Loading.vue'
-import Select from '@/components/ui/Select.vue'
+import Table from '@/components/ui/Table.vue'
 import inventoryMetaService from '@/services/inventory-meta.service'
-import inventoryService from '@/services/inventory.service'
+import { useToast } from '@/stores/toast'
 
-const router = useRouter()
-const route = useRoute()
+const props = defineProps({
+  type: {
+    type: String,
+    required: true,
+  },
+})
+
+const labels = {
+  categories: {
+    title: 'Inventory Categories',
+    subtitle: 'Create categories to group similar items',
+    singular: 'Category',
+    plural: 'Categories',
+    placeholder: 'Brakes',
+  },
+  vendors: {
+    title: 'Inventory Vendors',
+    subtitle: 'Track vendors for ordering and pricing',
+    singular: 'Vendor',
+    plural: 'Vendors',
+    placeholder: 'ACME Parts Co.',
+  },
+  locations: {
+    title: 'Inventory Locations',
+    subtitle: 'Keep locations updated for quick picking',
+    singular: 'Location',
+    plural: 'Locations',
+    placeholder: 'Aisle 3',
+  },
+}
+
+const copy = computed(() => labels[props.type] || labels.categories)
+
+const toast = useToast()
+const items = ref([])
+const filteredItems = ref([])
+const search = ref('')
+const loading = ref(false)
 const saving = ref(false)
-const success = ref('')
-const error = ref('')
-const isEditing = ref(false)
+const deletingId = ref(null)
+const showModal = ref(false)
+const editingItem = ref(null)
 
 const form = reactive({
   name: '',
-  sku: '',
-  category: '',
-  location: '',
-  vendor: '',
-  reorder_quantity: 0,
-  stock_quantity: 0,
-  low_stock_threshold: 0,
-  markup: null,
-  cost: 0,
-  sale_price: 0,
-  notes: '',
+  description: '',
+  is_parts_supplier: false,
 })
 
-const isInitializing = ref(true)
-const manualSalePrice = ref(false)
-const isAutoUpdatingSalePrice = ref(false)
+const columns = [
+  { key: 'name', label: 'Name' },
+  { key: 'description', label: 'Description' },
+]
 
-const categoryOptions = ref([])
-const locationOptions = ref([])
-const vendorOptions = ref([])
-const lookupsLoading = reactive({ categories: false, locations: false, vendors: false })
-const lookupError = reactive({ categories: '', locations: '', vendors: '' })
-const lookupFieldMap = { categories: 'category', locations: 'location', vendors: 'vendor' }
-
-const calculateSalePrice = () => {
-  const cost = Number(form.cost)
-  const markup = Number(form.markup ?? 0)
-
-  if (!Number.isFinite(cost)) return null
-
-  const salePrice = cost * (markup) + cost
-  return Number.isFinite(salePrice) ? Number(salePrice.toFixed(2)) : null
+const handleSearch = () => {
+  const term = search.value.toLowerCase()
+  filteredItems.value = !term
+    ? items.value
+    : items.value.filter(
+        (item) => {
+          const name = (item.name || '').toLowerCase()
+          const description = (item.description || '').toLowerCase()
+          return name.includes(term) || description.includes(term)
+        }
+      )
 }
 
-const goBack = () => router.push('/cp/inventory')
+const resetForm = () => {
+  form.name = ''
+  form.description = ''
+  form.is_parts_supplier = false
+}
 
-const loadLookup = async (type, target) => {
-  lookupsLoading[type] = true
-  lookupError[type] = ''
+const loadItems = async () => {
+  loading.value = true
   try {
-    const params = type === 'vendors' ? { parts_supplier: true } : {}
-    const data = await inventoryMetaService.list(type, params)
-    const options = data.map((item) => ({ label: item.name, value: item.name }))
-    const field = lookupFieldMap[type]
-    const currentValue = form[field]
-
-    if (currentValue && !options.some((option) => option.value === currentValue)) {
-      options.push({ label: currentValue, value: currentValue })
+    items.value = await inventoryMetaService.list(props.type)
+    filteredItems.value = items.value
+    if (search.value) {
+      handleSearch()
     }
-
-    target.value = options
   } catch (err) {
     console.error(err)
-    lookupError[type] = `Could not load ${type}.`
+    toast.error(`Unable to load ${copy.value.plural.toLowerCase()}`)
   } finally {
-    lookupsLoading[type] = false
+    loading.value = false
   }
 }
 
-const loadLookups = async () => {
-  await Promise.all([
-    loadLookup('categories', categoryOptions),
-    loadLookup('locations', locationOptions),
-    loadLookup('vendors', vendorOptions),
-  ])
+const startCreate = () => {
+  editingItem.value = null
+  resetForm()
+  showModal.value = true
 }
 
-const loadItem = async () => {
-  const id = route.params.id
-  if (!id) return
-  isEditing.value = true
-  const data = await inventoryService.get(id)
-  Object.assign(form, data)
+const startEdit = (item) => {
+  editingItem.value = item
+  form.name = item.name
+  form.description = item.description || ''
+  form.is_parts_supplier = Boolean(item.is_parts_supplier)
+  showModal.value = true
 }
 
-const updateSalePriceFromFormula = () => {
-  if (isInitializing.value || manualSalePrice.value) return
-
-  const salePrice = calculateSalePrice()
-  if (salePrice === null) return
-
-  isAutoUpdatingSalePrice.value = true
-  form.sale_price = salePrice
-  isAutoUpdatingSalePrice.value = false
+const closeModal = () => {
+  showModal.value = false
+  resetForm()
+  editingItem.value = null
 }
 
-watch(
-  () => [form.cost, form.markup],
-  () => {
-    updateSalePriceFromFormula()
-  },
-)
-
-watch(
-  () => form.sale_price,
-  (newValue) => {
-    if (isInitializing.value || isAutoUpdatingSalePrice.value) return
-
-    manualSalePrice.value = newValue !== '' && newValue !== null && newValue !== undefined
-  },
-)
-
-const save = async () => {
+const saveItem = async () => {
   saving.value = true
-  error.value = ''
-  success.value = ''
   try {
-    const payload = { ...form }
-    if (isEditing.value && route.params.id) {
-      await inventoryService.update(route.params.id, payload)
-      success.value = 'Inventory item updated.'
-    } else {
-      await inventoryService.create(payload)
-      success.value = 'Inventory item created.'
-      goBack()
+    const payload = { name: form.name, description: form.description }
+    if (props.type === 'vendors') {
+      payload.is_parts_supplier = form.is_parts_supplier
     }
+    if (editingItem.value) {
+      await inventoryMetaService.update(props.type, editingItem.value.id, payload)
+      toast.success(`${copy.value.singular} updated`)
+    } else {
+      await inventoryMetaService.create(props.type, payload)
+      toast.success(`${copy.value.singular} created`)
+    }
+    closeModal()
+    await loadItems()
   } catch (err) {
     console.error(err)
-    error.value = 'Could not save inventory item.'
+    toast.error(`Unable to save ${copy.value.singular.toLowerCase()}`)
   } finally {
     saving.value = false
   }
 }
 
-onMounted(async () => {
-  await loadItem()
-  loadLookups()
-  isInitializing.value = false
+const deleteItem = async (item) => {
+  if (!confirm(`Delete this ${copy.value.singular.toLowerCase()}?`)) return
+  deletingId.value = item.id
+  try {
+    await inventoryMetaService.remove(props.type, item.id)
+    toast.success(`${copy.value.singular} deleted`)
+    await loadItems()
+  } catch (err) {
+    console.error(err)
+    toast.error(`Unable to delete ${copy.value.singular.toLowerCase()}`)
+  } finally {
+    deletingId.value = null
+  }
+}
+
+onMounted(() => {
+  loadItems()
 })
+
+watch(
+  () => props.type,
+  () => {
+    resetForm()
+    search.value = ''
+    loadItems()
+  }
+)
 </script>
