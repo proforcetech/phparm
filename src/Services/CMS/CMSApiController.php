@@ -189,7 +189,7 @@ class CMSApiController
 
         $stmt->execute([
             'title' => $data['title'] ?? '',
-	'template_id' => $data['template_id'] ??
+			'template_id' => $data['template_id'] ??,
             'slug' => $data['slug'],
             'status' => $data['status'] ?? 'draft',
             'meta_title' => $data['meta_title'] ?? null,
