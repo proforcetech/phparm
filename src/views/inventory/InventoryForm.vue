@@ -182,7 +182,7 @@ const calculateSalePrice = () => {
 
   if (!Number.isFinite(cost)) return null
 
-  const salePrice = cost * (1 + markup / 100)
+  const salePrice = cost * (markup) + cost
   return Number.isFinite(salePrice) ? Number(salePrice.toFixed(2)) : null
 }
 
