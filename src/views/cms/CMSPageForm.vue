@@ -83,6 +83,34 @@
               </div>
 
               <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Header Component</label>
+                <select
+                  v-model="form.header_component_id"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option :value="null">No Header</option>
+                  <option v-for="component in availableHeaderComponents" :key="component.id" :value="component.id">
+                    {{ component.name }}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Choose a header component for this page</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Footer Component</label>
+                <select
+                  v-model="form.footer_component_id"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option :value="null">No Footer</option>
+                  <option v-for="component in availableFooterComponents" :key="component.id" :value="component.id">
+                    {{ component.name }}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Choose a footer component for this page</p>
+              </div>
+
+              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Summary</label>
                 <textarea
                   v-model="form.summary"
@@ -141,6 +169,37 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                   placeholder="keyword1, keyword2, keyword3"
                 />
+              </div>
+            </div>
+          </Card>
+
+          <!-- Custom Styling -->
+          <Card>
+            <template #header>
+              <h3 class="text-lg font-medium text-gray-900">Custom Styling</h3>
+            </template>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Custom CSS</label>
+                <textarea
+                  v-model="form.custom_css"
+                  :rows="6"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
+                  placeholder="/* Page-specific CSS styles... */"
+                ></textarea>
+                <p class="mt-1 text-xs text-gray-500">CSS that will be applied only to this page</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Custom JavaScript</label>
+                <textarea
+                  v-model="form.custom_js"
+                  :rows="6"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
+                  placeholder="// Page-specific JavaScript..."
+                ></textarea>
+                <p class="mt-1 text-xs text-gray-500">JavaScript that will be executed only on this page</p>
               </div>
             </div>
           </Card>
@@ -216,6 +275,8 @@ const saving = ref(false)
 const error = ref(null)
 const validationErrors = ref([])
 const availableTemplates = ref([])
+const availableHeaderComponents = ref([])
+const availableFooterComponents = ref([])
 
 const pageId = computed(() => route.params.id)
 const isEditing = computed(() => !!pageId.value && pageId.value !== 'create')
@@ -236,6 +297,10 @@ function createDefaultForm() {
     title: '',
     slug: '',
     template_id: null,
+    header_component_id: null,
+    footer_component_id: null,
+    custom_css: '',
+    custom_js: '',
     status: 'draft',
     meta_title: '',
     meta_description: '',
@@ -250,9 +315,11 @@ async function loadData() {
     loading.value = true
     error.value = null
 
-    // Load form options (templates, etc.)
+    // Load form options (templates, components, etc.)
     const formOptions = await cmsService.getPageFormOptions()
     availableTemplates.value = formOptions.templates || []
+    availableHeaderComponents.value = formOptions.header_components || []
+    availableFooterComponents.value = formOptions.footer_components || []
 
     // Load page if editing
     if (isEditing.value) {

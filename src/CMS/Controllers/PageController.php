@@ -7,6 +7,7 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSRenderingService;
 use DateTimeImmutable;
 use PDO;
 
@@ -87,8 +88,8 @@ class PageController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, template_id, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :template_id, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -118,7 +119,7 @@ class PageController
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE cms_pages SET title = :title, slug = :slug, template_id = :template_id, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            'UPDATE cms_pages SET title = :title, slug = :slug, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
             . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
@@ -205,6 +206,38 @@ class PageController
         return $this->mapPage($row)->toArray();
     }
 
+    /**
+     * Get a fully rendered published page by slug
+     *
+     * @param string $slug
+     * @return string|null Rendered HTML or null if page not found
+     */
+    public function renderPublishedPage(string $slug): ?string
+    {
+        $renderingService = new CMSRenderingService($this->connection, $this->cache);
+        return $renderingService->renderPage($slug);
+    }
+
+    /**
+     * Preview a page with full rendering (for admin use)
+     *
+     * @param User $user
+     * @param int $id
+     * @return string|null Rendered HTML or null if page not found
+     */
+    public function previewPage(User $user, int $id): ?string
+    {
+        $this->gate->assert($user, 'cms.pages.view');
+
+        $page = $this->find($id);
+        if ($page === null) {
+            return null;
+        }
+
+        $renderingService = new CMSRenderingService($this->connection, $this->cache);
+        return $renderingService->renderPageContent($page);
+    }
+
     private function find(int $id): ?Page
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM cms_pages WHERE id = :id LIMIT 1');
@@ -228,6 +261,10 @@ class PageController
             'title' => (string) $row['title'],
             'slug' => (string) $row['slug'],
             'template_id' => isset($row['template_id']) ? (int) $row['template_id'] : null,
+            'header_component_id' => isset($row['header_component_id']) ? (int) $row['header_component_id'] : null,
+            'footer_component_id' => isset($row['footer_component_id']) ? (int) $row['footer_component_id'] : null,
+            'custom_css' => $row['custom_css'] ?? null,
+            'custom_js' => $row['custom_js'] ?? null,
             'status' => (string) $row['status'],
             'meta_title' => $row['meta_title'] ?? null,
             'meta_description' => $row['meta_description'] ?? null,
@@ -261,6 +298,10 @@ class PageController
             'title' => (string) $title,
             'slug' => $this->slugify((string) $slugSource),
             'template_id' => isset($data['template_id']) ? (int) $data['template_id'] : $existing?->template_id,
+            'header_component_id' => isset($data['header_component_id']) ? (int) $data['header_component_id'] : $existing?->header_component_id,
+            'footer_component_id' => isset($data['footer_component_id']) ? (int) $data['footer_component_id'] : $existing?->footer_component_id,
+            'custom_css' => $data['custom_css'] ?? $existing?->custom_css,
+            'custom_js' => $data['custom_js'] ?? $existing?->custom_js,
             'status' => (string) $status,
             'meta_title' => $data['meta_title'] ?? $existing?->meta_title,
             'meta_description' => $data['meta_description'] ?? $existing?->meta_description,

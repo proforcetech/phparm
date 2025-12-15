@@ -2502,6 +2502,19 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->get('/api/cms/pages/{id}/preview', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $html = $cmsPageController->previewPage($user, $id);
+
+            if ($html === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::html($html);
+        });
+
         // CMS Menus
         $router->get('/api/cms/menus', function (Request $request) use ($cmsMenuController) {
             $user = $request->getAttribute('user');
