@@ -179,16 +179,17 @@ class CMSApiController
 
         $stmt = $pdo->prepare("
             INSERT INTO {$this->table('pages')} (
-                title, slug, status, meta_title, meta_description, meta_keywords,
+                title, slug, template_id, status, meta_title, meta_description, meta_keywords,
                 summary, content, created_at, updated_at
             ) VALUES (
-                :title, :slug, :status, :meta_title, :meta_description, :meta_keywords,
+                :title, :slug, :status, :tempate_id, :meta_title, :meta_description, :meta_keywords,
                 :summary, :content, NOW(), NOW()
             )
         ");
 
         $stmt->execute([
             'title' => $data['title'] ?? '',
+	'template_id' => $data['template_id'] ??
             'slug' => $data['slug'],
             'status' => $data['status'] ?? 'draft',
             'meta_title' => $data['meta_title'] ?? null,
@@ -216,6 +217,7 @@ class CMSApiController
             UPDATE {$this->table('pages')} SET
                 title = :title,
                 slug = :slug,
+	   template_id = :template_id,
                 status = :status,
                 meta_title = :meta_title,
                 meta_description = :meta_description,
@@ -230,6 +232,7 @@ class CMSApiController
             'id' => $id,
             'title' => $data['title'] ?? '',
             'slug' => $data['slug'] ?? '',
+	'template_id' => $data['template_id'] ?? '',
             'status' => $data['status'] ?? 'draft',
             'meta_title' => $data['meta_title'] ?? null,
             'meta_description' => $data['meta_description'] ?? null,
