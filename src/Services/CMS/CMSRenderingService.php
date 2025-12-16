@@ -83,13 +83,24 @@ class CMSRenderingService
         // Build placeholder data
         $data = $this->buildPlaceholderData($page, $template, $header, $footer);
 
-        // Load and render dynamic components ({{component:slug}})
+        // 1. Pre-render dynamic components inside the Page Content
+        if (!empty($data['content'])) {
+            // Find components specifically in the content
+            $contentComponentData = $this->loadDynamicComponents($data['content'], []);
+            
+            // If we found components, render the content immediately to resolve them
+            if (!empty($contentComponentData)) {
+                $data['content'] = $this->templateEngine->render($data['content'], $contentComponentData);
+            }
+        }
+
+        // 2. Load and render dynamic components in the Template Structure
         $data = $this->loadDynamicComponents($template->structure, $data);
 
         // Render the template
-        return $this->templateEngine->render($template->structure, $data);
-    }
-// Prepare assets
+        $html = $this->templateEngine->render($template->structure, $data);
+
+        // Prepare assets
         $templateCss = $template->default_css ?? '';
         $pageCss = $page->custom_css ?? '';
         $templateJs = $template->default_js ?? '';
@@ -110,7 +121,7 @@ class CMSRenderingService
 
     /**
      * Helper to inject CSS into <head> and JS before </body>
-     * * @param string $html
+     * @param string $html
      * @param string $css
      * @param string $js
      * @return string
@@ -253,7 +264,7 @@ class CMSRenderingService
                 $data[$placeholderKey] = $this->renderComponent($component);
             } else {
                 // Component not found, replace with empty string or comment
-                $data[$placeholderKey] = '<!-- Component "' . htmlspecialchars($slug) . '" not found -->';
+                $data[$placeholderKey] = '';
             }
         }
 
@@ -271,8 +282,8 @@ class CMSRenderingService
     {
         $slugs = [];
 
-        // Match all {{component:slug}} patterns
-        if (preg_match_all('/\{\{component:([a-zA-Z0-9_-]+)\}\}/', $template, $matches)) {
+        // Match all {{component:slug}} patterns, allow optional whitespace
+        if (preg_match_all('/\{\{\s*component:([a-zA-Z0-9_-]+)\s*\}\}/', $template, $matches)) {
             $slugs = array_unique($matches[1]);
         }
 
