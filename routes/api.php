@@ -795,7 +795,7 @@ return Response::json([
     };
 
     // Public CMS content delivery endpoints
-    $router->get('/cms/page/{slug}', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
+    $router->get('/api/cms/page/{slug}', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
         $cacheKey = $cmsCacheService->buildKey('page', $slug, $locale, 'json');
@@ -818,7 +818,7 @@ return Response::json([
     });
 
     // Get fully rendered HTML for a page (for Vue SPA)
-    $router->get('/cms/page/{slug}/rendered', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
+    $router->get('/api/cms/page/{slug}/rendered', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
         $cacheKey = $cmsCacheService->buildKey('page', $slug, $locale, 'rendered');
@@ -842,7 +842,7 @@ return Response::json([
         return Response::json(['html' => $html, 'page' => $page]);
     });
 
-    $router->get('/cms/menu/{slug}', function (Request $request) use ($cmsMenuController, $cmsCacheService, $resolveLocale) {
+    $router->get('/api/cms/menu/{slug}', function (Request $request) use ($cmsMenuController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
         $cacheKey = $cmsCacheService->buildKey('menu', $slug, $locale, 'json');
