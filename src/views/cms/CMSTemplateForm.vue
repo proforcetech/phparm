@@ -84,9 +84,10 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm bg-gray-50"
                   placeholder="<html>...</html>"
                 ></textarea>
-                <p class="mt-1 text-xs text-gray-500">
-                  Use placeholders like {{ '{{content}}' }} to inject page data.
-                </p>
+<p class="mt-1 text-xs text-gray-500">
+  Use placeholders like <code>{{content}}</code> to inject page data.
+</p>
+
               </div>
             </div>
           </Card>
