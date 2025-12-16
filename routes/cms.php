@@ -11,12 +11,17 @@ use App\Support\Http\Request;
 use App\Support\Http\Response;
 use App\Support\Http\Router;
 use App\Services\CMS\CMSCacheService;
-use CMS\Controllers\AdminController;
-use CMS\Controllers\PageController;
+use App\CMS\Controllers\PageController;
+use App\Support\Auth\AccessGate;
+use App\Support\Auth\RolePermissions;
 
 return function (Router $router, array $config, $connection) {
     $cmsConfig = $config['cms'] ?? [];
     $cmsCache = new CMSCacheService($cmsConfig);
+
+    // Initialize AccessGate for PageController
+    $authConfig = $config['auth'] ?? [];
+    $gate = new AccessGate(new RolePermissions($authConfig['roles'] ?? []));
 
     $reservedPrefixes = [
         'api',
@@ -69,46 +74,20 @@ return function (Router $router, array $config, $connection) {
     // Public CMS Routes
     // These routes handle the front-end website pages
 
-    // Homepage
-    $router->get('/', function (Request $request) use ($cmsCache, $localeResolver) {
-        $locale = $localeResolver($request);
-        $cacheKey = $cmsCache->buildKey('page', 'home', $locale, 'html');
-
-        if ($cached = $cmsCache->get($cacheKey)) {
-            return Response::html((string) $cached);
+    // Homepage - serve Vue SPA
+    $router->get('/', function (Request $request) {
+        // Let the Vue SPA handle the homepage
+        $indexPath = __DIR__ . '/../index.html';
+        if (file_exists($indexPath)) {
+            return Response::html(file_get_contents($indexPath));
         }
-
-        $controller = new PageController();
-        ob_start();
-        $controller->renderHome();
-        $content = ob_get_clean();
-
-        if ($cmsCache->isEnabled()) {
-            $cmsCache->set($cacheKey, $content);
-        }
-
-        return Response::html($content);
+        return Response::notFound('Application not found');
     });
 
-    // Sitemap
-    $router->get('/sitemap.xml', function (Request $request) use ($cmsCache, $localeResolver) {
-        $locale = $localeResolver($request);
-        $cacheKey = $cmsCache->buildKey('sitemap', 'index', $locale, 'xml');
-
-        if ($cached = $cmsCache->get($cacheKey)) {
-            return Response::make((string) $cached, 200, ['Content-Type' => 'application/xml']);
-        }
-
-        $controller = new PageController();
-        ob_start();
-        $controller->renderSitemap();
-        $content = ob_get_clean();
-
-        if ($cmsCache->isEnabled()) {
-            $cmsCache->set($cacheKey, $content);
-        }
-
-        return Response::make($content, 200, ['Content-Type' => 'application/xml']);
+    // Sitemap - placeholder for future implementation
+    $router->get('/sitemap.xml', function (Request $request) {
+        // TODO: Implement sitemap generation
+        return Response::make('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>', 200, ['Content-Type' => 'application/xml']);
     });
 
     // Admin CMS Routes
@@ -437,36 +416,19 @@ return function (Router $router, array $config, $connection) {
         return Response::make($content, 200, ['Content-Type' => $contentType]);
     });
 
-    // Dynamic page rendering by slug (root-level)
-    $router->get('/{path:.+}', function (Request $request) use ($cmsCache, $localeResolver, $isReservedPath) {
+    // Catch-all route - serve Vue SPA for all non-reserved paths
+    // The Vue SPA will handle routing client-side and make API calls to fetch CMS content
+    $router->get('/{path:.+}', function (Request $request) use ($isReservedPath) {
         if ($isReservedPath($request->path())) {
             return Response::notFound('Route not found');
         }
 
-        $controller = new PageController();
-        $path = (string) $request->getAttribute('path');
-        $slug = ltrim($path, '/');
-        $slugWithLeadingSlash = '/' . $slug;
-        $locale = $localeResolver($request);
-        $cacheKey = $cmsCache->buildKey('page', $slugWithLeadingSlash, $locale, 'html');
-
-        if ($cached = $cmsCache->get($cacheKey)) {
-            return Response::html((string) $cached);
+        // Serve the Vue SPA entry point for all public routes
+        // Vue Router will handle the routing and fetch content via API
+        $indexPath = __DIR__ . '/../index.html';
+        if (file_exists($indexPath)) {
+            return Response::html(file_get_contents($indexPath));
         }
-
-        ob_start();
-        try {
-            $controller->render($slug);
-            $content = ob_get_clean();
-
-            if ($cmsCache->isEnabled()) {
-                $cmsCache->set($cacheKey, $content);
-            }
-
-            return Response::html($content);
-        } catch (\Exception $e) {
-            ob_end_clean();
-            return Response::notFound('Page not found: ' . e($e->getMessage()));
-        }
+        return Response::notFound('Application not found');
     });
 };
