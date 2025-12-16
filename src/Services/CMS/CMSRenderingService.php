@@ -75,38 +75,29 @@ class CMSRenderingService
         $data = $this->loadDynamicComponents($template->structure, $data);
         $html = $this->templateEngine->render($data['__template'], $data);
 
-        return $this->injectAssets($html, $template->default_css ?? '', $page->custom_css ?? '', $template->default_js ?? '', $page->custom_js ?? '');
+        return $this->injectAssets($html, $page, $template->default_css ?? '', $page->custom_css ?? '', $template->default_js ?? '', $page->custom_js ?? '');
     }
 
 private function loadDynamicComponents(string $template, array $data): array
 {
     $slugs = $this->extractComponentSlugs($template);
-    error_log("Found component slugs: " . print_r($slugs, true));
-    error_log("Original template snippet: " . substr($template, 0, 200));
-    
+
     foreach ($slugs as $slug) {
         $normalizedKey = 'component_' . str_replace('-', '_', $slug);
         $placeholder = '{{component:' . $slug . '}}';
         $component = $this->loadComponentBySlug($slug);
-        
-        error_log("Processing component: $slug");
-        error_log("Placeholder: $placeholder");
-        error_log("Component found: " . ($component ? 'Yes' : 'No'));
-        
+
         if ($component !== null) {
             $data[$normalizedKey] = $this->renderComponent($component);
-            $template = str_replace($placeholder, '{{ ' . $normalizedKey . ' }}', $template);
-            error_log("Replaced with: {{ $normalizedKey }}");
+            $template = str_replace($placeholder, '{{' . $normalizedKey . '}}', $template);
         } else {
             $data[$normalizedKey] = '';
             $template = str_replace($placeholder, '', $template);
-            error_log("Removed placeholder");
         }
     }
-    
-    error_log("Final template snippet: " . substr($template, 0, 200));
+
     $data['__template'] = $template;
-    
+
     return $data;
 }
 
@@ -119,22 +110,47 @@ private function extractComponentSlugs(string $template): array
     return $slugs;
 }
 
-    private function injectAssets(string $html, string $templateCss, string $pageCss, string $templateJs, string $pageJs): string
+    private function injectAssets(string $html, Page $page, string $templateCss, string $pageCss, string $templateJs, string $pageJs): string
     {
+        // Inject meta tags
+        $metaTags = '';
+
+        // Add title tag if not already present in the HTML
+        if (stripos($html, '<title>') === false) {
+            $metaTags .= '<title>' . htmlspecialchars($page->meta_title ?? $page->title) . '</title>' . "\n";
+        }
+
+        // Add meta description
+        if ($page->meta_description) {
+            $metaTags .= '<meta name="description" content="' . htmlspecialchars($page->meta_description) . '">' . "\n";
+        }
+
+        // Add meta keywords
+        if ($page->meta_keywords) {
+            $metaTags .= '<meta name="keywords" content="' . htmlspecialchars($page->meta_keywords) . '">' . "\n";
+        }
+
+        // Inject CSS
         $css = '';
         if ($templateCss) $css .= "/* Template CSS */\n" . $templateCss . "\n";
         if ($pageCss) $css .= "/* Page CSS */\n" . $pageCss;
 
+        if (trim($css) !== '') {
+            $styleBlock = "<style>\n" . $css . "\n</style>";
+            $metaTags .= $styleBlock . "\n";
+        }
+
+        // Inject meta tags and CSS into <head>
+        if (trim($metaTags) !== '') {
+            $html = (stripos($html, '</head>') !== false)
+                ? str_ireplace('</head>', $metaTags . '</head>', $html)
+                : $metaTags . $html;
+        }
+
+        // Inject JS
         $js = '';
         if ($templateJs) $js .= "/* Template JS */\n" . $templateJs . "\n";
         if ($pageJs) $js .= "/* Page JS */\n" . $pageJs;
-
-        if (trim($css) !== '') {
-            $styleBlock = "<style>\n" . $css . "\n</style>";
-            $html = (stripos($html, '</head>') !== false)
-                ? str_ireplace('</head>', $styleBlock . "\n</head>", $html)
-                : $styleBlock . $html;
-        }
 
         if (trim($js) !== '') {
             $scriptBlock = "<script>\n" . $js . "\n</script>";
