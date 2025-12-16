@@ -48,6 +48,14 @@ export default {
   },
 
   /**
+   * Get fully rendered HTML for a published page by slug
+   */
+  async getRenderedPageBySlug(slug) {
+    const response = await api.get(`/cms/page/${slug}/rendered`)
+    return response.data
+  },
+
+  /**
    * Get form options for page editing (templates, components, etc.)
    */
   async getPageFormOptions() {
