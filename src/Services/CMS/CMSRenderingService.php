@@ -78,37 +78,46 @@ class CMSRenderingService
         return $this->injectAssets($html, $template->default_css ?? '', $page->custom_css ?? '', $template->default_js ?? '', $page->custom_js ?? '');
     }
 
-    private function loadDynamicComponents(string $template, array $data): array
-    {
-        $slugs = $this->extractComponentSlugs($template);
-
-        foreach ($slugs as $slug) {
-            $normalizedKey = 'component_' . $slug;
-            $placeholder = '{{component:' . $slug . '}}';
-            $component = $this->loadComponentBySlug($slug);
-
-            if ($component !== null) {
-                $data[$normalizedKey] = $this->renderComponent($component);
-                $template = str_replace($placeholder, '{{ ' . $normalizedKey . ' }}', $template);
-            } else {
-                $data[$normalizedKey] = '';
-                $template = str_replace($placeholder, '', $template);
-            }
+private function loadDynamicComponents(string $template, array $data): array
+{
+    $slugs = $this->extractComponentSlugs($template);
+    error_log("Found component slugs: " . print_r($slugs, true));
+    error_log("Original template snippet: " . substr($template, 0, 200));
+    
+    foreach ($slugs as $slug) {
+        $normalizedKey = 'component_' . str_replace('-', '_', $slug);
+        $placeholder = '{{component:' . $slug . '}}';
+        $component = $this->loadComponentBySlug($slug);
+        
+        error_log("Processing component: $slug");
+        error_log("Placeholder: $placeholder");
+        error_log("Component found: " . ($component ? 'Yes' : 'No'));
+        
+        if ($component !== null) {
+            $data[$normalizedKey] = $this->renderComponent($component);
+            $template = str_replace($placeholder, '{{ ' . $normalizedKey . ' }}', $template);
+            error_log("Replaced with: {{ $normalizedKey }}");
+        } else {
+            $data[$normalizedKey] = '';
+            $template = str_replace($placeholder, '', $template);
+            error_log("Removed placeholder");
         }
-
-        $data['__template'] = $template;
-
-        return $data;
     }
+    
+    error_log("Final template snippet: " . substr($template, 0, 200));
+    $data['__template'] = $template;
+    
+    return $data;
+}
 
-    private function extractComponentSlugs(string $template): array
-    {
-        $slugs = [];
-        if (preg_match_all('/\{\{\s*component:([a-zA-Z0-9_-]+)\s*\}\}/', $template, $matches)) {
-            $slugs = array_unique($matches[1]);
-        }
-        return $slugs;
+private function extractComponentSlugs(string $template): array
+{
+    $slugs = [];
+    if (preg_match_all('/\{\{component:([a-zA-Z0-9_-]+)\}\}/', $template, $matches)) {
+        $slugs = array_unique($matches[1]);
     }
+    return $slugs;
+}
 
     private function injectAssets(string $html, string $templateCss, string $pageCss, string $templateJs, string $pageJs): string
     {
