@@ -227,7 +227,7 @@ const structurePlaceholder = [
   '    {{header}}',
   '    <main>{{content}}</main>',
   '    {{footer}}',
-  '    <script>{{custom_js}}<\\/script>',
+  '    <script>{{custom_js}}<' + '/script>',
   '</body>',
   '</html>',
 ].join('\n')
