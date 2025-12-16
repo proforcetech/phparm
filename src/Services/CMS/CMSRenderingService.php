@@ -86,14 +86,25 @@ class CMSRenderingService
         // Load and render dynamic components ({{component:slug}})
         $data = $this->loadDynamicComponents($template->structure, $data);
 
-        // Render the template structure
-        $html = $this->templateEngine->render($template->structure, $data);
+        // Render the template
+        return $this->templateEngine->render($template->structure, $data);
+    }
+// Prepare assets
+        $templateCss = $template->default_css ?? '';
+        $pageCss = $page->custom_css ?? '';
+        $templateJs = $template->default_js ?? '';
+        $pageJs = $page->custom_js ?? '';
 
-        // Inject Page and Template assets (CSS/JS) automatically
-        // This ensures styles are loaded even if the template doesn't have {{custom_css}} placeholders
-        $css = "/* Template CSS */\n" . ($template->default_css ?? '') . "\n/* Page Custom CSS */\n" . ($page->custom_css ?? '');
-        $js = "/* Template JS */\n" . ($template->default_js ?? '') . "\n/* Page Custom JS */\n" . ($page->custom_js ?? '');
+        // Combine assets
+        $css = '';
+        if ($templateCss) $css .= "/* Template CSS */\n" . $templateCss . "\n";
+        if ($pageCss) $css .= "/* Page Custom CSS */\n" . $pageCss;
 
+        $js = '';
+        if ($templateJs) $js .= "/* Template JS */\n" . $templateJs . "\n";
+        if ($pageJs) $js .= "/* Page Custom JS */\n" . $pageJs;
+
+        // Inject them into the HTML
         return $this->injectAssets($html, $css, $js);
     }
 
@@ -242,7 +253,7 @@ class CMSRenderingService
                 $data[$placeholderKey] = $this->renderComponent($component);
             } else {
                 // Component not found, replace with empty string or comment
-                $data[$placeholderKey] = '';
+                $data[$placeholderKey] = '<!-- Component "' . htmlspecialchars($slug) . '" not found -->';
             }
         }
 
