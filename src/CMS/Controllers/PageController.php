@@ -24,6 +24,20 @@ class PageController
         $this->cache = $cache;
     }
 
+/**
+     * Render method called by routes/cms.php
+     */
+    public function render(string $slug): void
+    {
+        $html = $this->renderPublishedPage($slug);
+        
+        if ($html === null) {
+            throw new \Exception("Page not found");
+        }
+        
+        echo $html;
+    }
+
     /**
      * @param array<string, mixed> $filters
      * @return array<int, array<string, mixed>>
