@@ -13,33 +13,21 @@
     </div>
   </div>
 
-  <div v-else-if="page" class="cms-page">
-    <!-- Page Content -->
-    <div class="cms-page-content">
-      <div class="container mx-auto px-4 py-8">
-        <h1 class="text-4xl font-bold mb-6">{{ page.title }}</h1>
-
-        <!-- Summary -->
-        <div v-if="page.summary" class="text-xl text-gray-600 mb-6">
-          {{ page.summary }}
-        </div>
-
-        <!-- Content -->
-        <div class="prose max-w-none" v-html="renderContent(page.content)"></div>
-      </div>
-    </div>
-  </div>
+  <div v-else-if="renderedHtml" class="cms-page" v-html="renderedHtml"></div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import cmsService from '@/services/cms.service'
 
 const route = useRoute()
-const page = ref(null)
+const renderedHtml = ref(null)
+const pageData = ref(null)
 const loading = ref(true)
 const error = ref(null)
+const originalTitle = document.title
+const addedMetaTags = []
 
 // Get slug from route - either from params or use 'home' for root path
 const slug = computed(() => {
@@ -57,9 +45,61 @@ const slug = computed(() => {
   return route.path.substring(1)
 })
 
-function renderContent(content) {
-  if (!content) return ''
-  return content
+function extractAndInjectMetaTags(html) {
+  // Create a temporary DOM parser
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+
+  // Extract title
+  const titleTag = doc.querySelector('title')
+  if (titleTag) {
+    document.title = titleTag.textContent
+  } else if (pageData.value?.meta_title) {
+    document.title = pageData.value.meta_title
+  } else if (pageData.value?.title) {
+    document.title = pageData.value.title
+  }
+
+  // Remove existing CMS meta tags
+  addedMetaTags.forEach(tag => tag.remove())
+  addedMetaTags.length = 0
+
+  // Extract and inject meta tags
+  const metaTags = doc.querySelectorAll('meta[name="description"], meta[name="keywords"]')
+  metaTags.forEach(metaTag => {
+    const clonedTag = document.createElement('meta')
+    clonedTag.setAttribute('name', metaTag.getAttribute('name'))
+    clonedTag.setAttribute('content', metaTag.getAttribute('content'))
+    document.head.appendChild(clonedTag)
+    addedMetaTags.push(clonedTag)
+  })
+
+  // Extract style and script tags from the rendered HTML
+  const styleTags = doc.querySelectorAll('style')
+  const scriptTags = doc.querySelectorAll('script')
+
+  // Inject styles
+  styleTags.forEach(styleTag => {
+    const clonedStyle = document.createElement('style')
+    clonedStyle.textContent = styleTag.textContent
+    document.head.appendChild(clonedStyle)
+    addedMetaTags.push(clonedStyle)
+  })
+
+  // Inject scripts
+  scriptTags.forEach(scriptTag => {
+    const clonedScript = document.createElement('script')
+    if (scriptTag.src) {
+      clonedScript.src = scriptTag.src
+    } else {
+      clonedScript.textContent = scriptTag.textContent
+    }
+    document.body.appendChild(clonedScript)
+    addedMetaTags.push(clonedScript)
+  })
+
+  // Return HTML without the head tags (they're already injected)
+  return doc.body.innerHTML
 }
 
 async function loadPage() {
@@ -67,8 +107,9 @@ async function loadPage() {
   error.value = null
 
   try {
-    const data = await cmsService.getPageBySlug(slug.value)
-    page.value = data
+    const data = await cmsService.getRenderedPageBySlug(slug.value)
+    pageData.value = data.page
+    renderedHtml.value = extractAndInjectMetaTags(data.html)
   } catch (err) {
     if (err.response?.status === 404) {
       error.value = 'Page not found'
@@ -81,6 +122,13 @@ async function loadPage() {
   }
 }
 
+// Cleanup function to restore original title and remove added tags
+function cleanup() {
+  document.title = originalTitle
+  addedMetaTags.forEach(tag => tag.remove())
+  addedMetaTags.length = 0
+}
+
 // Load page on mount
 onMounted(() => {
   loadPage()
@@ -88,73 +136,18 @@ onMounted(() => {
 
 // Reload when slug changes
 watch(slug, () => {
+  cleanup()
   loadPage()
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  cleanup()
 })
 </script>
 
 <style scoped>
 .cms-page {
   min-height: 100vh;
-}
-
-.cms-page-content {
-  flex: 1;
-}
-
-/* Prose styles for content */
-.prose {
-  color: #374151;
-  max-width: 65ch;
-}
-
-.prose h1 {
-  font-size: 2.25em;
-  margin-top: 0;
-  margin-bottom: 0.8888889em;
-  line-height: 1.1111111;
-}
-
-.prose h2 {
-  font-size: 1.5em;
-  margin-top: 2em;
-  margin-bottom: 1em;
-  line-height: 1.3333333;
-}
-
-.prose h3 {
-  font-size: 1.25em;
-  margin-top: 1.6em;
-  margin-bottom: 0.6em;
-  line-height: 1.6;
-}
-
-.prose p {
-  margin-top: 1.25em;
-  margin-bottom: 1.25em;
-}
-
-.prose a {
-  color: #2563eb;
-  text-decoration: underline;
-}
-
-.prose a:hover {
-  color: #1d4ed8;
-}
-
-.prose ul, .prose ol {
-  margin-top: 1.25em;
-  margin-bottom: 1.25em;
-  padding-left: 1.625em;
-}
-
-.prose li {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-.prose img {
-  max-width: 100%;
-  height: auto;
 }
 </style>

@@ -817,6 +817,31 @@ return Response::json([
         return Response::json($page);
     });
 
+    // Get fully rendered HTML for a page (for Vue SPA)
+    $router->get('/cms/page/{slug}/rendered', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
+        $slug = (string) $request->getAttribute('slug');
+        $locale = $resolveLocale($request);
+        $cacheKey = $cmsCacheService->buildKey('page', $slug, $locale, 'rendered');
+
+        if ($cached = $cmsCacheService->get($cacheKey)) {
+            return Response::json(['html' => $cached, 'page' => $cmsPageController->publishedPage($slug)]);
+        }
+
+        $html = $cmsPageController->renderPublishedPage($slug);
+
+        if ($html === null) {
+            return Response::notFound('Page not found');
+        }
+
+        if ($cmsCacheService->isEnabled()) {
+            $cmsCacheService->set($cacheKey, $html, $cmsCacheService->defaultTtl());
+        }
+
+        $page = $cmsPageController->publishedPage($slug);
+
+        return Response::json(['html' => $html, 'page' => $page]);
+    });
+
     $router->get('/cms/menu/{slug}', function (Request $request) use ($cmsMenuController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
