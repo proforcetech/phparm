@@ -85,7 +85,7 @@
                   placeholder="<html>...</html>"
                 ></textarea>
                 <p class="mt-1 text-xs text-gray-500">
-                  Use placeholders like <code>{{content}}</code> to inject page data.
+                  Use placeholders like <code v-pre>{{content}}</code> to inject page data.
                 </p>
               </div>
             </div>
@@ -199,7 +199,6 @@ const router = useRouter()
 const loading = ref(true)
 const saving = ref(false)
 const error = ref(null)
-const showPlaceholders = ref(false)
 const templateData = ref(null)
 
 const templateId = computed(() => route.params.id)
