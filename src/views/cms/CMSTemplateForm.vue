@@ -84,10 +84,9 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm bg-gray-50"
                   placeholder="<html>...</html>"
                 ></textarea>
-<p class="mt-1 text-xs text-gray-500">
-  Use placeholders like <code>{{content}}</code> to inject page data.
-</p>
-
+                <p class="mt-1 text-xs text-gray-500">
+                  Use placeholders like <code>{{content}}</code> to inject page data.
+                </p>
               </div>
             </div>
           </Card>
@@ -165,17 +164,7 @@
                 v-for="ph in placeholders" 
                 :key="ph.token"
                 class="group flex items-center justify-between p-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer border border-transparent hover:border-gray-200 transition-colors"
-                @click="navigator.clipboard.writeText(ph.token)"
-function copyToClipboard(text) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text)
-      .then(() => alert('Copied to clipboard!'))
-      .catch(err => alert('Copy failed: ' + err))
-  } else {
-    alert('Clipboard API not supported.')
-  }
-}
-
+                @click="copyToClipboard(ph.token)"
               >
                 <code class="text-xs text-primary-700 font-mono">{{ ph.token }}</code>
                 <span class="text-xs text-gray-500">{{ ph.label }}</span>
@@ -243,8 +232,6 @@ const structurePlaceholder = [
   '</html>',
 ].join('\n')
 
-
-
 const placeholders = [
   { token: '{{header}}', label: 'Header component' },
   { token: '{{content}}', label: 'Page content' },
@@ -255,6 +242,19 @@ const placeholders = [
   { token: '{{custom_js}}', label: 'Page custom JavaScript' },
 ]
 
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => console.log('Copied to clipboard:', text))
+      .catch(err => {
+        console.error('Copy failed:', err)
+        alert('Copy failed: ' + err)
+      })
+  } else {
+    alert('Clipboard API not supported.')
+  }
+}
+
 onMounted(async () => {
   await loadData()
 })
@@ -264,7 +264,6 @@ async function loadData() {
     loading.value = true
     error.value = null
 
-    // Load template if editing
     if (isEditing.value) {
       templateData.value = await cmsService.getTemplate(templateId.value)
       form.value = {
@@ -286,7 +285,7 @@ async function loadData() {
 }
 
 function generateSlug() {
-  if (isEditing.value) return // Don't auto-generate when editing
+  if (isEditing.value) return
 
   const slug = form.value.name
     .toLowerCase()
@@ -310,21 +309,16 @@ async function saveTemplate() {
       return
     }
 
-    // Reload data to get fresh state
     await loadData()
   } catch (err) {
     console.error('Failed to save template:', err)
-    
-    // Check for specific status codes to provide better feedback
+
     if (err.response?.status === 409) {
-      // 409 Conflict - Duplicate slug/name
-      error.value = err.response.data.message || 'A template with this name or slug already exists. Please choose another.'
+      error.value = err.response.data.message || 'A template with this name or slug already exists.'
     } else if (err.response?.status === 403) {
-      // 403 Forbidden - Permission denied
       error.value = 'You do not have permission to perform this action.'
     } else {
-      // General error fallback
-      error.value = err.response?.data?.message || 'Failed to save template. Please try again.'
+      error.value = err.response?.data?.message || 'Failed to save template.'
     }
   } finally {
     saving.value = false
