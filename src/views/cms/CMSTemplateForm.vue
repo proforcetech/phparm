@@ -215,6 +215,7 @@ const form = ref({
   is_active: true,
 })
 
+// === KEY FIX HERE: The string is split to avoid parser error ===
 const structurePlaceholder = [
   '<!DOCTYPE html>',
   '<html>',
