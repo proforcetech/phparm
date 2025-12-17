@@ -65,6 +65,8 @@ import {
   RectangleGroupIcon,
   Squares2X2Icon,
   UsersIcon,
+  ClipboardDocumentCheckIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -110,6 +112,9 @@ const adminMenuItems = [
   { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
+  // Inspections Section
+  { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
   // CMS Section
   { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
   { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
@@ -124,6 +129,7 @@ const technicianMenuItems = [
   { path: '/cp/my-time', label: 'My Time', icon: ClockIcon },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
 ]
 
 // Customer menu items
@@ -132,8 +138,9 @@ const customerMenuItems = [
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
-  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon }, // ADD THIS
-  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon }, // ADD THIS
+  { path: '/portal/inspections', label: 'My Inspections', icon: ClipboardDocumentCheckIcon },
+  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon },
+  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon },
   { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
