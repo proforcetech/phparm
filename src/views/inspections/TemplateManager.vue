@@ -50,26 +50,102 @@
                 <span class="text-sm font-medium">Items</span>
                 <button class="text-indigo-600 text-sm" @click="addItem(sIndex)">+ Add Item</button>
               </div>
-              <div v-for="(item, iIndex) in section.items" :key="iIndex" class="p-2 border rounded space-y-2">
+              <div v-for="(item, iIndex) in section.items" :key="iIndex" class="p-3 border-2 rounded space-y-2 bg-gray-50">
                 <input
                   v-model="item.name"
                   placeholder="Item name"
                   class="w-full p-2 border rounded"
                   type="text"
                 />
-                <select v-model="item.input_type" class="w-full p-2 border rounded">
-                  <option value="text">Text</option>
-                  <option value="textarea">Textarea</option>
-                  <option value="boolean">Yes/No</option>
-                  <option value="number">Number</option>
-                </select>
+
+                <div>
+                  <label class="block text-xs font-medium text-gray-700 mb-1">Field Type</label>
+                  <select v-model="item.input_type" class="w-full p-2 border rounded" @change="onFieldTypeChange(item)">
+                    <option value="text">Text</option>
+                    <option value="textarea">Textarea</option>
+                    <option value="boolean">Yes/No</option>
+                    <option value="boolean_na">Yes/No/N/A</option>
+                    <option value="number">Number (free input)</option>
+                    <option value="number_scale">Number (scale)</option>
+                    <option value="select_scale">Written Scale</option>
+                  </select>
+                </div>
+
+                <!-- Number Scale Configuration -->
+                <div v-if="item.input_type === 'number_scale'" class="pl-3 border-l-2 border-indigo-300 space-y-2">
+                  <p class="text-xs font-medium text-gray-700">Scale Configuration</p>
+                  <div class="grid grid-cols-3 gap-2">
+                    <div>
+                      <label class="block text-xs text-gray-600">Min</label>
+                      <input
+                        v-model.number="item.options.min"
+                        type="number"
+                        class="w-full p-1 text-sm border rounded"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-600">Max</label>
+                      <input
+                        v-model.number="item.options.max"
+                        type="number"
+                        class="w-full p-1 text-sm border rounded"
+                        placeholder="10"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-600">Step</label>
+                      <input
+                        v-model.number="item.options.step"
+                        type="number"
+                        step="0.1"
+                        class="w-full p-1 text-sm border rounded"
+                        placeholder="1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Written Scale Configuration -->
+                <div v-if="item.input_type === 'select_scale'" class="pl-3 border-l-2 border-indigo-300 space-y-2">
+                  <p class="text-xs font-medium text-gray-700">Scale Options</p>
+                  <div class="space-y-1">
+                    <div v-for="(choice, cIndex) in item.options.choices" :key="cIndex" class="flex items-center space-x-2">
+                      <input
+                        v-model="item.options.choices[cIndex]"
+                        type="text"
+                        class="flex-1 p-1 text-sm border rounded"
+                        :placeholder="`Option ${cIndex + 1}`"
+                      />
+                      <button
+                        class="text-xs text-red-600 hover:text-red-800"
+                        @click="removeScaleChoice(item, cIndex)"
+                        v-if="item.options.choices.length > 2"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <button
+                      class="text-xs text-indigo-600 hover:text-indigo-800"
+                      @click="addScaleChoice(item)"
+                    >
+                      + Add Option
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-500 italic">Examples: Excellent, Good, Fair, Poor</p>
+                </div>
+
                 <input
+                  v-if="!['number_scale', 'select_scale'].includes(item.input_type)"
                   v-model="item.default_value"
                   placeholder="Default value (optional)"
-                  class="w-full p-2 border rounded"
+                  class="w-full p-2 border rounded text-sm"
                   type="text"
                 />
-                <button class="text-xs text-red-600" @click="removeItem(sIndex, iIndex)">Remove Item</button>
+
+                <button class="text-xs text-red-600 hover:text-red-800 font-medium" @click="removeItem(sIndex, iIndex)">
+                  Remove Item
+                </button>
               </div>
             </div>
           </div>
@@ -156,11 +232,46 @@ const removeSection = (index) => {
 }
 
 const addItem = (sectionIndex) => {
-  form.sections[sectionIndex].items.push({ name: 'Item', input_type: 'text', default_value: '' })
+  form.sections[sectionIndex].items.push({
+    name: 'Item',
+    input_type: 'text',
+    default_value: '',
+    options: {}
+  })
 }
 
 const removeItem = (sectionIndex, itemIndex) => {
   form.sections[sectionIndex].items.splice(itemIndex, 1)
+}
+
+const onFieldTypeChange = (item) => {
+  // Initialize options based on field type
+  if (item.input_type === 'number_scale') {
+    item.options = {
+      min: 0,
+      max: 10,
+      step: 1
+    }
+  } else if (item.input_type === 'select_scale') {
+    item.options = {
+      choices: ['Excellent', 'Good', 'Fair', 'Poor']
+    }
+  } else {
+    item.options = {}
+  }
+}
+
+const addScaleChoice = (item) => {
+  if (!item.options.choices) {
+    item.options.choices = []
+  }
+  item.options.choices.push('')
+}
+
+const removeScaleChoice = (item, index) => {
+  if (item.options.choices && item.options.choices.length > 2) {
+    item.options.choices.splice(index, 1)
+  }
 }
 
 const resetForm = () => {
