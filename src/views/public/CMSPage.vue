@@ -86,14 +86,27 @@ function extractAndInjectMetaTags(html) {
     addedMetaTags.push(clonedStyle)
   })
 
-  // Inject scripts
+  // Inject scripts - wrap in try-catch to prevent errors from breaking the page
   scriptTags.forEach(scriptTag => {
     const clonedScript = document.createElement('script')
     if (scriptTag.src) {
       clonedScript.src = scriptTag.src
+      clonedScript.onerror = (e) => {
+        console.warn('Failed to load external script:', scriptTag.src)
+      }
     } else {
-      clonedScript.textContent = scriptTag.textContent
+      // Wrap inline scripts in try-catch to prevent errors
+      const wrappedScript = `
+        try {
+          ${scriptTag.textContent}
+        } catch (e) {
+          console.warn('CMS script error:', e);
+        }
+      `
+      clonedScript.textContent = wrappedScript
     }
+    // Defer script execution until after page content is rendered
+    clonedScript.defer = true
     document.body.appendChild(clonedScript)
     addedMetaTags.push(clonedScript)
   })
