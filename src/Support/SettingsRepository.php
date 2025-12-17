@@ -155,7 +155,10 @@ class SettingsRepository
             'integer' => (int) $value,
             'float' => (float) $value,
             'string' => $value,
-            default => throw new InvalidArgumentException("Unknown settings type: {$type}"),
+            default => function() use ($value, $type) {
+                error_log("Warning: Unknown settings type '{$type}', defaulting to string. Value: {$value}");
+                return $value; // Default to string for unknown types
+            }(),
         };
     }
 
