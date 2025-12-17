@@ -284,11 +284,19 @@ class UserController
             throw new InvalidArgumentException('User not found');
         }
 
-        // Note: This sets two_factor_enabled which indicates the user has set it up
-        // You may want to add a separate field for "2FA required" vs "2FA enabled"
-        $updatedUser = $this->repository->update($id, [
-            'two_factor_enabled' => $required
-        ]);
+        // If requiring 2FA and user hasn't set it up yet, mark as pending setup
+        // If disabling 2FA requirement, reset their 2FA completely
+        if ($required) {
+            // Only mark as pending if they don't already have 2FA enabled
+            if (!$targetUser->two_factor_enabled) {
+                $updatedUser = $this->repository->requireTwoFactorSetup($id);
+            } else {
+                $updatedUser = $targetUser; // Already set up, no changes needed
+            }
+        } else {
+            // Disabling 2FA requirement - reset everything
+            $updatedUser = $this->repository->reset2FA($id);
+        }
 
         return [
             'id' => $updatedUser->id,
@@ -298,6 +306,7 @@ class UserController
             'email_verified' => $updatedUser->email_verified,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
             'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
+            'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending,
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
         ];
