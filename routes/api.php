@@ -2372,8 +2372,18 @@ return Response::json([
 
         $router->get('/api/settings', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
-            $data = $settingsController->index($user);
-            return Response::json($data);
+            try {
+                $data = $settingsController->index($user);
+                return Response::json($data);
+            } catch (\Exception $e) {
+                error_log('Settings endpoint error: ' . $e->getMessage());
+                error_log('Stack trace: ' . $e->getTraceAsString());
+                return Response::json([
+                    'error' => 'Failed to fetch settings',
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ], 500);
+            }
         });
 
         $router->get('/api/settings/{key}', function (Request $request) use ($settingsController) {
