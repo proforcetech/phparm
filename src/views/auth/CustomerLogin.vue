@@ -11,6 +11,12 @@
       </div>
 
       <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
+        <!-- Session expiration warning -->
+        <div v-if="sessionExpiredMessage" class="rounded-md bg-yellow-50 p-4 border border-yellow-200">
+          <p class="text-sm text-yellow-800">{{ sessionExpiredMessage }}</p>
+        </div>
+
+        <!-- Error message -->
         <div v-if="error" class="rounded-md bg-red-50 p-4">
           <p class="text-sm text-red-800">{{ error }}</p>
         </div>
@@ -118,10 +124,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRoute } from 'vue-router'
 import { securityService } from '@/services/security.service'
 import { useRecaptcha } from '@/composables/useRecaptcha'
 
 const authStore = useAuthStore()
+const route = useRoute()
 
 const form = ref({
   email: '',
@@ -133,6 +141,7 @@ const code = ref('')
 
 const loading = ref(false)
 const error = ref(null)
+const sessionExpiredMessage = ref(null)
 const recaptchaEnabled = ref(false)
 const recaptchaSiteKey = ref('')
 const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
@@ -140,6 +149,11 @@ const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(reca
 const isVerifying = computed(() => !!authStore.pendingChallenge)
 
 onMounted(async () => {
+  // Check for session expiration message from query params
+  if (route.query.expired === '1' && route.query.message) {
+    sessionExpiredMessage.value = route.query.message
+  }
+
   try {
     const settings = await securityService.getRecaptchaSettings()
     recaptchaEnabled.value = !!settings.enabled
