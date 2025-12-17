@@ -13,7 +13,8 @@
     </div>
   </div>
 
-  <div v-else-if="renderedHtml" class="cms-page" v-html="renderedHtml"></div>
+  <!-- CMS content isolated from Tailwind styles -->
+  <div v-else-if="renderedHtml" class="cms-isolated" v-html="renderedHtml"></div>
 </template>
 
 <script setup>
@@ -27,6 +28,7 @@ const pageData = ref(null)
 const loading = ref(true)
 const error = ref(null)
 const originalTitle = document.title
+const originalBodyClass = document.body.className
 const addedMetaTags = []
 
 // Get slug from route - either from params or use 'home' for root path
@@ -111,6 +113,9 @@ function extractAndInjectMetaTags(html) {
     addedMetaTags.push(clonedScript)
   })
 
+  // Add CMS body class to override Tailwind defaults
+  document.body.classList.add('cms-page-active')
+
   // Return HTML without the head tags (they're already injected)
   return doc.body.innerHTML
 }
@@ -138,6 +143,8 @@ async function loadPage() {
 // Cleanup function to restore original title and remove added tags
 function cleanup() {
   document.title = originalTitle
+  document.body.className = originalBodyClass
+  document.body.classList.remove('cms-page-active')
   addedMetaTags.forEach(tag => tag.remove())
   addedMetaTags.length = 0
 }
@@ -159,8 +166,25 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.cms-page {
+<style>
+/* Reset Tailwind styles for CMS content */
+.cms-isolated {
+  all: unset;
+  display: block;
   min-height: 100vh;
+}
+
+/* Override Tailwind body styles when CMS page is active */
+body.cms-page-active {
+  background-color: #0d0f12 !important;
+  color: #f5f5f5 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Ensure CMS content uses its own box-sizing */
+.cms-isolated,
+.cms-isolated * {
+  box-sizing: border-box;
 }
 </style>
