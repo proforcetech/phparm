@@ -473,6 +473,100 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['user' => $user->toArray()]);
     })->middleware(Middleware::auth());
 
+    // 2FA Setup Flow - Initiate setup by generating secret and QR code
+    $router->post('/api/auth/2fa/setup/initiate', function (Request $request) use ($totpService, $authService) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        // Generate a new TOTP secret
+        $secret = $totpService->generateSecret();
+
+        // Create QR code URL for TOTP apps
+        // Format: otpauth://totp/Label?secret=SECRET&issuer=ISSUER
+        $appName = env('APP_NAME', 'PHPArm');
+        $qrCodeUrl = sprintf(
+            'otpauth://totp/%s:%s?secret=%s&issuer=%s',
+            rawurlencode($appName),
+            rawurlencode($user->email),
+            $secret,
+            rawurlencode($appName)
+        );
+
+        // Store the secret temporarily in session until verified
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        $_SESSION['2fa_setup_secret'] = $secret;
+        $_SESSION['2fa_setup_user_id'] = $user->id;
+
+        return Response::json([
+            'secret' => $secret,
+            'qr_code_url' => $qrCodeUrl,
+            'message' => 'Scan the QR code with your authenticator app and enter the code to complete setup'
+        ]);
+    })->middleware(Middleware::auth());
+
+    // 2FA Setup Flow - Complete setup by verifying code
+    $router->post('/api/auth/2fa/setup/complete', function (Request $request) use ($totpService, $connection) {
+        $user = $request->getAttribute('user');
+        $code = $request->input('code');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (!$code) {
+            return Response::badRequest('Verification code is required');
+        }
+
+        // Get the secret from session
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $secret = $_SESSION['2fa_setup_secret'] ?? null;
+        $sessionUserId = $_SESSION['2fa_setup_user_id'] ?? null;
+
+        if (!$secret || $sessionUserId !== $user->id) {
+            return Response::badRequest('No pending 2FA setup found. Please initiate setup first.');
+        }
+
+        // Verify the code
+        if (!$totpService->verifyCode($secret, (string) $code)) {
+            return Response::unauthorized('Invalid verification code. Please try again.');
+        }
+
+        // Generate recovery codes
+        $recoveryCodes = [];
+        for ($i = 0; $i < 8; $i++) {
+            $recoveryCodes[] = bin2hex(random_bytes(4)); // 8-character recovery codes
+        }
+
+        // Save to database using UserRepository
+        $userRepo = new App\Services\User\UserRepository($connection);
+        $updatedUser = $userRepo->completeTwoFactorSetup($user->id, $secret, $recoveryCodes);
+
+        // Clear session data
+        unset($_SESSION['2fa_setup_secret']);
+        unset($_SESSION['2fa_setup_user_id']);
+
+        return Response::json([
+            'message' => '2FA has been successfully enabled',
+            'recovery_codes' => $recoveryCodes,
+            'user' => [
+                'id' => $updatedUser->id,
+                'name' => $updatedUser->name,
+                'email' => $updatedUser->email,
+                'two_factor_enabled' => $updatedUser->two_factor_enabled,
+                'two_factor_type' => $updatedUser->two_factor_type,
+                'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending
+            ]
+        ]);
+    })->middleware(Middleware::auth());
+
     // Password reset request (forgot password)
     $router->post('/api/auth/forgot-password', function (Request $request) use (
         $authService,
