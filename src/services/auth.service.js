@@ -70,4 +70,20 @@ export const authService = {
     const response = await api.put('/auth/profile', data)
     return response.data
   },
+
+  /**
+   * Initiate 2FA setup - generates secret and QR code URL
+   */
+  async initiateTwoFactorSetup() {
+    const response = await api.post('/auth/2fa/setup/initiate')
+    return response.data
+  },
+
+  /**
+   * Complete 2FA setup - verify code and activate 2FA
+   */
+  async completeTwoFactorSetup(code) {
+    const response = await api.post('/auth/2fa/setup/complete', { code })
+    return response.data
+  },
 }

@@ -76,7 +76,7 @@ class UserRepository
      */
     public function list(array $filters = []): array
     {
-        $query = 'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at FROM users WHERE 1=1';
+        $query = 'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE 1=1';
         $bindings = [];
 
         if (!empty($filters['role'])) {
@@ -109,7 +109,7 @@ class UserRepository
     public function find(int $id): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at
+            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at
              FROM users
              WHERE id = :id'
         );
@@ -129,7 +129,7 @@ class UserRepository
     public function findByEmail(string $email): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at
+            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at
              FROM users
              WHERE email = :email'
         );
@@ -214,6 +214,11 @@ class UserRepository
             $bindings['two_factor_type'] = $data['two_factor_type'];
         }
 
+        if (isset($data['two_factor_setup_pending'])) {
+            $fields[] = 'two_factor_setup_pending = :two_factor_setup_pending';
+            $bindings['two_factor_setup_pending'] = $data['two_factor_setup_pending'];
+        }
+
         if (empty($fields)) {
             return $this->find($id);
         }
@@ -244,9 +249,49 @@ class UserRepository
     public function reset2FA(int $id): User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_recovery_codes = NULL, updated_at = NOW() WHERE id = :id'
+            'UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_recovery_codes = NULL, two_factor_setup_pending = FALSE, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute(['id' => $id]);
+
+        return $this->find($id);
+    }
+
+    /**
+     * Mark 2FA setup as pending for a user
+     */
+    public function requireTwoFactorSetup(int $id): User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users SET two_factor_setup_pending = TRUE, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+
+        return $this->find($id);
+    }
+
+    /**
+     * Complete 2FA setup for a user
+     *
+     * @param array<int, string> $recoveryCodes
+     */
+    public function completeTwoFactorSetup(int $id, string $secret, array $recoveryCodes): User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users
+             SET two_factor_enabled = TRUE,
+                 two_factor_type = \'totp\',
+                 two_factor_secret = :secret,
+                 two_factor_recovery_codes = :recovery_codes,
+                 two_factor_setup_pending = FALSE,
+                 updated_at = NOW()
+             WHERE id = :id'
+        );
+
+        $stmt->execute([
+            'id' => $id,
+            'secret' => $secret,
+            'recovery_codes' => json_encode($recoveryCodes)
+        ]);
 
         return $this->find($id);
     }

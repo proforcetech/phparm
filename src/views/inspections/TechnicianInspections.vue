@@ -38,12 +38,25 @@
           <div class="mt-2 space-y-3">
             <div v-for="item in section.items" :key="item.id" class="space-y-1">
               <label class="block text-sm font-medium">{{ item.name }}</label>
+
+              <!-- Yes/No -->
               <template v-if="item.input_type === 'boolean'">
                 <select v-model="responses[item.id].response" class="w-full p-2 border rounded">
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
                 </select>
               </template>
+
+              <!-- Yes/No/N/A -->
+              <template v-else-if="item.input_type === 'boolean_na'">
+                <select v-model="responses[item.id].response" class="w-full p-2 border rounded">
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                  <option value="na">N/A</option>
+                </select>
+              </template>
+
+              <!-- Textarea -->
               <template v-else-if="item.input_type === 'textarea'">
                 <textarea
                   v-model="responses[item.id].response"
@@ -51,6 +64,41 @@
                   rows="3"
                 ></textarea>
               </template>
+
+              <!-- Number Scale (range slider) -->
+              <template v-else-if="item.input_type === 'number_scale'">
+                <div class="space-y-2">
+                  <div class="flex items-center space-x-4">
+                    <input
+                      v-model.number="responses[item.id].response"
+                      type="range"
+                      class="flex-1"
+                      :min="item.options?.min || 0"
+                      :max="item.options?.max || 10"
+                      :step="item.options?.step || 1"
+                    />
+                    <span class="text-lg font-semibold text-indigo-600 min-w-[3rem] text-center">
+                      {{ responses[item.id].response }}
+                    </span>
+                  </div>
+                  <div class="flex justify-between text-xs text-gray-500">
+                    <span>{{ item.options?.min || 0 }}</span>
+                    <span>{{ item.options?.max || 10 }}</span>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Written Scale (select dropdown) -->
+              <template v-else-if="item.input_type === 'select_scale'">
+                <select v-model="responses[item.id].response" class="w-full p-2 border rounded">
+                  <option value="" disabled>Select...</option>
+                  <option v-for="choice in item.options?.choices || []" :key="choice" :value="choice">
+                    {{ choice }}
+                  </option>
+                </select>
+              </template>
+
+              <!-- Text or Number (free input) -->
               <template v-else>
                 <input
                   v-model="responses[item.id].response"
@@ -58,9 +106,10 @@
                   :type="item.input_type === 'number' ? 'number' : 'text'"
                 />
               </template>
+
               <textarea
                 v-model="responses[item.id].note"
-                class="w-full p-2 border rounded"
+                class="w-full p-2 border rounded text-sm"
                 rows="2"
                 placeholder="Notes (optional)"
               ></textarea>
@@ -124,10 +173,25 @@ const prepareResponses = () => {
   if (!selectedTemplate.value) return
   selectedTemplate.value.sections.forEach((section) => {
     section.items.forEach((item) => {
+      let defaultResponse = item.default_value || ''
+
+      // Set smart defaults for new field types
+      if (item.input_type === 'number_scale' && item.options) {
+        // Default to middle of range
+        const min = item.options.min || 0
+        const max = item.options.max || 10
+        defaultResponse = Math.floor((min + max) / 2)
+      } else if (item.input_type === 'select_scale' && item.options?.choices?.length) {
+        // Default to first option
+        defaultResponse = ''
+      } else if (item.input_type === 'boolean_na') {
+        defaultResponse = 'na'
+      }
+
       responses[item.id] = {
         template_item_id: item.id,
         label: item.name,
-        response: item.default_value || '',
+        response: defaultResponse,
         note: '',
       }
     })

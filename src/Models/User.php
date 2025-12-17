@@ -19,6 +19,7 @@ class User extends BaseModel
      * @var array<int, string>|null
      */
     public ?array $two_factor_recovery_codes = null;
+    public bool $two_factor_setup_pending = false;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }
