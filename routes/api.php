@@ -13,6 +13,7 @@ use App\Support\Webhooks\WebhookDispatcher;
 use App\Support\Security\RecaptchaVerifier;
 use App\Support\Security\LoginRateLimiter;
 use App\Support\Auth\TotpService;
+use App\CMS\Controllers\CategoryController;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
 use App\CMS\Controllers\PageController;
@@ -1168,6 +1169,7 @@ return Response::json([
 
     $cmsCacheService = new CMSCacheService($config['cms'] ?? []);
     // CMS controllers reuse the same gate and connection
+    $cmsCategoryController = new CategoryController($connection, $gate);
     $cmsPageController = new PageController($connection, $gate, $cmsCacheService);
     $cmsMenuController = new MenuController($connection, $gate, $cmsCacheService);
     $cmsMediaController = new MediaController($connection, $gate, $cmsCacheService);
@@ -2844,7 +2846,7 @@ return Response::json([
     });
 
     // CMS Management routes (Admin/Manager for full access, Technician for content editing)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsPageController, $cmsMenuController, $cmsMediaController, $cmsCacheService, $gate, $cmsApiController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $cmsCategoryController, $cmsPageController, $cmsMenuController, $cmsMediaController, $cmsCacheService, $gate, $cmsApiController) {
 
         // CMS Dashboard
         $router->get('/api/cms/dashboard', function (Request $request) use ($cmsApiController) {
@@ -2944,6 +2946,68 @@ return Response::json([
             }
 
             return Response::html($html);
+        });
+
+        // CMS Categories
+        $router->get('/api/cms/categories', function (Request $request) use ($cmsCategoryController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'search' => $request->queryParam('search'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $cmsCategoryController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/cms/categories/{id}', function (Request $request) use ($cmsCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsCategoryController->show($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Category not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/categories', function (Request $request) use ($cmsCategoryController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsCategoryController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/cms/categories/{id}', function (Request $request) use ($cmsCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsCategoryController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::notFound('Category not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/cms/categories/{id}', function (Request $request) use ($cmsCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            // Check if category has pages
+            $pageCount = $cmsCategoryController->getPageCount($id);
+            if ($pageCount > 0) {
+                return Response::json([
+                    'error' => 'Cannot delete category with pages',
+                    'message' => "This category has {$pageCount} page(s). Please reassign or delete them first.",
+                    'page_count' => $pageCount
+                ], 400);
+            }
+
+            $cmsCategoryController->destroy($user, $id);
+            return Response::noContent();
         });
 
         // CMS Menus

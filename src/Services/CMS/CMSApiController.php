@@ -810,11 +810,17 @@ class CMSApiController
             ORDER BY title
         ")->fetchAll(PDO::FETCH_ASSOC);
 
+        $categories = $pdo->query("
+            SELECT id, name, slug FROM {$this->table('categories')}
+            WHERE status = 'published' ORDER BY sort_order, name
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
         return [
             'templates' => $templates,
             'header_components' => $headerComponents,
             'footer_components' => $footerComponents,
             'parent_pages' => $pages,
+            'categories' => $categories,
         ];
     }
 

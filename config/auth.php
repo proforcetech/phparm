@@ -46,6 +46,7 @@ return [
                 'inspections.*', 'time.*', 'appointments.view', 'service_types.view',
                 // CMS content editing (no administrative settings)
                 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete',
+                'cms.categories.view', 'cms.categories.create', 'cms.categories.update', 'cms.categories.delete',
                 'cms.menus.view', 'cms.menus.create', 'cms.menus.update', 'cms.menus.delete',
                 'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete',
                 'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete',
