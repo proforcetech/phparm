@@ -18,7 +18,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted, nextTick, createApp } from 'vue'
 import { useRoute } from 'vue-router'
 import cmsService from '@/services/cms.service'
 
@@ -30,6 +30,7 @@ const error = ref(null)
 const originalTitle = document.title
 const originalBodyClass = document.body.className
 const addedMetaTags = []
+const mountedVueApps = []
 
 // Get slug from route - either from params or use 'home' for root path
 const slug = computed(() => {
@@ -120,6 +121,42 @@ function extractAndInjectMetaTags(html) {
   return doc.body.innerHTML
 }
 
+// Mount Vue components embedded in CMS content
+async function mountVueComponents() {
+  await nextTick()
+
+  // Find all elements with data-vue-component attribute
+  const componentElements = document.querySelectorAll('[data-vue-component]')
+
+  for (const element of componentElements) {
+    const componentName = element.getAttribute('data-vue-component')
+
+    try {
+      let component = null
+
+      // Map component names to their imports
+      switch (componentName) {
+        case 'EstimateRequestForm':
+          component = (await import('@/components/public/EstimateRequestForm.vue')).default
+          break
+        // Add more components here as needed
+        default:
+          console.warn(`Unknown Vue component: ${componentName}`)
+          continue
+      }
+
+      if (component) {
+        // Create and mount the Vue app
+        const app = createApp(component)
+        app.mount(element)
+        mountedVueApps.push(app)
+      }
+    } catch (err) {
+      console.error(`Failed to mount Vue component ${componentName}:`, err)
+    }
+  }
+}
+
 async function loadPage() {
   loading.value = true
   error.value = null
@@ -128,6 +165,9 @@ async function loadPage() {
     const data = await cmsService.getRenderedPageBySlug(slug.value)
     pageData.value = data.page
     renderedHtml.value = extractAndInjectMetaTags(data.html)
+
+    // Mount any embedded Vue components after HTML is rendered
+    await mountVueComponents()
   } catch (err) {
     if (err.response?.status === 404) {
       error.value = 'Page not found'
@@ -147,6 +187,16 @@ function cleanup() {
   document.body.classList.remove('cms-page-active')
   addedMetaTags.forEach(tag => tag.remove())
   addedMetaTags.length = 0
+
+  // Unmount all Vue components
+  mountedVueApps.forEach(app => {
+    try {
+      app.unmount()
+    } catch (err) {
+      console.warn('Failed to unmount Vue app:', err)
+    }
+  })
+  mountedVueApps.length = 0
 }
 
 // Load page on mount

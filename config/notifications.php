@@ -238,5 +238,74 @@ The refund should appear in your account within 5-10 business days.
 
 Thank you.
 TEMPLATE,
+
+        // Estimate Request templates
+        'estimate_request.staff_notification' => <<<'TEMPLATE'
+New Estimate Request Received
+
+Request ID: #{{request_id}}
+Submitted: {{submitted_at}}
+
+Customer Information:
+Name: {{customer_name}}
+Email: {{customer_email}}
+Phone: {{customer_phone}}
+
+Address:
+{{customer_address}}
+{{customer_city}}, {{customer_state}} {{customer_zip}}
+
+{{#service_address_different}}
+Service Location:
+{{service_address}}
+{{service_city}}, {{service_state}} {{service_zip}}
+{{/service_address_different}}
+
+{{#vehicle_info}}
+Vehicle Information:
+{{vehicle_year}} {{vehicle_make}} {{vehicle_model}}
+{{#vin}}VIN: {{vin}}{{/vin}}
+{{#license_plate}}License: {{license_plate}}{{/license_plate}}
+{{/vehicle_info}}
+
+{{#service_type}}
+Requested Service: {{service_type}}
+{{/service_type}}
+
+{{#description}}
+Customer Notes:
+{{description}}
+{{/description}}
+
+{{#photo_count}}
+Photos Attached: {{photo_count}}
+{{/photo_count}}
+
+{{#estimate_created}}
+Draft Estimate Created: {{estimate_number}}
+{{/estimate_created}}
+
+View full details in the admin panel.
+TEMPLATE,
+
+        'estimate_request.customer_confirmation' => <<<'TEMPLATE'
+Hello {{customer_name}},
+
+Thank you for your estimate request! We have received your information and will contact you shortly.
+
+Request Details:
+{{#vehicle_info}}
+Vehicle: {{vehicle_year}} {{vehicle_make}} {{vehicle_model}}
+{{/vehicle_info}}
+{{#service_type}}
+Service Requested: {{service_type}}
+{{/service_type}}
+
+We typically respond to estimate requests within 1-2 business days. A member of our team will reach out to you at {{customer_phone}} or {{customer_email}} to discuss your needs and schedule a time to provide you with a detailed estimate.
+
+If you have any immediate questions, please don't hesitate to contact us.
+
+Thank you for choosing our services!
+TEMPLATE,
     ],
 ];
