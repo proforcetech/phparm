@@ -3329,7 +3329,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
             if ($request->query('search')) {
                 $filters['search'] = $request->query('search');
             }
-            if (isset($request->query('is_active'))) {
+            if ($request->query('is_active') !== null) {
                 $filters['is_active'] = (int) $request->query('is_active');
             }
 
