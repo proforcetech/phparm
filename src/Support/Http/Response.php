@@ -84,6 +84,11 @@ class Response
         return self::json(['error' => $message], 500);
     }
 
+    public static function redirect(string $url, int $statusCode = 302): self
+    {
+        return new self('', $statusCode, ['Location' => $url]);
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $this->headers[$name] = $value;
