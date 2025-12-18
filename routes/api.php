@@ -3243,5 +3243,194 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
                 return Response::forbidden($e->getMessage());
             }
         });
+
+        // 404 Log Management (Admin/Manager only)
+        $router->get('/api/404-logs', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $notFoundLogRepo = new \App\Services\NotFound\NotFoundLogRepository($connection);
+
+            $page = max(1, (int) ($request->query('page') ?? 1));
+            $perPage = min(100, max(1, (int) ($request->query('per_page') ?? 50)));
+            $offset = ($page - 1) * $perPage;
+
+            $filters = [];
+            if ($request->query('uri')) {
+                $filters['uri'] = $request->query('uri');
+            }
+            if ($request->query('min_hits')) {
+                $filters['min_hits'] = (int) $request->query('min_hits');
+            }
+            if ($request->query('sort')) {
+                $filters['sort'] = $request->query('sort');
+            }
+
+            $logs = $notFoundLogRepo->list($filters, $perPage, $offset);
+            $total = $notFoundLogRepo->count($filters);
+            $stats = $notFoundLogRepo->getStatistics();
+
+            return Response::json([
+                'logs' => array_map(fn($log) => $log->toArray(), $logs),
+                'pagination' => [
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'total_pages' => ceil($total / $perPage),
+                ],
+                'statistics' => $stats,
+            ]);
+        });
+
+        $router->delete('/api/404-logs/{id}', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $notFoundLogRepo = new \App\Services\NotFound\NotFoundLogRepository($connection);
+
+            if ($notFoundLogRepo->delete($id)) {
+                return Response::noContent();
+            }
+
+            return Response::notFound('Log entry not found');
+        });
+
+        $router->post('/api/404-logs/clear', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if ($user->role !== 'admin') {
+                return Response::forbidden('Admin access required');
+            }
+
+            $notFoundLogRepo = new \App\Services\NotFound\NotFoundLogRepository($connection);
+            $count = $notFoundLogRepo->clearAll();
+
+            return Response::json(['message' => 'All 404 logs cleared', 'deleted_count' => $count]);
+        });
+
+        // Redirect Management (Admin/Manager only)
+        $router->get('/api/redirects', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $redirectRepo = new \App\Services\NotFound\RedirectRepository($connection);
+
+            $page = max(1, (int) ($request->query('page') ?? 1));
+            $perPage = min(100, max(1, (int) ($request->query('per_page') ?? 50)));
+            $offset = ($page - 1) * $perPage;
+
+            $filters = [];
+            if ($request->query('search')) {
+                $filters['search'] = $request->query('search');
+            }
+            if (isset($request->query('is_active'))) {
+                $filters['is_active'] = (int) $request->query('is_active');
+            }
+
+            $redirects = $redirectRepo->list($filters, $perPage, $offset);
+            $total = $redirectRepo->count($filters);
+
+            return Response::json([
+                'redirects' => array_map(fn($redirect) => $redirect->toArray(), $redirects),
+                'pagination' => [
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'total_pages' => ceil($total / $perPage),
+                ],
+            ]);
+        });
+
+        $router->get('/api/redirects/{id}', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $redirectRepo = new \App\Services\NotFound\RedirectRepository($connection);
+            $redirect = $redirectRepo->find($id);
+
+            if (!$redirect) {
+                return Response::notFound('Redirect not found');
+            }
+
+            return Response::json($redirect->toArray());
+        });
+
+        $router->post('/api/redirects', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $body = $request->body();
+            $redirectRepo = new \App\Services\NotFound\RedirectRepository($connection);
+
+            $data = [
+                'source_path' => $body['source_path'] ?? '',
+                'destination_path' => $body['destination_path'] ?? '',
+                'redirect_type' => $body['redirect_type'] ?? '301',
+                'match_type' => $body['match_type'] ?? 'exact',
+                'is_active' => isset($body['is_active']) ? (bool) $body['is_active'] : true,
+                'description' => $body['description'] ?? null,
+                'created_by' => $user->id,
+            ];
+
+            if (empty($data['source_path']) || empty($data['destination_path'])) {
+                return Response::badRequest('Source and destination paths are required');
+            }
+
+            try {
+                $redirect = $redirectRepo->create($data);
+                return Response::created($redirect->toArray());
+            } catch (\PDOException $e) {
+                if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                    return Response::badRequest('A redirect for this source path already exists');
+                }
+                throw $e;
+            }
+        });
+
+        $router->put('/api/redirects/{id}', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $redirectRepo = new \App\Services\NotFound\RedirectRepository($connection);
+
+            $redirect = $redirectRepo->update($id, $body);
+
+            if (!$redirect) {
+                return Response::notFound('Redirect not found');
+            }
+
+            return Response::json($redirect->toArray());
+        });
+
+        $router->delete('/api/redirects/{id}', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            if (!in_array($user->role, ['admin', 'manager'], true)) {
+                return Response::forbidden('Insufficient permissions');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $redirectRepo = new \App\Services\NotFound\RedirectRepository($connection);
+
+            if ($redirectRepo->delete($id)) {
+                return Response::noContent();
+            }
+
+            return Response::notFound('Redirect not found');
+        });
     });
 };

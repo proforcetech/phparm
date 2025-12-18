@@ -40,6 +40,12 @@ $connection = new Connection($config['database']);
 // Create router instance
 $router = new Router();
 
+// Initialize 404 logging and redirect handling
+$redirectRepository = new \App\Services\NotFound\RedirectRepository($connection);
+$notFoundLogRepository = new \App\Services\NotFound\NotFoundLogRepository($connection);
+$router->setRedirectRepository($redirectRepository);
+$router->setNotFoundLogRepository($notFoundLogRepository);
+
 // Load route definitions
 $routeLoader = require __DIR__ . '/../routes/api.php';
 $routeLoader($router, $config, $connection);
