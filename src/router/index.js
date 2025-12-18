@@ -449,6 +449,12 @@ const routes = [
     component: () => import('@/views/customer-portal/Profile.vue'),
     meta: { requiresAuth: true, requiresCustomer: true },
   },
+  // Public estimate request form
+  {
+    path: '/request-estimate',
+    name: 'EstimateRequestForm',
+    component: () => import('@/views/public/EstimateRequestPage.vue'),
+  },
   {
     path: '/',
     name: 'Home',

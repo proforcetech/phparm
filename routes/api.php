@@ -133,6 +133,210 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
+    // Public vehicle data endpoints for estimate request form
+    $router->get('/api/public/vehicle-years', function () use ($connection) {
+        $stmt = $connection->pdo()->query(
+            'SELECT DISTINCT year FROM vehicle_master WHERE year IS NOT NULL ORDER BY year DESC'
+        );
+        $years = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        return Response::json(['years' => $years]);
+    });
+
+    $router->get('/api/public/vehicle-makes', function (Request $request) use ($connection) {
+        $year = $request->query('year');
+        if (!$year) {
+            return Response::json(['error' => 'Year parameter is required'], 400);
+        }
+
+        $stmt = $connection->pdo()->prepare(
+            'SELECT DISTINCT make FROM vehicle_master WHERE year = :year AND make IS NOT NULL ORDER BY make ASC'
+        );
+        $stmt->execute(['year' => $year]);
+        $makes = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        return Response::json(['makes' => $makes]);
+    });
+
+    $router->get('/api/public/vehicle-models', function (Request $request) use ($connection) {
+        $year = $request->query('year');
+        $make = $request->query('make');
+
+        if (!$year || !$make) {
+            return Response::json(['error' => 'Year and make parameters are required'], 400);
+        }
+
+        $stmt = $connection->pdo()->prepare(
+            'SELECT DISTINCT model FROM vehicle_master
+             WHERE year = :year AND make = :make AND model IS NOT NULL
+             ORDER BY model ASC'
+        );
+        $stmt->execute(['year' => $year, 'make' => $make]);
+        $models = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        return Response::json(['models' => $models]);
+    });
+
+    $router->get('/api/public/service-types', function () use ($connection) {
+        $stmt = $connection->pdo()->query(
+            'SELECT id, name, description
+             FROM service_types
+             WHERE active = 1
+             ORDER BY display_order ASC, name ASC'
+        );
+        $serviceTypes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        return Response::json(['service_types' => $serviceTypes]);
+    });
+
+    // Submit estimate request (public)
+    $router->post('/api/public/estimate-request', function (Request $request) use ($connection, $recaptchaVerifier) {
+        // Verify reCAPTCHA if enabled
+        $recaptchaToken = $request->input('recaptcha_token');
+        $verifier = $recaptchaVerifier();
+        if (!$verifier->verify($recaptchaToken)) {
+            return Response::json([
+                'error' => 'reCAPTCHA verification failed. Please try again.',
+            ], 400);
+        }
+
+        // Validate required fields
+        $name = trim((string) $request->input('name', ''));
+        $email = trim((string) $request->input('email', ''));
+        $phone = trim((string) $request->input('phone', ''));
+        $address = trim((string) $request->input('address', ''));
+        $city = trim((string) $request->input('city', ''));
+        $state = trim((string) $request->input('state', ''));
+        $zip = trim((string) $request->input('zip', ''));
+
+        if (!$name || !$email || !$phone || !$address || !$city || !$state || !$zip) {
+            return Response::json([
+                'error' => 'All contact and address fields are required.',
+            ], 400);
+        }
+
+        // Validate email format
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return Response::json([
+                'error' => 'Invalid email address.',
+            ], 400);
+        }
+
+        // Get service type name if ID provided
+        $serviceTypeId = $request->input('service_type_id');
+        $serviceTypeName = null;
+        if ($serviceTypeId) {
+            $stmt = $connection->pdo()->prepare('SELECT name FROM service_types WHERE id = :id');
+            $stmt->execute(['id' => $serviceTypeId]);
+            $serviceTypeName = $stmt->fetchColumn();
+        }
+
+        // Prepare request data
+        $requestData = [
+            'name' => $name,
+            'email' => $email,
+            'phone' => $phone,
+            'address' => $address,
+            'city' => $city,
+            'state' => $state,
+            'zip' => $zip,
+            'service_address_same_as_customer' => (bool) $request->input('service_address_same_as_customer', true),
+            'service_address' => $request->input('service_address'),
+            'service_city' => $request->input('service_city'),
+            'service_state' => $request->input('service_state'),
+            'service_zip' => $request->input('service_zip'),
+            'vehicle_year' => $request->input('vehicle_year'),
+            'vehicle_make' => $request->input('vehicle_make'),
+            'vehicle_model' => $request->input('vehicle_model'),
+            'vin' => $request->input('vin'),
+            'license_plate' => $request->input('license_plate'),
+            'service_type_id' => $serviceTypeId,
+            'service_type_name' => $serviceTypeName,
+            'description' => $request->input('description'),
+            'source' => 'website',
+            'ip_address' => $request->getClientIp(),
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+        ];
+
+        try {
+            // Create estimate request
+            $repository = new \App\Services\EstimateRequest\EstimateRequestRepository($connection);
+            $estimateRequest = $repository->create($requestData);
+
+            // Handle file uploads if present
+            if (!empty($_FILES['photos'])) {
+                $uploadDir = __DIR__ . '/../storage/uploads/estimate-requests/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+
+                $files = $_FILES['photos'];
+                $fileCount = is_array($files['name']) ? count($files['name']) : 1;
+
+                for ($i = 0; $i < min($fileCount, 5); $i++) {
+                    $fileName = is_array($files['name']) ? $files['name'][$i] : $files['name'];
+                    $fileTmpName = is_array($files['tmp_name']) ? $files['tmp_name'][$i] : $files['tmp_name'];
+                    $fileSize = is_array($files['size']) ? $files['size'][$i] : $files['size'];
+                    $fileError = is_array($files['error']) ? $files['error'][$i] : $files['error'];
+
+                    if ($fileError === UPLOAD_ERR_OK) {
+                        $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
+                        $safeFileName = 'request_' . $estimateRequest->id . '_' . uniqid() . '.' . $fileExt;
+                        $filePath = $uploadDir . $safeFileName;
+
+                        if (move_uploaded_file($fileTmpName, $filePath)) {
+                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                            $mimeType = finfo_file($finfo, $filePath);
+                            finfo_close($finfo);
+
+                            $repository->addMedia(
+                                $estimateRequest->id,
+                                'uploads/estimate-requests/' . $safeFileName,
+                                $fileName,
+                                $mimeType,
+                                $fileSize
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Auto-process to create draft estimate
+            try {
+                $processor = new \App\Services\EstimateRequest\EstimateRequestProcessor(
+                    $connection,
+                    $repository,
+                    new \App\Services\Customer\CustomerRepository(
+                        $connection,
+                        new \App\Services\Customer\CustomerValidator()
+                    ),
+                    new \App\Services\Customer\CustomerVehicleService($connection),
+                    new \App\Services\Vehicle\VehicleMasterRepository(
+                        $connection,
+                        new \App\Services\Vehicle\VehicleMasterValidator()
+                    )
+                );
+                $result = $processor->processRequest($estimateRequest);
+
+                return Response::json([
+                    'success' => true,
+                    'message' => 'Your estimate request has been submitted successfully. We will contact you shortly.',
+                    'request_id' => $estimateRequest->id,
+                    'estimate_id' => $result['estimate_id'],
+                ]);
+            } catch (\Throwable $e) {
+                // If auto-processing fails, still return success for the request submission
+                error_log('Failed to auto-process estimate request #' . $estimateRequest->id . ': ' . $e->getMessage());
+                return Response::json([
+                    'success' => true,
+                    'message' => 'Your estimate request has been submitted successfully. We will contact you shortly.',
+                    'request_id' => $estimateRequest->id,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            error_log('Estimate request submission error: ' . $e->getMessage());
+            return Response::json([
+                'error' => 'Failed to submit estimate request. Please try again.',
+            ], 500);
+        }
+    });
+
     // API info (public)
     $router->get('/', function () {
         return Response::json([
