@@ -141,10 +141,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { cmsService } from '@/services/cms.service'
-import Button from '@/components/common/Button.vue'
-import Card from '@/components/common/Card.vue'
-import Alert from '@/components/common/Alert.vue'
-import Loading from '@/components/common/Loading.vue'
+import Button from '@/components/ui/Button.vue'
+import Card from '@/components/ui/Card.vue'
+import Alert from '@/components/ui/Alert.vue'
+import Loading from '@/components/ui/Loading.vue'
 import { PlusIcon, FolderIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
