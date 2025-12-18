@@ -9,6 +9,7 @@ class Page extends BaseModel
     public int $id;
     public string $title;
     public string $slug;
+    public ?int $category_id = null;
     public ?int $template_id = null;
     public ?int $header_component_id = null;
     public ?int $footer_component_id = null;

@@ -96,6 +96,50 @@ export default {
   },
 
   // ================================================
+  // Categories
+  // ================================================
+
+  /**
+   * Get all CMS categories
+   */
+  async getCategories(params = {}) {
+    const response = await api.get('/cms/categories', { params })
+    return response.data
+  },
+
+  /**
+   * Get a single category by ID
+   */
+  async getCategory(id) {
+    const response = await api.get(`/cms/categories/${id}`)
+    return response.data
+  },
+
+  /**
+   * Create a new category
+   */
+  async createCategory(data) {
+    const response = await api.post('/cms/categories', data)
+    return response.data
+  },
+
+  /**
+   * Update an existing category
+   */
+  async updateCategory(id, data) {
+    const response = await api.put(`/cms/categories/${id}`, data)
+    return response.data
+  },
+
+  /**
+   * Delete a category
+   */
+  async deleteCategory(id) {
+    const response = await api.delete(`/cms/categories/${id}`)
+    return response.data
+  },
+
+  // ================================================
   // Menus
   // ================================================
 

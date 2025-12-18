@@ -102,8 +102,8 @@ class PageController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -133,7 +133,7 @@ class PageController
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE cms_pages SET title = :title, slug = :slug, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
             . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
@@ -198,19 +198,46 @@ class PageController
 
     /**
      * Public retrieval of a published page by slug.
+     * Supports both base URIs (/page-slug) and nested URIs (/category-slug/page-slug)
      *
      * @return array<string, mixed>|null
      */
     public function publishedPage(string $slug): ?array
     {
         $lookupSlug = $this->normalizedSlug($slug);
-        $sql = 'SELECT * FROM cms_pages WHERE slug = :slug AND status = "published" '
-            . 'AND (publish_start_at IS NULL OR publish_start_at <= NOW()) '
-            . 'AND (publish_end_at IS NULL OR publish_end_at >= NOW()) '
-            . 'ORDER BY published_at DESC LIMIT 1';
 
-        $stmt = $this->connection->pdo()->prepare($sql);
-        $stmt->execute(['slug' => $lookupSlug]);
+        // Check if this is a nested URI (category/page)
+        $parts = explode('/', $lookupSlug);
+
+        if (count($parts) === 2) {
+            // Nested URI: /category-slug/page-slug
+            [$categorySlug, $pageSlug] = $parts;
+
+            $sql = 'SELECT p.* FROM cms_pages p '
+                . 'INNER JOIN cms_categories c ON p.category_id = c.id '
+                . 'WHERE p.slug = :page_slug AND c.slug = :category_slug '
+                . 'AND p.status = "published" AND c.status = "published" '
+                . 'AND (p.publish_start_at IS NULL OR p.publish_start_at <= NOW()) '
+                . 'AND (p.publish_end_at IS NULL OR p.publish_end_at >= NOW()) '
+                . 'ORDER BY p.published_at DESC LIMIT 1';
+
+            $stmt = $this->connection->pdo()->prepare($sql);
+            $stmt->execute([
+                'page_slug' => $pageSlug,
+                'category_slug' => $categorySlug
+            ]);
+        } else {
+            // Base URI: /page-slug (pages without category or with category_id = NULL)
+            $sql = 'SELECT * FROM cms_pages WHERE slug = :slug AND status = "published" '
+                . 'AND category_id IS NULL '
+                . 'AND (publish_start_at IS NULL OR publish_start_at <= NOW()) '
+                . 'AND (publish_end_at IS NULL OR publish_end_at >= NOW()) '
+                . 'ORDER BY published_at DESC LIMIT 1';
+
+            $stmt = $this->connection->pdo()->prepare($sql);
+            $stmt->execute(['slug' => $lookupSlug]);
+        }
+
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($row === false) {
@@ -274,6 +301,7 @@ class PageController
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
             'slug' => (string) $row['slug'],
+            'category_id' => isset($row['category_id']) ? (int) $row['category_id'] : null,
             'template_id' => isset($row['template_id']) ? (int) $row['template_id'] : null,
             'header_component_id' => isset($row['header_component_id']) ? (int) $row['header_component_id'] : null,
             'footer_component_id' => isset($row['footer_component_id']) ? (int) $row['footer_component_id'] : null,
@@ -311,6 +339,7 @@ class PageController
         return [
             'title' => (string) $title,
             'slug' => $this->slugify((string) $slugSource),
+            'category_id' => array_key_exists('category_id', $data) ? ($data['category_id'] !== null ? (int) $data['category_id'] : null) : $existing?->category_id,
 	'template_id' => array_key_exists('template_id', $data) ? ($data['template_id'] !== null ? (int) $data['template_id'] : null) : $existing?->template_id,
             'header_component_id' => isset($data['header_component_id']) ? (int) $data['header_component_id'] : $existing?->header_component_id,
             'footer_component_id' => isset($data['footer_component_id']) ? (int) $data['footer_component_id'] : $existing?->footer_component_id,

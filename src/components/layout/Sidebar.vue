@@ -68,6 +68,7 @@ import {
   ClipboardDocumentCheckIcon,
   ClipboardDocumentListIcon,
   ExclamationTriangleIcon,
+  FolderIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -119,6 +120,7 @@ const adminMenuItems = [
   // CMS Section
   { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
   { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
+  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
   { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
   { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
   { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms' },

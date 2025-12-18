@@ -69,6 +69,27 @@
               </div>
 
               <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  v-model="form.category_id"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option :value="null">No Category (Base URL)</option>
+                  <option v-for="category in availableCategories" :key="category.id" :value="category.id">
+                    {{ category.name }} ({{ category.slug }})
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">
+                  <template v-if="form.category_id && selectedCategory">
+                    Page will be accessible at: /{{ selectedCategory.slug }}/{{ form.slug }}
+                  </template>
+                  <template v-else>
+                    Page will be accessible at: /{{ form.slug }}
+                  </template>
+                </p>
+              </div>
+
+              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Template</label>
                 <select
                   v-model="form.template_id"
@@ -277,9 +298,14 @@ const validationErrors = ref([])
 const availableTemplates = ref([])
 const availableHeaderComponents = ref([])
 const availableFooterComponents = ref([])
+const availableCategories = ref([])
 
 const pageId = computed(() => route.params.id)
 const isEditing = computed(() => !!pageId.value && pageId.value !== 'create')
+const selectedCategory = computed(() => {
+  if (!form.value.category_id) return null
+  return availableCategories.value.find(cat => cat.id === form.value.category_id)
+})
 const draftKey = computed(() => pageId.value || 'new')
 
 const form = ref(createDefaultForm())
@@ -296,6 +322,7 @@ function createDefaultForm() {
   return {
     title: '',
     slug: '',
+    category_id: null,
     template_id: null,
     header_component_id: null,
     footer_component_id: null,
@@ -320,6 +347,7 @@ async function loadData() {
     availableTemplates.value = formOptions.templates || []
     availableHeaderComponents.value = formOptions.header_components || []
     availableFooterComponents.value = formOptions.footer_components || []
+    availableCategories.value = formOptions.categories || []
 
     // Load page if editing
     if (isEditing.value) {
