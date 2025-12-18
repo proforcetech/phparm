@@ -146,7 +146,6 @@ import Card from '@/components/common/Card.vue'
 import Alert from '@/components/common/Alert.vue'
 import Loading from '@/components/common/Loading.vue'
 import { PlusIcon, FolderIcon } from '@heroicons/vue/24/outline'
-import { debounce } from 'lodash-es'
 
 const router = useRouter()
 
@@ -157,6 +156,8 @@ const filters = ref({
   search: '',
   status: ''
 })
+
+let searchTimeout = null
 
 const loadCategories = async () => {
   loading.value = true
@@ -175,9 +176,12 @@ const loadCategories = async () => {
   }
 }
 
-const debouncedSearch = debounce(() => {
-  loadCategories()
-}, 300)
+function debouncedSearch() {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    loadCategories()
+  }, 300)
+}
 
 const editCategory = (id) => {
   router.push(`/cp/cms/categories/${id}`)
