@@ -336,6 +336,24 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/cms/categories',
+    name: 'CMSCategoryList',
+    component: () => import('@/views/cms/CMSCategoryList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/cms/categories/create',
+    name: 'CMSCategoryCreate',
+    component: () => import('@/views/cms/CMSCategoryForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/cms/categories/:id',
+    name: 'CMSCategoryEdit',
+    component: () => import('@/views/cms/CMSCategoryForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/cms/menus',
     name: 'CMSMenuList',
     component: () => import('@/views/cms/CMSMenuList.vue'),
