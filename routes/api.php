@@ -298,6 +298,7 @@ return function (Router $router, array $config, $connection) {
             }
 
             // Auto-process to create draft estimate
+            $estimateNumber = null;
             try {
                 $processor = new \App\Services\EstimateRequest\EstimateRequestProcessor(
                     $connection,
@@ -314,21 +315,118 @@ return function (Router $router, array $config, $connection) {
                 );
                 $result = $processor->processRequest($estimateRequest);
 
-                return Response::json([
-                    'success' => true,
-                    'message' => 'Your estimate request has been submitted successfully. We will contact you shortly.',
-                    'request_id' => $estimateRequest->id,
-                    'estimate_id' => $result['estimate_id'],
-                ]);
+                // Get estimate number for email
+                $estimateStmt = $connection->pdo()->prepare('SELECT number FROM estimates WHERE id = :id');
+                $estimateStmt->execute(['id' => $result['estimate_id']]);
+                $estimateNumber = $estimateStmt->fetchColumn();
             } catch (\Throwable $e) {
-                // If auto-processing fails, still return success for the request submission
+                // If auto-processing fails, still continue to send notification emails
                 error_log('Failed to auto-process estimate request #' . $estimateRequest->id . ': ' . $e->getMessage());
-                return Response::json([
-                    'success' => true,
-                    'message' => 'Your estimate request has been submitted successfully. We will contact you shortly.',
-                    'request_id' => $estimateRequest->id,
-                ]);
             }
+
+            // Send email notifications
+            try {
+                $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+                $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+                    $notificationsConfig,
+                    new \App\Support\Notifications\TemplateEngine(),
+                    new \App\Support\Notifications\NotificationLogRepository($connection)
+                );
+
+                // Prepare email data
+                $emailData = [
+                    'request_id' => $estimateRequest->id,
+                    'submitted_at' => date('Y-m-d H:i:s'),
+                    'customer_name' => $estimateRequest->name,
+                    'customer_email' => $estimateRequest->email,
+                    'customer_phone' => $estimateRequest->phone,
+                    'customer_address' => $estimateRequest->address,
+                    'customer_city' => $estimateRequest->city,
+                    'customer_state' => $estimateRequest->state,
+                    'customer_zip' => $estimateRequest->zip,
+                ];
+
+                // Add service address if different
+                if (!$estimateRequest->service_address_same_as_customer && $estimateRequest->service_address) {
+                    $emailData['service_address_different'] = true;
+                    $emailData['service_address'] = $estimateRequest->service_address;
+                    $emailData['service_city'] = $estimateRequest->service_city;
+                    $emailData['service_state'] = $estimateRequest->service_state;
+                    $emailData['service_zip'] = $estimateRequest->service_zip;
+                }
+
+                // Add vehicle info if provided
+                if ($estimateRequest->vehicle_year && $estimateRequest->vehicle_make && $estimateRequest->vehicle_model) {
+                    $emailData['vehicle_info'] = true;
+                    $emailData['vehicle_year'] = $estimateRequest->vehicle_year;
+                    $emailData['vehicle_make'] = $estimateRequest->vehicle_make;
+                    $emailData['vehicle_model'] = $estimateRequest->vehicle_model;
+                    if ($estimateRequest->vin) {
+                        $emailData['vin'] = $estimateRequest->vin;
+                    }
+                    if ($estimateRequest->license_plate) {
+                        $emailData['license_plate'] = $estimateRequest->license_plate;
+                    }
+                }
+
+                // Add service type if selected
+                if ($estimateRequest->service_type_name) {
+                    $emailData['service_type'] = $estimateRequest->service_type_name;
+                }
+
+                // Add description if provided
+                if ($estimateRequest->description) {
+                    $emailData['description'] = $estimateRequest->description;
+                }
+
+                // Add photo count if photos uploaded
+                $mediaFiles = $repository->getMedia($estimateRequest->id);
+                if (count($mediaFiles) > 0) {
+                    $emailData['photo_count'] = count($mediaFiles);
+                }
+
+                // Add estimate number if created
+                if ($estimateNumber) {
+                    $emailData['estimate_created'] = true;
+                    $emailData['estimate_number'] = $estimateNumber;
+                }
+
+                // Send staff notification
+                $staffEmail = $settingsRepository->get('notifications.estimate_request_email', $notificationsConfig['mail']['from_address'] ?? 'admin@example.com');
+                if ($staffEmail) {
+                    try {
+                        $dispatcher->sendMail(
+                            'estimate_request.staff_notification',
+                            $staffEmail,
+                            $emailData,
+                            'New Estimate Request #' . $estimateRequest->id
+                        );
+                    } catch (\Throwable $e) {
+                        error_log('Failed to send staff notification for estimate request #' . $estimateRequest->id . ': ' . $e->getMessage());
+                    }
+                }
+
+                // Send customer confirmation email
+                try {
+                    $dispatcher->sendMail(
+                        'estimate_request.customer_confirmation',
+                        $estimateRequest->email,
+                        $emailData,
+                        'We Received Your Estimate Request'
+                    );
+                } catch (\Throwable $e) {
+                    error_log('Failed to send customer confirmation for estimate request #' . $estimateRequest->id . ': ' . $e->getMessage());
+                }
+            } catch (\Throwable $e) {
+                error_log('Failed to send estimate request notifications: ' . $e->getMessage());
+            }
+
+            return Response::json([
+                'success' => true,
+                'message' => 'Your estimate request has been submitted successfully. We will contact you shortly.',
+                'request_id' => $estimateRequest->id,
+                'estimate_id' => $estimateNumber ? $result['estimate_id'] : null,
+            ]);
         } catch (\Throwable $e) {
             error_log('Estimate request submission error: ' . $e->getMessage());
             return Response::json([

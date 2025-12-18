@@ -152,6 +152,12 @@ return [
             'description' => 'SMS sender number for appointment, estimate, and invoice messages.',
             'value' => null,
         ],
+        'notifications.estimate_request_email' => [
+            'group' => 'notifications',
+            'type' => 'string',
+            'description' => 'Email address to receive notifications for new estimate requests submitted through the public form.',
+            'value' => null,
+        ],
         'integrations.twilio.sid' => [
             'group' => 'integrations',
             'type' => 'string',
