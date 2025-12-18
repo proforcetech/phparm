@@ -390,6 +390,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/cms/404-manager',
+    name: 'NotFoundManager',
+    component: () => import('@/views/cms/NotFoundManager.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager'] },
+  },
+  {
     path: '/portal',
     name: 'CustomerPortal',
     component: () => import('@/views/customer-portal/Dashboard.vue'),
