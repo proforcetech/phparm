@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import cmsService from '@/services/cms.service'
+import { cmsService } from '@/services/cms.service'
 
 export const useCmsMenuStore = defineStore('cmsMenus', () => {
   const menus = ref([])
