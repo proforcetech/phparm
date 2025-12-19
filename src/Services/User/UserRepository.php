@@ -204,11 +204,12 @@ class UserRepository
             $bindings['email_verified'] = $data['email_verified'];
         }
 
-        if (isset($data['two_factor_enabled'])) {
-            $fields[] = 'two_factor_enabled = :two_factor_enabled';
-            $bindings['two_factor_enabled'] = $data['two_factor_enabled'];
-        }
-
+if (isset($data['two_factor_enabled'])) {
+        $data['two_factor_enabled'] = $data['two_factor_enabled'] ? 1 : 0;
+    } else {
+        // If it's missing from the request (common with unchecked checkboxes), default to 0
+        $data['two_factor_enabled'] = 0;
+    }
         if (isset($data['two_factor_type'])) {
             $fields[] = 'two_factor_type = :two_factor_type';
             $bindings['two_factor_type'] = $data['two_factor_type'];
