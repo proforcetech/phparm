@@ -140,7 +140,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import cmsService from '@/services/cms.service'
+import { cmsService } from '@/services/cms.service'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Alert from '@/components/ui/Alert.vue'

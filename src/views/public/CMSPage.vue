@@ -20,7 +20,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, onUnmounted, nextTick, createApp } from 'vue'
 import { useRoute } from 'vue-router'
-import cmsService from '@/services/cms.service'
+import { cmsService } from '@/services/cms.service'
 
 const route = useRoute()
 const renderedHtml = ref(null)

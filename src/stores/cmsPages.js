@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import cmsService from '@/services/cms.service'
+import { cmsService } from '@/services/cms.service'
 
 export const useCmsPageStore = defineStore('cmsPages', () => {
   const pages = ref([])
