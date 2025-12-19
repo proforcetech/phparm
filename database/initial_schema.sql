@@ -13,7 +13,7 @@ CREATE TABLE users (
     password VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL,
     email_verified TINYINT(1) DEFAULT 0,
-    customer_id INT NULL,
+    customer_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL
@@ -55,8 +55,8 @@ CREATE TABLE vehicle_master (
 
 CREATE TABLE customer_vehicles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
-    vehicle_master_id INT NULL,
+    customer_id UNSIGNED INT NOT NULL,
+    vehicle_master_id INT UNSIGNED NULL,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
     model VARCHAR(120) NOT NULL,
@@ -116,10 +116,10 @@ CREATE TABLE inventory_lookups (
 CREATE TABLE estimates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
-    customer_id INT NOT NULL,
-    vehicle_id INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_id INT UNSIGNED NOT NULL,
     status VARCHAR(40) NOT NULL,
-    technician_id INT NULL,
+    technician_id INT UNSIGNED NULL,
     expiration_date DATE NULL,
     subtotal DECIMAL(12,2) DEFAULT 0,
     tax DECIMAL(12,2) DEFAULT 0,
@@ -139,8 +139,8 @@ CREATE TABLE estimates (
 
 CREATE TABLE estimate_jobs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    estimate_id INT NOT NULL,
-    service_type_id INT NOT NULL,
+    estimate_id INT UNSIGNED NOT NULL,
+    service_type_id INT UNSIGNED NOT NULL,
     title VARCHAR(160) NOT NULL,
     notes TEXT NULL,
     reference VARCHAR(120) NULL,
@@ -156,7 +156,7 @@ CREATE TABLE estimate_jobs (
 
 CREATE TABLE estimate_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    estimate_job_id INT NOT NULL,
+    estimate_job_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
@@ -170,10 +170,10 @@ CREATE TABLE estimate_items (
 CREATE TABLE invoices (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
-    customer_id INT NOT NULL,
-    vehicle_id INT NULL,
-    estimate_id INT NULL,
-    service_type_id INT NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_id INT UNSIGNED NULL,
+    estimate_id INT UNSIGNED NULL,
+    service_type_id INT UNSIGNED NULL,
     status VARCHAR(40) NOT NULL,
     issue_date DATE NOT NULL,
     due_date DATE NULL,
@@ -194,7 +194,7 @@ CREATE TABLE invoices (
 
 CREATE TABLE invoice_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    invoice_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
@@ -207,7 +207,7 @@ CREATE TABLE invoice_items (
 
 CREATE TABLE payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    invoice_id INT UNSIGNED NOT NULL,
     gateway VARCHAR(40) NOT NULL,
     transaction_id VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
@@ -220,10 +220,10 @@ CREATE TABLE payments (
 
 CREATE TABLE appointments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
-    vehicle_id INT NOT NULL,
-    estimate_id INT NULL,
-    technician_id INT NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_id INT UNSIGNED NOT NULL,
+    estimate_id INT UNSIGNED NULL,
+    technician_id INT UNSIGNED NULL,
     status VARCHAR(40) NOT NULL,
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
@@ -237,9 +237,9 @@ CREATE TABLE appointments (
 
 CREATE TABLE warranty_claims (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
-    invoice_id INT NULL,
-    vehicle_id INT NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    invoice_id INT UNSIGNED NULL,
+    vehicle_id INT UNSIGNED NULL,
     subject VARCHAR(160) NOT NULL,
     description TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
@@ -264,7 +264,7 @@ CREATE TABLE bundles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
-    service_type_id INT NULL,
+    service_type_id INT UNSIGNED NULL,
     default_job_title VARCHAR(160) NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0,
@@ -273,7 +273,7 @@ CREATE TABLE bundles (
 
 CREATE TABLE bundle_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    bundle_id INT NOT NULL,
+    bundle_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
@@ -286,13 +286,13 @@ CREATE TABLE bundle_items (
 
 CREATE TABLE time_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    technician_id INT NOT NULL,
-    estimate_job_id INT NULL,
+    technician_id INT UNSIGNED NOT NULL,
+    estimate_job_id INT UNSIGNED NULL,
     started_at DATETIME NOT NULL,
     ended_at DATETIME NULL,
     duration_minutes DECIMAL(10,2) NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'approved',
-    reviewed_by INT NULL,
+    reviewed_by INT UNSIGNED NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
     start_latitude DECIMAL(10,6) NULL,
@@ -321,8 +321,8 @@ CREATE TABLE time_entries (
 
 CREATE TABLE time_adjustments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    time_entry_id INT NOT NULL,
-    actor_id INT NOT NULL,
+    time_entry_id INT UNSIGNED NOT NULL,
+    actor_id INT UNSIGNED NOT NULL,
     reason TEXT NOT NULL,
     previous_status VARCHAR(20) NULL,
     previous_started_at DATETIME NULL,
@@ -335,7 +335,7 @@ CREATE TABLE time_adjustments (
     new_started_at DATETIME NULL,
     new_ended_at DATETIME NULL,
     new_duration_minutes DECIMAL(10,2) NULL,
-    new_estimate_job_id INT NULL,
+    new_estimate_job_id INT UNSIGNED NULL,
     new_notes TEXT NULL,
     new_manual_override TINYINT(1) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -344,7 +344,7 @@ CREATE TABLE time_adjustments (
 
 CREATE TABLE credit_accounts (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     type VARCHAR(20) NOT NULL,
     credit_limit DECIMAL(12,2) DEFAULT 0,
     balance DECIMAL(12,2) DEFAULT 0,
