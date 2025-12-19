@@ -1,13 +1,13 @@
 -- Core users and access
 CREATE TABLE roles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     description VARCHAR(255) NULL,
     UNIQUE KEY unique_role_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     email VARCHAR(160) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customers (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(120) NOT NULL,
     last_name VARCHAR(120) NOT NULL,
     business_name VARCHAR(160) NULL,
@@ -40,7 +40,7 @@ CREATE TABLE customers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE vehicle_master (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
     model VARCHAR(120) NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE vehicle_master (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customer_vehicles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
     vehicle_master_id INT NULL,
     year SMALLINT NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE customer_vehicles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE service_types (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     alias VARCHAR(120) NOT NULL,
     color VARCHAR(120) NOT NULL,
@@ -89,7 +89,7 @@ CREATE TABLE service_types (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     sku VARCHAR(120) NULL,
     category VARCHAR(120) NULL,
@@ -105,7 +105,7 @@ CREATE TABLE inventory_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_lookups (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(32) NOT NULL,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
@@ -114,7 +114,7 @@ CREATE TABLE inventory_lookups (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimates (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT NOT NULL,
     vehicle_id INT NOT NULL,
@@ -138,7 +138,7 @@ CREATE TABLE estimates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimate_jobs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     estimate_id INT NOT NULL,
     service_type_id INT NOT NULL,
     title VARCHAR(160) NOT NULL,
@@ -155,7 +155,7 @@ CREATE TABLE estimate_jobs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimate_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     estimate_job_id INT NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
@@ -168,7 +168,7 @@ CREATE TABLE estimate_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE invoices (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT NOT NULL,
     vehicle_id INT NULL,
@@ -193,7 +193,7 @@ CREATE TABLE invoices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE invoice_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
@@ -206,7 +206,7 @@ CREATE TABLE invoice_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE payments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT NOT NULL,
     gateway VARCHAR(40) NOT NULL,
     transaction_id VARCHAR(120) NOT NULL,
@@ -219,7 +219,7 @@ CREATE TABLE payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE appointments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
     vehicle_id INT NOT NULL,
     estimate_id INT NULL,
@@ -236,7 +236,7 @@ CREATE TABLE appointments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE warranty_claims (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
     invoice_id INT NULL,
     vehicle_id INT NULL,
@@ -250,7 +250,7 @@ CREATE TABLE warranty_claims (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE reminder_campaigns (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     channel VARCHAR(20) NOT NULL,
     frequency VARCHAR(40) NOT NULL,
@@ -261,7 +261,7 @@ CREATE TABLE reminder_campaigns (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE bundles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     service_type_id INT NULL,
@@ -272,7 +272,7 @@ CREATE TABLE bundles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE bundle_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     bundle_id INT NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
@@ -285,7 +285,7 @@ CREATE TABLE bundle_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE time_entries (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     technician_id INT NOT NULL,
     estimate_job_id INT NULL,
     started_at DATETIME NOT NULL,
@@ -320,7 +320,7 @@ CREATE TABLE time_entries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE time_adjustments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     time_entry_id INT NOT NULL,
     actor_id INT NOT NULL,
     reason TEXT NOT NULL,
@@ -343,7 +343,7 @@ CREATE TABLE time_adjustments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE credit_accounts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
     type VARCHAR(20) NOT NULL,
     credit_limit DECIMAL(12,2) DEFAULT 0,
@@ -356,7 +356,7 @@ CREATE TABLE credit_accounts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE financial_entries (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(20) NOT NULL,
     category VARCHAR(120) NOT NULL,
     reference VARCHAR(120) NOT NULL,
@@ -369,7 +369,7 @@ CREATE TABLE financial_entries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inspection_templates (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1
