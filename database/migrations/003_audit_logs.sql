@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     event VARCHAR(100) NOT NULL,
     entity_type VARCHAR(100) NOT NULL,
     entity_id VARCHAR(100) NULL,
-    actor_id BIGINT UNSIGNED NULL,
+    actor_id INT UNSIGNED NULL,
     context JSON NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_entity (entity_type, entity_id),
