@@ -204,7 +204,7 @@ import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
-import cmsService from '@/services/cms.service'
+import { cmsService } from '@/services/cms.service'
 import {
   DocumentDuplicateIcon,
   CheckCircleIcon,

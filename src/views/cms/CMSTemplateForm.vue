@@ -190,7 +190,7 @@ import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
-import cmsService from '@/services/cms.service'
+import { cmsService } from '@/services/cms.service'
 import { ArrowLeftIcon, InformationCircleIcon } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
