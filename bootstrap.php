@@ -4,6 +4,11 @@ require __DIR__ . '/vendor/autoload.php';
 
 use App\Support\Env;
 
+$vehicleValidatorPath = __DIR__ . '/src/Services/Vehicle/VehicleMasterValidator.php';
+if (!class_exists(\App\Services\Vehicle\VehicleMasterValidator::class) && file_exists($vehicleValidatorPath)) {
+    require_once $vehicleValidatorPath;
+}
+
 $envFile = __DIR__ . '/.env';
 $GLOBALS['env'] = new Env($envFile);
 
