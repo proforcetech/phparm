@@ -2,7 +2,7 @@
 
 -- Table for tracking 404 errors
 CREATE TABLE IF NOT EXISTS not_found_logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     uri VARCHAR(512) NOT NULL COMMENT 'Requested URI that resulted in 404',
     referrer VARCHAR(512) NULL COMMENT 'HTTP Referer header',
     user_agent VARCHAR(512) NULL COMMENT 'User-Agent string',
@@ -21,7 +21,7 @@ COMMENT='Tracks 404 errors for monitoring and redirect creation';
 
 -- Table for managing redirects
 CREATE TABLE IF NOT EXISTS redirects (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     source_path VARCHAR(512) NOT NULL COMMENT 'Original path to redirect from',
     destination_path VARCHAR(512) NOT NULL COMMENT 'Target path to redirect to',
     redirect_type ENUM('301', '302', '307', '308') NOT NULL DEFAULT '301' COMMENT 'HTTP redirect status code',
