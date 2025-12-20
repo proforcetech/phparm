@@ -61,12 +61,21 @@ function extractAndInjectMetaTags(html) {
 
   // Extract title
   const titleTag = doc.querySelector('title')
+  console.log('extractAndInjectMetaTags - titleTag found:', !!titleTag)
+  console.log('extractAndInjectMetaTags - titleTag content:', titleTag?.textContent)
+  console.log('extractAndInjectMetaTags - pageData.value:', pageData.value)
+
   if (titleTag) {
     document.title = titleTag.textContent
+    console.log('extractAndInjectMetaTags - Set title from titleTag:', document.title)
   } else if (pageData.value?.meta_title) {
     document.title = pageData.value.meta_title
+    console.log('extractAndInjectMetaTags - Set title from meta_title:', document.title)
   } else if (pageData.value?.title) {
     document.title = pageData.value.title
+    console.log('extractAndInjectMetaTags - Set title from title:', document.title)
+  } else {
+    console.log('extractAndInjectMetaTags - No title found, document.title remains:', document.title)
   }
 
   // Remove existing CMS meta tags
@@ -180,10 +189,28 @@ async function loadPage() {
       pageTitle: data.page?.title
     })
 
+    // Set pageData FIRST so extractAndInjectMetaTags can access it
     pageData.value = data.page
+
+    // Extract and inject meta tags (including title)
     renderedHtml.value = extractAndInjectMetaTags(data.html)
 
     console.log('Rendered HTML length:', renderedHtml.value?.length || 0)
+
+    // Wait for DOM to update, then ensure title is set
+    await nextTick()
+    console.log('After nextTick, document.title:', document.title)
+
+    // If title is still not set, try setting it again
+    if (document.title === 'Auto Repair Shop Management' || document.title.includes('fixitfor.us')) {
+      if (pageData.value?.meta_title) {
+        document.title = pageData.value.meta_title
+        console.log('Force-set title to meta_title:', document.title)
+      } else if (pageData.value?.title) {
+        document.title = pageData.value.title
+        console.log('Force-set title to title:', document.title)
+      }
+    }
 
     // Mount any embedded Vue components after HTML is rendered
     await mountVueComponents()
