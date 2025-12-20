@@ -6,7 +6,7 @@ import api from './api'
  * Handles all CMS-related API calls for content management
  * within the phparm dashboard.
  */
-const cmsService = {
+export const cmsService = {
   // ================================================
   // Dashboard
   // ================================================
@@ -345,6 +345,3 @@ const cmsService = {
     ]
   },
 }
-
-export { cmsService }
-export default cmsService
