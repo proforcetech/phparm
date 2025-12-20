@@ -143,6 +143,7 @@ class Router
     {
         try {
             $route = $this->findRoute($request->method(), $request->path());
+            $loggedNotFound = false;
 
             if ($route === null) {
                 // Check for redirect before returning 404
@@ -175,6 +176,7 @@ class Router
                             $request->header('HTTP_USER_AGENT') ?: $request->header('USER_AGENT'),
                             $request->getClientIp()
                         );
+                        $loggedNotFound = true;
                     } catch (Throwable $e) {
                         // Don't let logging errors break the app
                         error_log('Failed to log 404: ' . $e->getMessage());
@@ -204,6 +206,20 @@ class Router
                     return Response::json($response);
                 }
                 return Response::text((string) $response);
+            }
+
+            // If a route handler explicitly returns a 404 response, ensure it gets logged
+            if ($response->getStatusCode() === 404 && !$loggedNotFound && $this->notFoundLogs !== null) {
+                try {
+                    $this->notFoundLogs->log(
+                        $request->path(),
+                        $request->header('HTTP_REFERER') ?: $request->header('REFERER'),
+                        $request->header('HTTP_USER_AGENT') ?: $request->header('USER_AGENT'),
+                        $request->getClientIp()
+                    );
+                } catch (Throwable $e) {
+                    error_log('Failed to log 404: ' . $e->getMessage());
+                }
             }
 
             return $response;

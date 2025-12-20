@@ -432,11 +432,17 @@ async function loadLogs() {
     if (minHits.value) params.append('min_hits', minHits.value)
 
     const response = await api.get(`/404-logs?${params}`)
-    logs.value = response.data.logs
-    logsPagination.value = response.data.pagination
-    statistics.value = response.data.statistics
+
+    // Ensure we always have sane defaults even if the API omits fields
+    const data = response.data || {}
+    logs.value = Array.isArray(data.logs) ? data.logs : []
+    logsPagination.value = data.pagination ?? null
+    statistics.value = data.statistics ?? null
   } catch (error) {
     console.error('Failed to load 404 logs:', error)
+    logs.value = []
+    logsPagination.value = null
+    statistics.value = null
   } finally {
     loading.value = false
   }
