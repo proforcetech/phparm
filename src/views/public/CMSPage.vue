@@ -14,7 +14,7 @@
   </div>
 
   <!-- CMS content isolated from Tailwind styles -->
-  <div v-else-if="renderedHtml" class="cms-isolated" v-html="renderedHtml"></div>
+  <div v-else class="cms-isolated" v-html="renderedHtml"></div>
 </template>
 
 <script setup>
@@ -163,8 +163,17 @@ async function loadPage() {
 
   try {
     const data = await cmsService.getRenderedPageBySlug(slug.value)
+    console.log('CMS API Response:', {
+      hasHtml: !!data.html,
+      htmlLength: data.html?.length || 0,
+      hasPage: !!data.page,
+      pageTitle: data.page?.title
+    })
+
     pageData.value = data.page
     renderedHtml.value = extractAndInjectMetaTags(data.html)
+
+    console.log('Rendered HTML length:', renderedHtml.value?.length || 0)
 
     // Mount any embedded Vue components after HTML is rendered
     await mountVueComponents()
