@@ -108,6 +108,11 @@ return function (Router $router, array $config, $connection) {
 
             error_log(sprintf('CMS render returned empty output for slug "%s"', $slug));
             return Response::serverError('CMS page could not be rendered');
+        try {
+            $html = $controller->renderPublishedPage($slug);
+            if ($html !== null) {
+                return Response::html($html);
+            }
         } catch (\Throwable $exception) {
             error_log(sprintf(
                 'CMS render failed for slug "%s": %s',
@@ -116,6 +121,9 @@ return function (Router $router, array $config, $connection) {
             ));
             return Response::serverError('CMS page render failed');
         }
+        }
+
+        return null;
     };
 
     // Public CMS Routes
@@ -126,6 +134,8 @@ return function (Router $router, array $config, $connection) {
         $rendered = $renderCmsPage($pageController, 'home');
         if ($rendered !== null) {
             return $rendered;
+        if ($response = $renderCmsPage($pageController, 'home')) {
+            return $response;
         }
 
         $indexPath = __DIR__ . '/../index.html';
@@ -479,6 +489,8 @@ return function (Router $router, array $config, $connection) {
         $rendered = $renderCmsPage($pageController, $path);
         if ($rendered !== null) {
             return $rendered;
+        if ($response = $renderCmsPage($pageController, $path)) {
+            return $response;
         }
 
         // Serve the Vue SPA entry point for all public routes when no CMS page exists
