@@ -14,7 +14,7 @@
   </div>
 
   <!-- CMS content isolated from Tailwind styles -->
-  <div v-else-if="renderedHtml" class="cms-isolated" v-html="renderedHtml"></div>
+  <div v-else class="cms-isolated" v-html="renderedHtml"></div>
 </template>
 
 <script setup>
@@ -49,9 +49,15 @@ const slug = computed(() => {
 })
 
 function extractAndInjectMetaTags(html) {
+  console.log('extractAndInjectMetaTags - Input HTML length:', html.length)
+
   // Create a temporary DOM parser
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
+
+  console.log('extractAndInjectMetaTags - Parsed doc.body exists:', !!doc.body)
+  console.log('extractAndInjectMetaTags - doc.body.innerHTML length:', doc.body?.innerHTML?.length || 0)
+  console.log('extractAndInjectMetaTags - doc.body first 500 chars:', doc.body?.innerHTML?.substring(0, 500))
 
   // Extract title
   const titleTag = doc.querySelector('title')
@@ -80,6 +86,8 @@ function extractAndInjectMetaTags(html) {
   // Extract style and script tags from the rendered HTML
   const styleTags = doc.querySelectorAll('style')
   const scriptTags = doc.querySelectorAll('script')
+
+  console.log('extractAndInjectMetaTags - Found', styleTags.length, 'style tags and', scriptTags.length, 'script tags')
 
   // Inject styles
   styleTags.forEach(styleTag => {
@@ -118,7 +126,9 @@ function extractAndInjectMetaTags(html) {
   document.body.classList.add('cms-page-active')
 
   // Return HTML without the head tags (they're already injected)
-  return doc.body.innerHTML
+  const bodyContent = doc.body.innerHTML
+  console.log('extractAndInjectMetaTags - Returning body content length:', bodyContent.length)
+  return bodyContent
 }
 
 // Mount Vue components embedded in CMS content
@@ -163,8 +173,17 @@ async function loadPage() {
 
   try {
     const data = await cmsService.getRenderedPageBySlug(slug.value)
+    console.log('CMS API Response:', {
+      hasHtml: !!data.html,
+      htmlLength: data.html?.length || 0,
+      hasPage: !!data.page,
+      pageTitle: data.page?.title
+    })
+
     pageData.value = data.page
     renderedHtml.value = extractAndInjectMetaTags(data.html)
+
+    console.log('Rendered HTML length:', renderedHtml.value?.length || 0)
 
     // Mount any embedded Vue components after HTML is rendered
     await mountVueComponents()
