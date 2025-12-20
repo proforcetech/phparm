@@ -10,16 +10,16 @@ SET available_credit = GREATEST(0, credit_limit - balance),
     updated_at = IFNULL(updated_at, NOW());
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    credit_account_id INT NOT NULL,
-    customer_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    credit_account_id UNSIGNED INT NOT NULL,
+    customer_id UNSIGNED INT NOT NULL,
     transaction_type VARCHAR(20) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     balance_after DECIMAL(12,2) NOT NULL,
     reference_type VARCHAR(50) NULL,
-    reference_id INT NULL,
+    reference_id INT UNSIGNED NULL,
     description TEXT NULL,
-    created_by INT NULL,
+    created_by INT UNSIGNED NULL,
     occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_credit_transactions_account (credit_account_id),
@@ -52,12 +52,12 @@ CREATE TABLE IF NOT EXISTS credit_payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS credit_payment_reminders (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     credit_account_id INT NOT NULL,
-    customer_id INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     reminder_type VARCHAR(20) NOT NULL,
-    days_before_due INT NULL,
-    days_past_due INT NULL,
+    days_before_due INT UNSIGNED NULL,
+    days_past_due INT UNSIGNED NULL,
     sent_at DATETIME NOT NULL,
     sent_via VARCHAR(20) NOT NULL,
     message TEXT NULL,
