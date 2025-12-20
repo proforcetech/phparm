@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS cms_categories (
 
 -- Add category relationship to pages
 ALTER TABLE cms_pages
-    ADD COLUMN category_id INT UNSIGNED NULL AFTER slug COMMENT 'Optional category for nested URIs',
+    ADD COLUMN category_id INT UNSIGNED NULL AFTER slug,
     ADD INDEX idx_cms_pages_category_id (category_id),
     ADD CONSTRAINT fk_cms_pages_category
         FOREIGN KEY (category_id) REFERENCES cms_categories(id)
