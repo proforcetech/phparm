@@ -30,15 +30,15 @@ CREATE TABLE IF NOT EXISTS estimate_requests (
     license_plate VARCHAR(30) NULL,
 
     -- Service Request
-    service_type_id INT UNSIGNEd NULL,
+    service_type_id INT UNSIGNED NULL, -- Fixed typo
     service_type_name VARCHAR(120) NULL COMMENT 'Stored in case service type is deleted',
     description TEXT NULL,
 
     -- Status and Processing
     status ENUM('pending', 'contacted', 'estimated', 'declined', 'converted') NOT NULL DEFAULT 'pending',
-    estimate_id INT NULL COMMENT 'Link to created estimate',
-    customer_id INT NULL COMMENT 'Link if customer is created/matched',
-    vehicle_id INT NULL COMMENT 'Link if vehicle is created',
+    estimate_id INT UNSIGNED NULL COMMENT 'Link to created estimate', -- Fixed: added UNSIGNED
+    customer_id INT UNSIGNED NULL COMMENT 'Link if customer is created/matched', -- Recommended for consistency
+    vehicle_id INT UNSIGNED NULL COMMENT 'Link if vehicle is created', -- Recommended for consistency
 
     -- Metadata
     source VARCHAR(50) DEFAULT 'website' COMMENT 'Form submission source',
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS estimate_requests (
     -- Staff Notes
     internal_notes TEXT NULL,
     contacted_at DATETIME NULL,
-    contacted_by INT NULL,
+    contacted_by INT UNSIGNED NULL, -- Fixed: added UNSIGNED
 
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -57,15 +57,17 @@ CREATE TABLE IF NOT EXISTS estimate_requests (
     INDEX idx_estimate_request_created (created_at),
     INDEX idx_estimate_request_email (email),
     INDEX idx_estimate_request_estimate (estimate_id),
-    FOREIGN KEY (service_type_id) REFERENCES service_types(id) ON DELETE SET NULL,
-    FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE SET NULL,
-    FOREIGN KEY (contacted_by) REFERENCES users(id) ON DELETE SET NULL
+    
+    -- Constraints will now work because types match
+    CONSTRAINT fk_est_req_service_type FOREIGN KEY (service_type_id) REFERENCES service_types(id) ON DELETE SET NULL,
+    CONSTRAINT fk_est_req_estimate FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE SET NULL,
+    CONSTRAINT fk_est_req_contacted_by FOREIGN KEY (contacted_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Table for storing photos uploaded with estimate requests
 CREATE TABLE IF NOT EXISTS estimate_request_media (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    request_id INT NOT NULL,
+    request_id INT UNSIGNED NOT NULL,
     file_path VARCHAR(255) NOT NULL,
     file_name VARCHAR(255) NOT NULL,
     mime_type VARCHAR(100) NOT NULL,
