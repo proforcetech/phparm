@@ -55,7 +55,7 @@ CREATE TABLE vehicle_master (
 
 CREATE TABLE customer_vehicles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id UNSIGNED INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     vehicle_master_id INT UNSIGNED NULL,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
