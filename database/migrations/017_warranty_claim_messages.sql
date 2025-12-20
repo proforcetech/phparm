@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS warranty_claim_messages (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    claim_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    claim_id INT UNSIGNED NOT NULL,
     actor_type VARCHAR(40) NOT NULL,
-    actor_id INT NOT NULL,
+    actor_id INT UNSIGNED NOT NULL,
     message TEXT NOT NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
