@@ -10,10 +10,10 @@ ALTER TABLE reminder_campaigns
     MODIFY channel VARCHAR(20) NOT NULL;
 
 CREATE TABLE IF NOT EXISTS reminder_logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    campaign_id INT NOT NULL,
-    preference_id INT NULL,
-    customer_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT UNSIGNED NOT NULL,
+    preference_id INT UNSIGNED NULL,
+    customer_id INT UNSIGNED NOT NULL,
     channel VARCHAR(20) NOT NULL,
     status VARCHAR(40) NOT NULL,
     scheduled_for DATETIME NULL,
