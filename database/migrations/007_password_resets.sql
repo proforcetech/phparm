@@ -1,6 +1,6 @@
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_resets (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(160) NOT NULL,
     token VARCHAR(120) NOT NULL,
     expires_at DATETIME NOT NULL,
