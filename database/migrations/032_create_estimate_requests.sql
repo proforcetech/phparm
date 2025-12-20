@@ -2,7 +2,7 @@
 -- Stores estimate requests submitted through public-facing form
 
 CREATE TABLE IF NOT EXISTS estimate_requests (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 
     -- Contact Information
     name VARCHAR(160) NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS estimate_requests (
     license_plate VARCHAR(30) NULL,
 
     -- Service Request
-    service_type_id INT NULL,
+    service_type_id INT UNSIGNEd NULL,
     service_type_name VARCHAR(120) NULL COMMENT 'Stored in case service type is deleted',
     description TEXT NULL,
 
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS estimate_requests (
 
 -- Table for storing photos uploaded with estimate requests
 CREATE TABLE IF NOT EXISTS estimate_request_media (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     request_id INT NOT NULL,
     file_path VARCHAR(255) NOT NULL,
     file_name VARCHAR(255) NOT NULL,
