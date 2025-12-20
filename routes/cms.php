@@ -70,13 +70,37 @@ return function (Router $router, array $config, $connection) {
     // Initialize CMS
     $cmsBootstrap = new CMSBootstrap($cmsConfig);
     $cmsBootstrap->init();
+    $pageController = new PageController($connection, $gate, $cmsCache);
+
+    $renderCmsPage = static function (PageController $controller, string $path): ?Response {
+        $slug = trim($path, '/');
+        $slug = $slug === '' ? 'home' : $slug;
+
+        try {
+            $html = $controller->renderPublishedPage($slug);
+            if ($html !== null) {
+                return Response::html($html);
+            }
+        } catch (\Throwable $exception) {
+            error_log(sprintf(
+                'CMS render failed for slug "%s": %s',
+                $slug,
+                $exception->getMessage()
+            ));
+        }
+
+        return null;
+    };
 
     // Public CMS Routes
     // These routes handle the front-end website pages
 
     // Homepage - serve Vue SPA
-    $router->get('/', function (Request $request) {
-        // Let the Vue SPA handle the homepage
+    $router->get('/', function (Request $request) use ($pageController, $renderCmsPage) {
+        if ($response = $renderCmsPage($pageController, 'home')) {
+            return $response;
+        }
+
         $indexPath = __DIR__ . '/../index.html';
         if (file_exists($indexPath)) {
             return Response::html(file_get_contents($indexPath));
@@ -418,13 +442,19 @@ return function (Router $router, array $config, $connection) {
 
     // Catch-all route - serve Vue SPA for all non-reserved paths
     // The Vue SPA will handle routing client-side and make API calls to fetch CMS content
-    $router->get('/{path:.+}', function (Request $request) use ($isReservedPath) {
+    $router->get('/{path:.+}', function (Request $request) use ($isReservedPath, $pageController, $renderCmsPage) {
         if ($isReservedPath($request->path())) {
             return Response::notFound('Route not found');
         }
 
-        // Serve the Vue SPA entry point for all public routes
-        // Vue Router will handle the routing and fetch content via API
+        // Try to render a published CMS page first
+        $path = $request->path();
+        if ($response = $renderCmsPage($pageController, $path)) {
+            return $response;
+        }
+
+        // Serve the Vue SPA entry point for all public routes when no CMS page exists
+        // Vue Router will handle routing on the client
         $indexPath = __DIR__ . '/../index.html';
         if (file_exists($indexPath)) {
             return Response::html(file_get_contents($indexPath));
