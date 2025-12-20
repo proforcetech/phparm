@@ -1,6 +1,6 @@
 -- Email verification tokens
 CREATE TABLE IF NOT EXISTS email_verifications (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     token VARCHAR(120) NOT NULL,
     expires_at DATETIME NOT NULL,
