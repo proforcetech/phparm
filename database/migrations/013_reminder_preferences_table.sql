@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS reminder_preferences (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     email VARCHAR(160) NULL,
     phone VARCHAR(40) NULL,
     timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
