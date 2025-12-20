@@ -238,9 +238,16 @@ onUnmounted(() => {
 <style>
 /* Reset Tailwind styles for CMS content */
 .cms-isolated {
-  all: unset;
+  /* Don't use 'all: unset' as it's too aggressive and can hide content */
   display: block;
+  width: 100%;
   min-height: 100vh;
+  /* Reset Tailwind's default styles that might interfere */
+  margin: 0;
+  padding: 0;
+  /* Ensure content is visible */
+  position: relative;
+  z-index: 1;
 }
 
 /* Override Tailwind body styles when CMS page is active */
