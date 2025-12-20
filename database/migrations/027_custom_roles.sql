@@ -3,7 +3,7 @@
 -- System roles (admin, manager, technician, customer) are pre-populated and protected
 
 CREATE TABLE IF NOT EXISTS custom_roles (
-    id INT UNSIGED AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
     label VARCHAR(100) NOT NULL,
     description TEXT NULL,
