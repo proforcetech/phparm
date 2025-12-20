@@ -1,13 +1,13 @@
 -- Core users and access
 CREATE TABLE IF NOT EXISTS roles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     description VARCHAR(255) NULL,
     UNIQUE KEY unique_role_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS role_permissions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     role VARCHAR(50) NOT NULL,
     permission VARCHAR(120) NOT NULL,
     created_at TIMESTAMP NULL,
@@ -16,20 +16,20 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     email VARCHAR(160) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL,
     email_verified TINYINT(1) DEFAULT 0,
-    customer_id INT NULL,
+    customer_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS customers (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(120) NOT NULL,
     last_name VARCHAR(120) NOT NULL,
     business_name VARCHAR(160) NULL,
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS customers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS vehicle_master (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
     model VARCHAR(120) NOT NULL,
@@ -63,9 +63,9 @@ CREATE TABLE IF NOT EXISTS vehicle_master (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS customer_vehicles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
-    vehicle_master_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_master_id UNSIGNED INT NULL,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
     model VARCHAR(120) NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS customer_vehicles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS service_types (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     alias VARCHAR(120) NOT NULL,
     color VARCHAR(120) NOT NULL,
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS service_types (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS inventory_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     sku VARCHAR(120) NULL,
     category VARCHAR(120) NULL,
@@ -114,10 +114,10 @@ CREATE TABLE IF NOT EXISTS inventory_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS estimates (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
-    customer_id INT NOT NULL,
-    vehicle_id INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_id INT UNSIGNED NOT NULL,
     status VARCHAR(40) NOT NULL,
     technician_id INT NULL,
     expiration_date DATE NULL,
@@ -138,9 +138,9 @@ CREATE TABLE IF NOT EXISTS estimates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS estimate_jobs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    estimate_id INT NOT NULL,
-    service_type_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    estimate_id INT UNSIGNED NOT NULL,
+    service_type_id INT UNSIGNED NOT NULL,
     title VARCHAR(160) NOT NULL,
     notes TEXT NULL,
     reference VARCHAR(120) NULL,
@@ -155,8 +155,8 @@ CREATE TABLE IF NOT EXISTS estimate_jobs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS estimate_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    estimate_job_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    estimate_job_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
@@ -168,9 +168,9 @@ CREATE TABLE IF NOT EXISTS estimate_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS invoices (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
-    customer_id INT NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     vehicle_id INT NULL,
     estimate_id INT NULL,
     service_type_id INT NULL,
@@ -193,8 +193,8 @@ CREATE TABLE IF NOT EXISTS invoices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
@@ -206,8 +206,8 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS payments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
     gateway VARCHAR(40) NOT NULL,
     transaction_id VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
@@ -219,9 +219,9 @@ CREATE TABLE IF NOT EXISTS payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS appointments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
-    vehicle_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_id INT UNSIGNED NOT NULL,
     estimate_id INT NULL,
     technician_id INT NULL,
     status VARCHAR(40) NOT NULL,
@@ -234,8 +234,8 @@ CREATE TABLE IF NOT EXISTS appointments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS warranty_claims (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
     invoice_id INT NULL,
     vehicle_id INT NULL,
     subject VARCHAR(160) NOT NULL,
@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS reminder_campaigns (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     channel VARCHAR(20) NOT NULL,
     frequency VARCHAR(40) NOT NULL,
@@ -259,7 +259,7 @@ CREATE TABLE IF NOT EXISTS reminder_campaigns (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS bundles (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     service_type_id INT NULL,
@@ -270,8 +270,8 @@ CREATE TABLE IF NOT EXISTS bundles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS bundle_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    bundle_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    bundle_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
@@ -283,8 +283,8 @@ CREATE TABLE IF NOT EXISTS bundle_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS time_entries (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    technician_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    technician_id INT UNSIGNED NOT NULL,
     estimate_job_id INT NULL,
     started_at DATETIME NOT NULL,
     ended_at DATETIME NULL,
@@ -318,9 +318,9 @@ CREATE TABLE IF NOT EXISTS time_entries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS time_adjustments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    time_entry_id INT NOT NULL,
-    actor_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    time_entry_id INT UNSIGNED NOT NULL,
+    actor_id INT UNSIGNED NOT NULL,
     reason TEXT NOT NULL,
     previous_status VARCHAR(20) NULL,
     previous_started_at DATETIME NULL,
@@ -341,8 +341,8 @@ CREATE TABLE IF NOT EXISTS time_adjustments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS credit_accounts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
     type VARCHAR(20) NOT NULL,
     credit_limit DECIMAL(12,2) DEFAULT 0,
     balance DECIMAL(12,2) DEFAULT 0,
@@ -354,7 +354,7 @@ CREATE TABLE IF NOT EXISTS credit_accounts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS financial_entries (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(20) NOT NULL,
     category VARCHAR(120) NOT NULL,
     reference VARCHAR(120) NOT NULL,
@@ -367,23 +367,23 @@ CREATE TABLE IF NOT EXISTS financial_entries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS inspection_templates (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS inspection_sections (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    template_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    template_id INT UNSIGNED NOT NULL,
     name VARCHAR(160) NOT NULL,
     display_order INT DEFAULT 0,
     CONSTRAINT fk_inspection_section_template FOREIGN KEY (template_id) REFERENCES inspection_templates (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS inspection_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    section_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    section_id INT UNSIGNED NOT NULL,
     name VARCHAR(160) NOT NULL,
     input_type VARCHAR(40) NOT NULL,
     default_value VARCHAR(160) NULL,
@@ -392,7 +392,7 @@ CREATE TABLE IF NOT EXISTS inspection_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS settings (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `key` VARCHAR(160) NOT NULL UNIQUE,
     `group` VARCHAR(80) NOT NULL,
     `type` VARCHAR(20) NOT NULL,
