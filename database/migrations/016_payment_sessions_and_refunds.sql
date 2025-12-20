@@ -2,8 +2,8 @@
 -- These tables support the payment gateway integration
 
 CREATE TABLE IF NOT EXISTS payment_sessions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
     provider VARCHAR(40) NOT NULL,
     session_id VARCHAR(255) NOT NULL,
     checkout_url TEXT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS payment_sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS refunds (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT NOT NULL,
     payment_reference VARCHAR(255) NOT NULL,
     refund_id VARCHAR(255) NOT NULL,
