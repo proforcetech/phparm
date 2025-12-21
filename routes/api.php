@@ -1437,8 +1437,18 @@ return Response::json([
 
         $router->post('/api/customers', function (Request $request) use ($customerController) {
             $user = $request->getAttribute('user');
-            $data = $customerController->store($user, $request->body());
-            return Response::created($data);
+            try {
+                $data = $customerController->store($user, $request->body());
+                return Response::created($data);
+            } catch (\InvalidArgumentException $e) {
+                error_log('Customer creation validation error: ' . $e->getMessage());
+                error_log('Request body: ' . json_encode($request->body()));
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('Customer creation error: ' . $e->getMessage());
+                error_log('Stack trace: ' . $e->getTraceAsString());
+                throw $e;
+            }
         });
 
         $router->put('/api/customers/{id}', function (Request $request) use ($customerController) {
