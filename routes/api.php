@@ -144,7 +144,7 @@ return function (Router $router, array $config, $connection) {
     });
 
     $router->get('/api/public/vehicle-makes', function (Request $request) use ($connection) {
-        $year = $request->query('year');
+        $year = $request->queryParam('year');
         if (!$year) {
             return Response::json(['error' => 'Year parameter is required'], 400);
         }
@@ -158,8 +158,8 @@ return function (Router $router, array $config, $connection) {
     });
 
     $router->get('/api/public/vehicle-models', function (Request $request) use ($connection) {
-        $year = $request->query('year');
-        $make = $request->query('make');
+        $year = $request->queryParam('year');
+        $make = $request->queryParam('make');
 
         if (!$year || !$make) {
             return Response::json(['error' => 'Year and make parameters are required'], 400);
@@ -3317,19 +3317,19 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
 
             $notFoundLogRepo = new \App\Services\NotFound\NotFoundLogRepository($connection);
 
-            $page = max(1, (int) ($request->query('page') ?? 1));
-            $perPage = min(100, max(1, (int) ($request->query('per_page') ?? 50)));
+            $page = max(1, (int) ($request->queryParam('page') ?? 1));
+            $perPage = min(100, max(1, (int) ($request->queryParam('per_page') ?? 50)));
             $offset = ($page - 1) * $perPage;
 
             $filters = [];
-            if ($request->query('uri')) {
-                $filters['uri'] = $request->query('uri');
+            if ($request->queryParam('uri')) {
+                $filters['uri'] = $request->queryParam('uri');
             }
-            if ($request->query('min_hits')) {
-                $filters['min_hits'] = (int) $request->query('min_hits');
+            if ($request->queryParam('min_hits')) {
+                $filters['min_hits'] = (int) $request->queryParam('min_hits');
             }
-            if ($request->query('sort')) {
-                $filters['sort'] = $request->query('sort');
+            if ($request->queryParam('sort')) {
+                $filters['sort'] = $request->queryParam('sort');
             }
 
             $logs = $notFoundLogRepo->list($filters, $perPage, $offset);
@@ -3385,16 +3385,16 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
 
             $redirectRepo = new \App\Services\NotFound\RedirectRepository($connection);
 
-            $page = max(1, (int) ($request->query('page') ?? 1));
-            $perPage = min(100, max(1, (int) ($request->query('per_page') ?? 50)));
+            $page = max(1, (int) ($request->queryParam('page') ?? 1));
+            $perPage = min(100, max(1, (int) ($request->queryParam('per_page') ?? 50)));
             $offset = ($page - 1) * $perPage;
 
             $filters = [];
-            if ($request->query('search')) {
-                $filters['search'] = $request->query('search');
+            if ($request->queryParam('search')) {
+                $filters['search'] = $request->queryParam('search');
             }
-            if ($request->query('is_active') !== null) {
-                $filters['is_active'] = (int) $request->query('is_active');
+            if ($request->queryParam('is_active') !== null) {
+                $filters['is_active'] = (int) $request->queryParam('is_active');
             }
 
             $redirects = $redirectRepo->list($filters, $perPage, $offset);
