@@ -15,6 +15,11 @@ class Customer extends BaseModel
     public ?string $state = null;
     public ?string $postal_code = null;
     public ?string $country = null;
+    public ?string $billing_street = null;
+    public ?string $billing_city = null;
+    public ?string $billing_state = null;
+    public ?string $billing_postal_code = null;
+    public ?string $billing_country = null;
     public bool $is_commercial = false;
     public bool $tax_exempt = false;
     public ?string $notes = null;
