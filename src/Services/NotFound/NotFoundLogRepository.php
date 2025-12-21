@@ -126,7 +126,25 @@ class NotFoundLogRepository
         $stmt->execute();
 
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        return array_map(fn($row) => $this->mapNotFoundLog($row), $rows);
+        error_log('NotFoundLogRepository::list() - Fetched ' . count($rows) . ' rows from database');
+
+        if (empty($rows)) {
+            error_log('NotFoundLogRepository::list() - No rows found. SQL: ' . $sql);
+            error_log('NotFoundLogRepository::list() - Filters: ' . json_encode($filters));
+            error_log('NotFoundLogRepository::list() - Limit: ' . $limit . ', Offset: ' . $offset);
+        }
+
+        $result = [];
+        foreach ($rows as $i => $row) {
+            try {
+                $result[] = $this->mapNotFoundLog($row);
+            } catch (\Throwable $e) {
+                error_log('NotFoundLogRepository::list() - Failed to map row ' . $i . ': ' . $e->getMessage());
+            }
+        }
+
+        error_log('NotFoundLogRepository::list() - Returning ' . count($result) . ' mapped logs');
+        return $result;
     }
 
     /**
@@ -212,17 +230,30 @@ class NotFoundLogRepository
 
     private function mapNotFoundLog(array $row): NotFoundLog
     {
-        return new NotFoundLog([
-            'id' => (int) $row['id'],
-            'uri' => (string) $row['uri'],
-            'referrer' => $row['referrer'],
-            'user_agent' => $row['user_agent'],
-            'ip_address' => $row['ip_address'],
-            'first_seen' => $row['first_seen'],
-            'last_seen' => $row['last_seen'],
-            'hits' => (int) $row['hits'],
-            'created_at' => $row['created_at'],
-            'updated_at' => $row['updated_at'],
-        ]);
+        // Handle potential null or invalid values safely
+        $uri = $row['uri'] ?? '';
+        if (is_array($uri)) {
+            error_log('NotFoundLog: URI is array: ' . json_encode($uri));
+            $uri = implode('', $uri);
+        }
+
+        try {
+            return new NotFoundLog([
+                'id' => (int) ($row['id'] ?? 0),
+                'uri' => (string) $uri,
+                'referrer' => $row['referrer'] ?? null,
+                'user_agent' => $row['user_agent'] ?? null,
+                'ip_address' => $row['ip_address'] ?? null,
+                'first_seen' => $row['first_seen'] ?? date('Y-m-d H:i:s'),
+                'last_seen' => $row['last_seen'] ?? date('Y-m-d H:i:s'),
+                'hits' => (int) ($row['hits'] ?? 1),
+                'created_at' => $row['created_at'] ?? null,
+                'updated_at' => $row['updated_at'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('NotFoundLog: Error mapping row: ' . $e->getMessage());
+            error_log('NotFoundLog: Row data: ' . json_encode($row));
+            throw $e;
+        }
     }
 }
