@@ -171,7 +171,7 @@ class Router
                 if ($this->notFoundLogs !== null) {
                     try {
                         $this->notFoundLogs->log(
-                            $request->path(),
+                            $this->extractPagePath($request->path()),
                             $request->header('HTTP_REFERER') ?: $request->header('REFERER'),
                             $request->header('HTTP_USER_AGENT') ?: $request->header('USER_AGENT'),
                             $request->getClientIp()
@@ -212,7 +212,7 @@ class Router
             if ($response->getStatusCode() === 404 && !$loggedNotFound && $this->notFoundLogs !== null) {
                 try {
                     $this->notFoundLogs->log(
-                        $request->path(),
+                        $this->extractPagePath($request->path()),
                         $request->header('HTTP_REFERER') ?: $request->header('REFERER'),
                         $request->header('HTTP_USER_AGENT') ?: $request->header('USER_AGENT'),
                         $request->getClientIp()
@@ -260,6 +260,30 @@ class Router
         }
 
         return $next;
+    }
+
+    /**
+     * Extract the original page path from CMS API endpoints
+     * Converts /api/cms/page/{slug}/rendered to /{slug}
+     *
+     * @param string $path
+     * @return string
+     */
+    private function extractPagePath(string $path): string
+    {
+        // Match pattern: /api/cms/page/{slug}/rendered
+        if (preg_match('#^/api/cms/page/(.+)/rendered$#', $path, $matches)) {
+            $slug = $matches[1];
+            // Convert 'home' slug to root path
+            if ($slug === 'home') {
+                return '/';
+            }
+            // Return page path with leading slash
+            return '/' . $slug;
+        }
+
+        // Return original path if it doesn't match the CMS API pattern
+        return $path;
     }
 
     /**
