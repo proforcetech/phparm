@@ -101,7 +101,9 @@ class NotFoundLogRepository
 
         if (!empty($filters['uri'])) {
             $clauses[] = 'uri LIKE :uri';
-            $bindings['uri'] = '%' . $filters['uri'] . '%';
+            // Handle case where uri might be an array
+            $uri = is_array($filters['uri']) ? implode('', $filters['uri']) : $filters['uri'];
+            $bindings['uri'] = '%' . $uri . '%';
         }
 
         if (!empty($filters['min_hits'])) {
@@ -140,7 +142,9 @@ class NotFoundLogRepository
 
         if (!empty($filters['uri'])) {
             $clauses[] = 'uri LIKE :uri';
-            $bindings['uri'] = '%' . $filters['uri'] . '%';
+            // Handle case where uri might be an array
+            $uri = is_array($filters['uri']) ? implode('', $filters['uri']) : $filters['uri'];
+            $bindings['uri'] = '%' . $uri . '%';
         }
 
         if (!empty($filters['min_hits'])) {
