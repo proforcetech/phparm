@@ -10,48 +10,136 @@
 
     <Card class="max-w-4xl">
       <form class="space-y-6" @submit.prevent="submit">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Full name *</label>
-            <Input v-model="form.name" required placeholder="John Doe" />
+        <!-- Basic Information -->
+        <div>
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Basic Information</h3>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">First name *</label>
+              <Input v-model="form.first_name" required placeholder="John" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Last name *</label>
+              <Input v-model="form.last_name" required placeholder="Doe" />
+            </div>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Email</label>
-            <Input v-model="form.email" type="email" placeholder="customer@example.com" />
-          </div>
-        </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Phone</label>
-            <Input v-model="form.phone" placeholder="(555) 123-4567" />
+          <div v-if="form.is_commercial" class="mt-4">
+            <label class="block text-sm font-medium text-gray-700">Business name</label>
+            <Input v-model="form.business_name" placeholder="ABC Company LLC" />
           </div>
-          <div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 mt-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Email *</label>
+              <Input v-model="form.email" type="email" required placeholder="customer@example.com" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Phone</label>
+              <Input v-model="form.phone" placeholder="(555) 123-4567" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 mt-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Customer type</label>
+              <Select
+                v-model="form.is_commercial"
+                :options="customerTypeOptions"
+                placeholder="Select type"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Tax status</label>
+              <Select
+                v-model="form.tax_exempt"
+                :options="taxOptions"
+                placeholder="Select tax status"
+              />
+            </div>
+          </div>
+
+          <div class="mt-4">
             <label class="block text-sm font-medium text-gray-700">External reference</label>
             <Input v-model="form.external_reference" placeholder="CRM-12345" />
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Customer type</label>
-            <Select
-              v-model="form.is_commercial"
-              :options="customerTypeOptions"
-              placeholder="Select type"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Tax status</label>
-            <Select
-              v-model="form.tax_exempt"
-              :options="taxOptions"
-              placeholder="Select tax status"
-            />
+        <!-- Address Information -->
+        <div class="pt-6 border-t border-gray-200">
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Address</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Street address</label>
+              <Input v-model="form.street" placeholder="123 Main St" />
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">City</label>
+                <Input v-model="form.city" placeholder="Grand Rapids" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">State</label>
+                <Input v-model="form.state" placeholder="MI" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Postal code</label>
+                <Input v-model="form.postal_code" placeholder="49503" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Country</label>
+              <Input v-model="form.country" placeholder="USA" />
+            </div>
           </div>
         </div>
 
-        <div>
+        <!-- Billing Address (Commercial only) -->
+        <div v-if="form.is_commercial" class="pt-6 border-t border-gray-200">
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Billing Address</h3>
+          <div class="mb-4">
+            <label class="flex items-center">
+              <input
+                v-model="billingAddressSameAsMain"
+                type="checkbox"
+                class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <span class="ml-2 text-sm text-gray-700">Same as main address</span>
+            </label>
+          </div>
+
+          <div v-if="!billingAddressSameAsMain" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Billing street address</label>
+              <Input v-model="form.billing_street" placeholder="456 Business Blvd" />
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Billing city</label>
+                <Input v-model="form.billing_city" placeholder="Grand Rapids" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Billing state</label>
+                <Input v-model="form.billing_state" placeholder="MI" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Billing postal code</label>
+                <Input v-model="form.billing_postal_code" placeholder="49503" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Billing country</label>
+              <Input v-model="form.billing_country" placeholder="USA" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="pt-6 border-t border-gray-200">
           <label class="block text-sm font-medium text-gray-700">Notes</label>
           <Textarea v-model="form.notes" :rows="4" placeholder="Customer preferences, notes, or important details" />
         </div>
@@ -67,7 +155,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -80,15 +168,50 @@ const router = useRouter()
 
 const submitting = ref(false)
 const error = ref('')
+const billingAddressSameAsMain = ref(true)
 
 const form = reactive({
-  name: '',
+  first_name: '',
+  last_name: '',
+  business_name: '',
   email: '',
   phone: '',
   external_reference: '',
   is_commercial: null,
   tax_exempt: null,
+  street: '',
+  city: '',
+  state: '',
+  postal_code: '',
+  country: '',
+  billing_street: '',
+  billing_city: '',
+  billing_state: '',
+  billing_postal_code: '',
+  billing_country: '',
   notes: ''
+})
+
+// Copy main address to billing address when checkbox is checked
+watch(billingAddressSameAsMain, (sameAsMain) => {
+  if (sameAsMain) {
+    form.billing_street = form.street
+    form.billing_city = form.city
+    form.billing_state = form.state
+    form.billing_postal_code = form.postal_code
+    form.billing_country = form.country
+  }
+})
+
+// Sync billing address with main address when checkbox is checked
+watch([() => form.street, () => form.city, () => form.state, () => form.postal_code, () => form.country], () => {
+  if (billingAddressSameAsMain.value) {
+    form.billing_street = form.street
+    form.billing_city = form.city
+    form.billing_state = form.state
+    form.billing_postal_code = form.postal_code
+    form.billing_country = form.country
+  }
 })
 
 const customerTypeOptions = [
@@ -110,8 +233,24 @@ const submit = async () => {
   error.value = ''
 
   try {
-    const payload = {
-      ...form
+    const payload = { ...form }
+
+    // If billing address is same as main address, copy values
+    if (form.is_commercial && billingAddressSameAsMain.value) {
+      payload.billing_street = form.street
+      payload.billing_city = form.city
+      payload.billing_state = form.state
+      payload.billing_postal_code = form.postal_code
+      payload.billing_country = form.country
+    }
+
+    // Clear billing fields for non-commercial customers
+    if (!form.is_commercial) {
+      payload.billing_street = null
+      payload.billing_city = null
+      payload.billing_state = null
+      payload.billing_postal_code = null
+      payload.billing_country = null
     }
 
     const customer = await createCustomer(payload)
