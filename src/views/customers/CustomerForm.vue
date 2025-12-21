@@ -39,7 +39,6 @@
               v-model="form.is_commercial"
               :options="customerTypeOptions"
               placeholder="Select type"
-              @change="onSelectChange('is_commercial', $event)"
             />
           </div>
           <div>
@@ -48,7 +47,6 @@
               v-model="form.tax_exempt"
               :options="taxOptions"
               placeholder="Select tax status"
-              @change="onSelectChange('tax_exempt', $event)"
             />
           </div>
         </div>
@@ -105,10 +103,6 @@ const taxOptions = [
 
 const goBack = () => {
   router.push('/cp/customers')
-}
-
-const onSelectChange = (key, value) => {
-  form[key] = value
 }
 
 const submit = async () => {
