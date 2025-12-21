@@ -199,4 +199,26 @@ class Request
     {
         return $this->method === strtoupper($method);
     }
+
+    /**
+     * Get the client's IP address
+     * Checks for proxied requests via X-Forwarded-For header
+     *
+     * @return string|null
+     */
+    public function getClientIp(): ?string
+    {
+        // Check for forwarded IP (when behind proxy/load balancer)
+        if (!empty($this->server['HTTP_X_FORWARDED_FOR'])) {
+            $ips = explode(',', $this->server['HTTP_X_FORWARDED_FOR']);
+            return trim($ips[0]);
+        }
+
+        if (!empty($this->server['HTTP_X_REAL_IP'])) {
+            return $this->server['HTTP_X_REAL_IP'];
+        }
+
+        // Direct connection
+        return $this->server['REMOTE_ADDR'] ?? null;
+    }
 }
