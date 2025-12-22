@@ -474,6 +474,24 @@ async function loadCustomer() {
   loading.value = true
   try {
     customer.value = await customerService.getCustomer(route.params.id)
+    console.log('Loaded customer data:', customer.value)
+    console.log('Address fields:', {
+      street: customer.value.street,
+      city: customer.value.city,
+      state: customer.value.state,
+      postal_code: customer.value.postal_code,
+      country: customer.value.country
+    })
+    console.log('Billing address fields:', {
+      billing_street: customer.value.billing_street,
+      billing_city: customer.value.billing_city,
+      billing_state: customer.value.billing_state,
+      billing_postal_code: customer.value.billing_postal_code,
+      billing_country: customer.value.billing_country
+    })
+    console.log('hasAddress computed:', hasAddress.value)
+    console.log('hasBillingAddress computed:', hasBillingAddress.value)
+    console.log('isBillingAddressSameAsMain computed:', isBillingAddressSameAsMain.value)
     // Load customer vehicles
     vehicles.value = await customerService.getCustomerVehicles(route.params.id)
   } catch (error) {
