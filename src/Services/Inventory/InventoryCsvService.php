@@ -41,10 +41,12 @@ class InventoryCsvService
                     $item->category,
                     $item->stock_quantity,
                     $item->low_stock_threshold,
+                    $item->reorder_quantity,
                     $item->cost,
                     $item->sale_price,
                     $item->markup,
                     $item->location,
+                    $item->vendor,
                     $item->notes,
                 ]);
             }
@@ -151,10 +153,12 @@ class InventoryCsvService
             'category',
             'stock_quantity',
             'low_stock_threshold',
+            'reorder_quantity',
             'cost',
             'sale_price',
             'markup',
             'location',
+            'vendor',
             'notes',
         ];
     }

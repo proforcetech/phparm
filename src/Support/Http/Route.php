@@ -40,7 +40,16 @@ class Route
             return false;
         }
 
-        $pattern = preg_replace('/\{([a-zA-Z0-9_]+)\}/', '(?P<$1>[^/]+)', $this->pattern);
+        $pattern = preg_replace_callback(
+            '/\{([a-zA-Z0-9_]+)(:([^}]+))?\}/',
+            function (array $matches) {
+                $name = $matches[1];
+                $customPattern = $matches[3] ?? '[^/]+';
+
+                return '(?P<' . $name . '>' . $customPattern . ')';
+            },
+            $this->pattern
+        );
         $pattern = '#^' . $pattern . '$#';
 
         if (preg_match($pattern, $path, $matches)) {

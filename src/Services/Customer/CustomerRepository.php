@@ -55,18 +55,40 @@ class CustomerRepository
     {
         $payload = $this->validator->validate($data);
 
-        $sql = 'INSERT INTO customers (name, email, phone, commercial, tax_exempt, notes, created_at, updated_at) '
-            . 'VALUES (:name, :email, :phone, :commercial, :tax_exempt, :notes, :created_at, :updated_at)';
+        $sql = 'INSERT INTO customers (
+            first_name, last_name, business_name, email, phone,
+            street, city, state, postal_code, country,
+            billing_street, billing_city, billing_state, billing_postal_code, billing_country,
+            is_commercial, tax_exempt, notes, external_reference, created_at, updated_at
+        ) VALUES (
+            :first_name, :last_name, :business_name, :email, :phone,
+            :street, :city, :state, :postal_code, :country,
+            :billing_street, :billing_city, :billing_state, :billing_postal_code, :billing_country,
+            :is_commercial, :tax_exempt, :notes, :external_reference, :created_at, :updated_at
+        )';
 
         $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute([
-            'name' => $payload['name'],
+            'first_name' => $payload['first_name'],
+            'last_name' => $payload['last_name'],
+            'business_name' => $payload['business_name'] ?? null,
             'email' => $payload['email'],
             'phone' => $payload['phone'],
-            'commercial' => $payload['commercial'] ? 1 : 0,
-            'tax_exempt' => $payload['tax_exempt'] ? 1 : 0,
-            'notes' => $payload['notes'],
+            'street' => $payload['street'] ?? null,
+            'city' => $payload['city'] ?? null,
+            'state' => $payload['state'] ?? null,
+            'postal_code' => $payload['postal_code'] ?? null,
+            'country' => $payload['country'] ?? null,
+            'billing_street' => $payload['billing_street'] ?? null,
+            'billing_city' => $payload['billing_city'] ?? null,
+            'billing_state' => $payload['billing_state'] ?? null,
+            'billing_postal_code' => $payload['billing_postal_code'] ?? null,
+            'billing_country' => $payload['billing_country'] ?? null,
+            'is_commercial' => isset($payload['is_commercial']) ? ($payload['is_commercial'] ? 1 : 0) : 0,
+            'tax_exempt' => isset($payload['tax_exempt']) ? ($payload['tax_exempt'] ? 1 : 0) : 0,
+            'notes' => $payload['notes'] ?? null,
+            'external_reference' => $payload['external_reference'] ?? null,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -90,18 +112,51 @@ class CustomerRepository
 
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
 
-        $sql = 'UPDATE customers SET name = :name, email = :email, phone = :phone, commercial = :commercial, '
-            . 'tax_exempt = :tax_exempt, notes = :notes, updated_at = :updated_at WHERE id = :id';
+        $sql = 'UPDATE customers SET
+            first_name = :first_name,
+            last_name = :last_name,
+            business_name = :business_name,
+            email = :email,
+            phone = :phone,
+            street = :street,
+            city = :city,
+            state = :state,
+            postal_code = :postal_code,
+            country = :country,
+            billing_street = :billing_street,
+            billing_city = :billing_city,
+            billing_state = :billing_state,
+            billing_postal_code = :billing_postal_code,
+            billing_country = :billing_country,
+            is_commercial = :is_commercial,
+            tax_exempt = :tax_exempt,
+            notes = :notes,
+            external_reference = :external_reference,
+            updated_at = :updated_at
+        WHERE id = :id';
 
         $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute([
-            'name' => $payload['name'],
+            'first_name' => $payload['first_name'],
+            'last_name' => $payload['last_name'],
+            'business_name' => $payload['business_name'] ?? null,
             'email' => $payload['email'],
             'phone' => $payload['phone'],
-            'commercial' => $payload['commercial'] ? 1 : 0,
-            'tax_exempt' => $payload['tax_exempt'] ? 1 : 0,
-            'notes' => $payload['notes'],
+            'street' => $payload['street'] ?? null,
+            'city' => $payload['city'] ?? null,
+            'state' => $payload['state'] ?? null,
+            'postal_code' => $payload['postal_code'] ?? null,
+            'country' => $payload['country'] ?? null,
+            'billing_street' => $payload['billing_street'] ?? null,
+            'billing_city' => $payload['billing_city'] ?? null,
+            'billing_state' => $payload['billing_state'] ?? null,
+            'billing_postal_code' => $payload['billing_postal_code'] ?? null,
+            'billing_country' => $payload['billing_country'] ?? null,
+            'is_commercial' => isset($payload['is_commercial']) ? ($payload['is_commercial'] ? 1 : 0) : 0,
+            'tax_exempt' => isset($payload['tax_exempt']) ? ($payload['tax_exempt'] ? 1 : 0) : 0,
+            'notes' => $payload['notes'] ?? null,
+            'external_reference' => $payload['external_reference'] ?? null,
             'updated_at' => $now,
             'id' => $id,
         ]);
@@ -132,7 +187,7 @@ class CustomerRepository
         $bindings = [];
 
         if (isset($filters['commercial'])) {
-            $clauses[] = 'commercial = :commercial';
+            $clauses[] = 'is_commercial = :commercial';
             $bindings['commercial'] = $filters['commercial'] ? 1 : 0;
         }
 
@@ -146,13 +201,14 @@ class CustomerRepository
         }
 
         if (!empty($filters['query'])) {
-            $clauses[] = '(name LIKE :query OR email LIKE :query OR phone LIKE :query)';
+            $clauses[] = '(id = :exact_id OR first_name LIKE :query OR last_name LIKE :query OR business_name LIKE :query OR email LIKE :query OR phone LIKE :query)';
+            $bindings['exact_id'] = is_numeric($filters['query']) ? (int) $filters['query'] : 0;
             $bindings['query'] = '%' . $filters['query'] . '%';
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
 
-        $sql = 'SELECT * FROM customers ' . $where . ' ORDER BY name ASC LIMIT :limit OFFSET :offset';
+        $sql = 'SELECT * FROM customers ' . $where . ' ORDER BY last_name ASC, first_name ASC LIMIT :limit OFFSET :offset';
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($bindings as $key => $value) {
             $stmt->bindValue(':' . $key, $value);

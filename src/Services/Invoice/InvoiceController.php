@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
+use RuntimeException;
 
 class InvoiceController
 {
@@ -34,11 +35,17 @@ class InvoiceController
      */
     public function index(User $user, array $filters = []): array
     {
-        if (!$this->gate->can($user, 'invoices.view')) {
-            throw new UnauthorizedException('Cannot view invoices');
+        $this->assertViewAccess($user);
+
+        if ($user->role === 'customer' && $user->customer_id !== null) {
+            $filters['customer_id'] = $user->customer_id;
         }
 
-        $invoices = $this->service->list($filters);
+        $limit = isset($filters['limit']) ? max(1, (int) $filters['limit']) : 50;
+        $offset = isset($filters['offset']) ? max(0, (int) $filters['offset']) : 0;
+        $filters = array_diff_key($filters, ['limit' => true, 'offset' => true]);
+
+        $invoices = $this->service->list($filters, $limit, $offset);
 
         return array_map(static fn ($invoice) => $invoice->toArray(), $invoices);
     }
@@ -50,15 +57,15 @@ class InvoiceController
      */
     public function show(User $user, int $id): array
     {
-        if (!$this->gate->can($user, 'invoices.view')) {
-            throw new UnauthorizedException('Cannot view invoices');
-        }
+        $this->assertViewAccess($user);
 
         $invoice = $this->service->findById($id);
 
         if ($invoice === null) {
             throw new InvalidArgumentException('Invoice not found');
         }
+
+        $this->assertCustomerOwnership($user, $invoice->customer_id);
 
         return $invoice->toArray();
     }
@@ -142,10 +149,14 @@ class InvoiceController
      */
     public function createCheckout(User $user, int $id, array $data): array
     {
-        // Customer can pay their own invoices
-        if (!$this->gate->can($user, 'invoices.view')) {
-            throw new UnauthorizedException('Cannot access invoice');
+        $this->assertViewAccess($user);
+
+        $invoice = $this->service->findById($id);
+        if ($invoice === null) {
+            throw new InvalidArgumentException('Invoice not found');
         }
+
+        $this->assertCustomerOwnership($user, $invoice->customer_id);
 
         if (!isset($data['provider'])) {
             throw new InvalidArgumentException('provider is required (stripe, square, or paypal)');
@@ -227,27 +238,45 @@ class InvoiceController
      */
     public function downloadPdf(User $user, int $id, array $settings = []): string
     {
-        // Customers can download their own invoices, staff can download all
-        if ($user->role === 'customer') {
-            // Verify this invoice belongs to the customer
-            $invoice = $this->service->findById($id);
-            if ($invoice === null) {
-                throw new InvalidArgumentException('Invoice not found');
-            }
-            // In a real implementation, check if invoice belongs to customer
-        } elseif (!$this->gate->can($user, 'invoices.view')) {
-            throw new UnauthorizedException('Cannot view invoices');
-        }
-
-        if ($this->pdfGenerator === null) {
-            throw new \RuntimeException('PDF generation not available');
-        }
-
         $invoice = $this->service->findById($id);
         if ($invoice === null) {
             throw new InvalidArgumentException('Invoice not found');
         }
 
+        if ($user->role === 'customer') {
+            $this->assertCustomerOwnership($user, $invoice->customer_id);
+        } elseif (!$this->gate->can($user, 'invoices.view')) {
+            throw new UnauthorizedException('Cannot view invoices');
+        }
+
+        if ($this->pdfGenerator === null) {
+            throw new RuntimeException('PDF generation not available');
+        }
+
         return $this->pdfGenerator->generate($invoice, $settings);
+    }
+
+    private function assertCustomerOwnership(User $user, int $customerId): void
+    {
+        if ($user->role !== 'customer') {
+            return;
+        }
+
+        if ($user->customer_id === null || $user->customer_id !== $customerId) {
+            throw new UnauthorizedException('Cannot access another customer\'s invoice');
+        }
+    }
+
+    private function assertViewAccess(User $user): void
+    {
+        if ($this->gate->can($user, 'invoices.view')) {
+            return;
+        }
+
+        if ($this->gate->can($user, 'portal.invoices')) {
+            return;
+        }
+
+        throw new UnauthorizedException('Cannot view invoices');
     }
 }

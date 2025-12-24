@@ -3,7 +3,7 @@
     <!-- Page Header -->
     <div class="mb-6">
       <div class="flex items-center gap-4 mb-2">
-        <Button variant="ghost" @click="$router.push('/invoices')">
+        <Button variant="ghost" @click="$router.push('/cp/invoices')">
           <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
@@ -66,6 +66,18 @@
                 label="Due Date *"
                 required
               />
+            </div>
+
+            <div class="mt-2 flex flex-wrap gap-4 text-sm text-gray-700">
+              <label class="inline-flex items-center gap-2">
+                <input v-model="form.is_mobile" type="radio" :value="false" class="h-4 w-4 text-indigo-600" />
+                In shop
+              </label>
+              <label class="inline-flex items-center gap-2">
+                <input v-model="form.is_mobile" type="radio" :value="true" class="h-4 w-4 text-indigo-600" />
+                Mobile repair
+              </label>
+              <span class="text-xs text-gray-500">Mobile invoices require location capture on time entries.</span>
             </div>
           </Card>
 
@@ -138,7 +150,7 @@
                   <Textarea
                     v-model="item.notes"
                     placeholder="Additional notes (optional)"
-                    rows="2"
+                    :rows="2"
                   />
                 </div>
               </div>
@@ -159,14 +171,14 @@
                 v-model="form.notes"
                 label="Notes"
                 placeholder="Additional notes for the invoice..."
-                rows="4"
+                :rows="4"
               />
 
               <Textarea
                 v-model="form.terms"
                 label="Terms & Conditions"
                 placeholder="Payment terms and conditions..."
-                rows="3"
+                :rows="3"
               />
             </div>
           </Card>
@@ -250,7 +262,7 @@
               <Button
                 variant="ghost"
                 class="w-full"
-                @click="$router.push('/invoices')"
+                @click="$router.push('/cp/invoices')"
               >
                 Cancel
               </Button>
@@ -285,6 +297,7 @@ const vehicles = ref([])
 const form = reactive({
   customer_id: '',
   vehicle_id: '',
+  is_mobile: false,
   invoice_date: new Date().toISOString().split('T')[0],
   due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   status: 'draft',

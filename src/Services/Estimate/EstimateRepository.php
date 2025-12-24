@@ -13,6 +13,19 @@ use Throwable;
 
 class EstimateRepository
 {
+    public const ALLOWED_STATUSES = [
+        'pending',
+        'sent',
+        'approved',
+        'rejected',
+        'expired',
+        'converted',
+    ];
+
+    private const STATUS_ALIASES = [
+        'declined' => 'rejected',
+    ];
+
     private Connection $connection;
     private ?AuditLogger $audit;
 
@@ -103,16 +116,20 @@ class EstimateRepository
             return null;
         }
 
-        $allowedStatuses = ['sent', 'approved', 'rejected', 'expired'];
-        if (!in_array($status, $allowedStatuses, true)) {
+        $normalized = self::normalizeStatus($status);
+        if (!in_array($normalized, self::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid status for estimate lifecycle.');
+        }
+
+        if ($estimate->status === $normalized) {
+            return $estimate;
         }
 
         $before = $estimate->toArray();
         $stmt = $this->connection->pdo()->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id');
-        $stmt->execute(['status' => $status, 'id' => $id]);
+        $stmt->execute(['status' => $normalized, 'id' => $id]);
 
-        $estimate->status = $status;
+        $estimate->status = $normalized;
         $this->log('estimate.status_changed', $id, $actorId, [
             'before' => $before,
             'after' => $estimate->toArray(),
@@ -124,22 +141,19 @@ class EstimateRepository
 
     public function markExpiredBefore(string $date, ?int $actorId = null): int
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT id FROM estimates WHERE expiration_date < :date AND status NOT IN (\'expired\', \'converted\')');
+        $stmt = $this->connection->pdo()->prepare('SELECT id, status FROM estimates WHERE expiration_date < :date AND status NOT IN (\'expired\', \'converted\')');
         $stmt->execute(['date' => $date]);
-        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($ids)) {
+        if (empty($rows)) {
             return 0;
         }
 
-        $update = $this->connection->pdo()->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id IN (' . implode(',', $ids) . ')');
-        $update->execute(['status' => 'expired']);
-
-        foreach ($ids as $estimateId) {
-            $this->log('estimate.status_changed', $estimateId, $actorId, ['before' => ['status' => 'pending'], 'after' => ['status' => 'expired']]);
+        foreach ($rows as $row) {
+            $this->updateStatus((int) $row['id'], 'expired', $actorId, 'Auto-expired after ' . $date);
         }
 
-        return count($ids);
+        return count($rows);
     }
 
     public function convertToInvoice(int $estimateId, string $issueDate, ?string $dueDate = null, ?int $actorId = null): ?Invoice
@@ -157,8 +171,8 @@ class EstimateRepository
             $serviceTypeId = $this->determinePrimaryServiceTypeId($estimateId);
 
             $insert = $pdo->prepare(<<<SQL
-                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
-                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
+                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, is_mobile, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
+                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :is_mobile, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
             SQL);
 
             $total = $estimate->grand_total;
@@ -167,6 +181,7 @@ class EstimateRepository
                 'customer_id' => $estimate->customer_id,
                 'service_type_id' => $serviceTypeId,
                 'vehicle_id' => $estimate->vehicle_id,
+                'is_mobile' => $estimate->is_mobile ? 1 : 0,
                 'estimate_id' => $estimate->id,
                 'status' => 'pending',
                 'issue_date' => $issueDate,
@@ -179,8 +194,7 @@ class EstimateRepository
             ]);
 
             $invoiceId = (int) $pdo->lastInsertId();
-            $pdo->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id')
-                ->execute(['status' => 'converted', 'id' => $estimateId]);
+            $this->updateStatus($estimateId, 'converted', $actorId, 'Converted to invoice ' . $invoiceNumber);
 
             $invoice = new Invoice([
                 'id' => $invoiceId,
@@ -239,6 +253,7 @@ class EstimateRepository
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
+            'is_mobile' => (bool) ($row['is_mobile'] ?? false),
             'status' => (string) $row['status'],
             'technician_id' => $row['technician_id'] !== null ? (int) $row['technician_id'] : null,
             'expiration_date' => $row['expiration_date'],
@@ -295,5 +310,12 @@ class EstimateRepository
         }
 
         $this->audit->log(new AuditEntry($event, 'estimate', (string) $estimateId, $actorId, $context));
+    }
+
+    public static function normalizeStatus(string $status): string
+    {
+        $normalized = strtolower($status);
+
+        return self::STATUS_ALIASES[$normalized] ?? $normalized;
     }
 }

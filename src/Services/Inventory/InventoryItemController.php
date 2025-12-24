@@ -5,22 +5,26 @@ namespace App\Services\Inventory;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
+use App\Services\Inventory\InventoryLowStockService;
 
 class InventoryItemController
 {
     private InventoryItemRepository $repository;
     private AccessGate $gate;
     private InventoryCsvService $csvService;
+    private InventoryLowStockService $lowStockService;
 
     public function __construct(
         InventoryItemRepository $repository,
         AccessGate $gate,
-        ?InventoryCsvService $csvService = null
+        ?InventoryCsvService $csvService = null,
+        ?InventoryLowStockService $lowStockService = null
     )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->csvService = $csvService ?? new InventoryCsvService($repository);
+        $this->lowStockService = $lowStockService ?? new InventoryLowStockService($repository);
     }
 
     /**
@@ -51,11 +55,43 @@ class InventoryItemController
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function lowStock(User $user, int $limit = 25, int $offset = 0): array
+    public function lowStock(User $user, array $params = []): array
     {
         $this->assertViewAccess($user);
 
-        return $this->repository->lowStockAlerts($limit, $offset);
+        $filters = [];
+        foreach (['category', 'location', 'query'] as $field) {
+            if (isset($params[$field]) && $params[$field] !== '') {
+                $filters[$field] = $params[$field];
+            }
+        }
+
+        $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 25;
+        $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
+
+        return $this->lowStockService->page($filters, $limit, $offset);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function lowStockTile(User $user, int $limit = 5): array
+    {
+        $this->assertViewAccess($user);
+
+        return $this->lowStockService->tile($limit);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function show(User $user, int $id): ?array
+    {
+        $this->assertViewAccess($user);
+
+        $item = $this->repository->find($id);
+
+        return $item?->toArray();
     }
 
     /**

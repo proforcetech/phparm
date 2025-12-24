@@ -67,7 +67,9 @@ class SettingsRepository
     public function set(string $key, $value, ?string $type = null, string $group = 'general', ?string $description = null): void
     {
         $existing = $this->find($key);
-        $type ??= $this->inferTypeFromValue($value);
+        $type ??= $existing?->type ?? $this->inferTypeFromValue($value);
+        $group = $existing?->group ?? $group;
+        $description ??= $existing?->description;
         $encodedValue = $this->encodeValue($value, $type);
 
         $sql = <<<SQL
@@ -147,14 +149,22 @@ class SettingsRepository
 
     private function decodeValue(string $value, string $type)
     {
-        return match ($type) {
+        $result = match ($type) {
             'json' => json_decode($value, true, 512, JSON_THROW_ON_ERROR),
             'boolean' => $value === '1' || strtolower($value) === 'true',
             'integer' => (int) $value,
             'float' => (float) $value,
             'string' => $value,
-            default => throw new InvalidArgumentException("Unknown settings type: {$type}"),
+            'decimal' => (float) $value, // Handle decimal type (same as float)
+            default => $value, // Default to string for unknown types
         };
+
+        // Log warning for unknown types (except known types)
+        if (!in_array($type, ['json', 'boolean', 'integer', 'float', 'string', 'decimal'], true)) {
+            error_log("Warning: Unknown settings type '{$type}', defaulting to string. Value: {$value}");
+        }
+
+        return $result;
     }
 
     private function find(string $key): ?Setting

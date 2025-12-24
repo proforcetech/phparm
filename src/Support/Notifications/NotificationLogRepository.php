@@ -14,11 +14,11 @@ class NotificationLogRepository
         $this->connection = $connection;
     }
 
-    public function log(NotificationLogEntry $entry): void
+public function log(NotificationLogEntry $entry): void
     {
+        // Removed the second duplicate string
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO notification_logs (channel, recipient, template, payload, status, meta, error_message, created_at) VALUES (:channel, :recipient, :template, :payload, :status, :meta, :error_message, NOW())'
-            'INSERT INTO notification_logs (channel, recipient, template, payload, status, created_at) VALUES (:channel, :recipient, :template, :payload, :status, NOW())'
         );
 
         $stmt->execute([

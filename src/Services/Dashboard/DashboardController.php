@@ -56,6 +56,9 @@ class DashboardController
         [$start, $end, $timezone] = $this->resolveRange($params);
         $options = $this->extractOptions($params);
         $options['timezone'] = $timezone;
+        if (isset($params['limit'])) {
+            $options['limit'] = (int) $params['limit'];
+        }
 
         $series = $this->service->serviceTypeBreakdown($start, $end, $options);
 
@@ -147,7 +150,7 @@ class DashboardController
     private function extractOptions(array $params): array
     {
         $options = [];
-        foreach (['timezone', 'cache_ttl', 'customer_id', 'role'] as $key) {
+        foreach (['timezone', 'cache_ttl', 'customer_id', 'role', 'technician_id'] as $key) {
             if (isset($params[$key])) {
                 $options[$key] = $params[$key];
             }

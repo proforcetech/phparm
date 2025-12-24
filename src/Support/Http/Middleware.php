@@ -2,12 +2,69 @@
 
 namespace App\Support\Http;
 
+use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\JwtService;
 use App\Support\Auth\UnauthorizedException;
 
 class Middleware
 {
+    private static ?RateLimiter $rateLimiter = null;
+    private static ?JwtService $jwtService = null;
+
+    /**
+     * Get or create the default rate limiter instance.
+     */
+    private static function getRateLimiter(): RateLimiter
+    {
+        if (self::$rateLimiter === null) {
+            $storagePath = dirname(__DIR__, 3) . '/storage/temp/ratelimits';
+            self::$rateLimiter = new RateLimiter($storagePath);
+        }
+        return self::$rateLimiter;
+    }
+
+    /**
+     * Set a custom rate limiter instance (for testing or custom configuration).
+     */
+    public static function setRateLimiter(RateLimiter $limiter): void
+    {
+        self::$rateLimiter = $limiter;
+    }
+
+    /**
+     * Get or create the JWT service instance.
+     */
+    private static function getJwtService(): JwtService
+    {
+        if (self::$jwtService === null) {
+            $configPath = dirname(__DIR__, 3) . '/config/auth.php';
+            $config = file_exists($configPath) ? require $configPath : [];
+            $jwtConfig = $config['jwt'] ?? [];
+
+            $secret = $jwtConfig['secret'] ?? 'default-secret-key-change-in-production';
+            $ttl = $jwtConfig['ttl'] ?? 3600;
+            $refreshTtl = $jwtConfig['refresh_ttl'] ?? 604800;
+
+            // Create database connection
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            self::$jwtService = new JwtService($connection, $secret, $ttl, $refreshTtl);
+        }
+        return self::$jwtService;
+    }
+
+    /**
+     * Set a custom JWT service instance (for testing or custom configuration).
+     */
+    public static function setJwtService(JwtService $service): void
+    {
+        self::$jwtService = $service;
+    }
+
     /**
      * Authenticate user from session or bearer token
      */
@@ -135,13 +192,143 @@ class Middleware
     }
 
     /**
-     * Simple token validation (for demonstration)
-     * In production, use JWT or database-backed tokens
+     * Rate limiting middleware using IP address.
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 60)
+     * @param int $decaySeconds Time window in seconds (default: 60)
      */
-    private static function validateToken(string $token): ?array
+    public static function throttle(int $maxAttempts = 60, int $decaySeconds = 60): callable
     {
-        // This is a placeholder - implement proper token validation
-        // For now, just return null to indicate invalid token
-        return null;
+        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds) {
+            $limiter = self::getRateLimiter()->withLimits($maxAttempts, $decaySeconds);
+            $key = self::resolveRateLimitKey($request);
+
+            if ($limiter->tooManyAttempts($key)) {
+                $retryAfter = $limiter->availableIn($key);
+                return Response::json([
+                    'error' => 'Too many requests',
+                    'message' => 'Rate limit exceeded. Please try again later.',
+                    'retry_after' => $retryAfter,
+                ], 429)
+                    ->withHeader('Retry-After', (string) $retryAfter)
+                    ->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', '0')
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $retryAfter));
+            }
+
+            $hits = $limiter->hit($key);
+            $remaining = max(0, $maxAttempts - $hits);
+
+            $response = $next($request);
+
+            if ($response instanceof Response) {
+                $response->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', (string) $remaining)
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $decaySeconds));
+            }
+
+            return $response;
+        };
+    }
+
+    /**
+     * Strict rate limiting for sensitive endpoints (e.g., login, password reset).
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 5)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     */
+    public static function throttleStrict(int $maxAttempts = 5, int $decaySeconds = 60): callable
+    {
+        return self::throttle($maxAttempts, $decaySeconds);
+    }
+
+    /**
+     * Rate limiting by authenticated user instead of IP.
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 100)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     */
+    public static function throttleByUser(int $maxAttempts = 100, int $decaySeconds = 60): callable
+    {
+        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds) {
+            $limiter = self::getRateLimiter()->withLimits($maxAttempts, $decaySeconds);
+
+            $user = $request->getAttribute('user');
+            $key = $user instanceof User
+                ? 'user:' . $user->id
+                : 'ip:' . self::getClientIp($request);
+
+            if ($limiter->tooManyAttempts($key)) {
+                $retryAfter = $limiter->availableIn($key);
+                return Response::json([
+                    'error' => 'Too many requests',
+                    'message' => 'Rate limit exceeded. Please try again later.',
+                    'retry_after' => $retryAfter,
+                ], 429)
+                    ->withHeader('Retry-After', (string) $retryAfter)
+                    ->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', '0')
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $retryAfter));
+            }
+
+            $hits = $limiter->hit($key);
+            $remaining = max(0, $maxAttempts - $hits);
+
+            $response = $next($request);
+
+            if ($response instanceof Response) {
+                $response->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Remaining', (string) $remaining)
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $decaySeconds));
+            }
+
+            return $response;
+        };
+    }
+
+    /**
+     * Resolve the rate limit key for a request.
+     */
+    private static function resolveRateLimitKey(Request $request): string
+    {
+        return 'ip:' . self::getClientIp($request) . ':' . $request->path();
+    }
+
+    /**
+     * Get the client IP address from the request.
+     */
+    private static function getClientIp(Request $request): string
+    {
+        // Check for forwarded IP (when behind proxy/load balancer)
+        $forwardedFor = $request->header('X-Forwarded-For');
+        if ($forwardedFor !== null) {
+            $ips = array_map('trim', explode(',', $forwardedFor));
+            return $ips[0];
+        }
+
+        $realIp = $request->header('X-Real-IP');
+        if ($realIp !== null) {
+            return $realIp;
+        }
+
+        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    }
+
+    /**
+     * Validate a JWT bearer token and return the user data.
+     *
+     * @param string $token The JWT token to validate
+     * @return User|null The authenticated user or null if invalid
+     */
+    private static function validateToken(string $token): ?User
+    {
+        try {
+            $jwtService = self::getJwtService();
+            return $jwtService->validateToken($token);
+        } catch (\Throwable $e) {
+            // Log validation errors but don't expose details
+            error_log('JWT validation error: ' . $e->getMessage());
+            return null;
+        }
     }
 }

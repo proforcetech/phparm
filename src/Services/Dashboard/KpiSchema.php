@@ -8,7 +8,7 @@ class KpiSchema
     {
         return [
             'type' => 'object',
-            'required' => ['estimates', 'invoices', 'tax', 'warranty', 'appointments', 'inventory'],
+            'required' => ['estimates', 'invoices', 'tax', 'warranty', 'appointments', 'inventory', 'summary'],
             'properties' => [
                 'estimates' => ['type' => 'object', 'patternProperties' => ['.*' => ['type' => 'integer']]],
                 'invoices' => [
@@ -28,6 +28,14 @@ class KpiSchema
                     'properties' => [
                         'low_stock' => ['type' => 'integer'],
                         'out_of_stock' => ['type' => 'integer'],
+                    ],
+                ],
+                'summary' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'revenue' => ['type' => 'number'],
+                        'pending_invoices' => ['type' => 'integer'],
+                        'appointments_today' => ['type' => 'integer'],
                     ],
                 ],
             ],

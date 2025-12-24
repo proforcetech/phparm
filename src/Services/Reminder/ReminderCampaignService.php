@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\ReminderCampaign;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
+use DateTimeImmutable;
 use InvalidArgumentException;
 use PDO;
 
@@ -28,16 +29,54 @@ class ReminderCampaignService
         $this->validate($data);
 
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO reminder_campaigns (name, channel, frequency, status, service_type_filter, last_run_at, next_run_at, created_at, updated_at)
-            VALUES (:name, :channel, :frequency, :status, :service_type_filter, NULL, :next_run_at, NOW(), NOW())
+            INSERT INTO reminder_campaigns (
+                name,
+                description,
+                channel,
+                frequency,
+                frequency_unit,
+                frequency_interval,
+                status,
+                service_type_filter,
+                email_subject,
+                email_body,
+                sms_body,
+                last_run_at,
+                next_run_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :name,
+                :description,
+                :channel,
+                :frequency,
+                :frequency_unit,
+                :frequency_interval,
+                :status,
+                :service_type_filter,
+                :email_subject,
+                :email_body,
+                :sms_body,
+                NULL,
+                :next_run_at,
+                NOW(),
+                NOW()
+            )
         SQL);
 
         $stmt->execute([
             'name' => $data['name'],
+            'description' => $data['description'] ?? null,
             'channel' => $data['channel'],
             'frequency' => $data['frequency'],
+            'frequency_unit' => $data['frequency_unit'] ?? 'day',
+            'frequency_interval' => (int) ($data['frequency_interval'] ?? 1),
             'status' => $data['status'] ?? 'draft',
             'service_type_filter' => $data['service_type_filter'] ?? null,
+            'email_subject' => $data['email_subject'] ?? null,
+            'email_body' => $data['email_body'] ?? null,
+            'sms_body' => $data['sms_body'] ?? null,
             'next_run_at' => $data['next_run_at'] ?? null,
         ]);
 
@@ -63,10 +102,16 @@ class ReminderCampaignService
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             UPDATE reminder_campaigns
             SET name = COALESCE(:name, name),
+                description = COALESCE(:description, description),
                 channel = COALESCE(:channel, channel),
                 frequency = COALESCE(:frequency, frequency),
+                frequency_unit = COALESCE(:frequency_unit, frequency_unit),
+                frequency_interval = COALESCE(:frequency_interval, frequency_interval),
                 status = COALESCE(:status, status),
                 service_type_filter = COALESCE(:service_type_filter, service_type_filter),
+                email_subject = COALESCE(:email_subject, email_subject),
+                email_body = COALESCE(:email_body, email_body),
+                sms_body = COALESCE(:sms_body, sms_body),
                 next_run_at = COALESCE(:next_run_at, next_run_at),
                 updated_at = NOW()
             WHERE id = :id
@@ -75,10 +120,16 @@ class ReminderCampaignService
         $stmt->execute([
             'id' => $campaignId,
             'name' => $data['name'] ?? null,
+            'description' => $data['description'] ?? null,
             'channel' => $data['channel'] ?? null,
             'frequency' => $data['frequency'] ?? null,
+            'frequency_unit' => $data['frequency_unit'] ?? null,
+            'frequency_interval' => isset($data['frequency_interval']) ? (int) $data['frequency_interval'] : null,
             'status' => $data['status'] ?? null,
             'service_type_filter' => $data['service_type_filter'] ?? null,
+            'email_subject' => $data['email_subject'] ?? null,
+            'email_body' => $data['email_body'] ?? null,
+            'sms_body' => $data['sms_body'] ?? null,
             'next_run_at' => $data['next_run_at'] ?? null,
         ]);
 
@@ -103,12 +154,29 @@ class ReminderCampaignService
     /**
      * @return array<int, ReminderCampaign>
      */
+    public function list(): array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM reminder_campaigns ORDER BY id DESC');
+        $stmt->execute();
+
+        return array_map(static fn (array $row) => new ReminderCampaign($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @return array<int, ReminderCampaign>
+     */
     public function listActive(): array
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM reminder_campaigns WHERE status = :status ORDER BY next_run_at ASC NULLS LAST');
         $stmt->execute(['status' => 'active']);
 
         return array_map(static fn (array $row) => new ReminderCampaign($row), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    public function activate(int $campaignId, int $actorId): ?ReminderCampaign
+    {
+        $nextRun = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+        return $this->update($campaignId, ['status' => 'active', 'next_run_at' => $nextRun], $actorId);
     }
 
     /**
@@ -127,8 +195,20 @@ class ReminderCampaignService
             }
         }
 
-        if (isset($data['channel']) && !in_array($data['channel'], ['mail', 'sms'], true)) {
-            throw new InvalidArgumentException('Reminder campaigns support mail or sms channels.');
+        if (isset($data['channel']) && !in_array($data['channel'], ['mail', 'sms', 'both'], true)) {
+            throw new InvalidArgumentException('Reminder campaigns support mail, sms, or both channels.');
+        }
+
+        if (isset($data['frequency_interval']) && (int) $data['frequency_interval'] < 1) {
+            throw new InvalidArgumentException('Reminder campaign frequency interval must be at least 1.');
+        }
+
+        if (isset($data['frequency_unit']) && !in_array($data['frequency_unit'], ['day', 'week', 'month'], true)) {
+            throw new InvalidArgumentException('Reminder campaign frequency unit must be day, week, or month.');
+        }
+
+        if (isset($data['status']) && !in_array($data['status'], ['draft', 'active', 'paused', 'archived'], true)) {
+            throw new InvalidArgumentException('Reminder campaign status must be draft, active, paused, or archived.');
         }
     }
 

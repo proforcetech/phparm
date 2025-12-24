@@ -19,6 +19,11 @@ class Request
     private array $body;
 
     /**
+     * @var array<string, mixed>
+     */
+    private array $files;
+
+    /**
      * @var array<string, string>
      */
     private array $headers;
@@ -45,7 +50,8 @@ class Request
         array $query = [],
         array $body = [],
         array $headers = [],
-        array $server = []
+        array $server = [],
+        array $files = []
     ) {
         $this->method = strtoupper($method);
         $this->uri = $uri;
@@ -54,6 +60,7 @@ class Request
         $this->body = $body;
         $this->headers = $headers;
         $this->server = $server;
+        $this->files = $files;
     }
 
     public static function capture(): self
@@ -84,7 +91,7 @@ class Request
             $body = $_POST;
         }
 
-        return new self($method, $uri, $_GET, $body, $headers, $_SERVER);
+        return new self($method, $uri, $_GET, $body, $headers, $_SERVER, $_FILES);
     }
 
     public function method(): string
@@ -126,6 +133,19 @@ class Request
     public function input(string $key, mixed $default = null): mixed
     {
         return $this->body[$key] ?? $default;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function files(): array
+    {
+        return $this->files;
+    }
+
+    public function file(string $key): mixed
+    {
+        return $this->files[$key] ?? null;
     }
 
     /**
@@ -178,5 +198,27 @@ class Request
     public function isMethod(string $method): bool
     {
         return $this->method === strtoupper($method);
+    }
+
+    /**
+     * Get the client's IP address
+     * Checks for proxied requests via X-Forwarded-For header
+     *
+     * @return string|null
+     */
+    public function getClientIp(): ?string
+    {
+        // Check for forwarded IP (when behind proxy/load balancer)
+        if (!empty($this->server['HTTP_X_FORWARDED_FOR'])) {
+            $ips = explode(',', $this->server['HTTP_X_FORWARDED_FOR']);
+            return trim($ips[0]);
+        }
+
+        if (!empty($this->server['HTTP_X_REAL_IP'])) {
+            return $this->server['HTTP_X_REAL_IP'];
+        }
+
+        // Direct connection
+        return $this->server['REMOTE_ADDR'] ?? null;
     }
 }

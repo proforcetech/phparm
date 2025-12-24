@@ -61,7 +61,7 @@ class SettingsController
             throw new InvalidArgumentException('value is required');
         }
 
-        $this->settings->set($key, $data['value'], $user->id);
+        $this->settings->set($key, $data['value']);
 
         return [
             'key' => $key,
@@ -83,7 +83,7 @@ class SettingsController
 
         $updated = [];
         foreach ($data as $key => $value) {
-            $this->settings->set($key, $value, $user->id);
+            $this->settings->set($key, $value);
             $updated[$key] = $value;
         }
 

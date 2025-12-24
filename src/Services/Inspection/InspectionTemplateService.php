@@ -104,6 +104,64 @@ class InspectionTemplateService
         return $templates;
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listDetailed(?bool $activeOnly = null): array
+    {
+        $templates = $this->list($activeOnly);
+
+        return array_map(function (InspectionTemplate $template) {
+            return $this->templateWithSections($template->id) ?? $template->toArray();
+        }, $templates);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function templateWithSections(int $templateId): ?array
+    {
+        $template = $this->fetchTemplate($templateId);
+        if ($template === null) {
+            return null;
+        }
+
+        $sections = $this->fetchSections($templateId);
+
+        return [
+            'id' => $template->id,
+            'name' => $template->name,
+            'description' => $template->description,
+            'active' => $template->active,
+            'sections' => $sections,
+        ];
+    }
+
+    public function delete(int $templateId, ?int $actorId = null): bool
+    {
+        $existing = $this->fetchTemplate($templateId);
+        if ($existing === null) {
+            return false;
+        }
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $this->deleteSections($templateId);
+            $stmt = $pdo->prepare('DELETE FROM inspection_templates WHERE id = :id');
+            $stmt->execute(['id' => $templateId]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+
+        $this->log('inspection.template_deleted', $templateId, $actorId, ['before' => $existing->toArray()]);
+
+        return true;
+    }
+
     public function activate(int $templateId, bool $active, ?int $actorId = null): bool
     {
         $stmt = $this->connection->pdo()->prepare('UPDATE inspection_templates SET active = :active WHERE id = :id');
@@ -247,6 +305,49 @@ class InspectionTemplateService
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row ? $this->mapTemplate($row) : null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchSections(int $templateId): array
+    {
+        $sectionsStmt = $this->connection->pdo()->prepare('SELECT * FROM inspection_sections WHERE template_id = :template_id ORDER BY display_order ASC');
+        $sectionsStmt->execute(['template_id' => $templateId]);
+
+        $sections = [];
+        foreach ($sectionsStmt->fetchAll(PDO::FETCH_ASSOC) as $sectionRow) {
+            $sections[] = [
+                'id' => (int) $sectionRow['id'],
+                'name' => (string) $sectionRow['name'],
+                'display_order' => (int) $sectionRow['display_order'],
+                'items' => $this->fetchItems((int) $sectionRow['id']),
+            ];
+        }
+
+        return $sections;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchItems(int $sectionId): array
+    {
+        $itemsStmt = $this->connection->pdo()->prepare('SELECT * FROM inspection_items WHERE section_id = :section_id ORDER BY display_order ASC');
+        $itemsStmt->execute(['section_id' => $sectionId]);
+
+        $items = [];
+        foreach ($itemsStmt->fetchAll(PDO::FETCH_ASSOC) as $itemRow) {
+            $items[] = [
+                'id' => (int) $itemRow['id'],
+                'name' => (string) $itemRow['name'],
+                'input_type' => (string) $itemRow['input_type'],
+                'default_value' => $itemRow['default_value'],
+                'display_order' => (int) $itemRow['display_order'],
+            ];
+        }
+
+        return $items;
     }
 
     /**

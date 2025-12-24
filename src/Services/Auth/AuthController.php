@@ -5,15 +5,29 @@ namespace App\Services\Auth;
 use App\Models\User;
 use App\Support\Auth\AuthService;
 use App\Support\Auth\UnauthorizedException;
+use App\Support\Notifications\NotificationDispatcher;
 use InvalidArgumentException;
 
 class AuthController
 {
     private AuthService $auth;
+    private ?NotificationDispatcher $notifications;
+    private string $appUrl;
+    private int $passwordResetExpiryMinutes;
+    private int $verificationExpiryHours;
 
-    public function __construct(AuthService $auth)
-    {
+    public function __construct(
+        AuthService $auth,
+        ?NotificationDispatcher $notifications = null,
+        string $appUrl = '',
+        int $passwordResetExpiryMinutes = 60,
+        int $verificationExpiryHours = 48
+    ) {
         $this->auth = $auth;
+        $this->notifications = $notifications;
+        $this->appUrl = rtrim($appUrl, '/');
+        $this->passwordResetExpiryMinutes = $passwordResetExpiryMinutes;
+        $this->verificationExpiryHours = $verificationExpiryHours;
     }
 
     /**
@@ -112,10 +126,84 @@ class AuthController
             (string) $data['role']
         );
 
+        // Send welcome email
+        $this->sendWelcomeEmail($user);
+
         return [
             'user' => $user->toArray(),
             'message' => 'Staff registered successfully',
         ];
+    }
+
+    /**
+     * Request email verification resend
+     *
+     * @param User $user
+     * @return array<string, mixed>
+     */
+    public function resendVerification(User $user): array
+    {
+        if ($user->email_verified) {
+            return ['message' => 'Email is already verified'];
+        }
+
+        $token = $this->auth->issueVerificationToken($user->id);
+        $this->sendVerificationEmail($user, $token->token);
+
+        return ['message' => 'Verification email has been sent'];
+    }
+
+    /**
+     * Send welcome email to new user
+     */
+    private function sendWelcomeEmail(User $user): void
+    {
+        if ($this->notifications === null) {
+            return;
+        }
+
+        $loginUrl = $this->appUrl . '/login';
+
+        try {
+            $this->notifications->sendMail(
+                'auth.welcome',
+                $user->email,
+                [
+                    'name' => $user->name,
+                    'login_url' => $loginUrl,
+                ],
+                'Welcome to Auto Repair Shop Management'
+            );
+        } catch (\Throwable $e) {
+            error_log('Failed to send welcome email: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send verification email
+     */
+    private function sendVerificationEmail(User $user, string $token): void
+    {
+        if ($this->notifications === null) {
+            return;
+        }
+
+        $verificationUrl = $this->appUrl . '/verify-email?token=' . urlencode($token);
+
+        try {
+            $this->notifications->sendMail(
+                'auth.email_verification',
+                $user->email,
+                [
+                    'name' => $user->name,
+                    'verification_url' => $verificationUrl,
+                    'expiry_hours' => $this->verificationExpiryHours,
+                ],
+                'Verify Your Email Address'
+            );
+        } catch (\Throwable $e) {
+            error_log('Failed to send verification email: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -130,16 +218,37 @@ class AuthController
             throw new InvalidArgumentException('Email is required');
         }
 
-        $token = $this->auth->requestPasswordReset((string) $data['email']);
+        $email = (string) $data['email'];
+        $token = $this->auth->requestPasswordReset($email);
 
         if ($token === null) {
             // Don't reveal if email exists
             return ['message' => 'If an account exists, a password reset link has been sent'];
         }
 
+        // Send password reset email
+        if ($this->notifications !== null) {
+            $resetUrl = $this->appUrl . '/reset-password?token=' . urlencode($token->token);
+            $expiryHours = round($this->passwordResetExpiryMinutes / 60, 1);
+
+            try {
+                $this->notifications->sendMail(
+                    'auth.password_reset',
+                    $email,
+                    [
+                        'reset_url' => $resetUrl,
+                        'expiry_hours' => $expiryHours,
+                    ],
+                    'Reset Your Password'
+                );
+            } catch (\Throwable $e) {
+                // Log but don't fail the request
+                error_log('Failed to send password reset email: ' . $e->getMessage());
+            }
+        }
+
         return [
-            'message' => 'Password reset link has been sent',
-            'token' => $token->token, // For testing/dev only, remove in production
+            'message' => 'If an account exists, a password reset link has been sent',
         ];
     }
 

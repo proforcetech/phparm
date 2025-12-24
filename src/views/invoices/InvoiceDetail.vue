@@ -9,7 +9,7 @@
     <Alert v-else-if="error" variant="danger" class="mb-6">
       {{ error }}
       <div class="mt-4">
-        <Button variant="outline" @click="$router.push('/invoices')">
+        <Button variant="outline" @click="$router.push('/cp/invoices')">
           Back to Invoices
         </Button>
       </div>
@@ -20,7 +20,7 @@
       <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <div class="flex items-center gap-4">
-          <Button variant="ghost" @click="$router.push('/invoices')">
+          <Button variant="ghost" @click="$router.push('/cp/invoices')">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
@@ -28,6 +28,7 @@
           <div>
             <h1 class="text-2xl font-bold text-gray-900">Invoice #{{ invoice.invoice_number }}</h1>
             <div class="mt-1 flex items-center gap-2">
+              <Badge v-if="invoice.is_mobile" variant="warning">Mobile repair</Badge>
               <Badge :variant="getStatusVariant(invoice.status)">
                 {{ invoice.status }}
               </Badge>
@@ -314,7 +315,7 @@
           v-model="paymentForm.notes"
           label="Notes"
           placeholder="Optional notes..."
-          rows="3"
+          :rows="3"
         />
       </div>
 

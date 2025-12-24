@@ -23,7 +23,7 @@ class TechnicianPortalService
     public function assignedJobs(int $technicianId): array
     {
         $sql = <<<SQL
-            SELECT j.id, j.title, e.number as estimate_number, c.name as customer_name, v.vin as vehicle_vin, j.customer_status
+            SELECT j.id, j.title, e.number as estimate_number, e.is_mobile, c.name as customer_name, v.vin as vehicle_vin, j.customer_status
             FROM estimate_jobs j
             JOIN estimates e ON e.id = j.estimate_id
             JOIN customers c ON c.id = e.customer_id
@@ -35,9 +35,15 @@ class TechnicianPortalService
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute(['tech' => $technicianId]);
 
+        $rows = array_map(static function (array $row) {
+            $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+
+            return $row;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
         return array_map(
             static fn (array $row) => new TechnicianJob($row),
-            $stmt->fetchAll(PDO::FETCH_ASSOC)
+            $rows
         );
     }
 
@@ -61,5 +67,45 @@ class TechnicianPortalService
     public function timeHistory(int $technicianId): array
     {
         return array_map(static fn ($entry) => $entry->toArray(), $this->timeTracking->entriesForTechnician($technicianId));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function summary(int $technicianId): array
+    {
+        $history = $this->timeHistory($technicianId);
+        $today = new \DateTimeImmutable('today');
+        $week = (new \DateTimeImmutable('today'))->modify('monday this week');
+
+        $todayMinutes = 0;
+        $weekMinutes = 0;
+
+        foreach ($history as $entry) {
+            if (($entry['status'] ?? 'approved') !== 'approved') {
+                continue;
+            }
+
+            $startedAt = new \DateTimeImmutable($entry['started_at']);
+            $minutes = (float) ($entry['duration_minutes'] ?? 0);
+
+            if ($startedAt >= $today) {
+                $todayMinutes += $minutes;
+            }
+
+            if ($startedAt >= $week) {
+                $weekMinutes += $minutes;
+            }
+        }
+
+        return [
+            'jobs' => $this->assignedJobs($technicianId),
+            'active_entry' => $this->activeTimer($technicianId),
+            'history' => $history,
+            'totals' => [
+                'today_minutes' => $todayMinutes,
+                'week_minutes' => $weekMinutes,
+            ],
+        ];
     }
 }

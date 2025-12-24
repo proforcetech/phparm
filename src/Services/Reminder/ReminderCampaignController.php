@@ -3,17 +3,20 @@
 namespace App\Services\Reminder;
 
 use App\Models\ReminderCampaign;
+use App\Models\ReminderLog;
 use InvalidArgumentException;
 
 class ReminderCampaignController
 {
     private ReminderCampaignService $campaigns;
     private ReminderScheduler $scheduler;
+    private ReminderLogService $logs;
 
-    public function __construct(ReminderCampaignService $campaigns, ReminderScheduler $scheduler)
+    public function __construct(ReminderCampaignService $campaigns, ReminderScheduler $scheduler, ReminderLogService $logs)
     {
         $this->campaigns = $campaigns;
         $this->scheduler = $scheduler;
+        $this->logs = $logs;
     }
 
     /**
@@ -21,7 +24,7 @@ class ReminderCampaignController
      */
     public function index(): array
     {
-        return array_map(static fn (ReminderCampaign $campaign) => $campaign->toArray(), $this->campaigns->listActive());
+        return array_map(static fn (ReminderCampaign $campaign) => $campaign->toArray(), $this->campaigns->list());
     }
 
     /**
@@ -47,7 +50,7 @@ class ReminderCampaignController
 
     public function activate(int $campaignId, int $actorId): ?ReminderCampaign
     {
-        $campaign = $this->campaigns->update($campaignId, ['status' => 'active'], $actorId);
+        $campaign = $this->campaigns->activate($campaignId, $actorId);
         if ($campaign === null) {
             return null;
         }
@@ -68,5 +71,13 @@ class ReminderCampaignController
         }
 
         return $this->scheduler->sendDueCampaigns($actorId);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function logs(int $campaignId, int $limit = 50): array
+    {
+        return array_map(static fn (ReminderLog $log) => $log->toArray(), $this->logs->forCampaign($campaignId, $limit));
     }
 }

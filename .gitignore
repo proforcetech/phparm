@@ -39,3 +39,8 @@ Thumbs.db
 /vendor/
 /node_modules/
 /dist/
+# Frontend dependencies
+node_modules/
+
+# Frontend build output
+dist/

@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -54,8 +54,22 @@ import {
   UserGroupIcon,
   TruckIcon,
   CubeIcon,
+  RectangleStackIcon,
   ChartBarIcon,
   Cog6ToothIcon,
+  ClockIcon,
+  CreditCardIcon,
+  ShieldCheckIcon,
+  GlobeAltIcon,
+  DocumentDuplicateIcon,
+  RectangleGroupIcon,
+  Squares2X2Icon,
+  UsersIcon,
+  Bars3Icon,
+  ClipboardDocumentCheckIcon,
+  ClipboardDocumentListIcon,
+  ExclamationTriangleIcon,
+  FolderIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -69,16 +83,59 @@ const route = useRoute()
 const authStore = useAuthStore()
 const isOpen = ref(true)
 
+function handleResize() {
+  if (typeof window === 'undefined') return
+  if (window.innerWidth >= 1024) {
+    isOpen.value = true
+  }
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    isOpen.value = false
+  }
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
 // Admin menu items
 const adminMenuItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/invoices', label: 'Invoices', icon: DocumentTextIcon },
-  { path: '/appointments', label: 'Appointments', icon: CalendarIcon },
-  { path: '/customers', label: 'Customers', icon: UserGroupIcon },
-  { path: '/vehicles', label: 'Vehicles', icon: TruckIcon },
-  { path: '/inventory', label: 'Inventory', icon: CubeIcon },
-  { path: '/reports', label: 'Reports', icon: ChartBarIcon },
-  { path: '/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
+  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
+  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
+  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
+  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
+  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
+  // Inspections Section
+  { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  // CMS Section
+  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
+  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
+  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
+  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms' },
+  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
+  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
+  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms' },
+  { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/users', label: 'Users', icon: UsersIcon },
+]
+
+const technicianMenuItems = [
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/my-time', label: 'My Time', icon: ClockIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
 ]
 
 // Customer menu items
@@ -87,16 +144,34 @@ const customerMenuItems = [
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
+  { path: '/portal/inspections', label: 'My Inspections', icon: ClipboardDocumentCheckIcon },
+  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon },
+  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon },
   { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
 const menuItems = computed(() => {
-  return props.type === 'customer' ? customerMenuItems : adminMenuItems
+  if (props.type === 'customer') {
+    return customerMenuItems
+  }
+
+  if (authStore.user?.role === 'technician') {
+    return technicianMenuItems
+  }
+
+  return adminMenuItems
 })
 
 function isActive(path) {
-  if (path === '/dashboard' || path === '/portal') {
+  if (path === '/cp/dashboard' || path === '/portal') {
     return route.path === path
+  }
+  if (path === '/cp/inventory') {
+    return route.path === '/cp/inventory'
+  }
+  // Handle CMS routes - exact match for /cp/cms, startsWith for others
+  if (path === '/cp/cms') {
+    return route.path === '/cp/cms'
   }
   return route.path.startsWith(path)
 }

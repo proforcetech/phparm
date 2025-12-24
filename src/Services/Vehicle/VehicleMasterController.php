@@ -49,6 +49,17 @@ class VehicleMasterController
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function show(User $user, int $id): ?array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.view');
+
+        return $this->repository->find($id)?->toArray();
+    }
+
+    /**
      * @return array<int, int>
      */
     public function years(User $user): array
@@ -64,8 +75,7 @@ class VehicleMasterController
      */
     public function makes(User $user, int $year): array
     {
-        $this->assertManageAccess($user);
-        $this->gate->assert($user, 'vehicles.view');
+        $this->assertCascadeAccess($user);
 
         return $this->cascade->makes($year);
     }
@@ -75,8 +85,7 @@ class VehicleMasterController
      */
     public function models(User $user, int $year, string $make): array
     {
-        $this->assertManageAccess($user);
-        $this->gate->assert($user, 'vehicles.view');
+        $this->assertCascadeAccess($user);
 
         return $this->cascade->models($year, $make);
     }
@@ -86,8 +95,7 @@ class VehicleMasterController
      */
     public function engines(User $user, int $year, string $make, string $model): array
     {
-        $this->assertManageAccess($user);
-        $this->gate->assert($user, 'vehicles.view');
+        $this->assertCascadeAccess($user);
 
         return $this->cascade->engines($year, $make, $model);
     }
@@ -97,8 +105,7 @@ class VehicleMasterController
      */
     public function transmissions(User $user, int $year, string $make, string $model, string $engine): array
     {
-        $this->assertManageAccess($user);
-        $this->gate->assert($user, 'vehicles.view');
+        $this->assertCascadeAccess($user);
 
         return $this->cascade->transmissions($year, $make, $model, $engine);
     }
@@ -108,8 +115,7 @@ class VehicleMasterController
      */
     public function drives(User $user, int $year, string $make, string $model, string $engine, string $transmission): array
     {
-        $this->assertManageAccess($user);
-        $this->gate->assert($user, 'vehicles.view');
+        $this->assertCascadeAccess($user);
 
         return $this->cascade->drives($year, $make, $model, $engine, $transmission);
     }
@@ -126,8 +132,7 @@ class VehicleMasterController
         string $transmission,
         string $drive
     ): array {
-        $this->assertManageAccess($user);
-        $this->gate->assert($user, 'vehicles.view');
+        $this->assertCascadeAccess($user);
 
         return $this->cascade->trims($year, $make, $model, $engine, $transmission, $drive);
     }
@@ -196,6 +201,44 @@ class VehicleMasterController
         $this->gate->assert($user, 'vehicles.delete');
 
         return $this->repository->delete($id);
+    }
+
+    /**
+     * Upload and process CSV file with vehicle data
+     * @return array<string, mixed>
+     */
+    public function uploadCsv(User $user, $request): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'vehicles.create');
+
+        // Get uploaded file
+        $files = $request->uploadedFiles();
+        if (empty($files['file'])) {
+            throw new InvalidArgumentException('No file uploaded');
+        }
+
+        $file = $files['file'];
+
+        // Read CSV content
+        $csvContent = file_get_contents($file->getFilePath());
+        if ($csvContent === false) {
+            throw new InvalidArgumentException('Failed to read CSV file');
+        }
+
+        // Default mapping for standard CSV format
+        $mapping = [
+            'year' => 0,
+            'make' => 1,
+            'model' => 2,
+            'engine' => 3,
+            'transmission' => 4,
+            'drive' => 5,
+            'trim' => 6,
+        ];
+
+        // Import the CSV
+        return $this->importer->import($csvContent, $mapping, false);
     }
 
     /**
@@ -337,5 +380,18 @@ class VehicleMasterController
     {
         // Vehicle master data governs downstream dropdowns and normalization; restrict to manager/admin roles.
         $this->gate->assert($user, 'vehicles.*');
+    }
+
+    private function assertCascadeAccess(User $user): void
+    {
+        // Allow cascade dropdown access for users who can view vehicles or manage customers
+        // (customer managers need cascades for adding vehicles to customer garages)
+        if ($this->gate->can($user, 'vehicles.view') ||
+            $this->gate->can($user, 'vehicles.*') ||
+            $this->gate->can($user, 'customers.*')) {
+            return;
+        }
+
+        throw new \App\Support\Auth\UnauthorizedException('User lacks permission to access vehicle cascade data.');
     }
 }

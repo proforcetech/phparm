@@ -108,9 +108,9 @@ class InventoryItemRepository
     {
         $payload = $this->validator->validate($data);
 
-        $sql = 'INSERT INTO inventory_items (name, sku, category, stock_quantity, low_stock_threshold, cost, sale_price, markup, '
-            . 'location, notes) VALUES (:name, :sku, :category, :stock_quantity, :low_stock_threshold, :cost, :sale_price, '
-            . ':markup, :location, :notes)';
+        $sql = 'INSERT INTO inventory_items (name, sku, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, '
+            . 'sale_price, markup, location, vendor, notes) VALUES (:name, :sku, :category, :stock_quantity, '
+            . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :markup, :location, :vendor, :notes)';
 
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
@@ -118,10 +118,12 @@ class InventoryItemRepository
             'category' => $payload['category'],
             'stock_quantity' => $payload['stock_quantity'],
             'low_stock_threshold' => $payload['low_stock_threshold'],
+            'reorder_quantity' => $payload['reorder_quantity'],
             'cost' => $payload['cost'],
             'sale_price' => $payload['sale_price'],
             'markup' => $payload['markup'],
             'location' => $payload['location'],
+            'vendor' => $payload['vendor'],
             'notes' => $payload['notes'],
         ]);
 
@@ -146,8 +148,9 @@ class InventoryItemRepository
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
 
         $sql = 'UPDATE inventory_items SET name = :name, sku = :sku, category = :category, stock_quantity = :stock_quantity, '
-            . 'low_stock_threshold = :low_stock_threshold, cost = :cost, sale_price = :sale_price, markup = :markup, '
-            . 'location = :location, notes = :notes WHERE id = :id';
+            . 'low_stock_threshold = :low_stock_threshold, reorder_quantity = :reorder_quantity, cost = :cost, '
+            . 'sale_price = :sale_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes '
+            . 'WHERE id = :id';
 
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
@@ -155,10 +158,12 @@ class InventoryItemRepository
             'category' => $payload['category'],
             'stock_quantity' => $payload['stock_quantity'],
             'low_stock_threshold' => $payload['low_stock_threshold'],
+            'reorder_quantity' => $payload['reorder_quantity'],
             'cost' => $payload['cost'],
             'sale_price' => $payload['sale_price'],
             'markup' => $payload['markup'],
             'location' => $payload['location'],
+            'vendor' => $payload['vendor'],
             'notes' => $payload['notes'],
             'id' => $id,
         ]);
@@ -240,7 +245,9 @@ class InventoryItemRepository
                 'name' => $item->name,
                 'stock_quantity' => $item->stock_quantity,
                 'low_stock_threshold' => $item->low_stock_threshold,
+                'reorder_quantity' => $item->reorder_quantity,
                 'severity' => $item->stock_quantity === 0 ? 'out' : 'low',
+                'recommended_reorder' => max(0, $item->reorder_quantity - $item->stock_quantity),
             ];
         }, $items);
     }
@@ -283,6 +290,7 @@ class InventoryItemRepository
     {
         $row['stock_quantity'] = (int) $row['stock_quantity'];
         $row['low_stock_threshold'] = (int) $row['low_stock_threshold'];
+        $row['reorder_quantity'] = (int) $row['reorder_quantity'];
         $row['cost'] = (float) $row['cost'];
         $row['sale_price'] = (float) $row['sale_price'];
         $row['markup'] = $row['markup'] === null ? null : (float) $row['markup'];

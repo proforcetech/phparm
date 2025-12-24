@@ -186,7 +186,7 @@ class EstimatePublicLinkService
         }
 
         if (in_array('rejected', $statuses, true)) {
-            $this->estimates->updateStatus($estimateId, 'rejected', null, 'Job rejected by customer');
+            $this->estimates->updateStatus($estimateId, 'declined', null, 'Job rejected by customer');
         }
     }
 

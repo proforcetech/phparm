@@ -131,6 +131,93 @@
         </Card>
       </div>
 
+      <!-- Inventory Alerts -->
+      <Card class="mb-8">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-medium text-gray-900">Inventory Alerts</h3>
+              <p class="text-sm text-gray-500">Low and out-of-stock items that need attention</p>
+            </div>
+            <Button variant="outline" @click="$router.push('/cp/inventory/alerts')">
+              View alerts
+            </Button>
+          </div>
+        </template>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="p-4 rounded-lg bg-red-50 border border-red-100">
+            <p class="text-sm font-medium text-red-700">Out of Stock</p>
+            <p class="mt-2 text-3xl font-bold text-red-800">
+              {{ inventoryAlerts.counts.out_of_stock || 0 }}
+            </p>
+            <p class="text-sm text-red-600">Items unavailable for sale</p>
+          </div>
+
+          <div class="p-4 rounded-lg bg-amber-50 border border-amber-100">
+            <p class="text-sm font-medium text-amber-700">Low Stock</p>
+            <p class="mt-2 text-3xl font-bold text-amber-800">
+              {{ inventoryAlerts.counts.low_stock || 0 }}
+            </p>
+            <p class="text-sm text-amber-600">Items approaching threshold</p>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <div v-if="inventoryAlerts.items.length === 0" class="text-sm text-gray-600">
+            All tracked items are above their low-stock thresholds.
+          </div>
+          <div v-else class="divide-y divide-gray-200">
+            <div
+              v-for="item in inventoryAlerts.items"
+              :key="item.id"
+              class="py-3 flex items-center justify-between"
+            >
+              <div>
+                <p class="text-sm font-medium text-gray-900">{{ item.name }}</p>
+                <p class="text-xs text-gray-500">
+                  {{ item.stock_quantity }} in stock • Threshold {{ item.low_stock_threshold }}
+                </p>
+              </div>
+              <Badge :variant="getSeverityVariant(item.severity)">
+                {{ item.severity === 'out' ? 'Out of Stock' : 'Low Stock' }}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <!-- Charts -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
+        <!-- Revenue Trends -->
+        <Card>
+          <template #header>
+            <h3 class="text-lg font-medium text-gray-900">Monthly Revenue Trends</h3>
+            <p class="text-sm text-gray-500">Last 6 months</p>
+          </template>
+          <div class="h-64">
+            <LineChart v-if="revenueChartData.labels.length" :data="revenueChartData" />
+            <div v-else class="flex items-center justify-center h-full text-gray-500 text-sm">
+              No data available
+            </div>
+          </div>
+        </Card>
+
+        <!-- Service Types Breakdown -->
+        <Card>
+          <template #header>
+            <h3 class="text-lg font-medium text-gray-900">Top Service Types</h3>
+            <p class="text-sm text-gray-500">Last 6 months</p>
+          </template>
+          <div class="h-64">
+            <DoughnutChart v-if="serviceTypeChartData.labels.length" :data="serviceTypeChartData" />
+            <div v-else class="flex items-center justify-center h-full text-gray-500 text-sm">
+              No data available
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <!-- Recent Activity -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-8">
         <!-- Recent Invoices -->
@@ -232,7 +319,7 @@
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Button
             variant="outline"
-            @click="$router.push('/invoices/create')"
+            @click="$router.push('/cp/invoices/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -243,7 +330,7 @@
 
           <Button
             variant="outline"
-            @click="$router.push('/appointments/create')"
+            @click="$router.push('/cp/appointments/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -254,7 +341,7 @@
 
           <Button
             variant="outline"
-            @click="$router.push('/customers/create')"
+            @click="$router.push('/cp/customers/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -265,7 +352,7 @@
 
           <Button
             variant="outline"
-            @click="$router.push('/vehicles/create')"
+            @click="$router.push('/cp/vehicles/create')"
             class="justify-center"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -280,16 +367,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
+import LineChart from '@/components/charts/LineChart.vue'
+import DoughnutChart from '@/components/charts/DoughnutChart.vue'
 import dashboardService from '@/services/dashboard.service'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const error = ref(null)
@@ -307,6 +398,12 @@ const stats = ref({
 
 const recentInvoices = ref([])
 const recentAppointments = ref([])
+const inventoryAlerts = ref({ counts: { out_of_stock: 0, low_stock: 0 }, items: [] })
+const revenueChartData = ref({ labels: [], datasets: [] })
+const serviceTypeChartData = ref({ labels: [], datasets: [] })
+
+const technicianId = computed(() => (authStore.user?.role === 'technician' ? authStore.user.id : null))
+const technicianParams = computed(() => (technicianId.value ? { technician_id: technicianId.value } : {}))
 
 onMounted(async () => {
   await loadDashboardData()
@@ -317,11 +414,28 @@ async function loadDashboardData() {
     loading.value = true
     error.value = null
 
+    // Calculate date range for charts (last 6 months)
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setMonth(startDate.getMonth() - 6)
+
     // Load all dashboard data in parallel
-    const [statsData, invoicesData, appointmentsData] = await Promise.all([
-      dashboardService.getStats().catch(() => ({})),
-      dashboardService.getRecentInvoices().catch(() => []),
-      dashboardService.getRecentAppointments().catch(() => []),
+    const [statsData, invoicesData, appointmentsData, lowStockData, trendsData, serviceTypesData] = await Promise.all([
+      dashboardService.getStats(technicianParams.value).catch(() => ({})),
+      dashboardService.getRecentInvoices(5, technicianParams.value).catch(() => []),
+      dashboardService.getRecentAppointments(5, technicianParams.value).catch(() => []),
+      dashboardService.getInventoryLowStockTile().catch(() => null),
+      dashboardService.getMonthlyTrendsChart({
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0],
+        ...technicianParams.value,
+      }).catch(() => []),
+      dashboardService.getServiceTypeChart({
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0],
+        limit: 8,
+        ...technicianParams.value,
+      }).catch(() => ({ label: '', data: [], categories: [] })),
     ])
 
     stats.value = {
@@ -337,6 +451,53 @@ async function loadDashboardData() {
 
     recentInvoices.value = invoicesData.data || invoicesData || []
     recentAppointments.value = appointmentsData.data || appointmentsData || []
+    inventoryAlerts.value = {
+      counts: lowStockData?.counts || { out_of_stock: 0, low_stock: 0 },
+      items: lowStockData?.items || [],
+    }
+
+    // Process chart data
+    const trendSeries = Array.isArray(trendsData)
+      ? trendsData
+      : Array.isArray(trendsData?.data)
+        ? trendsData.data
+        : []
+
+    if (trendSeries.length > 0) {
+      const categories = Array.isArray(trendsData?.categories)
+        ? trendsData.categories
+        : trendSeries[0]?.categories || []
+      revenueChartData.value = {
+        labels: categories.map(formatMonthLabel),
+        datasets: trendSeries.map((series, index) => ({
+          label: series.label,
+          data: series.data,
+          borderColor: index === 0 ? '#3B82F6' : '#10B981',
+          backgroundColor: index === 0 ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+          tension: 0.4,
+          fill: true
+        }))
+      }
+    }
+
+    if (serviceTypesData && serviceTypesData.categories && serviceTypesData.categories.length > 0) {
+      serviceTypeChartData.value = {
+        labels: serviceTypesData.categories,
+        datasets: [{
+          data: serviceTypesData.data,
+          backgroundColor: [
+            '#3B82F6',
+            '#10B981',
+            '#F59E0B',
+            '#EF4444',
+            '#8B5CF6',
+            '#EC4899',
+            '#14B8A6',
+            '#F97316'
+          ]
+        }]
+      }
+    }
   } catch (err) {
     console.error('Failed to load dashboard data:', err)
     error.value = 'Failed to load dashboard data. Please try again.'
@@ -381,5 +542,21 @@ function getAppointmentStatusVariant(status) {
     'no-show': 'default',
   }
   return variants[status?.toLowerCase()] || 'default'
+}
+
+function getSeverityVariant(severity) {
+  const variants = {
+    'out': 'danger',
+    'low': 'warning',
+  }
+
+  return variants[severity] || 'default'
+}
+
+function formatMonthLabel(yearMonth) {
+  if (!yearMonth) return ''
+  const [year, month] = yearMonth.split('-')
+  const date = new Date(parseInt(year), parseInt(month) - 1)
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 </script>

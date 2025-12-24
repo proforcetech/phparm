@@ -15,6 +15,7 @@ services:
       DB_DATABASE: phparm
       DB_USERNAME: phparm
       DB_PASSWORD: secret
+      CMS_TABLE_PREFIX: cms_
     depends_on:
       - db
 

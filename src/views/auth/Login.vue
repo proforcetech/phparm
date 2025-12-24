@@ -11,11 +11,17 @@
       </div>
 
       <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
+        <!-- Session expiration warning -->
+        <div v-if="sessionExpiredMessage" class="rounded-md bg-yellow-50 p-4 border border-yellow-200">
+          <p class="text-sm text-yellow-800">{{ sessionExpiredMessage }}</p>
+        </div>
+
+        <!-- Error message -->
         <div v-if="error" class="rounded-md bg-red-50 p-4">
           <p class="text-sm text-red-800">{{ error }}</p>
         </div>
 
-        <div class="rounded-md shadow-sm -space-y-px">
+        <div v-if="!isVerifying" class="rounded-md shadow-sm -space-y-px">
           <div>
             <label for="email" class="sr-only">Email address</label>
             <input
@@ -27,6 +33,7 @@
               required
               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
               placeholder="Email address"
+              :disabled="loading"
             />
           </div>
           <div>
@@ -40,11 +47,29 @@
               required
               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
               placeholder="Password"
+              :disabled="loading"
             />
           </div>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div v-else class="space-y-2">
+          <label for="code" class="block text-sm font-medium text-gray-700">Authentication code</label>
+          <input
+            id="code"
+            v-model="code"
+            name="code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            required
+            class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+            placeholder="Enter 6-digit code"
+            :disabled="loading"
+          />
+          <p class="text-xs text-gray-500">Open your authenticator app to retrieve the current code.</p>
+        </div>
+
+        <div v-if="!isVerifying" class="flex items-center justify-between">
           <div class="flex items-center">
             <input
               id="remember-me"
@@ -66,6 +91,10 @@
         </div>
 
         <div>
+          <div class="flex justify-center">
+            <div v-if="recaptchaEnabled" ref="recaptchaContainer"></div>
+          </div>
+
           <button
             type="submit"
             :disabled="loading"
@@ -87,10 +116,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRoute } from 'vue-router'
+import { securityService } from '@/services/security.service'
+import { useRecaptcha } from '@/composables/useRecaptcha'
 
 const authStore = useAuthStore()
+const route = useRoute()
 
 const form = ref({
   email: '',
@@ -98,19 +131,65 @@ const form = ref({
   remember: false,
 })
 
+const code = ref('')
+
 const loading = ref(false)
 const error = ref(null)
+const sessionExpiredMessage = ref(null)
+const recaptchaEnabled = ref(false)
+const recaptchaSiteKey = ref('')
+const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
+
+const isVerifying = computed(() => !!authStore.pendingChallenge)
+
+onMounted(async () => {
+  // Check for session expiration message from query params
+  if (route.query.expired === '1' && route.query.message) {
+    sessionExpiredMessage.value = route.query.message
+  }
+
+  try {
+    const settings = await securityService.getRecaptchaSettings()
+    recaptchaEnabled.value = !!settings.enabled
+    recaptchaSiteKey.value = settings.site_key || ''
+  } catch (err) {
+    recaptchaEnabled.value = false
+    recaptchaSiteKey.value = ''
+    console.error('Failed to load reCAPTCHA settings', err)
+  }
+})
 
 async function handleLogin() {
   loading.value = true
   error.value = null
 
   try {
-    await authStore.login(form.value.email, form.value.password, false)
+    if (isVerifying.value) {
+      await authStore.verifyTwoFactor(code.value)
+      return
+    }
+
+    if (recaptchaEnabled.value) {
+      if (!recaptchaSiteKey.value) {
+        throw new Error('reCAPTCHA is not configured')
+      }
+
+      if (!recaptchaToken.value) {
+        throw new Error('Please complete the reCAPTCHA challenge.')
+      }
+    }
+
+    const token = recaptchaEnabled.value ? recaptchaToken.value : null
+    const result = await authStore.login(form.value.email, form.value.password, false, token)
+
+    if (result?.status === '2fa_required') {
+      return
+    }
   } catch (err) {
-    error.value = err.response?.data?.message || 'Invalid credentials'
+    error.value = err.response?.data?.message || err.message || 'Invalid credentials'
   } finally {
     loading.value = false
+    resetRecaptcha()
   }
 }
 </script>

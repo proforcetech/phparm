@@ -30,6 +30,10 @@
         </div>
 
         <div>
+          <div class="flex justify-center">
+            <div v-if="recaptchaEnabled" ref="recaptchaContainer"></div>
+          </div>
+
           <button
             type="submit"
             :disabled="loading"
@@ -91,8 +95,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { securityService } from '@/services/security.service'
+import { useRecaptcha } from '@/composables/useRecaptcha'
 
 const authStore = useAuthStore()
 
@@ -100,18 +106,46 @@ const email = ref('')
 const loading = ref(false)
 const error = ref(null)
 const success = ref(false)
+const recaptchaEnabled = ref(false)
+const recaptchaSiteKey = ref('')
+const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
+
+onMounted(async () => {
+  try {
+    const settings = await securityService.getRecaptchaSettings()
+    recaptchaEnabled.value = !!settings.enabled
+    recaptchaSiteKey.value = settings.site_key || ''
+  } catch (err) {
+    recaptchaEnabled.value = false
+    recaptchaSiteKey.value = ''
+    console.error('Failed to load reCAPTCHA settings', err)
+  }
+})
 
 async function handleSubmit() {
   loading.value = true
   error.value = null
 
   try {
-    await authStore.requestPasswordReset(email.value)
+    if (recaptchaEnabled.value) {
+      if (!recaptchaSiteKey.value) {
+        throw new Error('reCAPTCHA is not configured')
+      }
+
+      if (!recaptchaToken.value) {
+        throw new Error('Please complete the reCAPTCHA challenge.')
+      }
+    }
+
+    const token = recaptchaEnabled.value ? recaptchaToken.value : null
+    await authStore.requestPasswordReset(email.value, token)
     success.value = true
   } catch (err) {
-    error.value = err.response?.data?.message || 'Failed to send reset email. Please try again.'
+    error.value =
+      err.response?.data?.message || err.message || 'Failed to send reset email. Please try again.'
   } finally {
     loading.value = false
+    resetRecaptcha()
   }
 }
 

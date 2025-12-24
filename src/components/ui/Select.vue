@@ -11,7 +11,7 @@
       :disabled="disabled"
       :required="required"
       :class="selectClasses"
-      @change="$emit('update:modelValue', $event.target.value)"
+      @change="handleChange"
     >
       <option v-if="placeholder" value="" disabled>{{ placeholder }}</option>
       <option
@@ -87,7 +87,7 @@ const props = defineProps({
   },
 })
 
-defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue'])
 
 const selectClasses = computed(() => {
   const base = 'block w-full rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed sm:text-sm px-3 py-2'
@@ -105,5 +105,15 @@ function getOptionValue(option) {
 
 function getOptionLabel(option) {
   return typeof option === 'object' ? option[props.labelKey] : option
+}
+
+function handleChange(event) {
+  const { options, selectedIndex, value } = event.target
+  const selectedOption = options[selectedIndex]
+  const parsedValue = selectedOption && Object.prototype.hasOwnProperty.call(selectedOption, '_value')
+    ? selectedOption._value
+    : value
+
+  emit('update:modelValue', parsedValue)
 }
 </script>

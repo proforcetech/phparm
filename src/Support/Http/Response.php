@@ -38,6 +38,14 @@ class Response
         return new self($content, $status, ['Content-Type' => 'text/html']);
     }
 
+    /**
+     * @param array<string, string> $headers
+     */
+    public static function make(mixed $content, int $status = 200, array $headers = []): self
+    {
+        return new self($content, $status, $headers);
+    }
+
     public static function noContent(): self
     {
         return new self('', 204);
@@ -74,6 +82,11 @@ class Response
     public static function serverError(string $message = 'Internal Server Error'): self
     {
         return self::json(['error' => $message], 500);
+    }
+
+    public static function redirect(string $url, int $statusCode = 302): self
+    {
+        return new self('', $statusCode, ['Location' => $url]);
     }
 
     public function withHeader(string $name, string $value): self

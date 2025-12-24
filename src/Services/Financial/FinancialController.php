@@ -35,8 +35,12 @@ class FinancialController
             throw new UnauthorizedException('Cannot view financial entries');
         }
 
-        $entries = $this->entries->list($filters);
-        return array_map(static fn ($e) => $e->toArray(), $entries);
+        $result = $this->entries->paginate($filters);
+
+        return [
+            'data' => array_map(static fn ($e) => $e->toArray(), $result['data']),
+            'pagination' => $result['pagination'],
+        ];
     }
 
     /**
@@ -93,6 +97,54 @@ class FinancialController
     }
 
     /**
+     * Handle attachment upload
+     *
+     * @param array<string, mixed> $file
+     */
+    public function uploadAttachment(User $user, int $entryId, array $file): array
+    {
+        if (!$this->gate->can($user, 'financials.update')) {
+            throw new UnauthorizedException('Cannot update financial entries');
+        }
+
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new InvalidArgumentException('Invalid file upload');
+        }
+
+        $allowed = ['pdf', 'png', 'jpg', 'jpeg'];
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowed, true)) {
+            throw new InvalidArgumentException('Unsupported file type');
+        }
+
+        $uploadDir = dirname(__DIR__, 3) . '/public/uploads/financial';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0775, true);
+        }
+
+        $filename = sprintf('entry_%d_%s.%s', $entryId, uniqid(), $extension);
+        $destination = $uploadDir . '/' . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new InvalidArgumentException('Unable to store attachment');
+        }
+
+        $relativePath = '/uploads/financial/' . $filename;
+        $this->entries->attachReceipt($entryId, $relativePath, $user->id);
+
+        return ['path' => $relativePath];
+    }
+
+    public function removeAttachment(User $user, int $entryId): void
+    {
+        if (!$this->gate->can($user, 'financials.update')) {
+            throw new UnauthorizedException('Cannot update financial entries');
+        }
+
+        $this->entries->removeReceipt($entryId, $user->id);
+    }
+
+    /**
      * Generate financial report
      *
      * @param array<string, mixed> $params
@@ -106,12 +158,14 @@ class FinancialController
 
         $startDate = $params['start_date'] ?? null;
         $endDate = $params['end_date'] ?? null;
+        $category = $params['category'] ?? null;
+        $vendor = $params['vendor'] ?? null;
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');
         }
 
-        return $this->reports->generate($startDate, $endDate);
+        return $this->reports->generate($startDate, $endDate, $category, $vendor);
     }
 
     /**
@@ -129,17 +183,40 @@ class FinancialController
         $startDate = $params['start_date'] ?? null;
         $endDate = $params['end_date'] ?? null;
         $format = $params['format'] ?? 'csv';
+        $category = $params['category'] ?? null;
+        $vendor = $params['vendor'] ?? null;
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');
         }
 
-        $data = $this->reports->export($startDate, $endDate, $format);
+        $data = $this->reports->export($startDate, $endDate, $format, $category, $vendor);
 
         return [
             'format' => $format,
             'data' => $data,
             'filename' => "financial-report-{$startDate}-{$endDate}.{$format}",
+        ];
+    }
+
+    /**
+     * Export financial entries
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function exportEntries(User $user, array $filters): array
+    {
+        if (!$this->gate->can($user, 'financials.view')) {
+            throw new UnauthorizedException('Cannot export financial entries');
+        }
+
+        $data = $this->entries->exportCsv($filters);
+
+        return [
+            'format' => 'csv',
+            'filename' => 'financial-entries.csv',
+            'data' => $data,
         ];
     }
 }

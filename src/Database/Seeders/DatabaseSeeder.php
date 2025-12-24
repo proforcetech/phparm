@@ -3,6 +3,7 @@
 namespace App\Database\Seeders;
 
 use App\Database\Connection;
+use App\Support\SettingsRepository;
 use DateTimeImmutable;
 use PDO;
 
@@ -17,9 +18,39 @@ class DatabaseSeeder
 
     public function seed(): void
     {
+        $this->seedVehicleMaster();
         $this->seedServiceTypes();
         $this->seedSettings();
         $this->seedDemoCustomers();
+        $this->seedCMS();
+    }
+
+    private function seedCMS(): void
+    {
+        $cmsSeeder = new CMSSeeder($this->connection);
+        $cmsSeeder->seed();
+    }
+
+    private function seedVehicleMaster(): void
+    {
+        $pdo = $this->connection->pdo();
+        $vehicles = [
+            ['year' => 2020, 'make' => 'Toyota', 'model' => 'Camry', 'engine' => '2.5L I4', 'transmission' => 'Automatic', 'drive' => 'FWD', 'trim' => 'SE'],
+            ['year' => 2020, 'make' => 'Toyota', 'model' => 'Camry', 'engine' => '3.5L V6', 'transmission' => 'Automatic', 'drive' => 'FWD', 'trim' => 'XSE'],
+            ['year' => 2021, 'make' => 'Ford', 'model' => 'F-150', 'engine' => '3.5L EcoBoost V6', 'transmission' => 'Automatic', 'drive' => '4WD', 'trim' => 'Lariat'],
+            ['year' => 2021, 'make' => 'Ford', 'model' => 'F-150', 'engine' => '5.0L V8', 'transmission' => 'Automatic', 'drive' => '4WD', 'trim' => 'Platinum'],
+            ['year' => 2019, 'make' => 'Honda', 'model' => 'Civic', 'engine' => '2.0L I4', 'transmission' => 'CVT', 'drive' => 'FWD', 'trim' => 'EX'],
+            ['year' => 2019, 'make' => 'Honda', 'model' => 'Civic', 'engine' => '1.5L Turbo I4', 'transmission' => 'CVT', 'drive' => 'FWD', 'trim' => 'Touring'],
+        ];
+
+        $stmt = $pdo->prepare('INSERT INTO vehicle_master (year, make, model, engine, transmission, drive, trim, created_at, updated_at) '
+            . 'VALUES (:year, :make, :model, :engine, :transmission, :drive, :trim, :created_at, :updated_at) '
+            . 'ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)');
+
+        $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+        foreach ($vehicles as $vehicle) {
+            $stmt->execute(array_merge($vehicle, ['created_at' => $now, 'updated_at' => $now]));
+        }
     }
 
     private function seedServiceTypes(): void
@@ -49,26 +80,10 @@ class DatabaseSeeder
 
     private function seedSettings(): void
     {
-        $pdo = $this->connection->pdo();
-        $settings = [
-            'shop.name' => 'Demo Auto Shop',
-            'shop.currency' => 'USD',
-            'pricing.tax_rate' => '0.07',
-            'notifications.from_email' => 'noreply@example.com',
-        ];
-
-        $stmt = $pdo->prepare('INSERT INTO settings (`key`, `value`, created_at, updated_at) '
-            . 'VALUES (:key, :value, :now, :now) '
-            . 'ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = VALUES(updated_at)');
-
-        $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
-        foreach ($settings as $key => $value) {
-            $stmt->execute([
-                'key' => $key,
-                'value' => $value,
-                'now' => $now,
-            ]);
-        }
+        $config = require __DIR__ . '/../../../config/settings.php';
+        $defaults = $config['defaults'] ?? [];
+        $repository = new SettingsRepository($this->connection);
+        $repository->seedDefaults($defaults);
     }
 
     private function seedDemoCustomers(): void

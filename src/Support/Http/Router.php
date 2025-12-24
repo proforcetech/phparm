@@ -3,6 +3,8 @@
 namespace App\Support\Http;
 
 use App\Support\Auth\UnauthorizedException;
+use App\Services\NotFound\RedirectRepository;
+use App\Services\NotFound\NotFoundLogRepository;
 use Exception;
 use InvalidArgumentException;
 use Throwable;
@@ -20,9 +22,40 @@ class Router
     private array $globalMiddleware = [];
 
     /**
+     * @var array<callable>
+     */
+    private array $groupMiddleware = [];
+
+    /**
      * @var array<string, Route>
      */
     private array $namedRoutes = [];
+
+    /**
+     * @var RedirectRepository|null
+     */
+    private ?RedirectRepository $redirects = null;
+
+    /**
+     * @var NotFoundLogRepository|null
+     */
+    private ?NotFoundLogRepository $notFoundLogs = null;
+
+    /**
+     * Set redirect repository for handling redirects
+     */
+    public function setRedirectRepository(RedirectRepository $redirects): void
+    {
+        $this->redirects = $redirects;
+    }
+
+    /**
+     * Set not found log repository for 404 logging
+     */
+    public function setNotFoundLogRepository(NotFoundLogRepository $notFoundLogs): void
+    {
+        $this->notFoundLogs = $notFoundLogs;
+    }
 
     /**
      * @param callable $handler
@@ -70,6 +103,12 @@ class Router
     private function addRoute(string $method, string $pattern, callable $handler): Route
     {
         $route = new Route($method, $pattern, $handler);
+
+        // Apply active group middleware to the new route
+        foreach ($this->groupMiddleware as $middleware) {
+            $route->middleware($middleware);
+        }
+
         $this->routes[] = $route;
         return $route;
     }
@@ -88,20 +127,62 @@ class Router
      */
     public function group(array $middleware, callable $callback): void
     {
-        $previousMiddleware = $this->globalMiddleware;
-        $this->globalMiddleware = array_merge($this->globalMiddleware, $middleware);
+        // Save current group middleware state to handle nesting
+        $previousGroupMiddleware = $this->groupMiddleware;
+        
+        // Merge new middleware into the group stack
+        $this->groupMiddleware = array_merge($this->groupMiddleware, $middleware);
 
         $callback($this);
 
-        $this->globalMiddleware = $previousMiddleware;
+        // Restore previous state
+        $this->groupMiddleware = $previousGroupMiddleware;
     }
 
     public function dispatch(Request $request): Response
     {
         try {
             $route = $this->findRoute($request->method(), $request->path());
+            $loggedNotFound = false;
 
             if ($route === null) {
+                // Check for redirect before returning 404
+                if ($this->redirects !== null) {
+                    $redirect = $this->redirects->findMatch($request->path());
+                    if ($redirect !== null && $redirect->is_active) {
+                        // Increment hit count
+                        $this->redirects->incrementHits($redirect->id);
+
+                        // Determine redirect destination
+                        $destination = $redirect->destination_path;
+
+                        // For prefix matching, replace the prefix
+                        if ($redirect->match_type === 'prefix') {
+                            $destination = str_replace($redirect->source_path, $redirect->destination_path, $request->path());
+                        }
+
+                        // Return appropriate redirect response
+                        $statusCode = (int) $redirect->redirect_type;
+                        return Response::redirect($destination, $statusCode);
+                    }
+                }
+
+                // Log 404 if logging is enabled
+                if ($this->notFoundLogs !== null) {
+                    try {
+                        $this->notFoundLogs->log(
+                            $this->extractPagePath($request->path()),
+                            $request->header('HTTP_REFERER') ?: $request->header('REFERER'),
+                            $request->header('HTTP_USER_AGENT') ?: $request->header('USER_AGENT'),
+                            $request->getClientIp()
+                        );
+                        $loggedNotFound = true;
+                    } catch (Throwable $e) {
+                        // Don't let logging errors break the app
+                        error_log('Failed to log 404: ' . $e->getMessage());
+                    }
+                }
+
                 return Response::notFound('Route not found');
             }
 
@@ -111,6 +192,7 @@ class Router
             }
 
             // Build middleware stack (global + route-specific)
+            // Note: Route-specific now includes the group middleware attached in addRoute
             $middleware = array_merge($this->globalMiddleware, $route->getMiddleware());
 
             // Execute middleware chain
@@ -124,6 +206,20 @@ class Router
                     return Response::json($response);
                 }
                 return Response::text((string) $response);
+            }
+
+            // If a route handler explicitly returns a 404 response, ensure it gets logged
+            if ($response->getStatusCode() === 404 && !$loggedNotFound && $this->notFoundLogs !== null) {
+                try {
+                    $this->notFoundLogs->log(
+                        $this->extractPagePath($request->path()),
+                        $request->header('HTTP_REFERER') ?: $request->header('REFERER'),
+                        $request->header('HTTP_USER_AGENT') ?: $request->header('USER_AGENT'),
+                        $request->getClientIp()
+                    );
+                } catch (Throwable $e) {
+                    error_log('Failed to log 404: ' . $e->getMessage());
+                }
             }
 
             return $response;
@@ -164,6 +260,30 @@ class Router
         }
 
         return $next;
+    }
+
+    /**
+     * Extract the original page path from CMS API endpoints
+     * Converts /api/cms/page/{slug}/rendered to /{slug}
+     *
+     * @param string $path
+     * @return string
+     */
+    private function extractPagePath(string $path): string
+    {
+        // Match pattern: /api/cms/page/{slug}/rendered
+        if (preg_match('#^/api/cms/page/(.+)/rendered$#', $path, $matches)) {
+            $slug = $matches[1];
+            // Convert 'home' slug to root path
+            if ($slug === 'home') {
+                return '/';
+            }
+            // Return page path with leading slash
+            return '/' . $slug;
+        }
+
+        // Return original path if it doesn't match the CMS API pattern
+        return $path;
     }
 
     /**
