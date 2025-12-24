@@ -17,7 +17,7 @@ export function updateUser(id, data) {
 }
 
 export function updateProfile(data) {
-  return api.put('/auth/profile', data).then((r) => r.data)
+  return api.put('/users/me', data).then((r) => r.data)
 }
 
 export function deleteUser(id) {

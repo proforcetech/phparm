@@ -2150,7 +2150,8 @@ return Response::json([
     // User controller for technician listings
     $userController = new \App\Services\User\UserController(
         new \App\Services\User\UserRepository($connection),
-        $gate
+        $gate,
+        $totpService
     );
 
     // Role controller for role management
@@ -2252,6 +2253,12 @@ return Response::json([
         });
 
         // User management routes
+        $router->put('/api/users/me', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->updateProfile($user, $request->body());
+            return Response::json($data);
+        });
+
         $router->get('/api/users', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $filters = [
