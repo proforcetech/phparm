@@ -524,6 +524,10 @@ router.beforeEach(async (to, from, next) => {
     return next('/cp/cms')
   }
 
+  if (to.meta.requiresStaff && authStore.isStaff && !to.path.startsWith('/cp')) {
+    return next(`/cp${to.fullPath}`)
+  }
+
   // Check if route requires staff access
   if (to.meta.requiresStaff && !authStore.isStaff) {
     return next('/portal')
