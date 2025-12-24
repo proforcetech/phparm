@@ -1,0 +1,42 @@
+# Composer dependencies
+/vendor/
+
+# Environment files
+.env
+.env.local
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/storage/logs/
+
+# Temporary files
+/tmp/
+/temp/
+
+# Cache
+/storage/cache/
+
+# Uploads
+/storage/uploads/
+/storage/public/
+
+# Testing
+/coverage/
+.phpunit.result.cache
+
+# Frontend dependencies
+node_modules/
+
+# Frontend build output
+dist/

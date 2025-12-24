@@ -53,7 +53,7 @@
             <Badge variant="secondary">{{ value || 'Unknown' }}</Badge>
           </template>
           <template #cell(drive)="{ value }">
-            <span class="text-sm">{{ value || 'â€”' }}</span>
+            <span class="text-sm">{{ value || '—' }}</span>
           </template>
           <template #actions="{ row }">
             <div class="flex gap-2">
@@ -68,8 +68,7 @@
       </div>
     </Card>
 
-    <!-- CSV Upload Modal -->
-    <Modal v-if="showUploadModal" @close="showUploadModal = false">
+    <Modal v-if="showUploadModal" :model-value="true" @close="showUploadModal = false">
       <template #title>Upload Vehicle CSV</template>
       <template #default>
         <div class="space-y-4">
@@ -108,8 +107,7 @@
       </template>
     </Modal>
 
-    <!-- Delete Confirmation Modal -->
-    <Modal v-if="vehicleToDelete" @close="vehicleToDelete = null">
+    <Modal v-if="vehicleToDelete" :model-value="true" @close="vehicleToDelete = null">
       <template #title>Delete Vehicle</template>
       <template #default>
         <p class="text-sm text-gray-700">
@@ -117,14 +115,14 @@
         </p>
         <div class="mt-3 rounded-md bg-gray-50 p-3">
           <p class="text-sm font-medium">{{ vehicleToDelete.year }} {{ vehicleToDelete.make }} {{ vehicleToDelete.model }}</p>
-          <p class="text-xs text-gray-600 mt-1">{{ vehicleToDelete.engine }} â€¢ {{ vehicleToDelete.transmission }} â€¢ {{ vehicleToDelete.drive }}</p>
+          <p class="text-xs text-gray-600 mt-1">{{ vehicleToDelete.engine }} • {{ vehicleToDelete.transmission }} • {{ vehicleToDelete.drive }}</p>
         </div>
         <p class="mt-3 text-xs text-red-600">This action cannot be undone.</p>
       </template>
       <template #footer>
         <div class="flex gap-3 justify-end">
           <Button variant="secondary" @click="vehicleToDelete = null">Cancel</Button>
-          <Button variant="danger" @click="deleteVehicle" :loading="deleting">Delete</Button>
+          <Button variant="danger" @click="deleteVehicle" :loading="deleting !== null">Delete</Button>
         </div>
       </template>
     </Modal>

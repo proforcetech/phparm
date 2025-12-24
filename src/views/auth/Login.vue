@@ -91,9 +91,6 @@
         </div>
 
         <div>
-          <div class="flex justify-center">
-            <div v-if="recaptchaEnabled" ref="recaptchaContainer"></div>
-          </div>
 
           <button
             type="submit"
@@ -138,7 +135,7 @@ const error = ref(null)
 const sessionExpiredMessage = ref(null)
 const recaptchaEnabled = ref(false)
 const recaptchaSiteKey = ref('')
-const { recaptchaContainer, recaptchaToken, resetRecaptcha } = useRecaptcha(recaptchaSiteKey)
+const { recaptchaToken, executeRecaptcha } = useRecaptcha(recaptchaSiteKey) // Removed resetRecaptcha and recaptchaContainer
 
 const isVerifying = computed(() => !!authStore.pendingChallenge)
 
@@ -169,17 +166,20 @@ async function handleLogin() {
       return
     }
 
+    let token = null
     if (recaptchaEnabled.value) {
       if (!recaptchaSiteKey.value) {
         throw new Error('reCAPTCHA is not configured')
       }
 
-      if (!recaptchaToken.value) {
-        throw new Error('Please complete the reCAPTCHA challenge.')
+      // v3 tokens should be generated right before the login request
+      token = await executeRecaptcha('login')
+      
+      if (!token) {
+        throw new Error('Failed to verify reCAPTCHA. Please try again.')
       }
     }
 
-    const token = recaptchaEnabled.value ? recaptchaToken.value : null
     const result = await authStore.login(form.value.email, form.value.password, false, token)
 
     if (result?.status === '2fa_required') {
@@ -189,7 +189,7 @@ async function handleLogin() {
     error.value = err.response?.data?.message || err.message || 'Invalid credentials'
   } finally {
     loading.value = false
-    resetRecaptcha()
+    // resetRecaptcha() is removed as it is not used in v3
   }
 }
 </script>

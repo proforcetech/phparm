@@ -117,7 +117,10 @@ class InventoryLookupService
         }
 
         $payload['description'] = $payload['description'] ?? null;
-        $payload['is_parts_supplier'] = (bool) ($payload['is_parts_supplier'] ?? false);
+        
+        // FIX: Cast to integer (0 or 1) because PDO casts false to "" (empty string), 
+        // causing "Incorrect integer value" errors in MySQL strict mode.
+        $payload['is_parts_supplier'] = !empty($payload['is_parts_supplier']) ? 1 : 0;
 
         return $payload;
     }

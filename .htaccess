@@ -1,14 +1,17 @@
 <IfModule mod_rewrite.c>
+    # Disable MultiViews to prevent Apache from treating URLs with dots as file searches
+    Options -MultiViews
+
     RewriteEngine On
 
-    # Redirect all requests to public directory except existing files/directories
-    RewriteCond %{REQUEST_URI} !^/public/
+    # Route all requests through index.php
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(.*)$ public/index.php [L,QSA]
+    RewriteRule ^ index.php [L]
 </IfModule>
 
 # Deny access to sensitive files
 <FilesMatch "^\.env|composer\.(json|lock)|\.git">
     Require all denied
 </FilesMatch>
+

@@ -1,0 +1,46 @@
+<?php
+
+namespace App\Support\Notifications;
+
+use App\Database\Connection;
+use PDO;
+
+class NotificationLogRepository
+{
+    private Connection $connection;
+
+    public function __construct(Connection $connection)
+    {
+        $this->connection = $connection;
+    }
+
+public function log(NotificationLogEntry $entry): void
+    {
+        // Removed the second duplicate string
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO notification_logs (channel, recipient, template, payload, status, meta, error_message, created_at) VALUES (:channel, :recipient, :template, :payload, :status, :meta, :error_message, NOW())'
+        );
+
+        $stmt->execute([
+            'channel' => $entry->channel,
+            'recipient' => $entry->recipient,
+            'template' => $entry->template,
+            'payload' => json_encode($entry->payload, JSON_THROW_ON_ERROR),
+            'status' => $entry->status,
+            'meta' => $entry->meta ? json_encode($entry->meta, JSON_THROW_ON_ERROR) : null,
+            'error_message' => $entry->error,
+        ]);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function recent(int $limit = 50): array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM notification_logs ORDER BY id DESC LIMIT :limit');
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}

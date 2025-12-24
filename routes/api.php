@@ -1646,12 +1646,12 @@ return Response::json([
             return Response::json($data);
         });
 
-        $router->get('/api/vehicles/{id}', function (Request $request, int $id) use ($vehicleController) {
-            $user = $request->getAttribute('user');
-            $data = $vehicleController->show($user, $id);
-            return Response::json($data);
-        });
-
+$router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleController) {
+    $user = $request->getAttribute('user');
+    $id = (int) $request->getAttribute('id');
+    $data = $vehicleController->show($user, $id);
+    return Response::json($data);
+});
         $router->post('/api/vehicles', function (Request $request) use ($vehicleController) {
             $user = $request->getAttribute('user');
             $data = $vehicleController->store($user, $request->body());

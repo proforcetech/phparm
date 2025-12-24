@@ -35,12 +35,13 @@ class InspectionCompletionService
             VALUES (:template_id, :customer_id, :vehicle_id, :estimate_id, :appointment_id, :status, :summary, NOW(), NOW())
         SQL);
 
+        // FIX: Cast values to int or null to prevent "Incorrect integer value" errors with empty strings
         $stmt->execute([
-            'template_id' => $payload['template_id'],
-            'customer_id' => $payload['customer_id'],
-            'vehicle_id' => $payload['vehicle_id'] ?? null,
-            'estimate_id' => $payload['estimate_id'] ?? null,
-            'appointment_id' => $payload['appointment_id'] ?? null,
+            'template_id' => (int) $payload['template_id'],
+            'customer_id' => (int) $payload['customer_id'],
+            'vehicle_id' => !empty($payload['vehicle_id']) ? (int) $payload['vehicle_id'] : null,
+            'estimate_id' => !empty($payload['estimate_id']) ? (int) $payload['estimate_id'] : null,
+            'appointment_id' => !empty($payload['appointment_id']) ? (int) $payload['appointment_id'] : null,
             'status' => 'draft',
             'summary' => $payload['summary'] ?? null,
         ]);

@@ -55,7 +55,7 @@ class Request
     ) {
         $this->method = strtoupper($method);
         $this->uri = $uri;
-        $this->path = parse_url($uri, PHP_URL_PATH) ?: '/';
+        $this->path = rawurldecode(parse_url($uri, PHP_URL_PATH) ?: '/');
         $this->query = $query;
         $this->body = $body;
         $this->headers = $headers;

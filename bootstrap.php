@@ -2,6 +2,18 @@
 
 require __DIR__ . '/vendor/autoload.php';
 
+// Ensure the logs directory exists
+$logPath = __DIR__ . '/storage/logs';
+if (!file_exists($logPath)) {
+    mkdir($logPath, 0777, true);
+}
+
+// Configure PHP to log errors to a specific file
+ini_set('log_errors', 1);
+ini_set('error_log', $logPath . '/app.log');
+// ---------------------------------------
+
+
 use App\Support\Env;
 
 $vehicleValidatorPath = __DIR__ . '/src/Services/Vehicle/VehicleMasterValidator.php';

@@ -25,7 +25,6 @@
         @keydown.escape="closeDropdown"
       />
 
-      <!-- Loading Spinner -->
       <div v-if="loading" class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
         <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -33,7 +32,6 @@
         </svg>
       </div>
 
-      <!-- Clear Button -->
       <div v-else-if="modelValue && !disabled" class="absolute inset-y-0 right-0 pr-3 flex items-center">
         <button
           type="button"
@@ -46,7 +44,6 @@
         </button>
       </div>
 
-      <!-- Dropdown -->
       <div
         v-if="showDropdown && (results.length > 0 || loading)"
         class="absolute z-50 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm"
@@ -74,7 +71,6 @@
         </div>
       </div>
 
-      <!-- No Results -->
       <div
         v-if="showDropdown && !loading && results.length === 0 && searchQuery"
         class="absolute z-50 mt-1 w-full bg-white shadow-lg rounded-md py-2 px-4 text-base ring-1 ring-black ring-opacity-5 sm:text-sm"
@@ -83,7 +79,6 @@
       </div>
     </div>
 
-    <!-- Helper text or error -->
     <p v-if="error" class="mt-1 text-sm text-red-600">
       {{ error }}
     </p>
@@ -190,7 +185,8 @@ const displayValue = computed(() => {
   if (selectedItem.value) {
     return getItemLabel(selectedItem.value)
   }
-  return searchQuery.value
+  // FIX: Ensure display value is never undefined
+  return searchQuery.value || ''
 })
 
 function getItemValue(item) {
@@ -249,8 +245,10 @@ function onInput(event) {
 
 function onFocus() {
   showDropdown.value = true
-  if (searchQuery.value.length >= props.minChars && results.value.length === 0) {
-    performSearch(searchQuery.value)
+  // FIX: Safely access length property even if searchQuery.value is undefined
+  const query = searchQuery.value || ''
+  if (query.length >= props.minChars && results.value.length === 0) {
+    performSearch(query)
   }
 }
 
@@ -312,7 +310,8 @@ watch(() => props.modelValue, async (newValue) => {
       const item = data?.find(d => getItemValue(d) === newValue)
       if (item) {
         selectedItem.value = item
-        searchQuery.value = getItemLabel(item)
+        // FIX: Ensure this doesn't set searchQuery.value to undefined
+        searchQuery.value = getItemLabel(item) || ''
       }
     } catch (error) {
       console.error('Failed to load initial value:', error)

@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
+// Uncomment the lines below if you get a "__dirname is not defined" error
+// import { fileURLToPath } from 'url';
+// const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -9,15 +13,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-server: {
-    // 1. Listen on all network interfaces (0.0.0.0), not just localhost
+  server: {
     host: true, 
     port: 3000,
     strictPort: true,
-    // 2. Explicitly tell the browser client to connect to port 3000 for HMR
-    //    This bypasses the Apache proxy for the WebSocket connection
+    allowedHosts: [
+      'fixitfor.us',
+    ], // Fixed missing comma
     hmr: {
-      clientPort: 3000,
+      clientPort: 443,
     },
     proxy: {
       '/api': {
@@ -27,7 +31,7 @@ server: {
     },
   },
   build: {
-    outDir: 'dist', // ✅ now outside 'public'
+    outDir: 'dist',
     emptyOutDir: true,
     manifest: true,
     rollupOptions: {
