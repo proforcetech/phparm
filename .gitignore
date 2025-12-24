@@ -34,3 +34,8 @@ Thumbs.db
 # Testing
 /coverage/
 .phpunit.result.cache
+
+#Libraries
+/vendor/
+/node_modules/
+/dist/

@@ -20,6 +20,12 @@ return [
             'description' => 'Primary phone number rendered on outbound documents.',
             'value' => null,
         ],
+        'shop.logo_url' => [
+            'group' => 'profile',
+            'type' => 'string',
+            'description' => 'Public URL for the shop logo used on estimates, invoices, and portal pages.',
+            'value' => null,
+        ],
         'shop.address' => [
             'group' => 'profile',
             'type' => 'json',
@@ -68,10 +74,22 @@ return [
             'description' => 'Stripe secret API key used for server-side payment actions.',
             'value' => null,
         ],
+        'integrations.stripe.webhook_secret' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Stripe webhook signing secret for verifying incoming payment events.',
+            'value' => null,
+        ],
         'integrations.square.token' => [
             'group' => 'integrations',
             'type' => 'string',
             'description' => 'Square access token for payments and catalog sync.',
+            'value' => null,
+        ],
+        'integrations.square.webhook_signature_key' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Square webhook signature key for validating notifications.',
             'value' => null,
         ],
         'integrations.paypal.client_id' => [
@@ -84,6 +102,36 @@ return [
             'group' => 'integrations',
             'type' => 'string',
             'description' => 'PayPal client secret for token exchange.',
+            'value' => null,
+        ],
+        'integrations.paypal.webhook_id' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'PayPal webhook ID used to validate incoming payment webhooks.',
+            'value' => null,
+        ],
+        'integrations.zoho.client_id' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Zoho CRM client ID for syncing customer or invoice records.',
+            'value' => null,
+        ],
+        'integrations.zoho.client_secret' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Zoho CRM client secret for token exchange.',
+            'value' => null,
+        ],
+        'integrations.zoho.refresh_token' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Zoho CRM refresh token used to rotate access tokens.',
+            'value' => null,
+        ],
+        'integrations.zoho.org_id' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Zoho CRM organization ID for API requests.',
             'value' => null,
         ],
         'notifications.mail.from_name' => [
@@ -102,6 +150,12 @@ return [
             'group' => 'notifications',
             'type' => 'string',
             'description' => 'SMS sender number for appointment, estimate, and invoice messages.',
+            'value' => null,
+        ],
+        'notifications.estimate_request_email' => [
+            'group' => 'notifications',
+            'type' => 'string',
+            'description' => 'Email address to receive notifications for new estimate requests submitted through the public form.',
             'value' => null,
         ],
         'integrations.twilio.sid' => [
@@ -157,6 +211,48 @@ return [
             'type' => 'string',
             'description' => 'reCAPTCHA secret key for server-side verification.',
             'value' => null,
+        ],
+        'integrations.recaptcha.enabled' => [
+            'group' => 'integrations',
+            'type' => 'boolean',
+            'description' => 'Enable reCAPTCHA verification for public forms and authentication flows.',
+            'value' => false,
+        ],
+        'integrations.recaptcha.score_threshold' => [
+            'group' => 'integrations',
+            'type' => 'float',
+            'description' => 'Minimum acceptable reCAPTCHA score (0.0 - 1.0) before processing public forms.',
+            'value' => 0.5,
+        ],
+        'integrations.partstech.api_base' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Base URL for PartsTech API requests.',
+            'value' => 'https://api.partstech.com',
+        ],
+        'integrations.partstech.api_key' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'PartsTech API key used for VIN decoding and catalog search.',
+            'value' => null,
+        ],
+        'integrations.partstech.markup_tiers' => [
+            'group' => 'integrations',
+            'type' => 'json',
+            'description' => 'Optional pricing markup tiers applied to PartsTech catalog results.',
+            'value' => [],
+        ],
+        'payments.urls.success' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Redirect URL after successful online payment.',
+            'value' => env('APP_URL', 'http://localhost') . '/payment/success',
+        ],
+        'payments.urls.cancel' => [
+            'group' => 'integrations',
+            'type' => 'string',
+            'description' => 'Redirect URL when a payer cancels checkout.',
+            'value' => env('APP_URL', 'http://localhost') . '/payment/cancel',
         ],
         'documents.terms.estimates' => [
             'group' => 'documents',
