@@ -4,6 +4,7 @@ namespace App\Services\User;
 
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\TotpService;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
 
@@ -11,11 +12,13 @@ class UserController
 {
     private UserRepository $repository;
     private AccessGate $gate;
+    private TotpService $totpService;
 
-    public function __construct(UserRepository $repository, AccessGate $gate)
+    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService)
     {
         $this->repository = $repository;
         $this->gate = $gate;
+        $this->totpService = $totpService;
     }
 
     /**
@@ -212,6 +215,121 @@ class UserController
             'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
+        ];
+    }
+
+    /**
+     * Update the authenticated user's profile
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function updateProfile(User $user, array $data): array
+    {
+        $updateData = [];
+        $sensitiveChange = false;
+        $twoFactorChange = false;
+
+        if (array_key_exists('name', $data)) {
+            $name = trim((string) $data['name']);
+            if ($name === '') {
+                throw new InvalidArgumentException('Name is required');
+            }
+            $updateData['name'] = $name;
+        }
+
+        if (array_key_exists('email', $data)) {
+            $email = trim((string) $data['email']);
+            if ($email === '') {
+                throw new InvalidArgumentException('Email is required');
+            }
+
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Invalid email address');
+            }
+
+            if ($email !== $user->email) {
+                if ($this->repository->findByEmail($email)) {
+                    throw new InvalidArgumentException('Email already exists');
+                }
+
+                $updateData['email'] = $email;
+                $sensitiveChange = true;
+            }
+        }
+
+        $passwordChange = array_key_exists('password', $data) && $data['password'] !== '';
+        if ($passwordChange) {
+            if (empty($data['password_confirmation'])) {
+                throw new InvalidArgumentException('Password confirmation is required');
+            }
+
+            if ($data['password'] !== $data['password_confirmation']) {
+                throw new InvalidArgumentException('Password confirmation does not match');
+            }
+
+            $updateData['password'] = password_hash((string) $data['password'], PASSWORD_DEFAULT);
+            $sensitiveChange = true;
+        }
+
+        if (array_key_exists('two_factor_enabled', $data)) {
+            $requestedTwoFactor = (bool) $data['two_factor_enabled'];
+            $twoFactorChange = $requestedTwoFactor !== $user->two_factor_enabled;
+            if ($twoFactorChange) {
+                $sensitiveChange = true;
+            }
+        }
+
+        if ($sensitiveChange) {
+            $currentPassword = (string) ($data['current_password'] ?? '');
+            if ($currentPassword === '' || !password_verify($currentPassword, $user->password)) {
+                throw new InvalidArgumentException('Current password is incorrect');
+            }
+        }
+
+        if ($user->two_factor_enabled || $twoFactorChange) {
+            $twoFactorCode = trim((string) ($data['two_factor_code'] ?? ''));
+            if ($twoFactorCode === '') {
+                throw new InvalidArgumentException('Two-factor code is required');
+            }
+
+            if (!$user->two_factor_secret) {
+                throw new InvalidArgumentException('Two-factor authentication is not configured');
+            }
+
+            $twoFactorType = $data['two_factor_type'] ?? $user->two_factor_type;
+            if (!in_array($twoFactorType, ['totp', 'sms'], true)) {
+                throw new InvalidArgumentException('Unsupported two-factor authentication type');
+            }
+
+            if (!$this->totpService->verifyCode($user->two_factor_secret, $twoFactorCode)) {
+                throw new InvalidArgumentException('Invalid two-factor code');
+            }
+        }
+
+        $updatedUser = $user;
+        if (!empty($updateData)) {
+            $updatedUser = $this->repository->update($user->id, $updateData);
+        }
+
+        if ($twoFactorChange && isset($data['two_factor_enabled']) && !$data['two_factor_enabled']) {
+            $updatedUser = $this->repository->reset2FA($user->id);
+        }
+
+        return [
+            'message' => 'Profile updated successfully',
+            'user' => [
+                'id' => $updatedUser->id,
+                'name' => $updatedUser->name,
+                'email' => $updatedUser->email,
+                'role' => $updatedUser->role,
+                'email_verified' => $updatedUser->email_verified,
+                'two_factor_enabled' => $updatedUser->two_factor_enabled,
+                'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
+                'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending,
+                'created_at' => $updatedUser->created_at,
+                'updated_at' => $updatedUser->updated_at,
+            ],
         ];
     }
 
