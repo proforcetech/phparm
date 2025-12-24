@@ -30,11 +30,14 @@ class BundleService
 
         try {
             $stmt = $pdo->prepare(
-                'INSERT INTO bundles (name, description, service_type_id, default_job_title, is_active, sort_order, created_at, updated_at) VALUES (:name, :description, :service_type_id, :job_title, :is_active, :sort_order, NOW(), NOW())'
+                'INSERT INTO bundles (name, description, internal_notes, discount_type, discount_value, service_type_id, default_job_title, is_active, sort_order, created_at, updated_at) VALUES (:name, :description, :internal_notes, :discount_type, :discount_value, :service_type_id, :job_title, :is_active, :sort_order, NOW(), NOW())'
             );
             $stmt->execute([
                 'name' => $payload['name'],
                 'description' => $payload['description'] ?? null,
+                'internal_notes' => $payload['internal_notes'] ?? null,
+                'discount_type' => $payload['discount_type'] ?? null,
+                'discount_value' => $payload['discount_value'] ?? null,
                 'service_type_id' => $payload['service_type_id'] ?? null,
                 'job_title' => $payload['default_job_title'],
                 'is_active' => isset($payload['is_active']) ? (int) (bool) $payload['is_active'] : 1,
@@ -68,12 +71,15 @@ class BundleService
 
         try {
             $stmt = $pdo->prepare(
-                'UPDATE bundles SET name = COALESCE(:name, name), description = COALESCE(:description, description), service_type_id = COALESCE(:service_type_id, service_type_id), default_job_title = COALESCE(:job_title, default_job_title), is_active = COALESCE(:is_active, is_active), sort_order = COALESCE(:sort_order, sort_order), updated_at = NOW() WHERE id = :id'
+                'UPDATE bundles SET name = COALESCE(:name, name), description = COALESCE(:description, description), internal_notes = COALESCE(:internal_notes, internal_notes), discount_type = COALESCE(:discount_type, discount_type), discount_value = COALESCE(:discount_value, discount_value), service_type_id = COALESCE(:service_type_id, service_type_id), default_job_title = COALESCE(:job_title, default_job_title), is_active = COALESCE(:is_active, is_active), sort_order = COALESCE(:sort_order, sort_order), updated_at = NOW() WHERE id = :id'
             );
             $stmt->execute([
                 'id' => $bundleId,
                 'name' => $payload['name'] ?? null,
                 'description' => $payload['description'] ?? null,
+                'internal_notes' => $payload['internal_notes'] ?? null,
+                'discount_type' => $payload['discount_type'] ?? null,
+                'discount_value' => $payload['discount_value'] ?? null,
                 'service_type_id' => $payload['service_type_id'] ?? null,
                 'job_title' => $payload['default_job_title'] ?? null,
                 'is_active' => array_key_exists('is_active', $payload) ? (int) (bool) $payload['is_active'] : null,
@@ -326,6 +332,13 @@ class BundleService
                 if (!in_array($type, self::ALLOWED_ITEM_TYPES, true)) {
                     throw new InvalidArgumentException('Invalid bundle item type: ' . $type);
                 }
+            }
+        }
+
+        if (isset($payload['discount_type'])) {
+            $discountType = (string) $payload['discount_type'];
+            if (!in_array($discountType, ['fixed', 'percent'], true)) {
+                throw new InvalidArgumentException('Invalid bundle discount type: ' . $discountType);
             }
         }
     }
