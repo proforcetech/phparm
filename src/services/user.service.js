@@ -16,6 +16,10 @@ export function updateUser(id, data) {
   return api.put(`/users/${id}`, data).then((r) => r.data)
 }
 
+export function updateProfile(data) {
+  return api.put('/auth/profile', data).then((r) => r.data)
+}
+
 export function deleteUser(id) {
   return api.delete(`/users/${id}`)
 }
@@ -33,6 +37,7 @@ const userService = {
   getUser,
   createUser,
   updateUser,
+  updateProfile,
   deleteUser,
   reset2FA,
   require2FA

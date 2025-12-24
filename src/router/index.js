@@ -39,6 +39,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/profile',
+    name: 'StaffProfile',
+    component: () => import('@/views/users/Profile.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/invoices',
     name: 'InvoiceList',
     component: () => import('@/views/invoices/InvoiceList.vue'),
