@@ -1,43 +1,29 @@
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import path from 'path'
 
-// Uncomment the lines below if you get a "__dirname is not defined" error
-// import { fileURLToPath } from 'url';
-// const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
+// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+  ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+      '@': fileURLToPath(new URL('./src', import.meta.url))
+    }
   },
   server: {
-    host: true, 
-    port: 3000,
-    strictPort: true,
-    allowedHosts: [
-      'fixitfor.us',
-    ], // Fixed missing comma
-    hmr: {
-      clientPort: 443,
+    host: '0.0.0.0',
+    port: 5173,
+    watch: {
+      usePolling: true
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8000', // Adjust if your PHP server runs on a different port
         changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
-    manifest: true,
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-      },
-    },
-  },
+        secure: false
+      }
+    }
+  }
 })
