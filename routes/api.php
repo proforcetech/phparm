@@ -2593,6 +2593,23 @@ return Response::json([
             new \App\Services\Financial\FinancialReportService($connection),
             $gate
         );
+        $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
+
+        $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'type' => $request->queryParam('type'),
+            ];
+            $data = $financialCategoryController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/categories/{type:purchase|expense|income}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+            $data = $financialCategoryController->index($user, ['type' => $type]);
+            return Response::json($data);
+        });
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
             $user = $request->getAttribute('user');
