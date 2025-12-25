@@ -78,14 +78,14 @@ class CustomerVehicleService
      */
     public function listVehicles(int $customerId): array
     {
-        $sql = 'SELECT cv.*, history.last_service_date, '
-            . 'CASE WHEN history.last_service_date IS NULL THEN NULL ELSE cv.mileage_out END AS last_service_mileage '
+        $sql = 'SELECT cv.*, history.last_service_date, history.last_service_mileage '
             . 'FROM customer_vehicles cv '
             . 'LEFT JOIN ('
-            . 'SELECT vehicle_id, MAX(issue_date) AS last_service_date '
-            . 'FROM invoices '
-            . 'WHERE customer_id = :customer_id '
-            . 'GROUP BY vehicle_id'
+            . 'SELECT i.vehicle_id, MAX(i.created_at) AS last_service_date, MAX(cv2.mileage_out) AS last_service_mileage '
+            . 'FROM invoices i '
+            . 'INNER JOIN customer_vehicles cv2 ON cv2.id = i.vehicle_id '
+            . 'WHERE i.customer_id = :customer_id '
+            . 'GROUP BY i.vehicle_id'
             . ') history ON history.vehicle_id = cv.id '
             . 'WHERE cv.customer_id = :customer_id AND cv.is_active = 1 '
             . 'ORDER BY cv.created_at DESC, cv.id DESC';
