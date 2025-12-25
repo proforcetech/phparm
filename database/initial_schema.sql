@@ -67,6 +67,7 @@ CREATE TABLE customer_vehicles (
     vin VARCHAR(30) NULL,
     license_plate VARCHAR(30) NULL,
     notes TEXT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_customer_vehicle_customer (customer_id),
