@@ -114,6 +114,7 @@ const adminMenuItems = [
   { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
   { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
+  { path: '/cp/financial/vendors', label: 'Vendors', icon: DocumentTextIcon },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
   // Inspections Section
   { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },

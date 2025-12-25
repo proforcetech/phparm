@@ -275,6 +275,24 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/financial/vendors',
+    name: 'FinancialVendors',
+    component: () => import('@/views/financial/VendorList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/financial/vendors/create',
+    name: 'FinancialVendorCreate',
+    component: () => import('@/views/financial/VendorForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/financial/vendors/:id/edit',
+    name: 'FinancialVendorEdit',
+    component: () => import('@/views/financial/VendorForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/reports',
     name: 'FinancialReports',
     component: () => import('@/views/financial/Reports.vue'),

@@ -35,7 +35,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Vendor</label>
-          <select v-model="filters.vendor" class="mt-1 w-full border-gray-300 rounded">
+          <select v-model="filters.vendor_id" class="mt-1 w-full border-gray-300 rounded">
             <option value="">All</option>
             <option v-for="option in vendorOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
           </select>
@@ -100,7 +100,7 @@
               <td class="px-4 py-2 text-sm text-gray-900">{{ entry.entry_date }}</td>
               <td class="px-4 py-2 text-sm capitalize">{{ entry.type }}</td>
               <td class="px-4 py-2 text-sm">{{ entry.category }}</td>
-              <td class="px-4 py-2 text-sm">{{ entry.vendor }}</td>
+              <td class="px-4 py-2 text-sm">{{ vendorLabel(entry) }}</td>
               <td class="px-4 py-2 text-sm">{{ entry.reference }}</td>
               <td class="px-4 py-2 text-sm">{{ entry.purchase_order }}</td>
               <td class="px-4 py-2 text-sm text-right font-semibold">${{ Number(entry.amount).toFixed(2) }}</td>
@@ -123,7 +123,7 @@
         <div v-for="entry in entries" :key="entry.id" class="rounded border border-gray-200 bg-gray-50 p-3 shadow-sm">
           <div class="flex items-start justify-between gap-2">
             <div>
-              <p class="text-sm font-semibold text-gray-900">{{ entry.vendor || 'Unknown vendor' }}</p>
+              <p class="text-sm font-semibold text-gray-900">{{ vendorLabel(entry) }}</p>
               <p class="text-xs text-gray-600">{{ entry.entry_date }} • {{ entry.category || 'Uncategorized' }}</p>
             </div>
             <span class="text-sm font-semibold text-gray-900">${{ Number(entry.amount).toFixed(2) }}</span>
@@ -200,12 +200,13 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Vendor</label>
-            <select v-model="form.vendor" class="mt-1 w-full border-gray-300 rounded">
+            <select v-model="form.vendor_id" class="mt-1 w-full border-gray-300 rounded">
               <option value="">Select vendor</option>
               <option v-for="option in vendorOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
             <p v-if="lookupsLoading.vendors" class="mt-1 text-xs text-gray-500">Loading vendors...</p>
             <p v-else-if="lookupError.vendors" class="mt-1 text-xs text-red-600">{{ lookupError.vendors }}</p>
+            <p v-else-if="legacyVendorName" class="mt-1 text-xs text-amber-600">Legacy vendor: {{ legacyVendorName }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Amount</label>
@@ -249,9 +250,10 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
 import financialService from '@/services/financial.service'
 import inventoryMetaService from '@/services/inventory-meta.service'
+import financialVendorService from '@/services/financial-vendor.service'
 import { useToast } from '@/stores/toast'
 
 const toast = useToast()
@@ -263,10 +265,12 @@ const categoryOptions = ref([])
 const vendorOptions = ref([])
 const lookupsLoading = reactive({ categories: false, vendors: false })
 const lookupError = reactive({ categories: '', vendors: '' })
+const legacyVendorName = ref('')
+const vendorLookup = computed(() => new Map(vendorOptions.value.map((option) => [option.value, option.label])))
 const filters = reactive({
   type: '',
   category: '',
-  vendor: '',
+  vendor_id: '',
   start_date: '',
   end_date: '',
   search: '',
@@ -280,7 +284,7 @@ const form = reactive({
   category: '',
   reference: '',
   purchase_order: '',
-  vendor: '',
+  vendor_id: '',
   amount: 0,
   entry_date: '',
   description: '',
@@ -293,6 +297,7 @@ onMounted(fetchEntries)
 onMounted(loadLookups)
 
 function loadLookups() {
+  loadLookup('categories', categoryOptions)
   loadCategories()
   loadVendors()
 }
@@ -301,6 +306,8 @@ async function loadCategories() {
   lookupsLoading.categories = true
   lookupError.categories = ''
   try {
+    const data = await inventoryMetaService.list(type)
+    target.value = data.map((item) => ({ label: item.name, value: item.name }))
     const data = await financialService.listCategories()
     categoryOptions.value = data.map((item) => ({
       label: item.name,
@@ -329,10 +336,30 @@ async function loadVendors() {
   }
 }
 
+async function loadVendors() {
+  lookupsLoading.vendors = true
+  lookupError.vendors = ''
+  try {
+    const data = await financialVendorService.list()
+    const items = Array.isArray(data) ? data : data.data || []
+    vendorOptions.value = items.map((item) => ({ label: item.name, value: item.id }))
+  } catch (err) {
+    console.error(err)
+    lookupError.vendors = 'Unable to load vendors'
+  } finally {
+    lookupsLoading.vendors = false
+  }
+}
+
 function fetchEntries() {
   loading.value = true
+  const params = { ...filters }
+  const selectedVendor = vendorLookup.value.get(filters.vendor_id)
+  if (selectedVendor) {
+    params.vendor = selectedVendor
+  }
   financialService
-    .list(filters)
+    .list(params)
     .then((res) => {
       entries.value = res.data || []
       hasMore.value = entries.value.length === filters.per_page
@@ -346,7 +373,7 @@ function fetchEntries() {
 function resetFilters() {
   filters.type = ''
   filters.category = ''
-  filters.vendor = ''
+  filters.vendor_id = ''
   filters.start_date = ''
   filters.end_date = ''
   filters.search = ''
@@ -374,7 +401,14 @@ function markAttachmentRemoval() {
 
 function openForm(entry = null) {
   if (entry) {
-    Object.assign(form, entry)
+    const matchedVendor = entry.vendor_id
+      ? entry.vendor_id
+      : vendorOptions.value.find((option) => option.label === entry.vendor)?.value || ''
+    Object.assign(form, {
+      ...entry,
+      vendor_id: matchedVendor || '',
+    })
+    legacyVendorName.value = entry.vendor && !matchedVendor ? entry.vendor : ''
     pendingFile.value = null
     removeAttachment.value = false
   } else {
@@ -384,12 +418,13 @@ function openForm(entry = null) {
       category: '',
       reference: '',
       purchase_order: '',
-      vendor: '',
+      vendor_id: '',
       amount: 0,
       entry_date: '',
       description: '',
       attachment_path: null,
     })
+    legacyVendorName.value = ''
     pendingFile.value = null
     removeAttachment.value = false
   }
@@ -401,7 +436,13 @@ function closeForm() {
 }
 
 async function saveEntry() {
+  const selectedVendorLabel = vendorLookup.value.get(form.vendor_id)
   const payload = { ...form }
+  if (selectedVendorLabel) {
+    payload.vendor = selectedVendorLabel
+  } else if (legacyVendorName.value) {
+    payload.vendor = legacyVendorName.value
+  }
   try {
     const saved = payload.id
       ? await financialService.update(payload.id, payload)
@@ -440,8 +481,13 @@ function confirmDelete(entry) {
 }
 
 function exportEntries() {
+  const params = { ...filters }
+  const selectedVendor = vendorLookup.value.get(filters.vendor_id)
+  if (selectedVendor) {
+    params.vendor = selectedVendor
+  }
   financialService
-    .exportEntries(filters)
+    .exportEntries(params)
     .then((res) => {
       const rows = res.data
       if (!rows || !rows.length) {
@@ -464,5 +510,14 @@ function exportEntries() {
       URL.revokeObjectURL(url)
     })
     .catch(() => toast.error('Failed to export entries'))
+}
+
+function vendorLabel(entry) {
+  return (
+    entry.vendor_name ||
+    entry.vendor ||
+    vendorLookup.value.get(entry.vendor_id) ||
+    'Unknown vendor'
+  )
 }
 </script>
