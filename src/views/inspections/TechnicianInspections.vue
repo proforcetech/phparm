@@ -15,8 +15,16 @@
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700">Customer ID</label>
-          <input v-model.number="customerId" type="number" class="w-full p-2 border rounded" />
+          <Autocomplete
+            v-model="customerId"
+            label="Customer"
+            placeholder="Search by name or phone..."
+            :search-fn="searchCustomers"
+            :item-value="(item) => item.id"
+            :item-label="(item) => item.name"
+            :item-subtext="(item) => item.phone || ''"
+            @select="onCustomerSelect"
+          />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Vehicle ID (optional)</label>
@@ -141,11 +149,14 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import Autocomplete from '@/components/ui/Autocomplete.vue'
+import customerService from '@/services/customer.service'
 import inspectionService from '@/services/inspection.service'
 
 const templates = ref([])
 const selectedTemplateId = ref('')
-const customerId = ref('')
+const customerId = ref(null)
+const selectedCustomer = ref(null)
 const vehicleId = ref('')
 const summary = ref('')
 const responses = reactive({})
@@ -236,5 +247,19 @@ const submit = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const searchCustomers = async (query) => {
+  try {
+    return await customerService.searchCustomers(query)
+  } catch (err) {
+    console.error('Customer search failed:', err)
+    return []
+  }
+}
+
+const onCustomerSelect = (customer) => {
+  selectedCustomer.value = customer
+  customerId.value = customer?.id ?? null
 }
 </script>
