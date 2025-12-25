@@ -108,11 +108,7 @@ return function (Router $router, array $config, $connection) {
 
             error_log(sprintf('CMS render returned empty output for slug "%s"', $slug));
             return Response::serverError('CMS page could not be rendered');
-        try {
-            $html = $controller->renderPublishedPage($slug);
-            if ($html !== null) {
-                return Response::html($html);
-            }
+
         } catch (\Throwable $exception) {
             error_log(sprintf(
                 'CMS render failed for slug "%s": %s',
@@ -121,9 +117,6 @@ return function (Router $router, array $config, $connection) {
             ));
             return Response::serverError('CMS page render failed');
         }
-        }
-
-        return null;
     };
 
     // Public CMS Routes
@@ -131,10 +124,8 @@ return function (Router $router, array $config, $connection) {
 
     // Homepage - serve Vue SPA
     $router->get('/', function (Request $request) use ($pageController, $renderCmsPage) {
-        $rendered = $renderCmsPage($pageController, 'home');
-        if ($rendered !== null) {
-            return $rendered;
-        if ($response = $renderCmsPage($pageController, 'home')) {
+        $response = $renderCmsPage($pageController, 'home');
+        if ($response !== null) {
             return $response;
         }
 
@@ -486,10 +477,8 @@ return function (Router $router, array $config, $connection) {
 
         // Try to render a published CMS page first
         $path = $request->path();
-        $rendered = $renderCmsPage($pageController, $path);
-        if ($rendered !== null) {
-            return $rendered;
-        if ($response = $renderCmsPage($pageController, $path)) {
+        $response = $renderCmsPage($pageController, $path);
+        if ($response !== null) {
             return $response;
         }
 
