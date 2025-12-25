@@ -29,9 +29,9 @@ class CustomerVehicleService
         $payload = $this->normalizeVehiclePayload($customerId, $data);
 
         $sql = 'INSERT INTO customer_vehicles (customer_id, vehicle_master_id, year, make, model, engine, transmission, drive, '
-            . 'trim, vin, license_plate, notes, mileage_in, mileage_out, created_at, updated_at) '
+            . 'trim, vin, license_plate, notes, mileage_in, mileage_out, is_active, created_at, updated_at) '
             . 'VALUES (:customer_id, :vehicle_master_id, :year, :make, :model, :engine, :transmission, :drive, :trim, '
-            . ':vin, :license_plate, :notes, :mileage_in, :mileage_out, :created_at, :updated_at)';
+            . ':vin, :license_plate, :notes, :mileage_in, :mileage_out, :is_active, :created_at, :updated_at)';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($payload);
@@ -65,10 +65,12 @@ class CustomerVehicleService
     {
         $this->findByCustomer($customerId, $vehicleId);
 
-        $sql = 'DELETE FROM customer_vehicles WHERE id = :id AND customer_id = :customer_id';
+        $sql = 'UPDATE customer_vehicles SET is_active = 0, updated_at = :updated_at WHERE id = :id AND customer_id = :customer_id';
         $stmt = $this->connection->pdo()->prepare($sql);
 
-        return $stmt->execute(['id' => $vehicleId, 'customer_id' => $customerId]);
+        $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+
+        return $stmt->execute(['id' => $vehicleId, 'customer_id' => $customerId, 'updated_at' => $now]);
     }
 
     /**
@@ -76,7 +78,17 @@ class CustomerVehicleService
      */
     public function listVehicles(int $customerId): array
     {
-        $sql = 'SELECT * FROM customer_vehicles WHERE customer_id = :customer_id ORDER BY created_at DESC, id DESC';
+        $sql = 'SELECT cv.*, history.last_service_date, history.last_service_mileage '
+            . 'FROM customer_vehicles cv '
+            . 'LEFT JOIN ('
+            . 'SELECT i.vehicle_id, MAX(i.created_at) AS last_service_date, MAX(cv2.mileage_out) AS last_service_mileage '
+            . 'FROM invoices i '
+            . 'INNER JOIN customer_vehicles cv2 ON cv2.id = i.vehicle_id '
+            . 'WHERE i.customer_id = :customer_id '
+            . 'GROUP BY i.vehicle_id'
+            . ') history ON history.vehicle_id = cv.id '
+            . 'WHERE cv.customer_id = :customer_id AND cv.is_active = 1 '
+            . 'ORDER BY cv.created_at DESC, cv.id DESC';
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute(['customer_id' => $customerId]);
 
@@ -144,6 +156,7 @@ class CustomerVehicleService
             'notes' => isset($data['notes']) ? trim((string) $data['notes']) : ($existing['notes'] ?? null),
             'mileage_in' => isset($data['mileage_in']) ? (int) $data['mileage_in'] : ($existing['mileage_in'] ?? null),
             'mileage_out' => isset($data['mileage_out']) ? (int) $data['mileage_out'] : ($existing['mileage_out'] ?? null),
+            'is_active' => isset($data['is_active']) ? (int) $data['is_active'] : ($existing['is_active'] ?? 1),
             'created_at' => $existing['created_at'] ?? $now,
             'updated_at' => $now,
         ];
@@ -154,7 +167,7 @@ class CustomerVehicleService
      */
     private function findByCustomer(int $customerId, int $vehicleId): array
     {
-        $sql = 'SELECT * FROM customer_vehicles WHERE id = :id AND customer_id = :customer_id LIMIT 1';
+        $sql = 'SELECT * FROM customer_vehicles WHERE id = :id AND customer_id = :customer_id AND is_active = 1 LIMIT 1';
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute(['id' => $vehicleId, 'customer_id' => $customerId]);
 

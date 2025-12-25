@@ -37,6 +37,25 @@
             <label class="block text-sm font-medium text-gray-700">Description</label>
             <Textarea v-model="form.description" :rows="3" placeholder="Optional description for the bundle" />
           </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700">Internal Notes</label>
+            <Textarea v-model="form.internal_notes" :rows="3" placeholder="Private notes for internal use" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Discount Type</label>
+            <select
+              v-model="form.discount_type"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            >
+              <option :value="null">No discount</option>
+              <option value="fixed">Fixed amount</option>
+              <option value="percent">Percent</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Discount Value</label>
+            <Input v-model.number="form.discount_value" type="number" min="0" step="0.01" :disabled="!form.discount_type" />
+          </div>
           <div class="flex items-center gap-2 md:col-span-2">
             <input v-model="form.is_active" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
             <span class="text-sm text-gray-700">Bundle is active</span>
@@ -129,6 +148,9 @@ const serviceTypes = ref([])
 const form = reactive({
   name: '',
   description: '',
+  internal_notes: '',
+  discount_type: null,
+  discount_value: null,
   service_type_id: null,
   default_job_title: '',
   is_active: true,
@@ -171,6 +193,9 @@ const loadBundle = async () => {
   Object.assign(form, {
     name: data.name,
     description: data.description || '',
+    internal_notes: data.internal_notes || '',
+    discount_type: data.discount_type || null,
+    discount_value: data.discount_value ?? null,
     service_type_id: data.service_type_id,
     default_job_title: data.default_job_title,
     is_active: Boolean(data.is_active),
@@ -191,7 +216,13 @@ const save = async () => {
   error.value = ''
   success.value = ''
   try {
-    const payload = { ...form, items: form.items }
+    const payload = {
+      ...form,
+      internal_notes: form.internal_notes || null,
+      discount_type: form.discount_type || null,
+      discount_value: form.discount_type ? form.discount_value : null,
+      items: form.items,
+    }
     if (isEditing.value && route.params.id) {
       await bundleService.update(route.params.id, payload)
       success.value = 'Bundle updated.'

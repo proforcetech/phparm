@@ -39,6 +39,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/profile',
+    name: 'StaffProfile',
+    component: () => import('@/views/users/Profile.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/invoices',
     name: 'InvoiceList',
     component: () => import('@/views/invoices/InvoiceList.vue'),
@@ -269,6 +275,24 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/financial/vendors',
+    name: 'FinancialVendors',
+    component: () => import('@/views/financial/VendorList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/financial/vendors/create',
+    name: 'FinancialVendorCreate',
+    component: () => import('@/views/financial/VendorForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/financial/vendors/:id/edit',
+    name: 'FinancialVendorEdit',
+    component: () => import('@/views/financial/VendorForm.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/reports',
     name: 'FinancialReports',
     component: () => import('@/views/financial/Reports.vue'),
@@ -278,6 +302,12 @@ const routes = [
     path: '/cp/settings',
     name: 'Settings',
     component: () => import('@/views/settings/SettingsPage.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/settings/services',
+    name: 'ServiceTypes',
+    component: () => import('@/views/settings/ServiceTypes.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
@@ -522,6 +552,10 @@ router.beforeEach(async (to, from, next) => {
       return next('/portal')
     }
     return next('/cp/cms')
+  }
+
+  if (to.meta.requiresStaff && authStore.isStaff && !to.path.startsWith('/cp')) {
+    return next(`/cp${to.fullPath}`)
   }
 
   // Check if route requires staff access

@@ -36,6 +36,41 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status
+    const responseData = error.response?.data
+
+    if (status === 422) {
+      const normalizeErrorBag = (errors) => {
+        if (!errors) return null
+        if (Array.isArray(errors)) {
+          return { _form: errors.filter(Boolean).join(' ') }
+        }
+        if (typeof errors === 'string') {
+          return { _form: errors }
+        }
+        if (typeof errors === 'object') {
+          return Object.entries(errors).reduce((acc, [key, value]) => {
+            if (Array.isArray(value)) {
+              acc[key] = value.filter(Boolean).join(' ')
+            } else if (value && typeof value === 'object') {
+              acc[key] = Object.values(value).flat().filter(Boolean).join(' ')
+            } else if (value != null) {
+              acc[key] = String(value)
+            }
+            return acc
+          }, {})
+        }
+        return null
+      }
+
+      const normalizedErrors = normalizeErrorBag(responseData?.errors || responseData?.error)
+      if (normalizedErrors) {
+        error.response.data = {
+          ...responseData,
+          errors: normalizedErrors,
+          message: responseData?.message || 'Please check the highlighted fields.'
+        }
+      }
+    }
 
     // Handle session expiration (401 Unauthorized or 403 Forbidden)
     if ((status === 401 || status === 403) && !isHandlingSessionExpiration) {

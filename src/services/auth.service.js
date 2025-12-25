@@ -67,7 +67,7 @@ export const authService = {
    * Update user profile
    */
   async updateProfile(data) {
-    const response = await api.put('/auth/profile', data)
+    const response = await api.put('/users/me', data)
     return response.data
   },
 

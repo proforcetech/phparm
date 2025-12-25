@@ -329,10 +329,27 @@
                     {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
                   </h4>
                   <p class="text-sm text-gray-500 mt-1">{{ vehicle.vin || 'No VIN' }}</p>
-                  <div class="flex gap-4 mt-2 text-xs text-gray-600">
+                  <div class="flex flex-wrap gap-4 mt-2 text-xs text-gray-600">
                     <span v-if="vehicle.color">Color: {{ vehicle.color }}</span>
-                    <span v-if="vehicle.license_plate">{{ vehicle.license_plate }}</span>
+                    <span v-if="vehicle.license_plate">Plate: {{ vehicle.license_plate }}</span>
+                    <span v-if="vehicle.transmission">Transmission: {{ vehicle.transmission }}</span>
+                    <span v-if="vehicle.drive">Drive: {{ vehicle.drive }}</span>
+                    <span v-if="vehicle.trim">Trim: {{ vehicle.trim }}</span>
                   </div>
+                  <div class="mt-3 space-y-1 text-xs text-gray-600">
+                    <p>
+                      <span class="font-medium text-gray-700">Last Service Date:</span>
+                      <span>{{ vehicle.last_service_date ? formatDate(vehicle.last_service_date) : '—' }}</span>
+                    </p>
+                    <p>
+                      <span class="font-medium text-gray-700">Last Service Mileage:</span>
+                      <span>{{ vehicle.last_service_mileage != null ? `${formatMileage(vehicle.last_service_mileage)} mi` : '—' }}</span>
+                    </p>
+                  </div>
+                </div>
+                <div class="flex flex-col gap-2 items-end">
+                  <Button size="xs" variant="outline" @click="openVehicleEditor(vehicle)">Edit</Button>
+                  <Button size="xs" variant="danger" @click="confirmDeleteVehicle(vehicle)">Delete</Button>
                 </div>
               </div>
             </div>
@@ -345,6 +362,35 @@
       <p class="text-gray-500">Customer not found.</p>
     </div>
   </div>
+
+  <Modal v-model="vehicleModalOpen" title="Edit Vehicle" size="lg" @close="resetVehicleForm">
+    <form class="space-y-4" @submit.prevent="saveVehicle">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Input v-model.number="vehicleForm.year" type="number" label="Year" required />
+        <Input v-model="vehicleForm.make" label="Make" required />
+        <Input v-model="vehicleForm.model" label="Model" required />
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Input v-model="vehicleForm.engine" label="Engine" required />
+        <Input v-model="vehicleForm.transmission" label="Transmission" required />
+        <Input v-model="vehicleForm.drive" label="Drive" required />
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Input v-model="vehicleForm.trim" label="Trim" />
+        <Input v-model="vehicleForm.vin" label="VIN" />
+        <Input v-model="vehicleForm.license_plate" label="License Plate" />
+      </div>
+
+      <Textarea v-model="vehicleForm.notes" label="Notes" :rows="3" />
+
+      <div class="flex justify-end gap-2 pt-2">
+        <Button variant="outline" type="button" @click="resetVehicleForm">Cancel</Button>
+        <Button type="submit" :loading="vehicleSaving">Save Vehicle</Button>
+      </div>
+    </form>
+  </Modal>
 </template>
 
 <script setup>
@@ -356,7 +402,9 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import Loading from '@/components/ui/Loading.vue'
+import Modal from '@/components/ui/Modal.vue'
 import customerService from '@/services/customer.service'
+import { updateCustomerVehicle, deleteCustomerVehicle } from '@/services/customer-vehicle.service'
 import { useToast } from '@/stores/toast'
 
 const route = useRoute()
@@ -368,6 +416,22 @@ const vehicles = ref([])
 const loading = ref(true)
 const saving = ref(false)
 const editing = ref(false)
+const vehicleModalOpen = ref(false)
+const vehicleSaving = ref(false)
+const editingVehicleId = ref(null)
+
+const vehicleForm = reactive({
+  year: null,
+  make: '',
+  model: '',
+  engine: '',
+  transmission: '',
+  drive: '',
+  trim: '',
+  vin: '',
+  license_plate: '',
+  notes: ''
+})
 
 const editForm = reactive({
   first_name: '',
@@ -423,6 +487,11 @@ function formatDate(dateString) {
     month: 'long',
     day: 'numeric'
   })
+}
+
+function formatMileage(mileage) {
+  if (mileage == null) return '—'
+  return new Intl.NumberFormat('en-US').format(mileage)
 }
 
 function startEditing() {
@@ -499,6 +568,73 @@ async function loadCustomer() {
     toast.error('Failed to load customer details')
   } finally {
     loading.value = false
+  }
+}
+
+function openVehicleEditor(vehicle) {
+  editingVehicleId.value = vehicle.id
+  Object.assign(vehicleForm, {
+    year: vehicle.year,
+    make: vehicle.make || '',
+    model: vehicle.model || '',
+    engine: vehicle.engine || '',
+    transmission: vehicle.transmission || '',
+    drive: vehicle.drive || '',
+    trim: vehicle.trim || '',
+    vin: vehicle.vin || '',
+    license_plate: vehicle.license_plate || '',
+    notes: vehicle.notes || ''
+  })
+  vehicleModalOpen.value = true
+}
+
+function resetVehicleForm() {
+  vehicleModalOpen.value = false
+  editingVehicleId.value = null
+  Object.assign(vehicleForm, {
+    year: null,
+    make: '',
+    model: '',
+    engine: '',
+    transmission: '',
+    drive: '',
+    trim: '',
+    vin: '',
+    license_plate: '',
+    notes: ''
+  })
+}
+
+async function saveVehicle() {
+  if (!editingVehicleId.value) return
+  vehicleSaving.value = true
+  try {
+    const updated = await updateCustomerVehicle(route.params.id, editingVehicleId.value, vehicleForm)
+    const index = vehicles.value.findIndex((vehicle) => vehicle.id === editingVehicleId.value)
+    if (index !== -1) {
+      vehicles.value.splice(index, 1, updated)
+    }
+    toast.success('Vehicle updated successfully')
+    resetVehicleForm()
+  } catch (error) {
+    console.error('Failed to update vehicle:', error)
+    toast.error(error.response?.data?.message || 'Failed to update vehicle')
+  } finally {
+    vehicleSaving.value = false
+  }
+}
+
+async function confirmDeleteVehicle(vehicle) {
+  const confirmed = window.confirm(`Delete ${vehicle.year} ${vehicle.make} ${vehicle.model}?`)
+  if (!confirmed) return
+
+  try {
+    await deleteCustomerVehicle(route.params.id, vehicle.id)
+    vehicles.value = vehicles.value.filter((item) => item.id !== vehicle.id)
+    toast.success('Vehicle deleted successfully')
+  } catch (error) {
+    console.error('Failed to delete vehicle:', error)
+    toast.error(error.response?.data?.message || 'Failed to delete vehicle')
   }
 }
 

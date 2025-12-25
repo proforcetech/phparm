@@ -51,7 +51,15 @@ class CustomerController
     {
         $this->assertViewAccess($user);
 
-        return $this->repository->find($id)?->toArray();
+        $customer = $this->repository->find($id);
+        if ($customer === null) {
+            return null;
+        }
+
+        $data = $customer->toArray();
+        $data['vehicles'] = $this->vehicleService->listVehicles($id);
+
+        return $data;
     }
 
     /**

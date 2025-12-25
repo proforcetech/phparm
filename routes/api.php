@@ -1822,7 +1822,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
         $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
-        $estimateController = new \App\Services\Estimate\EstimateController($estimateRepository, $gate, $estimateEditor);
+        $invoiceService = new \App\Services\Invoice\InvoiceService($connection, $auditLogger);
+        $estimateController = new \App\Services\Estimate\EstimateController(
+            $estimateRepository,
+            $gate,
+            $estimateEditor,
+            $invoiceService
+        );
 
         $router->get('/api/bundles', function (Request $request) use ($bundleController) {
             $user = $request->getAttribute('user');
@@ -1908,6 +1914,31 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
 
             $data = $estimateController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates/{id}/reject', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reason = $request->body()['reason'] ?? null;
+
+            $data = $estimateController->reject($user, $id, $reason);
+            return Response::json($data);
+        });
+
+        $router->patch('/api/estimates/{id}/items/status', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $estimateController->updateItemStatuses($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates/{id}/merge-into-invoice', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $estimateController->mergeIntoInvoice($user, $id, $request->body());
             return Response::json($data);
         });
     });
@@ -2150,7 +2181,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     // User controller for technician listings
     $userController = new \App\Services\User\UserController(
         new \App\Services\User\UserRepository($connection),
-        $gate
+        $gate,
+        $totpService
     );
 
     // Role controller for role management
@@ -2252,6 +2284,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // User management routes
+        $router->put('/api/users/me', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->updateProfile($user, $request->body());
+            return Response::json($data);
+        });
+
         $router->get('/api/users', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -2586,6 +2624,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Financial\FinancialReportService($connection),
             $gate
         );
+        $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
+
+        $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'type' => $request->queryParam('type'),
+            ];
+            $data = $financialCategoryController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/categories/{type:purchase|expense|income}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->getAttribute('type');
+            $data = $financialCategoryController->index($user, ['type' => $type]);
+            return Response::json($data);
+        });
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
             $user = $request->getAttribute('user');

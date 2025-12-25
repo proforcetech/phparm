@@ -16,11 +16,11 @@
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label class="block text-sm font-medium text-gray-700">First name *</label>
-              <Input v-model="form.first_name" required placeholder="John" />
+              <Input v-model="form.first_name" required placeholder="John" :error="errors.first_name" />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Last name *</label>
-              <Input v-model="form.last_name" required placeholder="Doe" />
+              <Input v-model="form.last_name" required placeholder="Doe" :error="errors.last_name" />
             </div>
           </div>
 
@@ -32,7 +32,7 @@
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2 mt-4">
             <div>
               <label class="block text-sm font-medium text-gray-700">Email *</label>
-              <Input v-model="form.email" type="email" required placeholder="customer@example.com" />
+              <Input v-model="form.email" type="email" required placeholder="customer@example.com" :error="errors.email" />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Phone</label>
@@ -163,8 +163,10 @@ import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import { createCustomer } from '@/services/customer.service'
+import { useToast } from '@/stores/toast'
 
 const router = useRouter()
+const toast = useToast()
 
 const submitting = ref(false)
 const error = ref('')
@@ -190,6 +192,12 @@ const form = reactive({
   billing_postal_code: '',
   billing_country: '',
   notes: ''
+})
+
+const errors = reactive({
+  first_name: '',
+  last_name: '',
+  email: ''
 })
 
 // Copy main address to billing address when checkbox is checked
@@ -228,11 +236,46 @@ const goBack = () => {
   router.push('/cp/customers')
 }
 
+const resetErrors = () => {
+  Object.keys(errors).forEach((key) => {
+    errors[key] = ''
+  })
+}
+
+const validateForm = () => {
+  resetErrors()
+  let isValid = true
+
+  if (!form.first_name) {
+    errors.first_name = 'First name is required'
+    isValid = false
+  }
+
+  if (!form.last_name) {
+    errors.last_name = 'Last name is required'
+    isValid = false
+  }
+
+  if (!form.email) {
+    errors.email = 'Email is required'
+    isValid = false
+  }
+
+  return isValid
+}
+
 const submit = async () => {
   submitting.value = true
   error.value = ''
 
   try {
+    if (!validateForm()) {
+      const message = 'Please fill in the required fields before saving.'
+      error.value = message
+      toast.error(message)
+      return
+    }
+
     const payload = { ...form }
 
     // If billing address is same as main address, copy values
@@ -257,6 +300,13 @@ const submit = async () => {
     router.push(`/cp/customers/${customer.id}`)
   } catch (err) {
     error.value = err?.response?.data?.message || err?.message || 'Failed to create customer'
+    toast.error(error.value)
+    if (err?.response?.data?.errors) {
+      Object.assign(errors, err.response.data.errors)
+      if (err.response.data.errors._form) {
+        error.value = err.response.data.errors._form
+      }
+    }
   } finally {
     submitting.value = false
   }

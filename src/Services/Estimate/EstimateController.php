@@ -3,6 +3,7 @@
 namespace App\Services\Estimate;
 
 use App\Models\User;
+use App\Services\Invoice\InvoiceService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -12,12 +13,19 @@ class EstimateController
     private EstimateRepository $repository;
     private AccessGate $gate;
     private EstimateEditorService $editor;
+    private InvoiceService $invoices;
 
-    public function __construct(EstimateRepository $repository, AccessGate $gate, EstimateEditorService $editor)
+    public function __construct(
+        EstimateRepository $repository,
+        AccessGate $gate,
+        EstimateEditorService $editor,
+        InvoiceService $invoices
+    )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->editor = $editor;
+        $this->invoices = $invoices;
     }
 
     /**
@@ -66,9 +74,50 @@ class EstimateController
     {
         $this->assertManageAccess($user);
 
-        $estimate = $this->repository->updateStatus($estimateId, 'declined', $user->id, $reason);
+        $estimate = $this->editor->reject($estimateId, $reason ?? '', $user->id);
 
         return $estimate?->toArray();
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function updateItemStatuses(User $user, int $estimateId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        if (!isset($payload['items']) || !is_array($payload['items'])) {
+            throw new InvalidArgumentException('items are required for status updates');
+        }
+
+        $estimate = $this->editor->updateItemStatuses($estimateId, $payload['items'], $user->id);
+        if ($estimate === null) {
+            throw new InvalidArgumentException('Estimate not found');
+        }
+
+        return $estimate->toArray();
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function mergeIntoInvoice(User $user, int $estimateId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+        $this->gate->assert($user, 'invoices.update');
+
+        if (!isset($payload['invoice_id'])) {
+            throw new InvalidArgumentException('invoice_id is required');
+        }
+
+        $invoice = $this->invoices->mergeEstimateIntoInvoice((int) $payload['invoice_id'], $estimateId, $user->id);
+        if ($invoice === null) {
+            throw new InvalidArgumentException('Invoice not found');
+        }
+
+        return $invoice->toArray();
     }
 
     public function requestReapproval(User $user, int $estimateId, ?string $reason = null): ?array

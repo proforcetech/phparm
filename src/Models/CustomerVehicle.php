@@ -19,6 +19,9 @@ class CustomerVehicle extends BaseModel
     public ?string $notes = null;
     public ?int $mileage_in = null;
     public ?int $mileage_out = null;
+    public int $is_active = 1;
+    public ?string $last_service_date = null;
+    public ?int $last_service_mileage = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }

@@ -59,10 +59,27 @@
           </div>
         </div>
 
-        <div class="rounded-md bg-gray-50 p-4">
-          <p class="text-sm font-semibold text-gray-800">Raw payload</p>
-          <pre class="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{{ pretty(vehicle) }}</pre>
+        <div class="rounded-md border border-gray-200 p-4">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-gray-800">Features</p>
+            <p v-if="!featureEntries.length" class="text-xs text-gray-500">No features listed.</p>
+          </div>
+          <div v-if="featureEntries.length" class="mt-3 grid grid-cols-1 gap-3 text-sm text-gray-900 md:grid-cols-2">
+            <div
+              v-for="entry in featureEntries"
+              :key="entry.key"
+              class="flex items-start justify-between gap-3 rounded-md bg-gray-50 px-3 py-2"
+            >
+              <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ entry.key }}</span>
+              <span class="text-sm text-gray-900 text-right">{{ entry.value }}</span>
+            </div>
+          </div>
         </div>
+
+        <details class="rounded-md bg-gray-50 p-4">
+          <summary class="cursor-pointer text-sm font-semibold text-gray-800">Raw payload</summary>
+          <pre class="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{{ pretty(vehicle) }}</pre>
+        </details>
       </div>
       <div v-else class="py-6 text-center text-sm text-gray-500">Vehicle not found.</div>
     </Card>
@@ -70,7 +87,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -82,6 +99,48 @@ const loading = ref(true)
 const vehicle = ref(null)
 
 const pretty = (value) => JSON.stringify(value, null, 2)
+
+const featureEntries = computed(() => {
+  if (!vehicle.value) {
+    return []
+  }
+
+  const rawFeatures = vehicle.value.features ?? vehicle.value.payload?.features
+
+  if (!rawFeatures) {
+    return []
+  }
+
+  if (Array.isArray(rawFeatures)) {
+    return rawFeatures.map((item, index) => {
+      if (item && typeof item === 'object') {
+        return {
+          key: item.name ?? item.label ?? `Feature ${index + 1}`,
+          value: item.value ?? item.description ?? JSON.stringify(item),
+        }
+      }
+
+      return {
+        key: `Feature ${index + 1}`,
+        value: item,
+      }
+    })
+  }
+
+  if (typeof rawFeatures === 'object') {
+    return Object.entries(rawFeatures).map(([key, value]) => ({
+      key,
+      value: value ?? 'N/A',
+    }))
+  }
+
+  return [
+    {
+      key: 'Features',
+      value: rawFeatures,
+    },
+  ]
+})
 
 const loadVehicle = async () => {
   loading.value = true

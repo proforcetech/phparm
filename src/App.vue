@@ -9,7 +9,7 @@
     </CustomerLayout>
 
     <!-- Admin/Staff routes - use AdminLayout -->
-    <AdminLayout v-else-if="isAuthenticated">
+    <AdminLayout v-else-if="isStaffRoute">
       <router-view :key="route.fullPath" />
     </AdminLayout>
 
@@ -34,16 +34,9 @@ onMounted(() => {
 })
 
 // Determine which layout to use based on route
-const isGuestRoute = computed(() => {
-  const guestRoutes = ['/login', '/customer-login', '/forgot-password']
-  return guestRoutes.some(guestRoute => route.path.startsWith(guestRoute)) || route.path.startsWith('/reset-password')
-})
+const isGuestRoute = computed(() => route.meta.guest === true)
 
-const isCustomerRoute = computed(() => {
-  return route.path.startsWith('/portal')
-})
+const isCustomerRoute = computed(() => authStore.isCustomer && route.meta.requiresCustomer)
 
-const isAuthenticated = computed(() => {
-  return authStore.isAuthenticated
-})
+const isStaffRoute = computed(() => authStore.isAuthenticated && authStore.isStaff)
 </script>

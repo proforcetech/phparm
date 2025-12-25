@@ -18,6 +18,9 @@ export default {
       .get('/financial/entries/export', { params })
       .then((res) => res.data)
   },
+  listCategories(params = {}) {
+    return api.get('/financial/categories', { params }).then((res) => res.data)
+  },
   uploadAttachment(id, file) {
     const formData = new FormData()
     formData.append('file', file)

@@ -5,6 +5,7 @@ namespace App\Models;
 class Estimate extends BaseModel
 {
     public int $id;
+    public ?int $parent_id = null;
     public string $number;
     public int $customer_id;
     public int $vehicle_id;
@@ -20,6 +21,7 @@ class Estimate extends BaseModel
     public float $grand_total = 0.0;
     public ?string $internal_notes = null;
     public ?string $customer_notes = null;
+    public ?string $rejection_reason = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }

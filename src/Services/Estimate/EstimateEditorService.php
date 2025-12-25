@@ -16,6 +16,7 @@ class EstimateEditorService
 {
     private Connection $connection;
     private ?AuditLogger $audit;
+    private const ALLOWED_ITEM_STATUSES = ['pending', 'approved', 'rejected'];
 
     public function __construct(Connection $connection, ?AuditLogger $audit = null)
     {
@@ -113,6 +114,101 @@ class EstimateEditorService
         return $updated;
     }
 
+    public function reject(int $estimateId, string $reason, ?int $actorId = null): ?Estimate
+    {
+        $estimate = $this->fetchEstimate($estimateId);
+        if ($estimate === null) {
+            return null;
+        }
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $stmt = $pdo->prepare(
+                'UPDATE estimates SET status = :status, rejection_reason = :reason, updated_at = NOW() WHERE id = :id'
+            );
+            $stmt->execute([
+                'status' => 'rejected',
+                'reason' => $reason,
+                'id' => $estimateId,
+            ]);
+
+            $pdo->prepare(
+                'UPDATE estimate_items ei JOIN estimate_jobs ej ON ej.id = ei.estimate_job_id ' .
+                'SET ei.status = :status WHERE ej.estimate_id = :estimate_id'
+            )->execute([
+                'status' => 'rejected',
+                'estimate_id' => $estimateId,
+            ]);
+
+            $pdo->commit();
+            $updated = $this->fetchEstimate($estimateId);
+            $this->log('estimate.rejected', $estimateId, $actorId, [
+                'reason' => $reason,
+                'after' => $updated?->toArray(),
+            ]);
+
+            return $updated;
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     */
+    public function updateItemStatuses(int $estimateId, array $items, ?int $actorId = null): ?Estimate
+    {
+        if ($items === []) {
+            throw new InvalidArgumentException('At least one item status update is required.');
+        }
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $stmt = $pdo->prepare(
+                'UPDATE estimate_items ei JOIN estimate_jobs ej ON ej.id = ei.estimate_job_id ' .
+                'SET ei.status = :status WHERE ei.id = :id AND ej.estimate_id = :estimate_id'
+            );
+
+            foreach ($items as $item) {
+                $status = $item['status'] ?? null;
+                $itemId = $item['id'] ?? null;
+
+                if ($itemId === null || $status === null) {
+                    throw new InvalidArgumentException('Each item update requires id and status.');
+                }
+
+                if (!in_array($status, self::ALLOWED_ITEM_STATUSES, true)) {
+                    throw new InvalidArgumentException('Invalid estimate item status value.');
+                }
+
+                $stmt->execute([
+                    'status' => $status,
+                    'id' => (int) $itemId,
+                    'estimate_id' => $estimateId,
+                ]);
+            }
+
+            $this->syncEstimateStatusFromItems($estimateId);
+
+            $pdo->commit();
+            $updated = $this->fetchEstimate($estimateId);
+            $this->log('estimate.items_status_updated', $estimateId, $actorId, [
+                'items' => $items,
+                'after' => $updated?->toArray(),
+            ]);
+
+            return $updated;
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
     /**
      * @param array<string, mixed> $payload
      */
@@ -163,13 +259,14 @@ class EstimateEditorService
     private function insertEstimate(array $payload, string $status): int
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimates (number, customer_id, vehicle_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, subtotal, tax, grand_total, created_at, updated_at)
-            VALUES (:number, :customer_id, :vehicle_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, 0, 0, 0, NOW(), NOW())
+            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, subtotal, tax, grand_total, created_at, updated_at)
+            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, 0, 0, 0, NOW(), NOW())
         SQL);
 
         $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
 
         $stmt->execute([
+            'parent_id' => $payload['parent_id'] ?? null,
             'number' => $payload['number'] ?? $this->generateNumber(),
             'customer_id' => (int) $payload['customer_id'],
             'vehicle_id' => (int) $payload['vehicle_id'],
@@ -194,6 +291,7 @@ class EstimateEditorService
     {
         $sql = <<<SQL
             UPDATE estimates SET
+                parent_id = :parent_id,
                 customer_id = :customer_id,
                 vehicle_id = :vehicle_id,
                 is_mobile = :is_mobile,
@@ -213,6 +311,7 @@ class EstimateEditorService
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute([
+            'parent_id' => $payload['parent_id'] ?? null,
             'customer_id' => (int) $payload['customer_id'],
             'vehicle_id' => (int) $payload['vehicle_id'],
             'is_mobile' => (int) (!empty($payload['is_mobile'])),
@@ -316,8 +415,8 @@ class EstimateEditorService
     private function insertItems(int $jobId, array $items): void
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimate_items (estimate_job_id, type, description, quantity, unit_price, taxable, line_total)
-            VALUES (:estimate_job_id, :type, :description, :quantity, :unit_price, :taxable, :line_total)
+            INSERT INTO estimate_items (estimate_job_id, type, description, quantity, unit_price, taxable, line_total, status)
+            VALUES (:estimate_job_id, :type, :description, :quantity, :unit_price, :taxable, :line_total, :status)
         SQL);
 
         foreach ($items as $displayOrder => $item) {
@@ -330,6 +429,7 @@ class EstimateEditorService
                 'unit_price' => (float) $item['unit_price'],
                 'taxable' => array_key_exists('taxable', $item) ? (bool) $item['taxable'] : true,
                 'line_total' => $lineTotal,
+                'status' => $item['status'] ?? 'pending',
             ]);
         }
     }
@@ -374,6 +474,7 @@ class EstimateEditorService
 
         return $row ? new Estimate([
             'id' => (int) $row['id'],
+            'parent_id' => $row['parent_id'] !== null ? (int) $row['parent_id'] : null,
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
@@ -389,6 +490,7 @@ class EstimateEditorService
             'grand_total' => (float) $row['grand_total'],
             'internal_notes' => $row['internal_notes'],
             'customer_notes' => $row['customer_notes'],
+            'rejection_reason' => $row['rejection_reason'] ?? null,
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ]) : null;
@@ -441,5 +543,35 @@ class EstimateEditorService
         }
 
         return $normalized;
+    }
+
+    private function syncEstimateStatusFromItems(int $estimateId): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT status, COUNT(*) AS total ' .
+            'FROM estimate_items ei JOIN estimate_jobs ej ON ej.id = ei.estimate_job_id ' .
+            'WHERE ej.estimate_id = :estimate_id GROUP BY status'
+        );
+        $stmt->execute(['estimate_id' => $estimateId]);
+        $counts = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        if (empty($counts)) {
+            return;
+        }
+
+        $total = array_sum(array_map('intval', $counts));
+        $approved = (int) ($counts['approved'] ?? 0);
+        $rejected = (int) ($counts['rejected'] ?? 0);
+
+        if ($total > 0 && $approved === $total) {
+            $this->connection->pdo()->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id')
+                ->execute(['status' => 'approved', 'id' => $estimateId]);
+            return;
+        }
+
+        if ($total > 0 && $rejected === $total) {
+            $this->connection->pdo()->prepare('UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id')
+                ->execute(['status' => 'rejected', 'id' => $estimateId]);
+        }
     }
 }

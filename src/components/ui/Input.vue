@@ -15,6 +15,7 @@
         :required="required"
         :autocomplete="autocomplete"
         :class="inputClasses"
+        ref="inputRef"
         @input="$emit('update:modelValue', $event.target.value)"
         @blur="$emit('blur', $event)"
         @focus="$emit('focus', $event)"
@@ -37,7 +38,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   id: {
@@ -90,16 +91,66 @@ const props = defineProps({
   },
 })
 
-defineEmits(['update:modelValue', 'blur', 'focus'])
+const emit = defineEmits(['update:modelValue', 'blur', 'focus', 'validation-error'])
+
+const inputRef = ref(null)
+const isShaking = ref(false)
+let shakeTimeoutId = null
 
 const inputClasses = computed(() => {
   const base = 'block w-full rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed sm:text-sm'
+  const shakeClass = isShaking.value ? 'input-shake' : ''
 
   if (props.error) {
-    return `${base} border-red-300 text-red-900 placeholder-red-300 focus:ring-red-500 focus:border-red-500`
+    return `${base} ${shakeClass} border-red-300 text-red-900 placeholder-red-300 focus:ring-red-500 focus:border-red-500`
   }
 
   const iconPadding = props.icon ? 'pl-10' : 'px-3'
-  return `${base} ${iconPadding} py-2 border-gray-300 focus:ring-primary-500 focus:border-primary-500`
+  return `${base} ${iconPadding} ${shakeClass} py-2 border-gray-300 focus:ring-primary-500 focus:border-primary-500`
 })
+
+watch(
+  () => props.error,
+  async (newError, oldError) => {
+    if (!newError || newError === oldError) {
+      return
+    }
+
+    emit('validation-error', newError)
+    isShaking.value = true
+
+    await nextTick()
+    if (inputRef.value?.scrollIntoView) {
+      inputRef.value.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+
+    if (shakeTimeoutId) {
+      clearTimeout(shakeTimeoutId)
+    }
+    shakeTimeoutId = setTimeout(() => {
+      isShaking.value = false
+    }, 450)
+  }
+)
 </script>
+
+<style scoped>
+@keyframes input-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.input-shake {
+  animation: input-shake 0.3s ease-in-out;
+}
+</style>

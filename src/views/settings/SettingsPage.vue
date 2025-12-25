@@ -64,11 +64,25 @@
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700">Estimate Terms</label>
-              <Textarea v-model="form.terms.estimates" :rows="4" placeholder="Terms shown on estimates" class="mt-1" />
+              <div class="mt-1 terms-editor">
+                <QuillEditor
+                  v-model:content="form.terms.estimates"
+                  content-type="html"
+                  theme="snow"
+                  :toolbar="termsToolbar"
+                />
+              </div>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Invoice Terms</label>
-              <Textarea v-model="form.terms.invoices" :rows="4" placeholder="Terms shown on invoices" class="mt-1" />
+              <div class="mt-1 terms-editor">
+                <QuillEditor
+                  v-model:content="form.terms.invoices"
+                  content-type="html"
+                  theme="snow"
+                  :toolbar="termsToolbar"
+                />
+              </div>
             </div>
           </div>
         </Card>
@@ -261,11 +275,21 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import { fetchSettings, saveSettings } from '@/services/settings.service'
+import { QuillEditor } from '@vueup/vue-quill'
+import '@vueup/vue-quill/dist/vue-quill.snow.css'
 
 const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
 const error = ref('')
+
+const termsToolbar = [
+  [{ header: [2, 3, false] }],
+  ['bold', 'italic', 'underline'],
+  [{ list: 'ordered' }, { list: 'bullet' }],
+  ['link'],
+  ['clean'],
+]
 
 const form = reactive({
   profile: {
@@ -457,3 +481,15 @@ const save = async () => {
 
 onMounted(hydrate)
 </script>
+
+<style scoped>
+:deep(.terms-editor .ql-container) {
+  border-radius: 0.375rem;
+}
+
+:deep(.terms-editor .ql-editor) {
+  min-height: 140px;
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+</style>
