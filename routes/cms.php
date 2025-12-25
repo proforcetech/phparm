@@ -72,10 +72,42 @@ return function (Router $router, array $config, $connection) {
     $cmsBootstrap->init();
     $pageController = new PageController($connection, $gate, $cmsCache);
 
+    /**
+     * Attempt to render a CMS page by path.
+     * Returns null when the page does not exist so the SPA can handle the request.
+     * Returns a 5xx response when rendering fails for an existing page to avoid silently
+     * falling back to the SPA with an empty screen.
+     */
     $renderCmsPage = static function (PageController $controller, string $path): ?Response {
         $slug = trim($path, '/');
         $slug = $slug === '' ? 'home' : $slug;
 
+        $page = null;
+
+        try {
+            $page = $controller->publishedPage($slug);
+        } catch (\Throwable $exception) {
+            error_log(sprintf(
+                'CMS lookup failed for slug "%s": %s',
+                $slug,
+                $exception->getMessage()
+            ));
+            return Response::serverError('CMS page lookup failed');
+        }
+
+        if ($page === null) {
+            return null;
+        }
+
+        try {
+            $html = $controller->renderPublishedPage($slug);
+
+            if ($html !== null && trim($html) !== '') {
+                return Response::html($html);
+            }
+
+            error_log(sprintf('CMS render returned empty output for slug "%s"', $slug));
+            return Response::serverError('CMS page could not be rendered');
         try {
             $html = $controller->renderPublishedPage($slug);
             if ($html !== null) {
@@ -87,6 +119,8 @@ return function (Router $router, array $config, $connection) {
                 $slug,
                 $exception->getMessage()
             ));
+            return Response::serverError('CMS page render failed');
+        }
         }
 
         return null;
@@ -97,6 +131,9 @@ return function (Router $router, array $config, $connection) {
 
     // Homepage - serve Vue SPA
     $router->get('/', function (Request $request) use ($pageController, $renderCmsPage) {
+        $rendered = $renderCmsPage($pageController, 'home');
+        if ($rendered !== null) {
+            return $rendered;
         if ($response = $renderCmsPage($pageController, 'home')) {
             return $response;
         }
@@ -449,6 +486,9 @@ return function (Router $router, array $config, $connection) {
 
         // Try to render a published CMS page first
         $path = $request->path();
+        $rendered = $renderCmsPage($pageController, $path);
+        if ($rendered !== null) {
+            return $rendered;
         if ($response = $renderCmsPage($pageController, $path)) {
             return $response;
         }
