@@ -29,21 +29,31 @@ class InvoiceService
         $this->audit = $audit;
     }
 
-    public function createFromEstimate(int $estimateId, array $jobIds, int $actorId): ?Invoice
+    public function createFromEstimate(int $estimateId, array $itemIds, int $actorId): ?Invoice
     {
         $estimate = $this->fetchEstimate($estimateId);
         if ($estimate === null) {
             return null;
         }
 
-        if (strtolower($estimate->status) !== 'approved') {
-            throw new InvalidArgumentException('Estimate must be approved before conversion');
+        $blocked = ['rejected', 'expired', 'converted'];
+        if (in_array(strtolower($estimate->status), $blocked, true)) {
+            throw new InvalidArgumentException('Estimate cannot be converted in its current status');
+        }
+
+        if (empty($itemIds)) {
+            throw new InvalidArgumentException('At least one approved item must be selected for invoicing');
         }
 
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
 
         try {
+            $items = $this->fetchApprovedEstimateItems($estimateId, $itemIds);
+            if (empty($items)) {
+                throw new InvalidArgumentException('No approved items found for invoicing');
+            }
+
             $invoiceId = $this->insertInvoice([
                 'customer_id' => $estimate->customer_id,
                 'vehicle_id' => $estimate->vehicle_id,
@@ -56,16 +66,18 @@ class InvoiceService
                 'public_token_expires_at' => $this->calculatePublicExpiry(),
             ]);
 
-            $totals = $this->copyEstimateJobs($invoiceId, $jobIds, $estimateId);
+            $totals = $this->appendEstimateItems($invoiceId, $items);
             $totals = $this->appendEstimateExtras($invoiceId, $estimate, $totals);
             $this->updateTotals($invoiceId, $totals);
             $this->syncInvoiceBalance($invoiceId);
+
+            $this->markEstimateConvertedIfFullyApproved($estimateId, $itemIds);
 
             $pdo->commit();
             $invoice = $this->fetchInvoice($invoiceId);
             $this->log('invoice.created_from_estimate', $invoiceId, $actorId, [
                 'estimate_id' => $estimateId,
-                'jobs' => $jobIds,
+                'items' => $itemIds,
                 'totals' => $totals,
             ]);
 
@@ -256,29 +268,17 @@ class InvoiceService
     }
 
     /**
-     * @param array<int, int> $jobIds
      * @return array<string, float>
      */
-    private function copyEstimateJobs(int $invoiceId, array $jobIds, int $estimateId): array
+    private function appendEstimateItems(int $invoiceId, array $items): array
     {
-        if (empty($jobIds)) {
-            throw new InvalidArgumentException('At least one job must be selected for invoicing');
-        }
-
-        $itemsStmt = $this->connection->pdo()->prepare(
-            'SELECT ej.title, ei.description, ei.quantity, ei.unit_price, ei.taxable, ei.type ' .
-            'FROM estimate_jobs ej JOIN estimate_items ei ON ej.id = ei.estimate_job_id ' .
-            'WHERE ej.estimate_id = ? AND ej.id IN (' . implode(',', array_fill(0, count($jobIds), '?')) . ')'
-        );
-        $itemsStmt->execute(array_merge([$estimateId], $jobIds));
-
         $totals = ['subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0];
-        while ($row = $itemsStmt->fetch(PDO::FETCH_ASSOC)) {
-            $lineTotal = ((float) $row['quantity']) * ((float) $row['unit_price']);
-            $tax = $row['taxable'] ? $lineTotal * 0.1 : 0.0;
+        foreach ($items as $row) {
+            $lineTotal = (float) ($row['line_total'] ?? 0.0);
+            $tax = !empty($row['taxable']) ? $lineTotal * 0.1 : 0.0;
             $this->insertInvoiceItem($invoiceId, [
                 'type' => $row['type'] ?? 'service',
-                'description' => $row['title'] . ' - ' . $row['description'],
+                'description' => $row['job_title'] . ' - ' . $row['description'],
                 'quantity' => $row['quantity'],
                 'unit_price' => $row['unit_price'],
                 'taxable' => $row['taxable'],
@@ -291,6 +291,53 @@ class InvoiceService
         $totals['total'] = $totals['subtotal'] + $totals['tax'];
 
         return $totals;
+    }
+
+    public function mergeEstimateIntoInvoice(int $invoiceId, int $subEstimateId, int $actorId): ?Invoice
+    {
+        $invoice = $this->fetchInvoice($invoiceId);
+        if ($invoice === null) {
+            return null;
+        }
+
+        $estimate = $this->fetchEstimate($subEstimateId);
+        if ($estimate === null) {
+            return null;
+        }
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $items = $this->fetchApprovedEstimateItems($subEstimateId, []);
+            if (empty($items)) {
+                throw new InvalidArgumentException('No approved items found for merge');
+            }
+
+            $addedTotals = $this->appendEstimateItems($invoiceId, $items);
+            $addedTotals = $this->appendEstimateExtras($invoiceId, $estimate, $addedTotals);
+
+            $combinedTotals = [
+                'subtotal' => (float) $invoice->subtotal + $addedTotals['subtotal'],
+                'tax' => (float) $invoice->tax + $addedTotals['tax'],
+                'total' => (float) $invoice->total + $addedTotals['total'],
+            ];
+
+            $this->updateTotals($invoiceId, $combinedTotals);
+            $this->syncInvoiceBalance($invoiceId);
+
+            $pdo->commit();
+            $updated = $this->fetchInvoice($invoiceId);
+            $this->log('invoice.merged_estimate_items', $invoiceId, $actorId, [
+                'estimate_id' => $subEstimateId,
+                'totals_added' => $addedTotals,
+            ]);
+
+            return $updated;
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
     }
 
     private function appendEstimateExtras(int $invoiceId, Estimate $estimate, array $totals): array
@@ -322,6 +369,33 @@ class InvoiceService
         $totals['total'] = $totals['subtotal'] + $totals['tax'];
 
         return $totals;
+    }
+
+    /**
+     * @param array<int, int> $itemIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchApprovedEstimateItems(int $estimateId, array $itemIds): array
+    {
+        $clauses = ['ej.estimate_id = ?'];
+        $bindings = [$estimateId];
+
+        if (!empty($itemIds)) {
+            $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+            $clauses[] = 'ei.id IN (' . $placeholders . ')';
+            $bindings = array_merge($bindings, $itemIds);
+        }
+
+        $clauses[] = "COALESCE(ei.status, 'pending') = 'approved'";
+
+        $itemsStmt = $this->connection->pdo()->prepare(
+            'SELECT ej.title AS job_title, ei.description, ei.quantity, ei.unit_price, ei.taxable, ei.type, ei.line_total ' .
+            'FROM estimate_jobs ej JOIN estimate_items ei ON ej.id = ei.estimate_job_id ' .
+            'WHERE ' . implode(' AND ', $clauses)
+        );
+        $itemsStmt->execute($bindings);
+
+        return $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
@@ -486,6 +560,33 @@ class InvoiceService
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
 
         return new Estimate($row);
+    }
+
+    /**
+     * @param array<int, int> $itemIds
+     */
+    private function markEstimateConvertedIfFullyApproved(int $estimateId, array $itemIds): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) AS total, SUM(CASE WHEN COALESCE(ei.status, \'pending\') = \'approved\' THEN 1 ELSE 0 END) AS approved ' .
+            'FROM estimate_items ei JOIN estimate_jobs ej ON ej.id = ei.estimate_job_id ' .
+            'WHERE ej.estimate_id = :estimate_id'
+        );
+        $stmt->execute(['estimate_id' => $estimateId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $total = (int) ($row['total'] ?? 0);
+        $approved = (int) ($row['approved'] ?? 0);
+        $uniqueItemCount = count(array_unique($itemIds));
+
+        if ($total > 0 && $approved === $total && $uniqueItemCount === $total) {
+            $this->connection->pdo()->prepare(
+                'UPDATE estimates SET status = :status, updated_at = NOW() WHERE id = :id'
+            )->execute([
+                'status' => 'converted',
+                'id' => $estimateId,
+            ]);
+        }
     }
 
     private function generateInvoiceNumber(): string

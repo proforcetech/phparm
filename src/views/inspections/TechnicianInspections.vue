@@ -27,8 +27,19 @@
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700">Vehicle ID (optional)</label>
-          <input v-model.number="vehicleId" type="number" class="w-full p-2 border rounded" />
+          <label class="block text-sm font-medium text-gray-700">Vehicle (optional)</label>
+          <select
+            v-model="vehicleId"
+            class="w-full p-2 border rounded"
+            :disabled="!customerId || loadingVehicles"
+          >
+            <option value="">
+              {{ loadingVehicles ? 'Loading vehicles...' : 'Select vehicle' }}
+            </option>
+            <option v-for="vehicle in vehicles" :key="vehicle.id" :value="vehicle.id">
+              {{ formatVehicleLabel(vehicle) }}
+            </option>
+          </select>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Summary</label>
@@ -148,10 +159,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Autocomplete from '@/components/ui/Autocomplete.vue'
 import customerService from '@/services/customer.service'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import inspectionService from '@/services/inspection.service'
+import customerService from '@/services/customer.service'
 
 const templates = ref([])
 const selectedTemplateId = ref('')
@@ -159,6 +172,8 @@ const customerId = ref(null)
 const selectedCustomer = ref(null)
 const vehicleId = ref('')
 const summary = ref('')
+const vehicles = ref([])
+const loadingVehicles = ref(false)
 const responses = reactive({})
 const mediaFiles = ref([])
 const loading = ref(false)
@@ -178,6 +193,40 @@ const loadTemplates = async () => {
 }
 
 onMounted(loadTemplates)
+
+const formatVehicleLabel = (vehicle) => {
+  const details = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')
+  const vin = vehicle.vin ? `VIN ${vehicle.vin}` : ''
+  return [details, vin].filter(Boolean).join(' • ')
+}
+
+const loadCustomerVehicles = async (customer) => {
+  if (!customer) {
+    vehicles.value = []
+    vehicleId.value = ''
+    return
+  }
+
+  loadingVehicles.value = true
+  try {
+    vehicles.value = await customerService.getCustomerVehicles(customer)
+    if (vehicleId.value && !vehicles.value.find((vehicle) => vehicle.id === Number(vehicleId.value))) {
+      vehicleId.value = ''
+    }
+  } catch (err) {
+    console.error(err)
+    error.value = 'Unable to load vehicles for customer'
+    vehicles.value = []
+    vehicleId.value = ''
+  } finally {
+    loadingVehicles.value = false
+  }
+}
+
+watch(customerId, (newCustomerId) => {
+  error.value = ''
+  loadCustomerVehicles(newCustomerId ? Number(newCustomerId) : null)
+})
 
 const prepareResponses = () => {
   Object.keys(responses).forEach((key) => delete responses[key])

@@ -14,6 +14,7 @@
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
     "@fullcalendar/vue3": "^6.1.19",
+    "@vueup/vue-quill": "^1.2.0",
     "axios": "^1.6.0",
     "chart.js": "^4.5.1",
     "pinia": "^2.1.7",
