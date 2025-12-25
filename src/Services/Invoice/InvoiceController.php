@@ -82,13 +82,13 @@ class InvoiceController
             throw new UnauthorizedException('Cannot create invoices');
         }
 
-        if (!isset($data['estimate_id'], $data['job_ids'])) {
-            throw new InvalidArgumentException('estimate_id and job_ids are required');
+        if (!isset($data['estimate_id'], $data['item_ids'])) {
+            throw new InvalidArgumentException('estimate_id and item_ids are required');
         }
 
         $invoice = $this->service->createFromEstimate(
             (int) $data['estimate_id'],
-            (array) $data['job_ids'],
+            (array) $data['item_ids'],
             $user->id
         );
 
