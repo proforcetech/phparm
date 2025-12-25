@@ -305,6 +305,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/settings/services',
+    name: 'ServiceTypes',
+    component: () => import('@/views/settings/ServiceTypes.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/users',
     name: 'UsersList',
     component: () => import('@/views/users/UsersList.vue'),

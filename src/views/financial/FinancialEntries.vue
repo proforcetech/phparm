@@ -298,20 +298,41 @@ onMounted(loadLookups)
 
 function loadLookups() {
   loadLookup('categories', categoryOptions)
+  loadCategories()
   loadVendors()
 }
 
-async function loadLookup(type, target) {
-  lookupsLoading[type] = true
-  lookupError[type] = ''
+async function loadCategories() {
+  lookupsLoading.categories = true
+  lookupError.categories = ''
   try {
     const data = await inventoryMetaService.list(type)
     target.value = data.map((item) => ({ label: item.name, value: item.name }))
+    const data = await financialService.listCategories()
+    categoryOptions.value = data.map((item) => ({
+      label: item.name,
+      value: item.name,
+      type: item.type,
+    }))
   } catch (err) {
     console.error(err)
-    lookupError[type] = 'Unable to load options'
+    lookupError.categories = 'Unable to load categories'
   } finally {
-    lookupsLoading[type] = false
+    lookupsLoading.categories = false
+  }
+}
+
+async function loadVendors() {
+  lookupsLoading.vendors = true
+  lookupError.vendors = ''
+  try {
+    const data = await inventoryMetaService.list('vendors', { parts_supplier: true })
+    vendorOptions.value = data.map((item) => ({ label: item.name, value: item.name }))
+  } catch (err) {
+    console.error(err)
+    lookupError.vendors = 'Unable to load vendors'
+  } finally {
+    lookupsLoading.vendors = false
   }
 }
 

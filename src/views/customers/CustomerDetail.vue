@@ -338,7 +338,7 @@
                   </div>
                   <div class="mt-3 space-y-1 text-xs text-gray-600">
                     <p>
-                      <span class="font-medium text-gray-700">Last Service:</span>
+                      <span class="font-medium text-gray-700">Last Service Date:</span>
                       <span>{{ vehicle.last_service_date ? formatDate(vehicle.last_service_date) : '—' }}</span>
                     </p>
                     <p>

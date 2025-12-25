@@ -250,6 +250,7 @@ class EstimateRepository
     {
         return new Estimate([
             'id' => (int) $row['id'],
+            'parent_id' => $row['parent_id'] !== null ? (int) $row['parent_id'] : null,
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
@@ -265,6 +266,7 @@ class EstimateRepository
             'grand_total' => (float) $row['grand_total'],
             'internal_notes' => $row['internal_notes'],
             'customer_notes' => $row['customer_notes'],
+            'rejection_reason' => $row['rejection_reason'] ?? null,
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ]);
