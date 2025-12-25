@@ -1306,6 +1306,7 @@ return Response::json([
             /** @var \App\Models\User|null $user */
             $user = $request->getAttribute('user');
             $params = [
+                'preset' => $request->queryParam('preset'),
                 'start' => $request->queryParam('start'),
                 'end' => $request->queryParam('end'),
                 'timezone' => $request->queryParam('timezone', 'UTC'),
@@ -1331,6 +1332,7 @@ return Response::json([
             /** @var \App\Models\User|null $user */
             $user = $request->getAttribute('user');
             $params = [
+                'preset' => $request->queryParam('preset'),
                 'start' => $request->queryParam('start'),
                 'end' => $request->queryParam('end'),
                 'timezone' => $request->queryParam('timezone', 'UTC'),
@@ -1356,6 +1358,7 @@ return Response::json([
             /** @var \App\Models\User|null $user */
             $user = $request->getAttribute('user');
             $params = [
+                'preset' => $request->queryParam('preset'),
                 'start' => $request->queryParam('start'),
                 'end' => $request->queryParam('end'),
                 'timezone' => $request->queryParam('timezone', 'UTC'),
