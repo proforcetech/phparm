@@ -336,6 +336,16 @@
                     <span v-if="vehicle.drive">Drive: {{ vehicle.drive }}</span>
                     <span v-if="vehicle.trim">Trim: {{ vehicle.trim }}</span>
                   </div>
+                  <div class="mt-3 space-y-1 text-xs text-gray-600">
+                    <p>
+                      <span class="font-medium text-gray-700">Last Service:</span>
+                      <span>{{ vehicle.last_service_date ? formatDate(vehicle.last_service_date) : '—' }}</span>
+                    </p>
+                    <p>
+                      <span class="font-medium text-gray-700">Last Service Mileage:</span>
+                      <span>{{ vehicle.last_service_mileage != null ? `${formatMileage(vehicle.last_service_mileage)} mi` : '—' }}</span>
+                    </p>
+                  </div>
                 </div>
                 <div class="flex flex-col gap-2 items-end">
                   <Button size="xs" variant="outline" @click="openVehicleEditor(vehicle)">Edit</Button>
@@ -477,6 +487,11 @@ function formatDate(dateString) {
     month: 'long',
     day: 'numeric'
   })
+}
+
+function formatMileage(mileage) {
+  if (mileage == null) return '—'
+  return new Intl.NumberFormat('en-US').format(mileage)
 }
 
 function startEditing() {
