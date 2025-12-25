@@ -12,4 +12,5 @@ class EstimateItem extends BaseModel
     public float $unit_price;
     public bool $taxable = true;
     public float $line_total = 0.0;
+    public string $status = 'pending';
 }
