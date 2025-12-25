@@ -162,9 +162,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Autocomplete from '@/components/ui/Autocomplete.vue'
 import customerService from '@/services/customer.service'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
 import inspectionService from '@/services/inspection.service'
-import customerService from '@/services/customer.service'
 
 const templates = ref([])
 const selectedTemplateId = ref('')
