@@ -597,8 +597,7 @@ async function searchVehicles(query) {
   if (!form.customer_id) return []
 
   try {
-    const response = await customerService.getCustomerVehicles(form.customer_id)
-    const vehicles = response.data || []
+    const vehicles = await customerService.getCustomerVehicles(form.customer_id)
 
     // Filter by query if provided
     if (query) {
@@ -619,8 +618,8 @@ async function searchVehicles(query) {
 
 async function searchTechnicians(query) {
   try {
-    const response = await technicianService.searchTechnicians(query || '')
-    return response.data || []
+    const technicians = await technicianService.searchTechnicians(query || '')
+    return technicians || []
   } catch (error) {
     console.error('Technician search failed:', error)
     return []
