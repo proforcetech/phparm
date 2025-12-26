@@ -3,7 +3,12 @@
     <div class="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <div>
         <h1 class="text-2xl font-bold text-gray-900">Preset Bundles</h1>
-        <p class="mt-1 text-sm text-gray-500">Create reusable groups of line items for faster estimate building.</p>
+        <p class="mt-1 text-sm text-gray-500">
+          Create reusable groups of line items for faster estimate building.
+          <router-link to="/cp/settings/services" class="ml-2 text-indigo-600 hover:text-indigo-800 font-medium">
+            Manage Service Types →
+          </router-link>
+        </p>
       </div>
       <Button @click="$router.push('/cp/bundles/create')">New Bundle</Button>
     </div>

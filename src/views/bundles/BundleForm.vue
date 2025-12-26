@@ -20,7 +20,15 @@
             <Input v-model="form.default_job_title" required placeholder="Brake Service" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Service Type</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-gray-700">Service Type</label>
+              <router-link
+                to="/cp/settings/services"
+                class="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Manage Service Types
+              </router-link>
+            </div>
             <select
               v-model="form.service_type_id"
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
