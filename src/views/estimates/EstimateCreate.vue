@@ -41,7 +41,6 @@
                   :item-label="(item) => item.name"
                   :item-subtext="(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`"
                   required
-                  @select="onCustomerSelect"
                 />
               </div>
 
@@ -393,7 +392,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
@@ -628,9 +627,11 @@ async function searchTechnicians(query) {
   }
 }
 
-function onCustomerSelect(customer) {
-  console.log('Selected customer:', customer)
-  // Clear vehicle when customer changes
-  form.vehicle_id = null
-}
+// Watch for customer changes and clear vehicle selection
+watch(() => form.customer_id, (newCustomerId, oldCustomerId) => {
+  // Only clear vehicle if customer actually changed (not initial load)
+  if (oldCustomerId !== undefined && newCustomerId !== oldCustomerId) {
+    form.vehicle_id = null
+  }
+})
 </script>
