@@ -38,7 +38,7 @@
                   placeholder="Search by name, email, phone, or ID..."
                   :search-fn="searchCustomers"
                   :item-value="(item) => item.id"
-                  :item-label="(item) => item.name"
+                  :item-label="(item) => `${item.first_name} ${item.last_name}`"
                   :item-subtext="(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`"
                   required
                 />
