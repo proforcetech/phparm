@@ -18,6 +18,8 @@ class Estimate extends BaseModel
     public float $call_out_fee = 0.0;
     public float $mileage_total = 0.0;
     public float $discounts = 0.0;
+    public float $shop_fee = 0.0;
+    public float $hazmat_disposal_fee = 0.0;
     public float $grand_total = 0.0;
     public ?string $internal_notes = null;
     public ?string $customer_notes = null;
