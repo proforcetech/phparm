@@ -10,6 +10,7 @@ class EstimateItem extends BaseModel
     public string $description;
     public float $quantity;
     public float $unit_price;
+    public float $list_price = 0.0;
     public bool $taxable = true;
     public float $line_total = 0.0;
     public string $status = 'pending';

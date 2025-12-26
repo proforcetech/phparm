@@ -109,8 +109,8 @@ class InventoryItemRepository
         $payload = $this->validator->validate($data);
 
         $sql = 'INSERT INTO inventory_items (name, sku, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, '
-            . 'sale_price, markup, location, vendor, notes) VALUES (:name, :sku, :category, :stock_quantity, '
-            . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :markup, :location, :vendor, :notes)';
+            . 'sale_price, list_price, markup, location, vendor, notes) VALUES (:name, :sku, :category, :stock_quantity, '
+            . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes)';
 
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
@@ -121,6 +121,7 @@ class InventoryItemRepository
             'reorder_quantity' => $payload['reorder_quantity'],
             'cost' => $payload['cost'],
             'sale_price' => $payload['sale_price'],
+            'list_price' => $payload['list_price'] ?? 0,
             'markup' => $payload['markup'],
             'location' => $payload['location'],
             'vendor' => $payload['vendor'],
@@ -149,7 +150,7 @@ class InventoryItemRepository
 
         $sql = 'UPDATE inventory_items SET name = :name, sku = :sku, category = :category, stock_quantity = :stock_quantity, '
             . 'low_stock_threshold = :low_stock_threshold, reorder_quantity = :reorder_quantity, cost = :cost, '
-            . 'sale_price = :sale_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes '
+            . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes '
             . 'WHERE id = :id';
 
         $this->connection->pdo()->prepare($sql)->execute([
@@ -161,6 +162,7 @@ class InventoryItemRepository
             'reorder_quantity' => $payload['reorder_quantity'],
             'cost' => $payload['cost'],
             'sale_price' => $payload['sale_price'],
+            'list_price' => $payload['list_price'] ?? 0,
             'markup' => $payload['markup'],
             'location' => $payload['location'],
             'vendor' => $payload['vendor'],
