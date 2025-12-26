@@ -2,10 +2,15 @@
 
 namespace App\Models;
 
-class EstimateSignature extends BaseModel
+class WorkorderSignature extends BaseModel
 {
+    public const TYPE_COMPLETION = 'completion';
+    public const TYPE_AUTHORIZATION = 'authorization';
+    public const TYPE_ADDITIONAL_WORK = 'additional_work';
+
     public int $id;
-    public int $estimate_id;
+    public int $workorder_id;
+    public string $signature_type = self::TYPE_COMPLETION;
     public string $signer_name;
     public ?string $signer_email = null;
     public string $signature_data;

@@ -3,9 +3,11 @@
 namespace App\Services\Estimate;
 
 use App\Database\Connection;
+use App\Models\ApprovalAuditLog;
 use App\Models\EstimateJob;
 use App\Models\EstimatePublicLink;
 use App\Models\EstimateSignature;
+use App\Services\Approval\ApprovalAuditService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -18,17 +20,20 @@ class EstimatePublicLinkService
     private EstimateRepository $estimates;
     private EstimateEditorService $editor;
     private ?AuditLogger $audit;
+    private ?ApprovalAuditService $approvalAudit;
 
     public function __construct(
         Connection $connection,
         EstimateRepository $estimates,
         EstimateEditorService $editor,
-        ?AuditLogger $audit = null
+        ?AuditLogger $audit = null,
+        ?ApprovalAuditService $approvalAudit = null
     ) {
         $this->connection = $connection;
         $this->estimates = $estimates;
         $this->editor = $editor;
         $this->audit = $audit;
+        $this->approvalAudit = $approvalAudit;
     }
 
     public function issueLink(int $estimateId, string $baseUrl, ?string $expiresAt = null, ?int $actorId = null): array
@@ -66,7 +71,7 @@ class EstimatePublicLinkService
     /**
      * @return array<string, mixed>
      */
-    public function fetchView(string $token): array
+    public function fetchView(string $token, ?string $ipAddress = null, ?string $userAgent = null): array
     {
         $link = $this->resolveLink($token);
         $estimate = $this->estimates->find($link->estimate_id);
@@ -78,6 +83,16 @@ class EstimatePublicLinkService
         $jobs = $this->fetchJobsWithItems($estimate->id);
         $this->touchLastAccessed($link->id);
 
+        // Log the view in the approval audit trail
+        if ($this->approvalAudit !== null && $ipAddress !== null) {
+            $this->approvalAudit->logView(
+                ApprovalAuditLog::ENTITY_ESTIMATE,
+                $estimate->id,
+                $ipAddress,
+                $userAgent
+            );
+        }
+
         return [
             'estimate' => $estimate,
             'jobs' => $jobs,
@@ -85,8 +100,15 @@ class EstimatePublicLinkService
         ];
     }
 
-    public function approveJob(string $token, int $jobId, ?string $comment = null): bool
-    {
+    public function approveJob(
+        string $token,
+        int $jobId,
+        ?string $comment = null,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+        ?string $signerName = null,
+        ?string $signerEmail = null
+    ): bool {
         $link = $this->resolveLink($token);
         $estimateId = $link->estimate_id;
         $updated = $this->editor->setJobCustomerStatus($estimateId, $jobId, 'approved');
@@ -95,37 +117,103 @@ class EstimatePublicLinkService
             $this->persistJobComment($estimateId, $jobId, $comment, 'approved');
             $this->propagateEstimateStatus($estimateId);
             $this->log('estimate.job_public_approved', $estimateId, null, ['job_id' => $jobId]);
+
+            // Log in approval audit trail
+            if ($this->approvalAudit !== null && $ipAddress !== null) {
+                $this->approvalAudit->logJobApproval(
+                    ApprovalAuditLog::ENTITY_ESTIMATE,
+                    $estimateId,
+                    $jobId,
+                    $ipAddress,
+                    $signerName,
+                    $signerEmail,
+                    $userAgent,
+                    $comment
+                );
+            }
         }
 
         return $updated;
     }
 
-    public function rejectJob(string $token, int $jobId, ?string $comment = null): bool
-    {
+    public function rejectJob(
+        string $token,
+        int $jobId,
+        ?string $comment = null,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+        ?string $signerName = null,
+        ?string $signerEmail = null,
+        ?string $rejectionReason = null
+    ): bool {
         $link = $this->resolveLink($token);
         $estimateId = $link->estimate_id;
         $updated = $this->editor->setJobCustomerStatus($estimateId, $jobId, 'rejected');
 
         if ($updated) {
             $this->persistJobComment($estimateId, $jobId, $comment, 'rejected');
+            $this->persistJobRejection($estimateId, $jobId, $rejectionReason, $comment, $signerName, $signerEmail, $ipAddress);
             $this->propagateEstimateStatus($estimateId);
             $this->log('estimate.job_public_rejected', $estimateId, null, ['job_id' => $jobId]);
+
+            // Log in approval audit trail
+            if ($this->approvalAudit !== null && $ipAddress !== null) {
+                $this->approvalAudit->logJobRejection(
+                    ApprovalAuditLog::ENTITY_ESTIMATE,
+                    $estimateId,
+                    $jobId,
+                    $ipAddress,
+                    $signerName,
+                    $signerEmail,
+                    $userAgent,
+                    $comment ?? $rejectionReason
+                );
+            }
         }
 
         return $updated;
     }
 
-    public function captureSignature(string $token, string $name, ?string $email, string $signatureData, ?string $comment = null): EstimateSignature
-    {
+    public function captureSignature(
+        string $token,
+        string $name,
+        ?string $email,
+        string $signatureData,
+        ?string $comment = null,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+        ?string $deviceFingerprint = null,
+        bool $legalConsent = false,
+        ?string $consentText = null
+    ): EstimateSignature {
         $link = $this->resolveLink($token);
         $estimate = $this->estimates->find($link->estimate_id);
         if ($estimate === null) {
             throw new RuntimeException('Estimate not found for signature.');
         }
 
+        $signedAt = date('Y-m-d H:i:s');
+
+        // Generate document hash for integrity verification
+        $documentHash = $this->approvalAudit !== null
+            ? $this->approvalAudit->generateDocumentHash($estimate->toArray())
+            : null;
+
+        // Generate signature hash
+        $signatureHash = $this->approvalAudit !== null
+            ? $this->approvalAudit->generateSignatureHash($signatureData, $name, $signedAt)
+            : null;
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimate_signatures (estimate_id, signer_name, signer_email, signature_data, comment, signed_at, created_at)
-            VALUES (:estimate_id, :signer_name, :signer_email, :signature_data, :comment, NOW(), NOW())
+            INSERT INTO estimate_signatures (
+                estimate_id, signer_name, signer_email, signature_data,
+                ip_address, user_agent, device_fingerprint, document_hash,
+                legal_consent, consent_text, comment, signed_at, created_at
+            ) VALUES (
+                :estimate_id, :signer_name, :signer_email, :signature_data,
+                :ip_address, :user_agent, :device_fingerprint, :document_hash,
+                :legal_consent, :consent_text, :comment, :signed_at, NOW()
+            )
         SQL);
 
         $stmt->execute([
@@ -133,7 +221,14 @@ class EstimatePublicLinkService
             'signer_name' => $name,
             'signer_email' => $email,
             'signature_data' => $signatureData,
+            'ip_address' => $ipAddress,
+            'user_agent' => $userAgent,
+            'device_fingerprint' => $deviceFingerprint,
+            'document_hash' => $documentHash,
+            'legal_consent' => $legalConsent ? 1 : 0,
+            'consent_text' => $consentText,
             'comment' => $comment,
+            'signed_at' => $signedAt,
         ]);
 
         $signatureId = (int) $this->connection->pdo()->lastInsertId();
@@ -143,11 +238,32 @@ class EstimatePublicLinkService
             'signer_name' => $name,
             'signer_email' => $email,
             'signature_data' => $signatureData,
+            'ip_address' => $ipAddress,
+            'user_agent' => $userAgent,
+            'device_fingerprint' => $deviceFingerprint,
+            'document_hash' => $documentHash,
+            'legal_consent' => $legalConsent,
+            'consent_text' => $consentText,
             'comment' => $comment,
-            'signed_at' => date('Y-m-d H:i:s'),
+            'signed_at' => $signedAt,
         ]);
 
         $this->log('estimate.signature_captured', $estimate->id, null, ['signer' => $name]);
+
+        // Log in approval audit trail
+        if ($this->approvalAudit !== null && $ipAddress !== null) {
+            $this->approvalAudit->logSignatureCapture(
+                ApprovalAuditLog::ENTITY_ESTIMATE,
+                $estimate->id,
+                $name,
+                $ipAddress,
+                $signatureHash ?? '',
+                $documentHash ?? '',
+                $email,
+                $userAgent,
+                $deviceFingerprint
+            );
+        }
 
         return $signature;
     }
@@ -229,6 +345,36 @@ class EstimatePublicLinkService
             'job_id' => $jobId,
             'action' => $action,
             'comment' => $comment,
+        ]);
+    }
+
+    private function persistJobRejection(
+        int $estimateId,
+        int $jobId,
+        ?string $rejectionReason,
+        ?string $rejectionDetails,
+        ?string $rejectedByName,
+        ?string $rejectedByEmail,
+        ?string $ipAddress
+    ): void {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            INSERT INTO estimate_job_rejections (
+                estimate_id, estimate_job_id, rejection_reason, rejection_details,
+                rejected_by_name, rejected_by_email, ip_address, rejected_at, created_at
+            ) VALUES (
+                :estimate_id, :job_id, :rejection_reason, :rejection_details,
+                :rejected_by_name, :rejected_by_email, :ip_address, NOW(), NOW()
+            )
+        SQL);
+
+        $stmt->execute([
+            'estimate_id' => $estimateId,
+            'job_id' => $jobId,
+            'rejection_reason' => $rejectionReason,
+            'rejection_details' => $rejectionDetails,
+            'rejected_by_name' => $rejectedByName,
+            'rejected_by_email' => $rejectedByEmail,
+            'ip_address' => $ipAddress,
         ]);
     }
 

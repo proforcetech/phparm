@@ -2165,6 +2165,114 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    // Workorder routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
+        $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+        $workorderController = new \App\Services\Workorder\WorkorderController($workorderRepository, $workorderService, $gate);
+
+        $router->get('/api/workorders', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'customer_id' => $request->queryParam('customer_id'),
+                'vehicle_id' => $request->queryParam('vehicle_id'),
+                'technician_id' => $request->queryParam('technician_id'),
+                'priority' => $request->queryParam('priority'),
+                'term' => $request->queryParam('term'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+            $data = $workorderController->index($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/workorders/stats', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $params = ['technician_id' => $request->queryParam('technician_id')];
+            $data = $workorderController->stats($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/workorders/{id}', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/from-estimate', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $data = $workorderController->createFromEstimate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->patch('/api/workorders/{id}/status', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->updateStatus($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/workorders/{id}/assign', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->assignTechnician($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/workorders/{id}/priority', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->updatePriority($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/to-invoice', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->convertToInvoice($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/workorders/{id}/sub-estimate', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->createSubEstimate($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/workorders/{id}/add-sub-estimate', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->addSubEstimateJobs($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/workorders/{id}/timeline', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->timeline($user, $id);
+            return Response::json($data);
+        });
+
+        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->updateJobStatus($user, $id, $jobId, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/workorders/{id}/jobs/{jobId}/assign', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->assignJobTechnician($user, $id, $jobId, $request->body());
+            return Response::json($data);
+        });
+    });
+
     // Appointment routes
     $appointmentAudit = new AuditLogger($connection, $config['audit']);
     $webhookConfig = $config['appointments']['webhooks'] ?? [];
