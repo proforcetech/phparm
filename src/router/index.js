@@ -91,6 +91,19 @@ const routes = [
     component: () => import('@/views/estimates/EstimateCreate.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
   },
+  // Workorders
+  {
+    path: '/cp/workorders',
+    name: 'WorkorderList',
+    component: () => import('@/views/workorders/WorkorderList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/cp/workorders/:id',
+    name: 'WorkorderDetail',
+    component: () => import('@/views/workorders/WorkorderDetail.vue'),
+    meta: { requiresAuth: true },
+  },
   {
     path: '/cp/bundles',
     name: 'BundleList',
