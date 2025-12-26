@@ -75,3 +75,28 @@ export function decodeVin(vin) {
 export function validateVin(vin) {
   return api.post('/vehicles/validate-vin', { vin }).then((r) => r.data)
 }
+
+// Search vehicle master records (for autocomplete)
+export function search(query, limit = 20) {
+  return api.get('/vehicle-master/search', { params: { query, limit } }).then((r) => r.data)
+}
+
+// Default export for convenience
+export default {
+  list: listVehicleMaster,
+  get: getVehicleMaster,
+  create: createVehicleMaster,
+  update: updateVehicleMaster,
+  delete: deleteVehicleMaster,
+  uploadCsv: uploadVehicleMasterCsv,
+  getYears,
+  getMakes,
+  getModels,
+  getEngines,
+  getTransmissions,
+  getDrives,
+  getTrims,
+  decodeVin,
+  validateVin,
+  search,
+}

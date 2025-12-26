@@ -7,6 +7,8 @@ class EstimateItem extends BaseModel
     public int $id;
     public int $estimate_job_id;
     public string $type;
+    public ?string $sku = null;
+    public ?int $inventory_item_id = null;
     public string $description;
     public float $quantity;
     public float $unit_price;

@@ -187,11 +187,35 @@
                             { value: 'PART', label: 'Part' }
                           ]"
                           required
+                          @change="onItemTypeChange(item)"
                         />
                       </div>
 
-                      <div class="col-span-12 md:col-span-4">
+                      <!-- SKU field - only for parts -->
+                      <div v-if="item.type === 'PART'" class="col-span-12 md:col-span-2">
                         <Input
+                          v-model="item.sku"
+                          placeholder="SKU / Part #"
+                          label="SKU"
+                          @blur="lookupBySku(item)"
+                        />
+                      </div>
+
+                      <div :class="item.type === 'PART' ? 'col-span-12 md:col-span-2' : 'col-span-12 md:col-span-4'">
+                        <Autocomplete
+                          v-if="item.type === 'PART'"
+                          v-model="item.description"
+                          label="Description"
+                          placeholder="Search parts..."
+                          :search-fn="(query) => searchInventoryParts(query)"
+                          :item-value="(inv) => inv.name"
+                          :item-label="(inv) => inv.name"
+                          :item-subtext="(inv) => inv.sku ? `SKU: ${inv.sku}` : ''"
+                          @select="(inv) => onInventorySelect(item, inv)"
+                          required
+                        />
+                        <Input
+                          v-else
                           v-model="item.description"
                           placeholder="Description"
                           label="Description"
@@ -223,11 +247,12 @@
                         />
                       </div>
 
-                      <div class="col-span-4 md:col-span-2">
+                      <!-- List Price - only for parts -->
+                      <div v-if="item.type === 'PART'" class="col-span-4 md:col-span-1">
                         <Input
                           v-model.number="item.list_price"
                           type="number"
-                          label="List Price"
+                          label="List"
                           min="0"
                           step="0.01"
                           @input="calculateTotals"
@@ -496,6 +521,7 @@ import Autocomplete from '@/components/ui/Autocomplete.vue'
 import estimateService from '@/services/estimate.service'
 import customerService from '@/services/customer.service'
 import technicianService from '@/services/technician.service'
+import inventoryService from '@/services/inventory.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -528,6 +554,8 @@ const form = reactive({
       items: [
         {
           type: 'LABOR',
+          sku: '',
+          inventory_item_id: null,
           description: '',
           quantity: 1,
           unit_price: 0,
@@ -569,6 +597,8 @@ function addJob() {
     items: [
       {
         type: 'LABOR',
+        sku: '',
+        inventory_item_id: null,
         description: '',
         quantity: 1,
         unit_price: 0,
@@ -589,6 +619,8 @@ function removeJob(jobIndex) {
 function addLineItem(jobIndex) {
   form.jobs[jobIndex].items.push({
     type: 'PART',
+    sku: '',
+    inventory_item_id: null,
     description: '',
     quantity: 1,
     unit_price: 0,
@@ -602,6 +634,69 @@ function removeLineItem(jobIndex, itemIndex) {
     form.jobs[jobIndex].items.splice(itemIndex, 1)
     calculateTotals()
   }
+}
+
+// Handle item type change - clear part-specific fields when switching to labor
+function onItemTypeChange(item) {
+  if (item.type === 'LABOR') {
+    item.sku = ''
+    item.inventory_item_id = null
+    item.list_price = 0
+  }
+}
+
+// Lookup inventory by SKU and auto-populate fields
+async function lookupBySku(item) {
+  if (!item.sku || item.sku.trim() === '') {
+    return
+  }
+
+  try {
+    const inventoryItem = await inventoryService.findBySku(item.sku.trim())
+    if (inventoryItem) {
+      populateFromInventory(item, inventoryItem)
+    }
+  } catch (err) {
+    // SKU not found - that's okay, user can still enter manually
+    console.log('SKU not found in inventory')
+  }
+}
+
+// Search inventory parts with vehicle compatibility filter
+async function searchInventoryParts(query) {
+  if (!query || query.length < 2) {
+    return []
+  }
+
+  try {
+    // Get vehicle master ID from the selected vehicle for compatibility filtering
+    let vehicleMasterId = null
+    // Note: We could enhance this to get the vehicle_master_id from the selected vehicle
+    // For now, we'll search all parts
+
+    const response = await inventoryService.searchParts(query, vehicleMasterId)
+    return response.data || []
+  } catch (err) {
+    console.error('Failed to search inventory:', err)
+    return []
+  }
+}
+
+// Handle selection of inventory item from autocomplete
+function onInventorySelect(item, inventoryItem) {
+  if (inventoryItem) {
+    populateFromInventory(item, inventoryItem)
+  }
+}
+
+// Populate line item fields from inventory item
+function populateFromInventory(item, inventoryItem) {
+  item.sku = inventoryItem.sku || ''
+  item.inventory_item_id = inventoryItem.id
+  item.description = inventoryItem.name
+  item.unit_price = inventoryItem.sale_price || 0
+  item.list_price = inventoryItem.list_price || 0
+  calculateTotals()
 }
 
 function calculateJobSubtotal(job) {

@@ -4,6 +4,7 @@ namespace App\Services\Inventory;
 
 use App\Database\Connection;
 use App\Models\InventoryItem;
+use App\Models\InventoryVehicleCompatibility;
 use PDO;
 
 class InventoryItemRepository
@@ -108,13 +109,14 @@ class InventoryItemRepository
     {
         $payload = $this->validator->validate($data);
 
-        $sql = 'INSERT INTO inventory_items (name, sku, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, '
-            . 'sale_price, list_price, markup, location, vendor, notes) VALUES (:name, :sku, :category, :stock_quantity, '
+        $sql = 'INSERT INTO inventory_items (name, sku, manufacturer_part_number, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, '
+            . 'sale_price, list_price, markup, location, vendor, notes) VALUES (:name, :sku, :manufacturer_part_number, :category, :stock_quantity, '
             . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes)';
 
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
             'sku' => $payload['sku'],
+            'manufacturer_part_number' => $payload['manufacturer_part_number'] ?? null,
             'category' => $payload['category'],
             'stock_quantity' => $payload['stock_quantity'],
             'low_stock_threshold' => $payload['low_stock_threshold'],
@@ -148,7 +150,8 @@ class InventoryItemRepository
 
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
 
-        $sql = 'UPDATE inventory_items SET name = :name, sku = :sku, category = :category, stock_quantity = :stock_quantity, '
+        $sql = 'UPDATE inventory_items SET name = :name, sku = :sku, manufacturer_part_number = :manufacturer_part_number, '
+            . 'category = :category, stock_quantity = :stock_quantity, '
             . 'low_stock_threshold = :low_stock_threshold, reorder_quantity = :reorder_quantity, cost = :cost, '
             . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes '
             . 'WHERE id = :id';
@@ -156,6 +159,7 @@ class InventoryItemRepository
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
             'sku' => $payload['sku'],
+            'manufacturer_part_number' => $payload['manufacturer_part_number'] ?? null,
             'category' => $payload['category'],
             'stock_quantity' => $payload['stock_quantity'],
             'low_stock_threshold' => $payload['low_stock_threshold'],
@@ -274,7 +278,7 @@ class InventoryItemRepository
         }
 
         if (isset($filters['query']) && $filters['query'] !== '') {
-            $clauses[] = '(name LIKE :query OR sku LIKE :query)';
+            $clauses[] = '(name LIKE :query OR sku LIKE :query OR manufacturer_part_number LIKE :query)';
             $bindings['query'] = $filters['query'] . '%';
         }
 
@@ -298,5 +302,156 @@ class InventoryItemRepository
         $row['markup'] = $row['markup'] === null ? null : (float) $row['markup'];
 
         return new InventoryItem($row);
+    }
+
+    /**
+     * Search inventory items with optional vehicle compatibility filter
+     *
+     * @param string $query Search query (name, SKU, or manufacturer part number)
+     * @param int|null $vehicleMasterId Optional vehicle master ID to filter compatible parts
+     * @param int $limit Maximum number of results
+     * @return array<int, InventoryItem>
+     */
+    public function searchForParts(string $query, ?int $vehicleMasterId = null, int $limit = 20): array
+    {
+        $bindings = ['query' => '%' . $query . '%'];
+
+        if ($vehicleMasterId !== null) {
+            // Search only parts compatible with the specified vehicle
+            $sql = 'SELECT DISTINCT i.* FROM inventory_items i
+                    INNER JOIN inventory_vehicle_compatibility ivc ON i.id = ivc.inventory_item_id
+                    WHERE ivc.vehicle_master_id = :vehicle_master_id
+                    AND (i.name LIKE :query OR i.sku LIKE :query OR i.manufacturer_part_number LIKE :query)
+                    ORDER BY i.name ASC
+                    LIMIT :limit';
+            $bindings['vehicle_master_id'] = $vehicleMasterId;
+        } else {
+            $sql = 'SELECT * FROM inventory_items
+                    WHERE (name LIKE :query OR sku LIKE :query OR manufacturer_part_number LIKE :query)
+                    ORDER BY name ASC
+                    LIMIT :limit';
+        }
+
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare($sql);
+
+        foreach ($bindings as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $results = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $item = $this->mapRow($row);
+            $results[] = $item;
+            $this->cache[$item->id] = $item;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Get vehicle compatibility entries for an inventory item
+     *
+     * @param int $inventoryItemId
+     * @return array<int, array<string, mixed>>
+     */
+    public function getVehicleCompatibility(int $inventoryItemId): array
+    {
+        $sql = 'SELECT ivc.*, vm.year, vm.make, vm.model, vm.engine, vm.transmission, vm.drive, vm.trim
+                FROM inventory_vehicle_compatibility ivc
+                INNER JOIN vehicle_master vm ON ivc.vehicle_master_id = vm.id
+                WHERE ivc.inventory_item_id = :inventory_item_id
+                ORDER BY vm.year DESC, vm.make, vm.model';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute(['inventory_item_id' => $inventoryItemId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Add vehicle compatibility entry
+     *
+     * @param int $inventoryItemId
+     * @param int $vehicleMasterId
+     * @param string|null $notes
+     * @return InventoryVehicleCompatibility
+     */
+    public function addVehicleCompatibility(int $inventoryItemId, int $vehicleMasterId, ?string $notes = null): InventoryVehicleCompatibility
+    {
+        $sql = 'INSERT INTO inventory_vehicle_compatibility (inventory_item_id, vehicle_master_id, notes)
+                VALUES (:inventory_item_id, :vehicle_master_id, :notes)
+                ON DUPLICATE KEY UPDATE notes = :notes2, updated_at = CURRENT_TIMESTAMP';
+
+        $this->connection->pdo()->prepare($sql)->execute([
+            'inventory_item_id' => $inventoryItemId,
+            'vehicle_master_id' => $vehicleMasterId,
+            'notes' => $notes,
+            'notes2' => $notes,
+        ]);
+
+        // Get the ID
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id FROM inventory_vehicle_compatibility WHERE inventory_item_id = :inventory_item_id AND vehicle_master_id = :vehicle_master_id'
+        );
+        $stmt->execute(['inventory_item_id' => $inventoryItemId, 'vehicle_master_id' => $vehicleMasterId]);
+        $id = (int) $stmt->fetchColumn();
+
+        return new InventoryVehicleCompatibility([
+            'id' => $id,
+            'inventory_item_id' => $inventoryItemId,
+            'vehicle_master_id' => $vehicleMasterId,
+            'notes' => $notes,
+        ]);
+    }
+
+    /**
+     * Remove vehicle compatibility entry
+     *
+     * @param int $inventoryItemId
+     * @param int $vehicleMasterId
+     * @return bool
+     */
+    public function removeVehicleCompatibility(int $inventoryItemId, int $vehicleMasterId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'DELETE FROM inventory_vehicle_compatibility WHERE inventory_item_id = :inventory_item_id AND vehicle_master_id = :vehicle_master_id'
+        );
+        $stmt->execute(['inventory_item_id' => $inventoryItemId, 'vehicle_master_id' => $vehicleMasterId]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Bulk add vehicle compatibility entries
+     *
+     * @param int $inventoryItemId
+     * @param array<int, int> $vehicleMasterIds
+     * @return int Number of entries added
+     */
+    public function bulkAddVehicleCompatibility(int $inventoryItemId, array $vehicleMasterIds): int
+    {
+        if (empty($vehicleMasterIds)) {
+            return 0;
+        }
+
+        $sql = 'INSERT IGNORE INTO inventory_vehicle_compatibility (inventory_item_id, vehicle_master_id) VALUES ';
+        $placeholders = [];
+        $bindings = [];
+
+        foreach ($vehicleMasterIds as $index => $vehicleMasterId) {
+            $placeholders[] = "(:inventory_item_id, :vehicle_master_id_{$index})";
+            $bindings["vehicle_master_id_{$index}"] = $vehicleMasterId;
+        }
+
+        $sql .= implode(', ', $placeholders);
+        $bindings['inventory_item_id'] = $inventoryItemId;
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($bindings);
+
+        return $stmt->rowCount();
     }
 }
