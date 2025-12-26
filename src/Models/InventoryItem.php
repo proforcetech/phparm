@@ -13,6 +13,7 @@ class InventoryItem extends BaseModel
     public int $reorder_quantity = 0;
     public float $cost = 0.0;
     public float $sale_price = 0.0;
+    public float $list_price = 0.0;
     public ?float $markup = null;
     public ?string $location = null;
     public ?string $vendor = null;

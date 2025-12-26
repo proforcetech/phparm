@@ -76,7 +76,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Stock quantity</label>
             <Input v-model.number="form.stock_quantity" type="number" min="0" placeholder="50" />
@@ -102,6 +102,17 @@
               min="0"
               placeholder="25.00"
               helperText="Calculated as cost × (1 + markup/100). You can override this if needed."
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">List price</label>
+            <Input
+              v-model.number="form.list_price"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="35.00"
+              helperText="MSRP or manufacturer's suggested retail price (optional)."
             />
           </div>
         </div>
@@ -162,6 +173,7 @@ const form = reactive({
   markup: null,
   cost: 0,
   sale_price: 0,
+  list_price: 0,
   notes: '',
 })
 

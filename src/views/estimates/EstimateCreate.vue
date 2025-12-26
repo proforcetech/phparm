@@ -46,14 +46,20 @@
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">Vehicle ID *</label>
-                <Input
-                  v-model.number="form.vehicle_id"
-                  type="number"
-                  placeholder="Vehicle ID"
-                  class="mt-1"
+                <Autocomplete
+                  v-model="form.vehicle_id"
+                  label="Vehicle"
+                  placeholder="Select a vehicle..."
+                  :search-fn="searchVehicles"
+                  :item-value="(item) => item.id"
+                  :item-label="(item) => `${item.year} ${item.make} ${item.model}`"
+                  :item-subtext="(item) => item.vin || item.license_plate || ''"
                   required
+                  :disabled="!form.customer_id"
                 />
+                <p v-if="!form.customer_id" class="mt-1 text-xs text-gray-500">
+                  Select a customer first
+                </p>
               </div>
 
               <div>
@@ -71,12 +77,14 @@
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">Technician ID</label>
-                <Input
-                  v-model.number="form.technician_id"
-                  type="number"
-                  placeholder="Assign technician (optional)"
-                  class="mt-1"
+                <Autocomplete
+                  v-model="form.technician_id"
+                  label="Technician"
+                  placeholder="Search by name or email..."
+                  :search-fn="searchTechnicians"
+                  :item-value="(item) => item.id"
+                  :item-label="(item) => item.name"
+                  :item-subtext="(item) => item.email"
                 />
               </div>
 
@@ -134,6 +142,17 @@
                       min="0"
                       step="0.01"
                       required
+                      @input="calculateGrandTotal"
+                    />
+                  </div>
+
+                  <div class="col-span-4 md:col-span-2">
+                    <Input
+                      v-model.number="item.list_price"
+                      type="number"
+                      label="List Price"
+                      min="0"
+                      step="0.01"
                       @input="calculateGrandTotal"
                     />
                   </div>
@@ -385,6 +404,7 @@ import Loading from '@/components/ui/Loading.vue'
 import Autocomplete from '@/components/ui/Autocomplete.vue'
 import estimateService from '@/services/estimate.service'
 import customerService from '@/services/customer.service'
+import technicianService from '@/services/technician.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -415,6 +435,7 @@ const form = reactive({
       description: '',
       quantity: 1,
       unit_price: 0,
+      list_price: 0,
       notes: ''
     }
   ]
@@ -440,6 +461,7 @@ function addLineItem() {
     description: '',
     quantity: 1,
     unit_price: 0,
+    list_price: 0,
     notes: ''
   })
 }
@@ -462,6 +484,7 @@ async function loadEstimate() {
             description: item.description || '',
             quantity: Number(item.quantity) || 1,
             unit_price: Number(item.unit_price) || 0,
+            list_price: Number(item.list_price) || 0,
             notes: item.notes || ''
           }))
         : [
@@ -469,6 +492,7 @@ async function loadEstimate() {
               description: '',
               quantity: 1,
               unit_price: 0,
+              list_price: 0,
               notes: ''
             }
           ]
@@ -570,7 +594,43 @@ async function searchCustomers(query) {
   }
 }
 
+async function searchVehicles(query) {
+  if (!form.customer_id) return []
+
+  try {
+    const response = await customerService.getCustomerVehicles(form.customer_id)
+    const vehicles = response.data || []
+
+    // Filter by query if provided
+    if (query) {
+      const lowerQuery = query.toLowerCase()
+      return vehicles.filter(v =>
+        `${v.year} ${v.make} ${v.model}`.toLowerCase().includes(lowerQuery) ||
+        (v.vin && v.vin.toLowerCase().includes(lowerQuery)) ||
+        (v.license_plate && v.license_plate.toLowerCase().includes(lowerQuery))
+      )
+    }
+
+    return vehicles
+  } catch (error) {
+    console.error('Failed to load vehicles:', error)
+    return []
+  }
+}
+
+async function searchTechnicians(query) {
+  try {
+    const response = await technicianService.searchTechnicians(query || '')
+    return response.data || []
+  } catch (error) {
+    console.error('Technician search failed:', error)
+    return []
+  }
+}
+
 function onCustomerSelect(customer) {
   console.log('Selected customer:', customer)
+  // Clear vehicle when customer changes
+  form.vehicle_id = null
 }
 </script>

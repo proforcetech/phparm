@@ -10,6 +10,7 @@ class BundleItem extends BaseModel
     public string $description;
     public float $quantity;
     public float $unit_price;
+    public float $list_price = 0.0;
     public bool $taxable = true;
     public int $sort_order = 0;
 }
