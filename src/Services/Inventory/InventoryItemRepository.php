@@ -278,7 +278,7 @@ class InventoryItemRepository
         }
 
         if (isset($filters['query']) && $filters['query'] !== '') {
-            $clauses[] = '(name LIKE :query OR sku LIKE :query OR manufacturer_part_number LIKE :query)';
+            $clauses[] = '(name LIKE :query OR sku LIKE :query)';
             $bindings['query'] = $filters['query'] . '%';
         }
 
@@ -321,13 +321,13 @@ class InventoryItemRepository
             $sql = 'SELECT DISTINCT i.* FROM inventory_items i
                     INNER JOIN inventory_vehicle_compatibility ivc ON i.id = ivc.inventory_item_id
                     WHERE ivc.vehicle_master_id = :vehicle_master_id
-                    AND (i.name LIKE :query OR i.sku LIKE :query OR i.manufacturer_part_number LIKE :query)
+                    AND (i.name LIKE :query OR i.sku LIKE :query)
                     ORDER BY i.name ASC
                     LIMIT :limit';
             $bindings['vehicle_master_id'] = $vehicleMasterId;
         } else {
             $sql = 'SELECT * FROM inventory_items
-                    WHERE (name LIKE :query OR sku LIKE :query OR manufacturer_part_number LIKE :query)
+                    WHERE (name LIKE :query OR sku LIKE :query)
                     ORDER BY name ASC
                     LIMIT :limit';
         }
