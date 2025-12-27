@@ -1989,6 +1989,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->delete('/api/estimates/{id}', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $success = $estimateController->delete($user, $id);
+            return $success ? Response::noContent() : Response::notFound(['error' => 'Estimate not found']);
+        });
+
         $router->post('/api/estimates/{id}/reject', function (Request $request) use ($estimateController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');

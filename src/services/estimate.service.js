@@ -98,5 +98,14 @@ export default {
    */
   getBundleItems(bundleId) {
     return api.get(`/estimates/bundles/${bundleId}/items`)
+  },
+
+  /**
+   * Delete estimate
+   * @param {number} id - Estimate ID
+   * @returns {Promise}
+   */
+  deleteEstimate(id) {
+    return api.delete(`/estimates/${id}`)
   }
 }

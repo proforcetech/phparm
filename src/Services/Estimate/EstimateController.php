@@ -184,6 +184,13 @@ class EstimateController
         return $updated->toArray();
     }
 
+    public function delete(User $user, int $estimateId): bool
+    {
+        $this->assertManageAccess($user);
+
+        return $this->repository->delete($estimateId, $user->id);
+    }
+
     /**
      * @param array<string, mixed> $params
      * @return array<string, mixed>
