@@ -25,14 +25,25 @@ CREATE TABLE IF NOT EXISTS approval_audit_log (
     INDEX idx_approval_audit_signer (signer_email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Enhance estimate_signatures table for legal compliance
-ALTER TABLE estimate_signatures
-    ADD COLUMN ip_address VARCHAR(45) NULL AFTER signature_data,
-    ADD COLUMN user_agent TEXT NULL AFTER ip_address,
-    ADD COLUMN device_fingerprint VARCHAR(255) NULL AFTER user_agent,
-    ADD COLUMN document_hash VARCHAR(64) NULL AFTER device_fingerprint,
-    ADD COLUMN legal_consent TINYINT(1) NOT NULL DEFAULT 0 AFTER document_hash,
-    ADD COLUMN consent_text TEXT NULL AFTER legal_consent;
+-- Create estimate_signatures table for e-signing legal compliance
+CREATE TABLE IF NOT EXISTS estimate_signatures (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    estimate_id INT UNSIGNED NOT NULL,
+    signer_name VARCHAR(160) NOT NULL,
+    signer_email VARCHAR(160) NULL,
+    signature_data MEDIUMTEXT NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent TEXT NULL,
+    device_fingerprint VARCHAR(255) NULL,
+    document_hash VARCHAR(64) NULL,
+    legal_consent TINYINT(1) NOT NULL DEFAULT 0,
+    consent_text TEXT NULL,
+    comment TEXT NULL,
+    signed_at DATETIME NOT NULL,
+    created_at TIMESTAMP NULL,
+    INDEX idx_estimate_signature_estimate (estimate_id),
+    CONSTRAINT fk_estimate_signature_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create workorder_signatures table for workorder completions
 CREATE TABLE IF NOT EXISTS workorder_signatures (
