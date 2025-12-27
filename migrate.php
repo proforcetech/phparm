@@ -38,8 +38,11 @@ try {
         'password' => getenv('DB_PASSWORD') ?: '',
         'charset' => 'utf8mb4'
     ]);
-    
+
     $pdo = $connection->pdo();
+
+    // Enable buffered queries to avoid "unbuffered queries" errors
+    $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
     
     echo "✓ Database connection established\n\n";
     
