@@ -1,5 +1,3 @@
-import { onMounted, reactive, ref, watch, nextTick } from 'vue' 
-import { useRoute, useRouter } from 'vue-router'
 <template>
   <div>
     <div class="mb-6 flex items-center justify-between">
@@ -206,7 +204,8 @@ import { useRoute, useRouter } from 'vue-router'
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+// 1. Add 'nextTick' to the imports
+import { onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -256,6 +255,9 @@ const lookupFieldMap = { categories: 'category', locations: 'location', vendors:
 // Vehicle compatibility state
 const vehicleCompatibility = ref([])
 const selectedVehicle = ref(null)
+
+// 2. Add a variable to hold the timer for the delay
+let calculationTimeout = null
 
 const calculateSalePrice = () => {
   const cost = parseFloat(form.cost)
@@ -355,15 +357,25 @@ const loadItem = async () => {
   Object.assign(form, data)
 }
 
+// 3. Updated function with Debounce and nextTick
 const updateSalePriceFromFormula = () => {
   if (isInitializing.value || manualSalePrice.value) return
 
-  const salePrice = calculateSalePrice()
-  if (salePrice === null) return
+  // Reset the timer if the user types again within 500ms
+  if (calculationTimeout) clearTimeout(calculationTimeout)
 
-  isAutoUpdatingSalePrice.value = true
-  form.sale_price = salePrice
-  isAutoUpdatingSalePrice.value = false
+  calculationTimeout = setTimeout(async () => {
+    const salePrice = calculateSalePrice()
+    if (salePrice === null) return
+
+    isAutoUpdatingSalePrice.value = true
+    form.sale_price = salePrice
+    
+    // Wait for Vue to update the DOM and the Input component to react
+    await nextTick()
+    
+    isAutoUpdatingSalePrice.value = false
+  }, 500) // 500ms delay
 }
 
 watch(
