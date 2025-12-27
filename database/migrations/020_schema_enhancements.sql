@@ -2,11 +2,26 @@
 -- This file consolidates multiple small ALTER TABLE migrations for better maintainability
 
 -- Add reminder tracking to appointments
-ALTER TABLE appointments
-  ADD COLUMN reminder_sent_at TIMESTAMP NULL AFTER notes;
+SET @has_reminder_sent_at := (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'appointments' AND column_name = 'reminder_sent_at'
+);
+SET @reminder_sent_at_sql := IF(@has_reminder_sent_at = 0,
+    'ALTER TABLE appointments ADD COLUMN reminder_sent_at TIMESTAMP NULL AFTER notes', 'SELECT 1');
+PREPARE reminder_sent_at_stmt FROM @reminder_sent_at_sql;
+EXECUTE reminder_sent_at_stmt;
+DEALLOCATE PREPARE reminder_sent_at_stmt;
 
-CREATE INDEX idx_appointments_reminder
-  ON appointments (status, scheduled_at, reminder_sent_at);
+-- Create index if it doesn't exist
+SET @has_reminder_index := (
+    SELECT COUNT(*) FROM information_schema.statistics
+    WHERE table_schema = DATABASE() AND table_name = 'appointments' AND index_name = 'idx_appointments_reminder'
+);
+SET @reminder_index_sql := IF(@has_reminder_index = 0,
+    'CREATE INDEX idx_appointments_reminder ON appointments (status, scheduled_at, reminder_sent_at)', 'SELECT 1');
+PREPARE reminder_index_stmt FROM @reminder_index_sql;
+EXECUTE reminder_index_stmt;
+DEALLOCATE PREPARE reminder_index_stmt;
 
 -- Add mileage tracking to customer vehicles
 ALTER TABLE customer_vehicles
