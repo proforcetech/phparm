@@ -20,6 +20,10 @@
             <Input v-model="form.sku" placeholder="SKU-1234" />
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-700">Manufacturer Part #</label>
+            <Input v-model="form.manufacturer_part_number" placeholder="MFG-5678" />
+          </div>
+          <div>
             <div class="flex items-center justify-between text-sm font-medium text-gray-700">
               <span>Category</span>
               <RouterLink class="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/categories">Manage</RouterLink>
@@ -127,6 +131,62 @@
           ></textarea>
         </div>
 
+        <!-- Vehicle Compatibility Section (only when editing) -->
+        <div v-if="isEditing" class="border-t border-gray-200 pt-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-medium text-gray-900">Vehicle Compatibility</h3>
+              <p class="text-sm text-gray-500">Specify which vehicles this part is compatible with</p>
+            </div>
+          </div>
+
+          <!-- Add Vehicle -->
+          <div class="mb-4">
+            <Autocomplete
+              v-model="selectedVehicle"
+              label="Add Compatible Vehicle"
+              placeholder="Search vehicles..."
+              :search-fn="searchVehicleMaster"
+              :item-value="(v) => v.id"
+              :item-label="(v) => `${v.year} ${v.make} ${v.model}`"
+              :item-subtext="(v) => `${v.engine} • ${v.transmission}`"
+              @select="addVehicleCompatibility"
+            />
+          </div>
+
+          <!-- Compatible Vehicles List -->
+          <div v-if="vehicleCompatibility.length > 0" class="space-y-2">
+            <div
+              v-for="compat in vehicleCompatibility"
+              :key="compat.id"
+              class="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+            >
+              <div>
+                <span class="font-medium text-gray-900">
+                  {{ compat.year }} {{ compat.make }} {{ compat.model }}
+                </span>
+                <span class="text-sm text-gray-500 ml-2">
+                  {{ compat.engine }} • {{ compat.transmission }}
+                </span>
+                <span v-if="compat.notes" class="text-xs text-gray-400 block">
+                  {{ compat.notes }}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                @click="removeVehicleCompatibility(compat.vehicle_master_id)"
+                type="button"
+              >
+                <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </Button>
+            </div>
+          </div>
+          <p v-else class="text-sm text-gray-500 italic">No vehicle compatibility entries yet.</p>
+        </div>
+
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-sm text-gray-600">Fields marked with * are required. Pricing and stock will sync to alerts.</p>
@@ -151,8 +211,10 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Loading from '@/components/ui/Loading.vue'
 import Select from '@/components/ui/Select.vue'
+import Autocomplete from '@/components/ui/Autocomplete.vue'
 import inventoryMetaService from '@/services/inventory-meta.service'
 import inventoryService from '@/services/inventory.service'
+import vehicleMasterService from '@/services/vehicle-master.service'
 
 const router = useRouter()
 const route = useRoute()
@@ -164,6 +226,7 @@ const isEditing = ref(false)
 const form = reactive({
   name: '',
   sku: '',
+  manufacturer_part_number: '',
   category: '',
   location: '',
   vendor: '',
@@ -187,6 +250,10 @@ const vendorOptions = ref([])
 const lookupsLoading = reactive({ categories: false, locations: false, vendors: false })
 const lookupError = reactive({ categories: '', locations: '', vendors: '' })
 const lookupFieldMap = { categories: 'category', locations: 'location', vendors: 'vendor' }
+
+// Vehicle compatibility state
+const vehicleCompatibility = ref([])
+const selectedVehicle = ref(null)
 
 const calculateSalePrice = () => {
   const cost = parseFloat(form.cost)
@@ -231,6 +298,51 @@ const loadLookups = async () => {
     loadLookup('locations', locationOptions),
     loadLookup('vendors', vendorOptions),
   ])
+}
+
+// Vehicle compatibility functions
+const searchVehicleMaster = async (query) => {
+  if (!query || query.length < 2) return []
+  try {
+    const response = await vehicleMasterService.search(query)
+    return response.data || []
+  } catch (err) {
+    console.error('Failed to search vehicles:', err)
+    return []
+  }
+}
+
+const loadVehicleCompatibility = async () => {
+  if (!route.params.id) return
+  try {
+    const response = await inventoryService.getVehicleCompatibility(route.params.id)
+    vehicleCompatibility.value = response.data || []
+  } catch (err) {
+    console.error('Failed to load vehicle compatibility:', err)
+  }
+}
+
+const addVehicleCompatibility = async (vehicle) => {
+  if (!vehicle || !route.params.id) return
+  try {
+    await inventoryService.addVehicleCompatibility(route.params.id, vehicle.id)
+    await loadVehicleCompatibility()
+    selectedVehicle.value = null
+  } catch (err) {
+    console.error('Failed to add vehicle compatibility:', err)
+    error.value = 'Failed to add vehicle compatibility'
+  }
+}
+
+const removeVehicleCompatibility = async (vehicleMasterId) => {
+  if (!route.params.id) return
+  try {
+    await inventoryService.removeVehicleCompatibility(route.params.id, vehicleMasterId)
+    await loadVehicleCompatibility()
+  } catch (err) {
+    console.error('Failed to remove vehicle compatibility:', err)
+    error.value = 'Failed to remove vehicle compatibility'
+  }
 }
 
 const loadItem = async () => {
@@ -293,6 +405,9 @@ const save = async () => {
 onMounted(async () => {
   await loadItem()
   loadLookups()
+  if (isEditing.value) {
+    loadVehicleCompatibility()
+  }
   isInitializing.value = false
 })
 </script>

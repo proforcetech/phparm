@@ -7,6 +7,7 @@ class InventoryItem extends BaseModel
     public int $id;
     public string $name;
     public ?string $sku = null;
+    public ?string $manufacturer_part_number = null;
     public ?string $category = null;
     public int $stock_quantity = 0;
     public int $low_stock_threshold = 0;

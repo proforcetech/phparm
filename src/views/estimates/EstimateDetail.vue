@@ -52,6 +52,13 @@
           </Button>
           <Button
             v-if="estimate.status === 'approved'"
+            variant="primary"
+            @click="showWorkorderModal = true"
+          >
+            Create Workorder
+          </Button>
+          <Button
+            v-if="estimate.status === 'approved'"
             @click="showConvertModal = true"
           >
             Convert to Invoice
@@ -214,6 +221,37 @@
         </Button>
       </template>
     </Modal>
+
+    <!-- Create Workorder Modal -->
+    <Modal v-if="showWorkorderModal" @close="showWorkorderModal = false">
+      <template #title>Create Workorder</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Create a workorder from estimate #{{ estimate?.number }}?
+          </p>
+          <Alert variant="info">
+            A workorder will be created with all approved jobs from this estimate.
+            You can then track work progress and assign technicians.
+          </Alert>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Assign Technician (Optional)</label>
+            <Select
+              v-model="workorderForm.technician_id"
+              :options="technicianOptions"
+              placeholder="Select technician"
+              class="mt-1"
+            />
+          </div>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="outline" @click="showWorkorderModal = false">Cancel</Button>
+        <Button @click="confirmCreateWorkorder" :disabled="creatingWorkorder">
+          {{ creatingWorkorder ? 'Creating...' : 'Create Workorder' }}
+        </Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -224,10 +262,13 @@ import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Input from '@/components/ui/Input.vue'
+import Select from '@/components/ui/Select.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
 import Modal from '@/components/ui/Modal.vue'
 import estimateService from '@/services/estimate.service'
+import workorderService from '@/services/workorder.service'
+import userService from '@/services/user.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -236,17 +277,27 @@ const toast = useToast()
 
 const loading = ref(true)
 const converting = ref(false)
+const creatingWorkorder = ref(false)
 const error = ref(null)
 const estimate = ref(null)
+const technicians = ref([])
 const showConvertModal = ref(false)
+const showWorkorderModal = ref(false)
 
 const convertForm = reactive({
   issue_date: new Date().toISOString().split('T')[0],
   due_date: ''
 })
 
+const workorderForm = reactive({
+  technician_id: ''
+})
+
+const technicianOptions = ref([{ value: '', label: 'Unassigned' }])
+
 onMounted(() => {
   loadEstimate()
+  loadTechnicians()
 })
 
 async function loadEstimate() {
@@ -260,6 +311,43 @@ async function loadEstimate() {
     error.value = err.response?.data?.message || 'Failed to load estimate'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadTechnicians() {
+  try {
+    const response = await userService.getUsers({ role: 'technician' })
+    const users = response.data || []
+    technicians.value = users
+    technicianOptions.value = [
+      { value: '', label: 'Unassigned' },
+      ...users.map(u => ({ value: u.id, label: u.name }))
+    ]
+  } catch (err) {
+    console.error('Failed to load technicians:', err)
+  }
+}
+
+async function confirmCreateWorkorder() {
+  try {
+    creatingWorkorder.value = true
+    const response = await workorderService.createFromEstimate(
+      estimate.value.id,
+      workorderForm.technician_id || null
+    )
+
+    toast.success('Workorder created successfully')
+    showWorkorderModal.value = false
+
+    // Redirect to the new workorder
+    if (response.data?.id) {
+      router.push(`/cp/workorders/${response.data.id}`)
+    }
+  } catch (err) {
+    console.error('Failed to create workorder:', err)
+    toast.error(err.response?.data?.error || 'Failed to create workorder')
+  } finally {
+    creatingWorkorder.value = false
   }
 }
 

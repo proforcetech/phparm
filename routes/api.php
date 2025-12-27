@@ -1649,6 +1649,16 @@ return Response::json([
             return Response::json($data);
         });
 
+        // Vehicle master search (for autocomplete)
+        $router->get('/api/vehicle-master/search', function (Request $request) use ($vehicleController) {
+            $user = $request->getAttribute('user');
+            $query = $request->queryParam('query', '');
+            $limit = (int) $request->queryParam('limit', 20);
+
+            $data = $vehicleController->search($user, $query, $limit);
+            return Response::json(['data' => $data]);
+        });
+
 $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleController) {
     $user = $request->getAttribute('user');
     $id = (int) $request->getAttribute('id');
@@ -1811,6 +1821,65 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
 
             $inventoryLookupController->destroy($user, $type, $id);
+            return Response::noContent();
+        });
+
+        // Inventory search for parts (with optional vehicle compatibility filter)
+        $router->get('/api/inventory/search-parts', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'query' => $request->queryParam('query'),
+                'vehicle_master_id' => $request->queryParam('vehicle_master_id'),
+                'limit' => $request->queryParam('limit'),
+            ];
+
+            $data = $inventoryController->searchParts($user, $params);
+            return Response::json(['data' => $data]);
+        });
+
+        // Find inventory by SKU (for auto-populate)
+        $router->get('/api/inventory/by-sku/{sku}', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $sku = (string) $request->getAttribute('sku');
+
+            $data = $inventoryController->findBySku($user, $sku);
+            if ($data === null) {
+                return Response::json(['error' => 'Item not found'], 404);
+            }
+            return Response::json($data);
+        });
+
+        // Vehicle compatibility routes
+        $router->get('/api/inventory/{id}/vehicle-compatibility', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $inventoryController->getVehicleCompatibility($user, $id);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/inventory/{id}/vehicle-compatibility', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $inventoryController->addVehicleCompatibility($user, $id, $request->body());
+            return Response::json($data, 201);
+        });
+
+        $router->post('/api/inventory/{id}/vehicle-compatibility/bulk', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $inventoryController->bulkAddVehicleCompatibility($user, $id, $request->body());
+            return Response::json($data, 201);
+        });
+
+        $router->delete('/api/inventory/{id}/vehicle-compatibility/{vehicleMasterId}', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $vehicleMasterId = (int) $request->getAttribute('vehicleMasterId');
+
+            $inventoryController->removeVehicleCompatibility($user, $id, $vehicleMasterId);
             return Response::noContent();
         });
     });

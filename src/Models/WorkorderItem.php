@@ -8,6 +8,8 @@ class WorkorderItem extends BaseModel
     public int $workorder_job_id;
     public ?int $estimate_item_id = null;
     public string $type;
+    public ?string $sku = null;
+    public ?int $inventory_item_id = null;
     public string $description;
     public float $quantity;
     public float $unit_price;
