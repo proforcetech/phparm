@@ -246,6 +246,42 @@ class EstimateRepository
         return $payload;
     }
 
+    public function delete(int $estimateId, ?int $actorId = null): bool
+    {
+        $estimate = $this->find($estimateId);
+        if ($estimate === null) {
+            return false;
+        }
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            // Delete estimate items first (foreign key constraint)
+            $pdo->prepare('DELETE FROM estimate_items WHERE estimate_job_id IN (SELECT id FROM estimate_jobs WHERE estimate_id = :estimate_id)')
+                ->execute(['estimate_id' => $estimateId]);
+
+            // Delete estimate jobs
+            $pdo->prepare('DELETE FROM estimate_jobs WHERE estimate_id = :estimate_id')
+                ->execute(['estimate_id' => $estimateId]);
+
+            // Delete the estimate
+            $pdo->prepare('DELETE FROM estimates WHERE id = :id')
+                ->execute(['id' => $estimateId]);
+
+            $pdo->commit();
+
+            $this->log('estimate.deleted', $estimateId, $actorId, [
+                'estimate' => $estimate->toArray(),
+            ]);
+
+            return true;
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
     private function mapEstimate(array $row): Estimate
     {
         return new Estimate([
