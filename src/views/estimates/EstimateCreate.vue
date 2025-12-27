@@ -837,6 +837,7 @@ async function saveEstimate() {
 
     // Prepare data in the format the backend expects
     const data = {
+      number: null, // Backend will auto-generate if null
       customer_id: parseInt(form.customer_id),
       vehicle_id: parseInt(form.vehicle_id),
       is_mobile: !!form.is_mobile,
