@@ -674,8 +674,10 @@ async function searchInventoryParts(query) {
     // Note: We could enhance this to get the vehicle_master_id from the selected vehicle
     // For now, we'll search all parts
 
-    const response = await inventoryService.searchParts(query, vehicleMasterId)
-    return response.data || []
+    const results = await inventoryService.searchParts(query, vehicleMasterId)
+    // Handle both wrapped {data: [...]} and unwrapped array responses
+    if (!results) return []
+    return Array.isArray(results) ? results : (results.data || [])
   } catch (err) {
     console.error('Failed to search inventory:', err)
     return []
