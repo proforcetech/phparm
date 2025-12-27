@@ -36,12 +36,17 @@ try {
         'database' => getenv('DB_DATABASE') ?: 'phparm',
         'username' => getenv('DB_USERNAME') ?: 'root',
         'password' => getenv('DB_PASSWORD') ?: '',
-        'charset' => 'utf8mb4'
+        'charset' => 'utf8mb4',
+        // OPTIONAL: If your Connection class accepts options here, pass it here. 
+        // Otherwise, the setAttribute below is fine.
+        'options' => [
+            PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+        ]
     ]);
 
     $pdo = $connection->pdo();
 
-    // Enable buffered queries to avoid "unbuffered queries" errors
+    // Ensure buffered queries are enabled
     $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
     
     echo "✓ Database connection established\n\n";
@@ -58,6 +63,7 @@ try {
     // Get list of executed migrations
     $stmt = $pdo->query("SELECT migration FROM migrations");
     $executed = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $stmt->closeCursor(); // <--- FIX 1: Explicitly close cursor after fetching
     
     // Get list of migration files
     $migrationFiles = glob(__DIR__ . '/database/migrations/*.sql');
@@ -93,12 +99,18 @@ try {
                     continue;
                 }
                 
-                $pdo->exec($statement);
+                // <--- FIX 2: Use prepare/execute/closeCursor instead of exec
+                // This ensures that if a migration contains a SELECT or output,
+                // the connection is freed immediately.
+                $stmt = $pdo->prepare($statement);
+                $stmt->execute();
+                $stmt->closeCursor(); 
             }
             
             // Record migration
             $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?)");
             $stmt->execute([$migrationName]);
+            $stmt->closeCursor(); // Good practice to close here too
             
             echo " ✓\n";
             $runCount++;
