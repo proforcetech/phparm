@@ -1967,11 +1967,32 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->get('/api/estimates/{id}', function (Request $request) use ($estimateController) {
+        $router->get('/api/estimates/{id}', function (Request $request) use ($estimateController, $connection) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
 
             $data = $estimateController->show($user, $id);
+
+            // Enrich with customer data
+            if (!empty($data['customer_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, name, email, phone FROM customers WHERE id = :id');
+                $stmt->execute(['id' => $data['customer_id']]);
+                $customer = $stmt->fetch();
+                if ($customer) {
+                    $data['customer'] = $customer;
+                }
+            }
+
+            // Enrich with vehicle data
+            if (!empty($data['vehicle_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM vehicles WHERE id = :id');
+                $stmt->execute(['id' => $data['vehicle_id']]);
+                $vehicle = $stmt->fetch();
+                if ($vehicle) {
+                    $data['vehicle'] = $vehicle;
+                }
+            }
+
             return Response::json($data);
         });
 
