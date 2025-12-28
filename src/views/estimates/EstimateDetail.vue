@@ -35,7 +35,29 @@
         </div>
 
         <!-- Actions -->
-        <div class="flex gap-2 mt-4">
+        <div class="flex flex-wrap gap-2 mt-4">
+          <!-- Share Buttons -->
+          <Button
+            variant="outline"
+            @click="openShareEmailModal"
+          >
+            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Share via Email
+          </Button>
+          <Button
+            variant="outline"
+            @click="openShareSmsModal"
+          >
+            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            Share via SMS
+          </Button>
+
+          <div class="w-px bg-gray-300 mx-1"></div>
+
           <Button
             v-if="['pending', 'sent'].includes(estimate.status)"
             variant="primary"
@@ -268,6 +290,76 @@
         </Button>
       </template>
     </Modal>
+
+    <!-- Share via Email Modal -->
+    <Modal v-if="showShareEmailModal" @close="showShareEmailModal = false">
+      <template #title>Share Estimate via Email</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Send estimate #{{ estimate?.number }} to the customer via email.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Email Address *</label>
+            <Input
+              v-model="shareEmailForm.email"
+              type="email"
+              placeholder="customer@example.com"
+              class="mt-1"
+              required
+            />
+          </div>
+          <Alert variant="info" class="text-xs">
+            The customer will receive a secure link to view and approve/reject this estimate.
+          </Alert>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="outline" @click="showShareEmailModal = false">Cancel</Button>
+        <Button @click="sendShareEmail" :disabled="!shareEmailForm.email || sendingEmail">
+          <svg v-if="sendingEmail" class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ sendingEmail ? 'Sending...' : 'Send Email' }}
+        </Button>
+      </template>
+    </Modal>
+
+    <!-- Share via SMS Modal -->
+    <Modal v-if="showShareSmsModal" @close="showShareSmsModal = false">
+      <template #title>Share Estimate via SMS</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Send estimate #{{ estimate?.number }} to the customer via SMS.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Phone Number *</label>
+            <Input
+              v-model="sharesSmsForm.phone"
+              type="tel"
+              placeholder="+1 (555) 123-4567"
+              class="mt-1"
+              required
+            />
+          </div>
+          <Alert variant="info" class="text-xs">
+            The customer will receive a text message with a secure link to view this estimate.
+          </Alert>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="outline" @click="showShareSmsModal = false">Cancel</Button>
+        <Button @click="sendShareSms" :disabled="!sharesSmsForm.phone || sendingSms">
+          <svg v-if="sendingSms" class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ sendingSms ? 'Sending...' : 'Send SMS' }}
+        </Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -299,6 +391,10 @@ const estimate = ref(null)
 const technicians = ref([])
 const showConvertModal = ref(false)
 const showWorkorderModal = ref(false)
+const showShareEmailModal = ref(false)
+const showShareSmsModal = ref(false)
+const sendingEmail = ref(false)
+const sendingSms = ref(false)
 
 const convertForm = reactive({
   issue_date: new Date().toISOString().split('T')[0],
@@ -307,6 +403,14 @@ const convertForm = reactive({
 
 const workorderForm = reactive({
   technician_id: ''
+})
+
+const shareEmailForm = reactive({
+  email: ''
+})
+
+const sharesSmsForm = reactive({
+  phone: ''
 })
 
 const technicianOptions = ref([{ value: '', label: 'Unassigned' }])
@@ -448,6 +552,52 @@ async function deleteEstimate() {
   } catch (err) {
     console.error('Failed to delete estimate:', err)
     toast.error(err.response?.data?.message || 'Failed to delete estimate')
+  }
+}
+
+function openShareEmailModal() {
+  // Pre-fill with customer email if available
+  shareEmailForm.email = estimate.value?.customer?.email || ''
+  showShareEmailModal.value = true
+}
+
+function openShareSmsModal() {
+  // Pre-fill with customer phone if available
+  sharesSmsForm.phone = estimate.value?.customer?.phone || ''
+  showShareSmsModal.value = true
+}
+
+async function sendShareEmail() {
+  if (!shareEmailForm.email) return
+
+  try {
+    sendingEmail.value = true
+    await estimateService.shareViaEmail(estimate.value.id, shareEmailForm.email)
+    toast.success('Estimate sent via email successfully')
+    showShareEmailModal.value = false
+    shareEmailForm.email = ''
+  } catch (err) {
+    console.error('Failed to send estimate via email:', err)
+    toast.error(err.response?.data?.message || 'Failed to send email')
+  } finally {
+    sendingEmail.value = false
+  }
+}
+
+async function sendShareSms() {
+  if (!sharesSmsForm.phone) return
+
+  try {
+    sendingSms.value = true
+    await estimateService.shareViaSms(estimate.value.id, sharesSmsForm.phone)
+    toast.success('Estimate sent via SMS successfully')
+    showShareSmsModal.value = false
+    sharesSmsForm.phone = ''
+  } catch (err) {
+    console.error('Failed to send estimate via SMS:', err)
+    toast.error(err.response?.data?.message || 'Failed to send SMS')
+  } finally {
+    sendingSms.value = false
   }
 }
 

@@ -107,5 +107,25 @@ export default {
    */
   deleteEstimate(id) {
     return api.delete(`/estimates/${id}`)
+  },
+
+  /**
+   * Share estimate via email
+   * @param {number} id - Estimate ID
+   * @param {string} email - Recipient email address
+   * @returns {Promise}
+   */
+  shareViaEmail(id, email) {
+    return api.post(`/estimates/${id}/share/email`, { email })
+  },
+
+  /**
+   * Share estimate via SMS
+   * @param {number} id - Estimate ID
+   * @param {string} phone - Recipient phone number
+   * @returns {Promise}
+   */
+  shareViaSms(id, phone) {
+    return api.post(`/estimates/${id}/share/sms`, { phone })
   }
 }
