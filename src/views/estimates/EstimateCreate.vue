@@ -877,7 +877,7 @@ async function saveEstimate() {
 
     // Redirect to estimate detail
     if (response.data?.id) {
-      router.push(`/estimates/${response.data.id}`)
+      router.push(`/cp/estimates/${response.data.id}`)
     } else {
       router.push('/cp/estimates')
     }
