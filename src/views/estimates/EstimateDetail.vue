@@ -226,7 +226,7 @@
     </div>
 
     <!-- Convert to Invoice Modal -->
-    <Modal v-if="showConvertModal" @close="showConvertModal = false">
+    <Modal v-model="showConvertModal" @close="showConvertModal = false">
       <template #title>Convert to Invoice</template>
       <template #content>
         <div class="space-y-4">
@@ -261,7 +261,7 @@
     </Modal>
 
     <!-- Create Workorder Modal -->
-    <Modal v-if="showWorkorderModal" @close="showWorkorderModal = false">
+    <Modal v-model="showWorkorderModal" @close="showWorkorderModal = false">
       <template #title>Create Workorder</template>
       <template #content>
         <div class="space-y-4">
@@ -292,7 +292,7 @@
     </Modal>
 
     <!-- Share via Email Modal -->
-    <Modal v-if="showShareEmailModal" @close="showShareEmailModal = false">
+    <Modal v-model="showShareEmailModal" @close="showShareEmailModal = false">
       <template #title>Share Estimate via Email</template>
       <template #content>
         <div class="space-y-4">
@@ -327,7 +327,7 @@
     </Modal>
 
     <!-- Share via SMS Modal -->
-    <Modal v-if="showShareSmsModal" @close="showShareSmsModal = false">
+    <Modal v-model="showShareSmsModal" @close="showShareSmsModal = false">
       <template #title>Share Estimate via SMS</template>
       <template #content>
         <div class="space-y-4">
