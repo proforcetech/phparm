@@ -239,6 +239,30 @@
             class="mt-1"
             required
           />
+    <Modal v-model="showConvertModal" @close="showConvertModal = false">
+      <template #title>Convert to Invoice</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Convert estimate #{{ estimate?.number }} to an invoice?
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Issue Date *</label>
+            <Input
+              v-model="convertForm.issue_date"
+              type="date"
+              class="mt-1"
+              required
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Due Date (Optional)</label>
+            <Input
+              v-model="convertForm.due_date"
+              type="date"
+              class="mt-1"
+            />
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Due Date (Optional)</label>
@@ -275,6 +299,26 @@
             placeholder="Select technician"
             class="mt-1"
           />
+    <Modal v-model="showWorkorderModal" @close="showWorkorderModal = false">
+      <template #title>Create Workorder</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Create a workorder from estimate #{{ estimate?.number }}?
+          </p>
+          <Alert variant="info">
+            A workorder will be created with all approved jobs from this estimate.
+            You can then track work progress and assign technicians.
+          </Alert>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Assign Technician (Optional)</label>
+            <Select
+              v-model="workorderForm.technician_id"
+              :options="technicianOptions"
+              placeholder="Select technician"
+              class="mt-1"
+            />
+          </div>
         </div>
       </div>
       <template #footer>
@@ -300,6 +344,26 @@
             class="mt-1"
             required
           />
+    <Modal v-model="showShareEmailModal" @close="showShareEmailModal = false">
+      <template #title>Share Estimate via Email</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Send estimate #{{ estimate?.number }} to the customer via email.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Email Address *</label>
+            <Input
+              v-model="shareEmailForm.email"
+              type="email"
+              placeholder="customer@example.com"
+              class="mt-1"
+              required
+            />
+          </div>
+          <Alert variant="info" class="text-xs">
+            The customer will receive a secure link to view and approve/reject this estimate.
+          </Alert>
         </div>
         <Alert variant="info" class="text-xs">
           The customer will receive a secure link to view and approve/reject this estimate.
@@ -332,6 +396,26 @@
             class="mt-1"
             required
           />
+    <Modal v-model="showShareSmsModal" @close="showShareSmsModal = false">
+      <template #title>Share Estimate via SMS</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Send estimate #{{ estimate?.number }} to the customer via SMS.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Phone Number *</label>
+            <Input
+              v-model="sharesSmsForm.phone"
+              type="tel"
+              placeholder="+1 (555) 123-4567"
+              class="mt-1"
+              required
+            />
+          </div>
+          <Alert variant="info" class="text-xs">
+            The customer will receive a text message with a secure link to view this estimate.
+          </Alert>
         </div>
         <Alert variant="info" class="text-xs">
           The customer will receive a text message with a secure link to view this estimate.
