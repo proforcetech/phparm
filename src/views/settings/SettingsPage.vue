@@ -212,6 +212,48 @@
               <Input v-model="form.smtp.encryption" placeholder="tls" class="mt-1" />
             </div>
           </div>
+          <div class="mt-6 border-t border-gray-200 pt-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900">Test Notifications</h3>
+                <p class="text-xs text-gray-500">Save settings before running tests.</p>
+              </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Test Email Recipient</label>
+                <Input v-model="smtpTestRecipient" placeholder="you@example.com" class="mt-1" />
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" :loading="smtpConnectionLoading" @click="runSmtpConnectionTest">
+                    Test SMTP Connection
+                  </Button>
+                  <Button size="sm" :loading="smtpEmailLoading" @click="runSmtpEmailTest">
+                    Send Test Email
+                  </Button>
+                </div>
+                <p v-if="smtpConnectionMessage" class="mt-2 text-xs text-green-600">{{ smtpConnectionMessage }}</p>
+                <p v-if="smtpConnectionError" class="mt-2 text-xs text-red-600">{{ smtpConnectionError }}</p>
+                <p v-if="smtpEmailMessage" class="mt-2 text-xs text-green-600">{{ smtpEmailMessage }}</p>
+                <p v-if="smtpEmailError" class="mt-2 text-xs text-red-600">{{ smtpEmailError }}</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Test SMS Recipient</label>
+                <Input v-model="smsTestRecipient" placeholder="+15551234567" class="mt-1" />
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" :loading="twilioConnectionLoading" @click="runTwilioConnectionTest">
+                    Test Twilio Connection
+                  </Button>
+                  <Button size="sm" :loading="twilioSmsLoading" @click="runTwilioSmsTest">
+                    Send Test SMS
+                  </Button>
+                </div>
+                <p v-if="twilioConnectionMessage" class="mt-2 text-xs text-green-600">{{ twilioConnectionMessage }}</p>
+                <p v-if="twilioConnectionError" class="mt-2 text-xs text-red-600">{{ twilioConnectionError }}</p>
+                <p v-if="twilioSmsMessage" class="mt-2 text-xs text-green-600">{{ twilioSmsMessage }}</p>
+                <p v-if="twilioSmsError" class="mt-2 text-xs text-red-600">{{ twilioSmsError }}</p>
+              </div>
+            </div>
+          </div>
         </Card>
       </div>
 
@@ -329,7 +371,14 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Textarea from '@/components/ui/Textarea.vue'
-import { fetchSettings, saveSettings } from '@/services/settings.service'
+import {
+  fetchSettings,
+  saveSettings,
+  sendTestEmail,
+  sendTestSms,
+  testSmtpConnection,
+  testTwilioConnection,
+} from '@/services/settings.service'
 import { QuillEditor } from '@vueup/vue-quill'
 import '@vueup/vue-quill/dist/vue-quill.snow.css'
 
@@ -337,6 +386,20 @@ const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
 const error = ref('')
+const smtpTestRecipient = ref('')
+const smsTestRecipient = ref('')
+const smtpConnectionLoading = ref(false)
+const smtpEmailLoading = ref(false)
+const twilioConnectionLoading = ref(false)
+const twilioSmsLoading = ref(false)
+const smtpConnectionMessage = ref('')
+const smtpConnectionError = ref('')
+const smtpEmailMessage = ref('')
+const smtpEmailError = ref('')
+const twilioConnectionMessage = ref('')
+const twilioConnectionError = ref('')
+const twilioSmsMessage = ref('')
+const twilioSmsError = ref('')
 
 const termsToolbar = [
   [{ header: [2, 3, false] }],
@@ -551,6 +614,73 @@ const save = async () => {
     error.value = e?.response?.data?.message || e?.message || 'Failed to save settings.'
   } finally {
     saving.value = false
+  }
+}
+
+const resetTestMessages = () => {
+  smtpConnectionMessage.value = ''
+  smtpConnectionError.value = ''
+  smtpEmailMessage.value = ''
+  smtpEmailError.value = ''
+  twilioConnectionMessage.value = ''
+  twilioConnectionError.value = ''
+  twilioSmsMessage.value = ''
+  twilioSmsError.value = ''
+}
+
+const runSmtpConnectionTest = async () => {
+  resetTestMessages()
+  smtpConnectionLoading.value = true
+
+  try {
+    const result = await testSmtpConnection()
+    smtpConnectionMessage.value = result?.message || 'SMTP connection successful.'
+  } catch (e) {
+    smtpConnectionError.value = e?.response?.data?.error || e?.message || 'Failed to test SMTP connection.'
+  } finally {
+    smtpConnectionLoading.value = false
+  }
+}
+
+const runSmtpEmailTest = async () => {
+  resetTestMessages()
+  smtpEmailLoading.value = true
+
+  try {
+    const result = await sendTestEmail(smtpTestRecipient.value)
+    smtpEmailMessage.value = result?.message || 'Test email sent.'
+  } catch (e) {
+    smtpEmailError.value = e?.response?.data?.error || e?.message || 'Failed to send test email.'
+  } finally {
+    smtpEmailLoading.value = false
+  }
+}
+
+const runTwilioConnectionTest = async () => {
+  resetTestMessages()
+  twilioConnectionLoading.value = true
+
+  try {
+    const result = await testTwilioConnection()
+    twilioConnectionMessage.value = result?.message || 'Twilio connection successful.'
+  } catch (e) {
+    twilioConnectionError.value = e?.response?.data?.error || e?.message || 'Failed to test Twilio connection.'
+  } finally {
+    twilioConnectionLoading.value = false
+  }
+}
+
+const runTwilioSmsTest = async () => {
+  resetTestMessages()
+  twilioSmsLoading.value = true
+
+  try {
+    const result = await sendTestSms(smsTestRecipient.value)
+    twilioSmsMessage.value = result?.message || 'Test SMS sent.'
+  } catch (e) {
+    twilioSmsError.value = e?.response?.data?.error || e?.message || 'Failed to send test SMS.'
+  } finally {
+    twilioSmsLoading.value = false
   }
 }
 
