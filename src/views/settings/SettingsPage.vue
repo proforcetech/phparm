@@ -88,6 +88,61 @@
         </Card>
       </div>
 
+      <!-- Estimate Sharing Templates -->
+      <div class="grid grid-cols-1 gap-6">
+        <Card>
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Estimate Sharing Templates</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Configure templates for sharing estimates with customers. Available variables:
+            <code class="bg-gray-100 px-1 rounded">{customer}</code>,
+            <code class="bg-gray-100 px-1 rounded">{estimate_number}</code>,
+            <code class="bg-gray-100 px-1 rounded">{total}</code>,
+            <code class="bg-gray-100 px-1 rounded">{vehicle}</code>,
+            <code class="bg-gray-100 px-1 rounded">{expiration_date}</code>,
+            <code class="bg-gray-100 px-1 rounded">{link}</code>,
+            <code class="bg-gray-100 px-1 rounded">{shop_name}</code>,
+            <code class="bg-gray-100 px-1 rounded">{shop_phone}</code>
+          </p>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Email Template</label>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Subject Line</label>
+                <Input
+                  v-model="form.templates.estimateEmailSubject"
+                  placeholder="Your Estimate #{estimate_number} from {shop_name}"
+                  class="mb-2"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Email Body</label>
+                <div class="template-editor">
+                  <QuillEditor
+                    v-model:content="form.templates.estimateEmail"
+                    content-type="html"
+                    theme="snow"
+                    :toolbar="templateToolbar"
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">SMS Template</label>
+              <p class="text-xs text-gray-500 mb-2">Keep SMS messages concise (160 characters recommended)</p>
+              <Textarea
+                v-model="form.templates.estimateSms"
+                :rows="4"
+                placeholder="Hi {customer}, your estimate #{estimate_number} for {total} is ready. View it here: {link} - {shop_name}"
+                class="mt-1"
+              />
+              <p class="text-xs text-gray-400 mt-1">
+                {{ (form.templates.estimateSms || '').length }} characters
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Pricing Defaults</h2>
@@ -291,6 +346,14 @@ const termsToolbar = [
   ['clean'],
 ]
 
+const templateToolbar = [
+  [{ header: [2, 3, false] }],
+  ['bold', 'italic', 'underline'],
+  [{ list: 'ordered' }, { list: 'bullet' }],
+  ['link'],
+  ['clean'],
+]
+
 const form = reactive({
   profile: {
     name: '',
@@ -300,6 +363,11 @@ const form = reactive({
     address: { street: '', city: '', state: '', postal_code: '', country: '' },
   },
   terms: { estimates: '', invoices: '' },
+  templates: {
+    estimateEmailSubject: '',
+    estimateEmail: '',
+    estimateSms: '',
+  },
   pricing: { taxRate: 0, laborRate: 0, callOutFee: 0, mileageRate: 0 },
   notifications: { fromName: '', fromAddress: '', smsNumber: '', twilioSid: '', twilioToken: '' },
   smtp: { host: '', port: 587, username: '', password: '', encryption: 'tls' },
@@ -350,6 +418,10 @@ const hydrate = async () => {
 
     form.terms.estimates = getSetting(settings, 'documents.terms.estimates', '')
     form.terms.invoices = getSetting(settings, 'documents.terms.invoices', '')
+
+    form.templates.estimateEmailSubject = getSetting(settings, 'templates.estimate.email_subject', 'Your Estimate #{estimate_number} from {shop_name}')
+    form.templates.estimateEmail = getSetting(settings, 'templates.estimate.email_body', '')
+    form.templates.estimateSms = getSetting(settings, 'templates.estimate.sms_body', '')
 
     form.pricing.taxRate = Number(getSetting(settings, 'pricing.tax_rate', 0))
     form.pricing.laborRate = Number(getSetting(settings, 'pricing.labor_rate', 0))
@@ -433,6 +505,9 @@ const save = async () => {
     'shop.address': { ...form.profile.address },
     'documents.terms.estimates': form.terms.estimates,
     'documents.terms.invoices': form.terms.invoices,
+    'templates.estimate.email_subject': form.templates.estimateEmailSubject,
+    'templates.estimate.email_body': form.templates.estimateEmail,
+    'templates.estimate.sms_body': form.templates.estimateSms,
     'pricing.tax_rate': Number(form.pricing.taxRate) || 0,
     'pricing.labor_rate': Number(form.pricing.laborRate) || 0,
     'pricing.call_out_fee': Number(form.pricing.callOutFee) || 0,
@@ -483,12 +558,19 @@ onMounted(hydrate)
 </script>
 
 <style scoped>
-:deep(.terms-editor .ql-container) {
+:deep(.terms-editor .ql-container),
+:deep(.template-editor .ql-container) {
   border-radius: 0.375rem;
 }
 
 :deep(.terms-editor .ql-editor) {
   min-height: 140px;
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+:deep(.template-editor .ql-editor) {
+  min-height: 180px;
   font-family: inherit;
   font-size: 0.875rem;
 }

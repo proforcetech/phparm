@@ -2021,6 +2021,60 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $estimateController->mergeIntoInvoice($user, $id, $request->body());
             return Response::json($data);
         });
+
+        // Share estimate via email
+        $router->post('/api/estimates/{id}/share/email', function (Request $request) use ($connection, $auditLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+
+            if (empty($body['email'])) {
+                return Response::badRequest(['error' => 'Email address is required']);
+            }
+
+            $notificationConfig = require __DIR__ . '/../config/notifications.php';
+            $templateEngine = new \App\Support\Notifications\TemplateEngine();
+            $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+            $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+
+            $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+            $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+            $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
+
+            $baseUrl = rtrim($request->getHeader('Origin') ?? $request->getHeader('Referer') ?? 'http://localhost', '/');
+            $result = $shareService->shareViaEmail($id, $body['email'], $baseUrl);
+
+            return Response::json($result);
+        });
+
+        // Share estimate via SMS
+        $router->post('/api/estimates/{id}/share/sms', function (Request $request) use ($connection, $auditLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+
+            if (empty($body['phone'])) {
+                return Response::badRequest(['error' => 'Phone number is required']);
+            }
+
+            $notificationConfig = require __DIR__ . '/../config/notifications.php';
+            $templateEngine = new \App\Support\Notifications\TemplateEngine();
+            $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+            $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+
+            $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+            $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+            $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
+
+            $baseUrl = rtrim($request->getHeader('Origin') ?? $request->getHeader('Referer') ?? 'http://localhost', '/');
+            $result = $shareService->shareViaSms($id, $body['phone'], $baseUrl);
+
+            return Response::json($result);
+        });
     });
 
     // Reminder Campaign routes

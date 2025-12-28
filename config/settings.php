@@ -266,5 +266,23 @@ return [
             'description' => 'Terms and conditions block rendered on invoices.',
             'value' => null,
         ],
+        'templates.estimate.email_subject' => [
+            'group' => 'notifications',
+            'type' => 'string',
+            'description' => 'Subject line template for estimate sharing emails.',
+            'value' => 'Your Estimate #{estimate_number} from {shop_name}',
+        ],
+        'templates.estimate.email_body' => [
+            'group' => 'notifications',
+            'type' => 'string',
+            'description' => 'HTML body template for estimate sharing emails.',
+            'value' => '<p>Hi {customer},</p><p>Your estimate <strong>#{estimate_number}</strong> for <strong>{total}</strong> is ready for review.</p><p>Vehicle: {vehicle}</p><p><a href="{link}">Click here to view your estimate</a></p><p>This estimate expires on {expiration_date}.</p><p>Thank you,<br>{shop_name}<br>{shop_phone}</p>',
+        ],
+        'templates.estimate.sms_body' => [
+            'group' => 'notifications',
+            'type' => 'string',
+            'description' => 'SMS body template for estimate sharing.',
+            'value' => 'Hi {customer}, your estimate #{estimate_number} for {total} is ready. View: {link} - {shop_name}',
+        ],
     ],
 ];
