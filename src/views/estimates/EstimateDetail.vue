@@ -541,7 +541,10 @@ async function deleteEstimate() {
 
 function openShareEmailModal() {
   // Pre-fill with customer email if available
-  shareEmailForm.email = estimate.value?.customer?.email || ''
+  shareEmailForm.email = estimate.value?.customer?.email
+    || estimate.value?.customer_email
+    || estimate.value?.customerEmail
+    || ''
   showShareEmailModal.value = true
 }
 
