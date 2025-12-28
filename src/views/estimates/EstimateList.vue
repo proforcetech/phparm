@@ -301,6 +301,11 @@ function viewEstimate(id) {
   router.push(`/cp/estimates/${id}`)
 }
 
+function onRowClick(row) {
+  // Use the existing viewEstimate function which handles the router push
+  viewEstimate(row.id)
+}
+
 function convertToInvoice(id) {
   selectedEstimate.value = estimates.value.find(e => e.id === id)
   showConvertModal.value = true
