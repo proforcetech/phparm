@@ -103,25 +103,32 @@
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="text-sm font-medium text-gray-500">Customer</label>
-                <p class="mt-1 text-sm text-gray-900">
+                <div class="mt-1 text-sm">
                   <router-link
-                    :to="`/customers/${estimate.customer_id}`"
-                    class="text-primary-600 hover:text-primary-800"
+                    :to="`/cp/customers/${estimate.customer_id}`"
+                    class="text-primary-600 hover:text-primary-800 font-medium"
                   >
-                    Customer #{{ estimate.customer_id }}
+                    {{ estimate.customer?.name || `Customer #${estimate.customer_id}` }}
                   </router-link>
-                </p>
+                  <p v-if="estimate.customer?.phone" class="text-gray-600">{{ estimate.customer.phone }}</p>
+                  <p v-if="estimate.customer?.email" class="text-gray-600">{{ estimate.customer.email }}</p>
+                </div>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Vehicle</label>
-                <p class="mt-1 text-sm text-gray-900">
+                <div class="mt-1 text-sm">
                   <router-link
-                    :to="`/vehicles/${estimate.vehicle_id}`"
-                    class="text-primary-600 hover:text-primary-800"
+                    :to="`/cp/vehicles/${estimate.vehicle_id}`"
+                    class="text-primary-600 hover:text-primary-800 font-medium"
                   >
-                    Vehicle #{{ estimate.vehicle_id }}
+                    <span v-if="estimate.vehicle?.year || estimate.vehicle?.make || estimate.vehicle?.model">
+                      {{ estimate.vehicle.year }} {{ estimate.vehicle.make }} {{ estimate.vehicle.model }}
+                    </span>
+                    <span v-else>Vehicle #{{ estimate.vehicle_id }}</span>
                   </router-link>
-                </p>
+                  <p v-if="estimate.vehicle?.vin" class="text-gray-600">VIN: {{ estimate.vehicle.vin }}</p>
+                  <p v-if="estimate.vehicle?.license_plate" class="text-gray-600">Plate: {{ estimate.vehicle.license_plate }}</p>
+                </div>
               </div>
               <div v-if="estimate.technician_id">
                 <label class="text-sm font-medium text-gray-500">Technician</label>
