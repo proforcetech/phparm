@@ -68,7 +68,7 @@
       <Table :columns="columns" :data="estimates" :loading="loading" hoverable>
         <template #cell-number="{ row }">
           <router-link
-            :to="`/estimates/${row.id}`"
+            :to="`/cp/estimates/${row.id}`"
             class="text-primary-600 hover:text-primary-800 font-medium"
           >
             {{ row.number }}
@@ -298,7 +298,7 @@ function previousPage() {
 }
 
 function viewEstimate(id) {
-  router.push(`/estimates/${id}`)
+  router.push(`/cp/estimates/${id}`)
 }
 
 function convertToInvoice(id) {
@@ -318,7 +318,7 @@ async function confirmConvert() {
 
     // Redirect to the new invoice
     if (response.data?.id) {
-      router.push(`/invoices/${response.data.id}`)
+      router.push(`/cp/invoices/${response.data.id}`)
     } else {
       loadEstimates()
     }
