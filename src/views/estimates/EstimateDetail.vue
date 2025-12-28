@@ -436,12 +436,11 @@ async function loadEstimate() {
 
 async function loadTechnicians() {
   try {
-    const response = await userService.getUsers({ role: 'technician' })
-    const users = response.data || []
+    const users = await userService.listUsers({ role: 'technician' }) || []
     technicians.value = users
     technicianOptions.value = [
       { value: '', label: 'Unassigned' },
-      ...users.map(u => ({ value: u.id, label: u.name }))
+      ...technicians.value.map(u => ({ value: u.id, label: u.name }))
     ]
   } catch (err) {
     console.error('Failed to load technicians:', err)
