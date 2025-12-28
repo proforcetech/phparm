@@ -51,15 +51,13 @@
             <!-- Body -->
             <tbody class="divide-y divide-gray-200 bg-white">
               <!-- Loading state -->
-<tr 
-    v-for="(row, i) in data" 
-    :key="i" 
-    @click="$emit('row-click', row)"
-    :class="[
-      'transition-colors duration-150',
-      { 'hover:bg-gray-50 cursor-pointer': hoverable || $attrs.onRowClick }
-    ]"
-  >
+              <tr v-if="loading">
+                <td :colspan="columnCount" class="px-3 py-12 text-center">
+                  <div class="flex justify-center">
+                    <Loading size="lg" />
+                  </div>
+                </td>
+              </tr>
 
               <!-- Empty state -->
               <tr v-else-if="data.length === 0">
