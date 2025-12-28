@@ -3074,6 +3074,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $settingsRepository,
             $gate
         );
+        $notificationTests = new \App\Services\Settings\NotificationTestService($settingsRepository);
 
         $router->get('/api/settings', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
@@ -3109,6 +3110,58 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $settingsController->bulkUpdate($user, $request->body());
             return Response::json($data);
+        });
+
+        $router->post('/api/settings/notifications/smtp/test-connection', function (Request $request) use ($notificationTests) {
+            try {
+                $data = $notificationTests->testSmtpConnection();
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('SMTP test connection failed: ' . $e->getMessage());
+                return Response::serverError('Failed to test SMTP connection.');
+            }
+        });
+
+        $router->post('/api/settings/notifications/smtp/test-email', function (Request $request) use ($notificationTests) {
+            $recipient = trim((string) $request->input('recipient', ''));
+
+            try {
+                $data = $notificationTests->sendTestEmail($recipient);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('SMTP test email failed: ' . $e->getMessage());
+                return Response::serverError('Failed to send test email.');
+            }
+        });
+
+        $router->post('/api/settings/notifications/twilio/test-connection', function (Request $request) use ($notificationTests) {
+            try {
+                $data = $notificationTests->testTwilioConnection();
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('Twilio test connection failed: ' . $e->getMessage());
+                return Response::serverError('Failed to test Twilio connection.');
+            }
+        });
+
+        $router->post('/api/settings/notifications/twilio/test-sms', function (Request $request) use ($notificationTests) {
+            $recipient = trim((string) $request->input('recipient', ''));
+
+            try {
+                $data = $notificationTests->sendTestSms($recipient);
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('Twilio test SMS failed: ' . $e->getMessage());
+                return Response::serverError('Failed to send test SMS.');
+            }
         });
     });
 
