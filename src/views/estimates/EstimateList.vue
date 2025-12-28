@@ -65,7 +65,7 @@
 
     <!-- Estimates Table -->
     <Card>
-      <Table :columns="columns" :data="estimates" :loading="loading" hoverable>
+      <Table :columns="columns" :data="estimates" :loading="loading" hoverable @row-click="onRowClick">
         <template #cell-number="{ row }">
           <router-link
             :to="`/cp/estimates/${row.id}`"
