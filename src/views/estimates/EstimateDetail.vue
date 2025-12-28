@@ -421,7 +421,7 @@ async function confirmConvert() {
 
     // Redirect to the new invoice
     if (response.data?.id) {
-      router.push(`/invoices/${response.data.id}`)
+      router.push(`/cp/invoices/${response.data.id}`)
     }
   } catch (err) {
     console.error('Failed to convert estimate:', err)
