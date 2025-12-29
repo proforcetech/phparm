@@ -177,7 +177,7 @@ class EstimateShareService
         $smtpPort = (int) $this->getSetting('integrations.smtp.port', 587);
         $smtpUser = $this->getSetting('integrations.smtp.username');
         $smtpPass = $this->getSetting('integrations.smtp.password');
-        $smtpEncryption = $this->getSetting('integrations.smtp.encryption', 'tls');
+        $smtpEncryption = strtolower((string) $this->getSetting('integrations.smtp.encryption', 'tls'));
         $fromName = $this->getSetting('notifications.mail.from_name', 'Auto Shop');
         $fromAddress = $this->getSetting('notifications.mail.from_address');
 
@@ -185,20 +185,91 @@ class EstimateShareService
             throw new \RuntimeException('SMTP is not configured. Please configure email settings.');
         }
 
-        // Build headers
+        if ($smtpEncryption === 'starttls') {
+            $smtpEncryption = 'tls';
+        }
+
+        // Open SMTP connection
+        $transport = $smtpEncryption === 'ssl' ? 'ssl' : 'tcp';
+        $endpoint = sprintf('%s://%s:%d', $transport, $smtpHost, $smtpPort);
+        $socket = stream_socket_client($endpoint, $errno, $error, 10, STREAM_CLIENT_CONNECT);
+
+        if (!$socket) {
+            throw new \RuntimeException(sprintf('Unable to connect to SMTP server: %s (%s)', $error ?: 'unknown error', $errno));
+        }
+
+        stream_set_timeout($socket, 10);
+        $this->smtpExpectResponse($socket, [220]);
+
+        $hostname = gethostname() ?: 'localhost';
+        $this->smtpSendCommand($socket, "EHLO {$hostname}", [250]);
+
+        if ($smtpEncryption === 'tls') {
+            $this->smtpSendCommand($socket, 'STARTTLS', [220]);
+            $crypto = stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+            if ($crypto !== true) {
+                throw new \RuntimeException('Failed to establish TLS encryption with the SMTP server.');
+            }
+            $this->smtpSendCommand($socket, "EHLO {$hostname}", [250]);
+        }
+
+        if ($smtpUser !== '' && $smtpUser !== null) {
+            $this->smtpSendCommand($socket, 'AUTH LOGIN', [334]);
+            $this->smtpSendCommand($socket, base64_encode($smtpUser), [334]);
+            $this->smtpSendCommand($socket, base64_encode($smtpPass), [235]);
+        }
+
+        $this->smtpSendCommand($socket, sprintf('MAIL FROM:<%s>', $fromAddress), [250]);
+        $this->smtpSendCommand($socket, sprintf('RCPT TO:<%s>', $to), [250, 251]);
+        $this->smtpSendCommand($socket, 'DATA', [354]);
+
+        $fromHeader = $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromAddress) : $fromAddress;
         $headers = [
+            'Subject: ' . $subject,
+            'From: ' . $fromHeader,
+            'To: ' . $to,
+            'Date: ' . gmdate('D, d M Y H:i:s') . ' +0000',
             'MIME-Version: 1.0',
-            'Content-type: text/html; charset=UTF-8',
-            'From: ' . ($fromName ? "$fromName <$fromAddress>" : $fromAddress),
-            'Reply-To: ' . $fromAddress,
-            'X-Mailer: PHP/' . phpversion(),
+            'Content-Type: text/html; charset=UTF-8',
         ];
 
-        // Use PHP mail with SMTP configuration or fallback
-        $result = mail($to, $subject, $body, implode("\r\n", $headers));
+        $message = implode("\r\n", $headers) . "\r\n\r\n" . $body;
+        $message = str_replace("\n.", "\n..", str_replace("\r\n", "\n", $message));
+        $message = str_replace("\n", "\r\n", $message);
 
-        if (!$result) {
-            throw new \RuntimeException('Failed to send email');
+        fwrite($socket, $message . "\r\n.\r\n");
+        $this->smtpExpectResponse($socket, [250]);
+        $this->smtpSendCommand($socket, 'QUIT', [221, 250]);
+        fclose($socket);
+    }
+
+    private function smtpSendCommand($socket, string $command, array $expectedCodes): void
+    {
+        fwrite($socket, $command . "\r\n");
+        $this->smtpExpectResponse($socket, $expectedCodes);
+    }
+
+    private function smtpExpectResponse($socket, array $expectedCodes): void
+    {
+        $message = '';
+        while (!feof($socket)) {
+            $line = fgets($socket, 515);
+            if ($line === false) {
+                break;
+            }
+            $message .= $line;
+            if (preg_match('/^\d{3} /', $line)) {
+                break;
+            }
+        }
+
+        if ($message === '') {
+            throw new \RuntimeException('No response from SMTP server.');
+        }
+
+        $code = (int) substr(trim($message), 0, 3);
+        if (!in_array($code, $expectedCodes, true)) {
+            throw new \RuntimeException(sprintf('SMTP error: %s', trim($message)));
         }
     }
 
