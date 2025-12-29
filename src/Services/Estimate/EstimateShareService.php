@@ -124,14 +124,14 @@ class EstimateShareService
 
     private function fetchCustomer(int $customerId): ?array
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT id, name, email, phone FROM customers WHERE id = :id');
+        $stmt = $this->connection->pdo()->prepare('SELECT id, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
         $stmt->execute(['id' => $customerId]);
         return $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
     }
 
     private function fetchVehicle(int $vehicleId): ?array
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM vehicles WHERE id = :id');
+        $stmt = $this->connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM customer_vehicles WHERE id = :id');
         $stmt->execute(['id' => $vehicleId]);
         return $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
     }
