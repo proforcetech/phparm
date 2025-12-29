@@ -2217,6 +2217,228 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
+    // Public estimate routes
+    $router->get('/api/public/estimate', function (Request $request) use ($connection, $auditLogger) {
+        $token = $request->queryParam('token');
+        if (!$token) {
+            return Response::badRequest(['error' => 'Token is required']);
+        }
+
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+
+        try {
+            $data = $linkService->fetchView($token, $request->getClientIp(), $request->header('USER_AGENT'));
+
+            // Convert estimate object to array
+            $estimate = $data['estimate']->toArray();
+
+            // Get customer and vehicle data
+            $customerStmt = $connection->pdo()->prepare('SELECT id, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
+            $customerStmt->execute(['id' => $estimate['customer_id']]);
+            $customer = $customerStmt->fetch(\PDO::FETCH_ASSOC);
+
+            $vehicleStmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM customer_vehicles WHERE id = :id');
+            $vehicleStmt->execute(['id' => $estimate['vehicle_id']]);
+            $vehicle = $vehicleStmt->fetch(\PDO::FETCH_ASSOC);
+
+            // Format jobs with items
+            $jobs = [];
+            foreach ($data['jobs'] as $jobData) {
+                $job = $jobData['job']->toArray();
+                $job['items'] = $jobData['items'];
+                $jobs[] = $job;
+            }
+
+            return Response::json([
+                'estimate' => $estimate,
+                'customer' => $customer ?: null,
+                'vehicle' => $vehicle ?: null,
+                'jobs' => $jobs,
+            ]);
+        } catch (\RuntimeException $e) {
+            return Response::json(['error' => $e->getMessage()], 400);
+        }
+    });
+
+    $router->post('/api/public/estimate/approve-job', function (Request $request) use ($connection, $auditLogger) {
+        $body = $request->body();
+        $token = $body['token'] ?? '';
+        $jobId = (int) ($body['job_id'] ?? 0);
+
+        if (!$token || !$jobId) {
+            return Response::badRequest(['error' => 'Token and job_id are required']);
+        }
+
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+
+        try {
+            $result = $linkService->approveJob(
+                $token,
+                $jobId,
+                $body['comment'] ?? null,
+                $request->getClientIp(),
+                $request->header('USER_AGENT'),
+                $body['signer_name'] ?? null,
+                $body['signer_email'] ?? null
+            );
+            return Response::json(['success' => $result]);
+        } catch (\RuntimeException $e) {
+            return Response::json(['error' => $e->getMessage()], 400);
+        }
+    });
+
+    $router->post('/api/public/estimate/reject-job', function (Request $request) use ($connection, $auditLogger) {
+        $body = $request->body();
+        $token = $body['token'] ?? '';
+        $jobId = (int) ($body['job_id'] ?? 0);
+
+        if (!$token || !$jobId) {
+            return Response::badRequest(['error' => 'Token and job_id are required']);
+        }
+
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+
+        try {
+            $result = $linkService->rejectJob(
+                $token,
+                $jobId,
+                $body['comment'] ?? null,
+                $request->getClientIp(),
+                $request->header('USER_AGENT'),
+                $body['signer_name'] ?? null,
+                $body['signer_email'] ?? null,
+                $body['rejection_reason'] ?? null
+            );
+            return Response::json(['success' => $result]);
+        } catch (\RuntimeException $e) {
+            return Response::json(['error' => $e->getMessage()], 400);
+        }
+    });
+
+    $router->post('/api/public/estimate/signature', function (Request $request) use ($connection, $auditLogger) {
+        $body = $request->body();
+        $token = $body['token'] ?? '';
+
+        if (!$token || empty($body['name']) || empty($body['signature_data'])) {
+            return Response::badRequest(['error' => 'Token, name, and signature_data are required']);
+        }
+
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+
+        try {
+            $signature = $linkService->captureSignature(
+                $token,
+                $body['name'],
+                $body['email'] ?? null,
+                $body['signature_data'],
+                $body['comment'] ?? null,
+                $request->getClientIp(),
+                $request->header('USER_AGENT'),
+                $body['device_fingerprint'] ?? null,
+                !empty($body['legal_consent']),
+                $body['consent_text'] ?? null
+            );
+            return Response::json(['success' => true, 'signature_id' => $signature->id]);
+        } catch (\RuntimeException $e) {
+            return Response::json(['error' => $e->getMessage()], 400);
+        }
+    });
+
+    // Short code redirect for estimates
+    $router->get('/e/{shortCode}', function (Request $request) use ($connection) {
+        $shortCode = (string) $request->getAttribute('shortCode');
+
+        $stmt = $connection->pdo()->prepare('SELECT token_hash FROM estimate_public_links WHERE short_code = :short_code LIMIT 1');
+        $stmt->execute(['short_code' => $shortCode]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return Response::notFound(['error' => 'Link not found']);
+        }
+
+        // We can't redirect with the original token since we only store the hash
+        // Instead redirect to a page that will look up by short code
+        $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? '', '/');
+        if (!$baseUrl) {
+            $baseUrl = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+        }
+
+        header('Location: ' . $baseUrl . '/estimate/view?code=' . $shortCode);
+        exit;
+    });
+
+    // Also support fetching estimate by short code
+    $router->get('/api/public/estimate/by-code/{shortCode}', function (Request $request) use ($connection, $auditLogger) {
+        $shortCode = (string) $request->getAttribute('shortCode');
+
+        $stmt = $connection->pdo()->prepare('SELECT * FROM estimate_public_links WHERE short_code = :short_code LIMIT 1');
+        $stmt->execute(['short_code' => $shortCode]);
+        $linkRow = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$linkRow) {
+            return Response::notFound(['error' => 'Link not found']);
+        }
+
+        // Check expiration
+        if ($linkRow['expires_at'] !== null && strtotime($linkRow['expires_at']) < time()) {
+            return Response::json(['error' => 'This estimate link has expired'], 400);
+        }
+
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimate = $estimateRepository->find((int) $linkRow['estimate_id']);
+
+        if ($estimate === null) {
+            return Response::notFound(['error' => 'Estimate not found']);
+        }
+
+        // Update last accessed
+        $updateStmt = $connection->pdo()->prepare('UPDATE estimate_public_links SET last_accessed_at = NOW() WHERE id = :id');
+        $updateStmt->execute(['id' => $linkRow['id']]);
+
+        // Get customer and vehicle data
+        $customerStmt = $connection->pdo()->prepare('SELECT id, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
+        $customerStmt->execute(['id' => $estimate->customer_id]);
+        $customer = $customerStmt->fetch(\PDO::FETCH_ASSOC);
+
+        $vehicleStmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM customer_vehicles WHERE id = :id');
+        $vehicleStmt->execute(['id' => $estimate->vehicle_id]);
+        $vehicle = $vehicleStmt->fetch(\PDO::FETCH_ASSOC);
+
+        // Get jobs with items
+        $jobsStmt = $connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY position ASC');
+        $jobsStmt->execute(['estimate_id' => $estimate->id]);
+        $jobRows = $jobsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $itemStmt = $connection->pdo()->prepare('SELECT * FROM estimate_items WHERE job_id = :job_id ORDER BY position ASC');
+
+        $jobs = [];
+        foreach ($jobRows as $jobRow) {
+            $itemStmt->execute(['job_id' => $jobRow['id']]);
+            $jobRow['items'] = $itemStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $jobs[] = $jobRow;
+        }
+
+        return Response::json([
+            'estimate' => $estimate->toArray(),
+            'customer' => $customer ?: null,
+            'vehicle' => $vehicle ?: null,
+            'jobs' => $jobs,
+            'short_code' => $shortCode,
+        ]);
+    });
+
 // Invoice routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $paymentConfig) {
 
