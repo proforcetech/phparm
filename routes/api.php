@@ -1975,7 +1975,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             // Enrich with customer data
             if (!empty($data['customer_id'])) {
-                $stmt = $connection->pdo()->prepare('SELECT id, name, email, phone FROM customers WHERE id = :id');
+                $stmt = $connection->pdo()->prepare('SELECT id, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
                 $stmt->execute(['id' => $data['customer_id']]);
                 $customer = $stmt->fetch(\PDO::FETCH_ASSOC);
                 if ($customer) {
@@ -1985,7 +1985,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             // Enrich with vehicle data
             if (!empty($data['vehicle_id'])) {
-                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM vehicles WHERE id = :id');
+                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM customer_vehicles WHERE id = :id');
                 $stmt->execute(['id' => $data['vehicle_id']]);
                 $vehicle = $stmt->fetch(\PDO::FETCH_ASSOC);
                 if ($vehicle) {
