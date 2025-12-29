@@ -236,9 +236,9 @@ async function loadEstimate() {
 
     let response
     if (token.value) {
-      response = await api.get('/api/public/estimate', { params: { token: token.value } })
+      response = await api.get('/public/estimate', { params: { token: token.value } })
     } else if (shortCode.value) {
-      response = await api.get(`/api/public/estimate/by-code/${shortCode.value}`)
+      response = await api.get(`/public/estimate/by-code/${shortCode.value}`)
     } else {
       throw new Error('No token or code provided')
     }
@@ -262,7 +262,7 @@ async function approveEstimate() {
   try {
     // Approve all jobs
     for (const job of jobs.value) {
-      await api.post('/api/public/estimate/approve-job', {
+      await api.post('/public/estimate/approve-job', {
         token: token.value,
         job_id: job.id
       })
@@ -284,7 +284,7 @@ async function declineEstimate() {
   try {
     // Reject all jobs
     for (const job of jobs.value) {
-      await api.post('/api/public/estimate/reject-job', {
+      await api.post('/public/estimate/reject-job', {
         token: token.value,
         job_id: job.id,
         rejection_reason: declineReason.value
