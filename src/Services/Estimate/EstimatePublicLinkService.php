@@ -311,10 +311,10 @@ class EstimatePublicLinkService
      */
     private function fetchJobsWithItems(int $estimateId): array
     {
-        $jobsStmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY position ASC');
+        $jobsStmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY display_order ASC');
         $jobsStmt->execute(['estimate_id' => $estimateId]);
 
-        $itemStmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_items WHERE job_id = :job_id ORDER BY position ASC');
+        $itemStmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_items WHERE estimate_job_id = :job_id ORDER BY id ASC');
 
         $results = [];
         foreach ($jobsStmt->fetchAll(PDO::FETCH_ASSOC) as $jobRow) {
