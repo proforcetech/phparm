@@ -2064,7 +2064,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
             $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
 
-            $baseUrl = rtrim($request->getHeader('Origin') ?? $request->getHeader('Referer') ?? 'http://localhost', '/');
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
             $result = $shareService->shareViaEmail($id, $body['email'], $baseUrl);
 
             return Response::json($result);
@@ -2091,7 +2091,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
             $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
 
-            $baseUrl = rtrim($request->getHeader('Origin') ?? $request->getHeader('Referer') ?? 'http://localhost', '/');
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
             $result = $shareService->shareViaSms($id, $body['phone'], $baseUrl);
 
             return Response::json($result);
