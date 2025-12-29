@@ -522,6 +522,12 @@ const routes = [
     name: 'EstimateRequestForm',
     component: () => import('@/views/public/EstimateRequestPage.vue'),
   },
+  // Public estimate view (shared via email/SMS)
+  {
+    path: '/estimate/view',
+    name: 'PublicEstimateView',
+    component: () => import('@/views/public/PublicEstimateView.vue'),
+  },
   {
     path: '/',
     name: 'Home',

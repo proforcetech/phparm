@@ -64,7 +64,7 @@ class EstimatePublicLinkService
         return [
             'token' => $token,
             'short_url' => rtrim($baseUrl, '/') . '/e/' . $shortCode,
-            'secure_url' => rtrim($baseUrl, '/') . '/public/estimate?token=' . $token,
+            'secure_url' => rtrim($baseUrl, '/') . '/estimate/view?token=' . $token,
         ];
     }
 
