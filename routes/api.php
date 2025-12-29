@@ -2417,11 +2417,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $vehicle = $vehicleStmt->fetch(\PDO::FETCH_ASSOC);
 
         // Get jobs with items
-        $jobsStmt = $connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY position ASC');
+        $jobsStmt = $connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY display_order ASC');
         $jobsStmt->execute(['estimate_id' => $estimate->id]);
         $jobRows = $jobsStmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        $itemStmt = $connection->pdo()->prepare('SELECT * FROM estimate_items WHERE job_id = :job_id ORDER BY position ASC');
+        $itemStmt = $connection->pdo()->prepare('SELECT * FROM estimate_items WHERE estimate_job_id = :job_id ORDER BY id ASC');
 
         $jobs = [];
         foreach ($jobRows as $jobRow) {
