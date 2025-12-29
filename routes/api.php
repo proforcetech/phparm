@@ -2218,7 +2218,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Public estimate routes
-    $router->get('/api/public/estimate', function (Request $request) use ($connection, $auditLogger) {
+    $router->get('/public/estimate', function (Request $request) use ($connection, $auditLogger) {
         $token = $request->queryParam('token');
         if (!$token) {
             return Response::badRequest(['error' => 'Token is required']);
@@ -2263,7 +2263,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
     });
 
-    $router->post('/api/public/estimate/approve-job', function (Request $request) use ($connection, $auditLogger) {
+    $router->post('/public/estimate/approve-job', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
         $token = $body['token'] ?? '';
         $jobId = (int) ($body['job_id'] ?? 0);
@@ -2293,7 +2293,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
     });
 
-    $router->post('/api/public/estimate/reject-job', function (Request $request) use ($connection, $auditLogger) {
+    $router->post('/public/estimate/reject-job', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
         $token = $body['token'] ?? '';
         $jobId = (int) ($body['job_id'] ?? 0);
@@ -2324,7 +2324,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
     });
 
-    $router->post('/api/public/estimate/signature', function (Request $request) use ($connection, $auditLogger) {
+    $router->post('/public/estimate/signature', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
         $token = $body['token'] ?? '';
 
@@ -2380,7 +2380,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Also support fetching estimate by short code
-    $router->get('/api/public/estimate/by-code/{shortCode}', function (Request $request) use ($connection, $auditLogger) {
+    $router->get('/public/estimate/by-code/{shortCode}', function (Request $request) use ($connection, $auditLogger) {
         $shortCode = (string) $request->getAttribute('shortCode');
 
         $stmt = $connection->pdo()->prepare('SELECT * FROM estimate_public_links WHERE short_code = :short_code LIMIT 1');
