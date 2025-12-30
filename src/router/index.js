@@ -313,15 +313,55 @@ const routes = [
   },
   {
     path: '/cp/settings',
-    name: 'Settings',
-    component: () => import('@/views/settings/SettingsPage.vue'),
+    component: () => import('@/views/settings/SettingsLayout.vue'),
     meta: { requiresAuth: true, requiresStaff: true },
-  },
-  {
-    path: '/cp/settings/services',
-    name: 'ServiceTypes',
-    component: () => import('@/views/settings/ServiceTypes.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    children: [
+      {
+        path: '',
+        name: 'Settings',
+        component: () => import('@/views/settings/SettingsShopProfile.vue'),
+      },
+      {
+        path: 'terms',
+        name: 'SettingsTerms',
+        component: () => import('@/views/settings/SettingsTerms.vue'),
+      },
+      {
+        path: 'templates',
+        name: 'SettingsTemplates',
+        component: () => import('@/views/settings/SettingsTemplates.vue'),
+      },
+      {
+        path: 'rejection-reasons',
+        name: 'SettingsRejectionReasons',
+        component: () => import('@/views/settings/SettingsRejectionReasons.vue'),
+      },
+      {
+        path: 'pricing',
+        name: 'SettingsPricing',
+        component: () => import('@/views/settings/SettingsPricing.vue'),
+      },
+      {
+        path: 'notifications',
+        name: 'SettingsNotifications',
+        component: () => import('@/views/settings/SettingsNotifications.vue'),
+      },
+      {
+        path: 'payments',
+        name: 'SettingsPayments',
+        component: () => import('@/views/settings/SettingsPayments.vue'),
+      },
+      {
+        path: 'integrations',
+        name: 'SettingsIntegrations',
+        component: () => import('@/views/settings/SettingsIntegrations.vue'),
+      },
+      {
+        path: 'services',
+        name: 'ServiceTypes',
+        component: () => import('@/views/settings/ServiceTypes.vue'),
+      },
+    ],
   },
   {
     path: '/cp/users',
