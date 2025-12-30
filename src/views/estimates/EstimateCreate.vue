@@ -530,6 +530,7 @@ const toast = useToast()
 
 const loading = ref(false)
 const saving = ref(false)
+const isHydrating = ref(false)
 const today = new Date().toISOString().substring(0, 10)
 
 const form = reactive({
@@ -754,6 +755,7 @@ function calculateTotals() {
 async function loadEstimate() {
   try {
     loading.value = true
+    isHydrating.value = true
     const response = await estimateService.getEstimate(route.params.id)
     const estimateData = response.data || {}
     const subtotal = Number(estimateData.subtotal) || 0
@@ -833,6 +835,7 @@ async function loadEstimate() {
     toast.error('Failed to load estimate')
     router.push('/cp/estimates')
   } finally {
+    isHydrating.value = false
     loading.value = false
   }
 }
@@ -933,8 +936,6 @@ async function searchCustomers(query) {
 }
 
 async function searchVehicles(query) {
-  if (!form.customer_id) return []
-
   try {
     const normalizedQuery = String(query || '').trim()
     if (
@@ -984,7 +985,7 @@ async function searchTechnicians(query) {
 // Watch for customer changes and clear vehicle selection
 watch(() => form.customer_id, (newCustomerId, oldCustomerId) => {
   // Only clear vehicle if customer actually changed (not initial load)
-  if (oldCustomerId !== undefined && newCustomerId !== oldCustomerId) {
+  if (!isHydrating.value && oldCustomerId !== undefined && newCustomerId !== oldCustomerId) {
     form.vehicle_id = null
   }
 })
