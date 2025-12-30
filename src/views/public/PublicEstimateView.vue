@@ -54,26 +54,74 @@
         <div class="bg-white shadow rounded-lg p-6 mb-6">
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Services</h2>
 
-          <div v-for="job in jobs" :key="job.id" class="border-b last:border-b-0 py-4">
-            <div class="flex justify-between items-start">
-              <div class="flex-1">
-                <h3 class="font-medium text-gray-900">{{ job.name || job.description }}</h3>
-                <p v-if="job.description && job.name" class="text-sm text-gray-600 mt-1">{{ job.description }}</p>
+          <div v-for="(job, jobIndex) in jobs" :key="job.id" class="border border-gray-200 rounded-lg overflow-hidden mb-4 last:mb-0">
+            <!-- Job Header -->
+            <div class="bg-gray-50 px-4 py-3 flex justify-between items-center">
+              <div>
+                <h3 class="font-medium text-gray-900">{{ job.title || job.name || `Job ${jobIndex + 1}` }}</h3>
+                <p v-if="job.notes" class="text-sm text-gray-600 mt-1">{{ job.notes }}</p>
               </div>
-              <div class="text-right ml-4">
-                <p class="font-semibold">${{ formatNumber(job.total || 0) }}</p>
-                <span v-if="job.customer_status" :class="jobStatusClass(job.customer_status)" class="text-xs px-2 py-1 rounded">
-                  {{ job.customer_status }}
+              <div class="flex items-center gap-3">
+                <span class="font-semibold text-gray-900">${{ formatNumber(calculateJobTotal(job)) }}</span>
+                <span v-if="job.customer_status" :class="jobStatusClass(job.customer_status)" class="text-xs px-2 py-1 rounded font-medium">
+                  {{ formatJobStatus(job.customer_status) }}
                 </span>
               </div>
             </div>
 
-            <!-- Job Items -->
-            <div v-if="job.items && job.items.length" class="mt-3 pl-4 border-l-2 border-gray-200">
-              <div v-for="item in job.items" :key="item.id" class="flex justify-between text-sm py-1">
-                <span class="text-gray-600">{{ item.description }} (x{{ item.quantity }})</span>
-                <span class="text-gray-900">${{ formatNumber(item.total || 0) }}</span>
-              </div>
+            <!-- Line Items Table -->
+            <div v-if="job.items && job.items.length" class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="item in job.items" :key="item.id">
+                    <td class="px-4 py-2 whitespace-nowrap">
+                      <span :class="item.type === 'LABOR' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'" class="text-xs px-2 py-1 rounded font-medium">
+                        {{ item.type === 'LABOR' ? 'Labor' : 'Part' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2">
+                      <div class="text-sm text-gray-900">{{ item.description }}</div>
+                      <div v-if="item.sku" class="text-xs text-gray-500">SKU: {{ item.sku }}</div>
+                    </td>
+                    <td class="px-4 py-2 text-right text-sm text-gray-900 whitespace-nowrap">
+                      {{ item.quantity }}
+                    </td>
+                    <td class="px-4 py-2 text-right text-sm text-gray-900 whitespace-nowrap">
+                      ${{ formatNumber(item.unit_price) }}
+                    </td>
+                    <td class="px-4 py-2 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                      ${{ formatNumber((item.quantity || 0) * (item.unit_price || 0)) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Individual Job Actions -->
+            <div v-if="canTakeAction && !job.customer_status" class="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                @click="approveJob(job)"
+                :disabled="submitting"
+                class="bg-green-600 text-white text-sm py-1.5 px-4 rounded font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                Approve Job
+              </button>
+              <button
+                @click="openRejectJobModal(job)"
+                :disabled="submitting"
+                class="bg-red-600 text-white text-sm py-1.5 px-4 rounded font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                Reject Job
+              </button>
             </div>
           </div>
         </div>
@@ -106,38 +154,47 @@
           <p class="text-gray-600 whitespace-pre-wrap">{{ estimate.customer_notes }}</p>
         </div>
 
-        <!-- Actions (if estimate is pending/sent) -->
-        <div v-if="canTakeAction" class="bg-white shadow rounded-lg p-6">
-          <h2 class="text-lg font-semibold text-gray-900 mb-4">Your Response</h2>
-          <p class="text-gray-600 mb-4">Please review the services above and approve or decline this estimate.</p>
+        <!-- Actions (if estimate is pending/sent and has pending jobs) -->
+        <div v-if="canTakeAction && hasPendingJobs" class="bg-white shadow rounded-lg p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+          <p class="text-gray-600 mb-4">
+            You can approve or reject individual jobs above, or use the buttons below to respond to all remaining jobs at once.
+          </p>
 
           <div class="flex gap-4">
             <button
-              @click="approveEstimate"
+              @click="approveAllPendingJobs"
               :disabled="submitting"
               class="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
             >
-              {{ submitting ? 'Processing...' : 'Approve Estimate' }}
+              {{ submitting ? 'Processing...' : 'Approve All Remaining Jobs' }}
             </button>
             <button
               @click="showDeclineModal = true"
               :disabled="submitting"
               class="flex-1 bg-red-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50"
             >
-              Decline
+              Reject All Remaining Jobs
             </button>
           </div>
+        </div>
+
+        <!-- Status Message when all jobs have been responded to -->
+        <div v-if="canTakeAction && !hasPendingJobs && jobs.length > 0" class="bg-green-50 border border-green-200 rounded-lg p-6">
+          <h2 class="text-lg font-semibold text-green-800 mb-2">Thank You!</h2>
+          <p class="text-green-700">You have responded to all jobs on this estimate.</p>
         </div>
       </div>
     </div>
 
-    <!-- Decline Modal -->
+    <!-- Decline All Modal -->
     <div v-if="showDeclineModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-lg p-6 max-w-md w-full">
-        <h3 class="text-lg font-semibold mb-4">Decline Estimate</h3>
+        <h3 class="text-lg font-semibold mb-4">Reject All Remaining Jobs</h3>
+        <p class="text-gray-600 mb-4">This will reject all jobs that haven't been responded to yet.</p>
         <textarea
           v-model="declineReason"
-          placeholder="Please let us know why you're declining (optional)"
+          placeholder="Please let us know why you're rejecting (optional)"
           class="w-full border rounded-lg p-3 h-32"
         ></textarea>
         <div class="flex gap-4 mt-4">
@@ -148,11 +205,41 @@
             Cancel
           </button>
           <button
-            @click="declineEstimate"
+            @click="rejectAllPendingJobs"
             :disabled="submitting"
             class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50"
           >
-            {{ submitting ? 'Processing...' : 'Confirm Decline' }}
+            {{ submitting ? 'Processing...' : 'Confirm Reject All' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reject Individual Job Modal -->
+    <div v-if="showRejectJobModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 class="text-lg font-semibold mb-4">Reject Job</h3>
+        <p class="text-gray-600 mb-4">
+          You are rejecting: <strong>{{ rejectingJob?.title || rejectingJob?.name || 'This job' }}</strong>
+        </p>
+        <textarea
+          v-model="rejectJobReason"
+          placeholder="Please let us know why you're rejecting this job (optional)"
+          class="w-full border rounded-lg p-3 h-32"
+        ></textarea>
+        <div class="flex gap-4 mt-4">
+          <button
+            @click="closeRejectJobModal"
+            class="flex-1 border border-gray-300 py-2 px-4 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmRejectJob"
+            :disabled="submitting"
+            class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            {{ submitting ? 'Processing...' : 'Confirm Reject' }}
           </button>
         </div>
       </div>
@@ -179,6 +266,9 @@ const shortCode = ref('')
 const submitting = ref(false)
 const showDeclineModal = ref(false)
 const declineReason = ref('')
+const showRejectJobModal = ref(false)
+const rejectingJob = ref(null)
+const rejectJobReason = ref('')
 
 const vehicleDescription = computed(() => {
   if (!vehicle.value) return 'N/A'
@@ -204,6 +294,10 @@ const canTakeAction = computed(() => {
   return status === 'pending' || status === 'sent'
 })
 
+const hasPendingJobs = computed(() => {
+  return jobs.value.some(job => !job.customer_status)
+})
+
 function jobStatusClass(status) {
   const classes = {
     approved: 'bg-green-100 text-green-800',
@@ -211,6 +305,20 @@ function jobStatusClass(status) {
     pending: 'bg-yellow-100 text-yellow-800'
   }
   return classes[status] || 'bg-gray-100 text-gray-800'
+}
+
+function formatJobStatus(status) {
+  if (!status) return ''
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function calculateJobTotal(job) {
+  if (!job.items || !job.items.length) return job.total || 0
+  return job.items.reduce((sum, item) => {
+    const quantity = Number(item.quantity) || 0
+    const unitPrice = Number(item.unit_price) || 0
+    return sum + (quantity * unitPrice)
+  }, 0)
 }
 
 function formatDate(dateStr) {
@@ -255,13 +363,70 @@ async function loadEstimate() {
   }
 }
 
-async function approveEstimate() {
+// Approve a single job
+async function approveJob(job) {
   if (!token.value || submitting.value) return
 
   submitting.value = true
   try {
-    // Approve all jobs
-    for (const job of jobs.value) {
+    await api.post('/public/estimate/approve-job', {
+      token: token.value,
+      job_id: job.id
+    })
+    // Reload to show updated status
+    await loadEstimate()
+  } catch (err) {
+    console.error('Failed to approve job:', err)
+    error.value = err.response?.data?.error || 'Failed to approve job'
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Open modal to reject a single job
+function openRejectJobModal(job) {
+  rejectingJob.value = job
+  rejectJobReason.value = ''
+  showRejectJobModal.value = true
+}
+
+function closeRejectJobModal() {
+  showRejectJobModal.value = false
+  rejectingJob.value = null
+  rejectJobReason.value = ''
+}
+
+// Confirm rejection of a single job
+async function confirmRejectJob() {
+  if (!token.value || !rejectingJob.value || submitting.value) return
+
+  submitting.value = true
+  try {
+    await api.post('/public/estimate/reject-job', {
+      token: token.value,
+      job_id: rejectingJob.value.id,
+      rejection_reason: rejectJobReason.value
+    })
+    closeRejectJobModal()
+    // Reload to show updated status
+    await loadEstimate()
+  } catch (err) {
+    console.error('Failed to reject job:', err)
+    error.value = err.response?.data?.error || 'Failed to reject job'
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Approve all pending jobs
+async function approveAllPendingJobs() {
+  if (!token.value || submitting.value) return
+
+  submitting.value = true
+  try {
+    // Approve only jobs that haven't been responded to
+    const pendingJobs = jobs.value.filter(job => !job.customer_status)
+    for (const job of pendingJobs) {
       await api.post('/public/estimate/approve-job', {
         token: token.value,
         job_id: job.id
@@ -271,19 +436,21 @@ async function approveEstimate() {
     await loadEstimate()
   } catch (err) {
     console.error('Failed to approve:', err)
-    error.value = err.response?.data?.error || 'Failed to approve estimate'
+    error.value = err.response?.data?.error || 'Failed to approve jobs'
   } finally {
     submitting.value = false
   }
 }
 
-async function declineEstimate() {
+// Reject all pending jobs
+async function rejectAllPendingJobs() {
   if (!token.value || submitting.value) return
 
   submitting.value = true
   try {
-    // Reject all jobs
-    for (const job of jobs.value) {
+    // Reject only jobs that haven't been responded to
+    const pendingJobs = jobs.value.filter(job => !job.customer_status)
+    for (const job of pendingJobs) {
       await api.post('/public/estimate/reject-job', {
         token: token.value,
         job_id: job.id,
@@ -291,11 +458,12 @@ async function declineEstimate() {
       })
     }
     showDeclineModal.value = false
+    declineReason.value = ''
     // Reload to show updated status
     await loadEstimate()
   } catch (err) {
-    console.error('Failed to decline:', err)
-    error.value = err.response?.data?.error || 'Failed to decline estimate'
+    console.error('Failed to reject:', err)
+    error.value = err.response?.data?.error || 'Failed to reject jobs'
   } finally {
     submitting.value = false
   }
