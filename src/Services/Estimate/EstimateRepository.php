@@ -18,6 +18,7 @@ class EstimateRepository
         'sent',
         'approved',
         'rejected',
+        'partial',
         'expired',
         'converted',
     ];

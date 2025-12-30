@@ -2332,7 +2332,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $body['signer_email'] ?? null
             );
             return Response::json(['success' => $result]);
-        } catch (\RuntimeException $e) {
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
     });
@@ -2363,7 +2363,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $body['rejection_reason'] ?? null
             );
             return Response::json(['success' => $result]);
-        } catch (\RuntimeException $e) {
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
     });
