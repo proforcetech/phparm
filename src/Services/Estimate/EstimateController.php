@@ -65,6 +65,10 @@ class EstimateController
     {
         $this->assertManageAccess($user);
 
+        // First approve all pending jobs so workorder creation will work
+        $this->editor->approveAllPendingJobs($estimateId, $user->id);
+
+        // Then update the estimate status
         $estimate = $this->repository->updateStatus($estimateId, 'approved', $user->id, $reason);
 
         return $estimate?->toArray();
