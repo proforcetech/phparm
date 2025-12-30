@@ -22,7 +22,7 @@
               <h1 class="text-2xl font-bold text-gray-900">Estimate #{{ estimate.number }}</h1>
               <p class="mt-1 text-gray-600">
                 Status:
-                <span :class="statusClass">{{ estimate.status }}</span>
+                <span :class="statusClass">{{ displayStatus }}</span>
               </p>
             </div>
             <div class="text-right">
@@ -320,15 +320,43 @@ const statusClass = computed(() => {
     sent: 'text-blue-600',
     approved: 'text-green-600',
     rejected: 'text-red-600',
+    declined: 'text-red-600',
+    partial: 'text-orange-600',
     expired: 'text-gray-600',
     converted: 'text-purple-600'
   }
   return classes[status] || 'text-gray-600'
 })
 
+// Calculate job approval stats for display
+const jobApprovalStats = computed(() => {
+  if (!jobs.value || jobs.value.length === 0) return null
+  const total = jobs.value.length
+  const approved = jobs.value.filter(j => j.customer_status === 'approved').length
+  const rejected = jobs.value.filter(j => j.customer_status === 'rejected').length
+  const pending = total - approved - rejected
+  return { total, approved, rejected, pending }
+})
+
+// Get display-friendly status text
+const displayStatus = computed(() => {
+  const status = estimate.value?.status
+  const stats = jobApprovalStats.value
+
+  if (status === 'partial' && stats) {
+    return `${stats.approved}/${stats.total} Jobs Approved`
+  }
+  if (status === 'declined') {
+    return 'Declined'
+  }
+  // Capitalize first letter
+  return status ? status.charAt(0).toUpperCase() + status.slice(1) : ''
+})
+
 const canTakeAction = computed(() => {
   const status = estimate.value?.status
-  return status === 'pending' || status === 'sent'
+  // Allow action on pending, sent, or partial (some jobs still need response)
+  return status === 'pending' || status === 'sent' || status === 'partial'
 })
 
 const hasPendingJobs = computed(() => {

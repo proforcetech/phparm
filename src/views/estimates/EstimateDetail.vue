@@ -67,14 +67,14 @@
             Reject
           </Button>
           <Button
-            v-if="estimate.status === 'approved'"
+            v-if="estimate.status === 'approved' || estimate.status === 'partial'"
             variant="primary"
             @click="showWorkorderModal = true"
           >
             Create Workorder
           </Button>
           <Button
-            v-if="estimate.status === 'approved'"
+            v-if="estimate.status === 'approved' || estimate.status === 'partial'"
             @click="showConvertModal = true"
           >
             Convert to Invoice
@@ -173,9 +173,18 @@
                 class="border border-gray-200 rounded-lg overflow-hidden"
               >
                 <!-- Job Header -->
-                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                  <h4 class="font-medium text-gray-900">{{ job.title || `Job ${jobIndex + 1}` }}</h4>
-                  <p v-if="job.notes" class="mt-1 text-sm text-gray-600">{{ job.notes }}</p>
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-start">
+                  <div>
+                    <h4 class="font-medium text-gray-900">{{ job.title || `Job ${jobIndex + 1}` }}</h4>
+                    <p v-if="job.notes" class="mt-1 text-sm text-gray-600">{{ job.notes }}</p>
+                  </div>
+                  <Badge
+                    v-if="job.customer_status"
+                    :variant="job.customer_status === 'approved' ? 'success' : job.customer_status === 'rejected' ? 'danger' : 'default'"
+                    size="sm"
+                  >
+                    {{ job.customer_status === 'approved' ? 'Approved' : job.customer_status === 'rejected' ? 'Rejected' : 'Pending' }}
+                  </Badge>
                 </div>
 
                 <!-- Line Items Table -->
@@ -416,7 +425,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
@@ -441,6 +450,17 @@ const creatingWorkorder = ref(false)
 const error = ref(null)
 const estimate = ref(null)
 const technicians = ref([])
+
+// Calculate job approval stats for partial status display
+const jobApprovalStats = computed(() => {
+  if (!estimate.value?.jobs || estimate.value.jobs.length === 0) return null
+  const jobs = estimate.value.jobs
+  const total = jobs.length
+  const approved = jobs.filter(j => j.customer_status === 'approved').length
+  const rejected = jobs.filter(j => j.customer_status === 'rejected').length
+  const pending = total - approved - rejected
+  return { total, approved, rejected, pending }
+})
 const showConvertModal = ref(false)
 const showWorkorderModal = ref(false)
 const showShareEmailModal = ref(false)
@@ -661,6 +681,8 @@ function getStatusVariant(status) {
     pending: 'default',
     approved: 'success',
     rejected: 'danger',
+    declined: 'danger',
+    partial: 'warning',
     expired: 'warning',
     converted: 'success'
   }
@@ -668,6 +690,13 @@ function getStatusVariant(status) {
 }
 
 function formatStatus(status) {
+  if (status === 'partial' && jobApprovalStats.value) {
+    const stats = jobApprovalStats.value
+    return `${stats.approved}/${stats.total} Jobs Approved`
+  }
+  if (status === 'declined') {
+    return 'Declined'
+  }
   return status
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
