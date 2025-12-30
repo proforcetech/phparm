@@ -158,6 +158,11 @@ const props = defineProps({
     type: Number,
     default: 300,
   },
+  // Allow free text entry (preserve typed text even if no item selected)
+  freeText: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'select'])
@@ -234,7 +239,9 @@ function onInput(event) {
   const value = event.target.value
   searchQuery.value = value
   selectedItem.value = null
-  emit('update:modelValue', null)
+  // If freeText is enabled, set the typed value immediately
+  // Otherwise, clear the value until user selects from dropdown
+  emit('update:modelValue', props.freeText ? value : null)
   showDropdown.value = true
 
   clearTimeout(debounceTimer)
@@ -256,6 +263,11 @@ function onBlur() {
   // Delay to allow click events on dropdown items
   setTimeout(() => {
     showDropdown.value = false
+    // If freeText is enabled and user typed something but didn't select,
+    // preserve the typed text as the value
+    if (props.freeText && !selectedItem.value && searchQuery.value) {
+      emit('update:modelValue', searchQuery.value)
+    }
   }, 200)
 }
 

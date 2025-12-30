@@ -206,13 +206,14 @@
                           v-if="item.type === 'PART'"
                           v-model="item.description"
                           label="Description"
-                          placeholder="Search parts..."
+                          placeholder="Search or enter part description..."
                           :search-fn="(query) => searchInventoryParts(query)"
                           :item-value="(inv) => inv.name"
                           :item-label="(inv) => inv.name"
                           :item-subtext="(inv) => inv.sku ? `SKU: ${inv.sku}` : ''"
                           @select="(inv) => onInventorySelect(item, inv)"
                           required
+                          free-text
                         />
                         <Input
                           v-else
@@ -843,7 +844,6 @@ async function loadEstimate() {
 }
 
 async function saveEstimate() {
-  console.log('saveEstimate called, current saving state:', saving.value)
   try {
     saving.value = true
 
@@ -854,7 +854,6 @@ async function saveEstimate() {
     }
 
     // Validate that all jobs have titles and all items have descriptions
-    console.log('Validating jobs:', form.jobs)
     for (let i = 0; i < form.jobs.length; i++) {
       if (!form.jobs[i].title || form.jobs[i].title.trim() === '') {
         toast.error(`Job ${i + 1} requires a title`)
@@ -865,7 +864,6 @@ async function saveEstimate() {
       // Validate line items
       for (let j = 0; j < form.jobs[i].items.length; j++) {
         const item = form.jobs[i].items[j]
-        console.log(`Validating Job ${i + 1}, Item ${j + 1}:`, item.type, 'description:', item.description)
         if (!item.description || item.description.trim() === '') {
           const itemType = item.type === 'PART' ? 'Part' : 'Labor'
           toast.error(`Job ${i + 1}, Item ${j + 1}: ${itemType} requires a description`)
@@ -874,7 +872,6 @@ async function saveEstimate() {
         }
       }
     }
-    console.log('Validation passed, preparing data...')
 
     // Prepare data in the format the backend expects
     const data = {
