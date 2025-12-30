@@ -161,6 +161,73 @@
             </div>
           </Card>
 
+          <!-- Jobs Breakdown -->
+          <Card v-if="estimate.jobs && estimate.jobs.length > 0">
+            <template #header>
+              <h3 class="text-lg font-medium text-gray-900">Jobs & Line Items</h3>
+            </template>
+            <div class="space-y-6">
+              <div
+                v-for="(job, jobIndex) in estimate.jobs"
+                :key="job.id || jobIndex"
+                class="border border-gray-200 rounded-lg overflow-hidden"
+              >
+                <!-- Job Header -->
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <h4 class="font-medium text-gray-900">{{ job.title || `Job ${jobIndex + 1}` }}</h4>
+                  <p v-if="job.notes" class="mt-1 text-sm text-gray-600">{{ job.notes }}</p>
+                </div>
+
+                <!-- Line Items Table -->
+                <div class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                      <tr v-for="(item, itemIndex) in job.items" :key="item.id || itemIndex">
+                        <td class="px-4 py-2 whitespace-nowrap">
+                          <Badge :variant="item.type === 'LABOR' ? 'info' : 'default'" size="sm">
+                            {{ item.type === 'LABOR' ? 'Labor' : 'Part' }}
+                          </Badge>
+                        </td>
+                        <td class="px-4 py-2">
+                          <div class="text-sm text-gray-900">{{ item.description }}</div>
+                          <div v-if="item.sku" class="text-xs text-gray-500">SKU: {{ item.sku }}</div>
+                        </td>
+                        <td class="px-4 py-2 text-right text-sm text-gray-900 whitespace-nowrap">
+                          {{ item.quantity }}
+                        </td>
+                        <td class="px-4 py-2 text-right text-sm text-gray-900 whitespace-nowrap">
+                          {{ formatCurrency(item.unit_price) }}
+                        </td>
+                        <td class="px-4 py-2 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                          {{ formatCurrency(item.quantity * item.unit_price) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                    <tfoot class="bg-gray-50">
+                      <tr>
+                        <td colspan="4" class="px-4 py-2 text-right text-sm font-medium text-gray-700">
+                          Job Subtotal
+                        </td>
+                        <td class="px-4 py-2 text-right text-sm font-bold text-gray-900">
+                          {{ formatCurrency(calculateJobSubtotal(job)) }}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <Card v-if="estimate.customer_notes || estimate.internal_notes">
             <template #header>
               <h3 class="text-lg font-medium text-gray-900">Notes</h3>
@@ -634,5 +701,14 @@ function isExpiringSoon(expirationDate) {
   const now = new Date()
   const daysUntilExpiry = (expiry - now) / (1000 * 60 * 60 * 24)
   return daysUntilExpiry > 0 && daysUntilExpiry <= 7
+}
+
+function calculateJobSubtotal(job) {
+  if (!job.items || !job.items.length) return 0
+  return job.items.reduce((sum, item) => {
+    const quantity = Number(item.quantity) || 0
+    const unitPrice = Number(item.unit_price) || 0
+    return sum + (quantity * unitPrice)
+  }, 0)
 }
 </script>
