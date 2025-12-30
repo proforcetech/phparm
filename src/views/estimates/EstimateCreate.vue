@@ -851,11 +851,21 @@ async function saveEstimate() {
       return
     }
 
-    // Validate that all jobs have titles
+    // Validate that all jobs have titles and all items have descriptions
     for (let i = 0; i < form.jobs.length; i++) {
       if (!form.jobs[i].title || form.jobs[i].title.trim() === '') {
         toast.error(`Job ${i + 1} requires a title`)
         return
+      }
+
+      // Validate line items
+      for (let j = 0; j < form.jobs[i].items.length; j++) {
+        const item = form.jobs[i].items[j]
+        if (!item.description || item.description.trim() === '') {
+          const itemType = item.type === 'PART' ? 'Part' : 'Labor'
+          toast.error(`Job ${i + 1}, Item ${j + 1}: ${itemType} requires a description`)
+          return
+        }
       }
     }
 
