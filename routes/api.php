@@ -2051,12 +2051,31 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->post('/api/estimates/{id}/approve', function (Request $request) use ($estimateController) {
+        $router->post('/api/estimates/{id}/approve', function (Request $request) use ($estimateController, $connection, $auditLogger, $gate) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $reason = $request->body()['reason'] ?? null;
 
             $data = $estimateController->approve($user, $id, $reason);
+
+            // Auto-create workorder after approval
+            if ($data) {
+                try {
+                    $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
+                    $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+
+                    // Check if workorder already exists
+                    $existingWorkorder = $workorderRepository->findByEstimateId($id);
+                    if ($existingWorkorder === null) {
+                        $workorder = $workorderService->createFromEstimate($id, null, $user->id);
+                        $data['workorder'] = $workorder->toArray();
+                    }
+                } catch (\Exception $e) {
+                    // Log error but don't fail the approval
+                    error_log('Auto workorder creation failed: ' . $e->getMessage());
+                }
+            }
+
             return Response::json($data);
         });
 
@@ -2423,7 +2442,30 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 !empty($body['legal_consent']),
                 $body['consent_text'] ?? null
             );
-            return Response::json(['success' => true, 'signature_id' => $signature->id]);
+
+            // Auto-create workorder after signature is captured
+            $estimateId = $signature->estimate_id;
+            $workorderCreated = null;
+            try {
+                $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
+                $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+
+                // Check if workorder already exists
+                $existingWorkorder = $workorderRepository->findByEstimateId($estimateId);
+                if ($existingWorkorder === null) {
+                    $workorder = $workorderService->createFromEstimate($estimateId, null, null);
+                    $workorderCreated = $workorder->id;
+                }
+            } catch (\Exception $e) {
+                // Log error but don't fail the signature capture
+                error_log('Auto workorder creation after signature failed: ' . $e->getMessage());
+            }
+
+            return Response::json([
+                'success' => true,
+                'signature_id' => $signature->id,
+                'workorder_id' => $workorderCreated,
+            ]);
         } catch (\RuntimeException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
