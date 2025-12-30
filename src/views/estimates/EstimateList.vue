@@ -339,6 +339,8 @@ function getStatusVariant(status) {
     sent: 'info',
     approved: 'success',
     rejected: 'danger',
+    declined: 'danger',
+    partial: 'warning',
     expired: 'warning',
     converted: 'success'
   }
@@ -346,6 +348,12 @@ function getStatusVariant(status) {
 }
 
 function formatStatus(status) {
+  if (status === 'partial') {
+    return 'Partial Approval'
+  }
+  if (status === 'declined') {
+    return 'Declined'
+  }
   return status
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))

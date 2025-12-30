@@ -290,19 +290,45 @@ class EstimatePublicLinkService
     {
         $stmt = $this->connection->pdo()->prepare('SELECT customer_status FROM estimate_jobs WHERE estimate_id = :estimate_id');
         $stmt->execute(['estimate_id' => $estimateId]);
-        $statuses = array_filter($stmt->fetchAll(PDO::FETCH_COLUMN));
+        $allStatuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-        if (empty($statuses)) {
+        if (empty($allStatuses)) {
             return;
         }
 
-        if (count(array_unique($statuses)) === 1 && reset($statuses) === 'approved') {
+        // Count job responses
+        $totalJobs = count($allStatuses);
+        $approvedCount = 0;
+        $rejectedCount = 0;
+        $pendingCount = 0;
+
+        foreach ($allStatuses as $status) {
+            if ($status === 'approved') {
+                $approvedCount++;
+            } elseif ($status === 'rejected') {
+                $rejectedCount++;
+            } else {
+                $pendingCount++;
+            }
+        }
+
+        // Determine estimate status based on job responses
+        if ($pendingCount > 0) {
+            // Still have pending jobs - keep estimate in current state (pending/sent)
+            // Don't change status until all jobs have been responded to
+            return;
+        }
+
+        // All jobs have been responded to
+        if ($approvedCount === $totalJobs) {
+            // All approved
             $this->estimates->updateStatus($estimateId, 'approved');
-            return;
-        }
-
-        if (in_array('rejected', $statuses, true)) {
-            $this->estimates->updateStatus($estimateId, 'declined', null, 'Job rejected by customer');
+        } elseif ($rejectedCount === $totalJobs) {
+            // All rejected
+            $this->estimates->updateStatus($estimateId, 'declined', null, 'All jobs rejected by customer');
+        } else {
+            // Mixed: some approved, some rejected - use "partial" status
+            $this->estimates->updateStatus($estimateId, 'partial', null, "{$approvedCount}/{$totalJobs} jobs approved");
         }
     }
 
