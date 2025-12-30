@@ -41,10 +41,10 @@ class WorkorderService
         }
 
         // Verify estimate is in a valid state for conversion
-        $allowedStatuses = ['approved', 'sent'];
+        $allowedStatuses = ['approved', 'sent', 'partial'];
         if (!in_array($estimate->status, $allowedStatuses, true)) {
             throw new InvalidArgumentException(
-                'Estimate must be approved or sent to create a workorder. Current status: ' . $estimate->status
+                'Estimate must be approved, sent, or partially approved to create a workorder. Current status: ' . $estimate->status
             );
         }
 
