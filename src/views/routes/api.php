@@ -1889,11 +1889,56 @@ return Response::json([
             return Response::json($data);
         });
 
-        $router->get('/api/estimates/{id}', function (Request $request) use ($estimateController) {
+        $router->get('/api/estimates/{id}', function (Request $request) use ($estimateController, $connection) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
 
             $data = $estimateController->show($user, $id);
+
+            // Enrich with customer data
+            if (!empty($data['customer_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
+                $stmt->execute(['id' => $data['customer_id']]);
+                $customer = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($customer) {
+                    $data['customer'] = $customer;
+                }
+            }
+
+            // Enrich with vehicle data
+            if (!empty($data['vehicle_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM customer_vehicles WHERE id = :id');
+                $stmt->execute(['id' => $data['vehicle_id']]);
+                $vehicle = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($vehicle) {
+                    $data['vehicle'] = $vehicle;
+                }
+            }
+
+            // Enrich with technician data
+            if (!empty($data['technician_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, name, email FROM users WHERE id = :id');
+                $stmt->execute(['id' => $data['technician_id']]);
+                $technician = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($technician) {
+                    $data['technician'] = $technician;
+                }
+            }
+
+            // Add estimate jobs and items
+            $jobsStmt = $connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY display_order ASC');
+            $jobsStmt->execute(['estimate_id' => $id]);
+            $jobRows = $jobsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            $itemStmt = $connection->pdo()->prepare('SELECT * FROM estimate_items WHERE estimate_job_id = :job_id ORDER BY id ASC');
+            $jobs = [];
+            foreach ($jobRows as $jobRow) {
+                $itemStmt->execute(['job_id' => $jobRow['id']]);
+                $jobRow['items'] = $itemStmt->fetchAll(\PDO::FETCH_ASSOC);
+                $jobs[] = $jobRow;
+            }
+            $data['jobs'] = $jobs;
+
             return Response::json($data);
         });
 
