@@ -945,7 +945,6 @@ async function searchVehicles(query) {
     ) {
       return [initialSelections.vehicle]
     }
-    if (!form.customer_id) return []
     const vehicles = await customerService.getCustomerVehicles(form.customer_id)
 
     // Filter by query if provided

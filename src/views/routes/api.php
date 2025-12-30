@@ -1897,7 +1897,7 @@ return Response::json([
 
             // Enrich with customer data
             if (!empty($data['customer_id'])) {
-                $stmt = $connection->pdo()->prepare('SELECT id, first_name, last_name, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
+                $stmt = $connection->pdo()->prepare('SELECT id, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
                 $stmt->execute(['id' => $data['customer_id']]);
                 $customer = $stmt->fetch(\PDO::FETCH_ASSOC);
                 if ($customer) {
