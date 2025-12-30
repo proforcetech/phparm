@@ -843,31 +843,38 @@ async function loadEstimate() {
 }
 
 async function saveEstimate() {
+  console.log('saveEstimate called, current saving state:', saving.value)
   try {
     saving.value = true
 
     if (form.expiration_date && form.expiration_date < today) {
       toast.error('Expiration date cannot be in the past')
+      saving.value = false
       return
     }
 
     // Validate that all jobs have titles and all items have descriptions
+    console.log('Validating jobs:', form.jobs)
     for (let i = 0; i < form.jobs.length; i++) {
       if (!form.jobs[i].title || form.jobs[i].title.trim() === '') {
         toast.error(`Job ${i + 1} requires a title`)
+        saving.value = false
         return
       }
 
       // Validate line items
       for (let j = 0; j < form.jobs[i].items.length; j++) {
         const item = form.jobs[i].items[j]
+        console.log(`Validating Job ${i + 1}, Item ${j + 1}:`, item.type, 'description:', item.description)
         if (!item.description || item.description.trim() === '') {
           const itemType = item.type === 'PART' ? 'Part' : 'Labor'
           toast.error(`Job ${i + 1}, Item ${j + 1}: ${itemType} requires a description`)
+          saving.value = false
           return
         }
       }
     }
+    console.log('Validation passed, preparing data...')
 
     // Prepare data in the format the backend expects
     const data = {
