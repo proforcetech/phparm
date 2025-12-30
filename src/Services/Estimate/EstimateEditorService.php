@@ -114,6 +114,27 @@ class EstimateEditorService
         return $updated;
     }
 
+    /**
+     * Approve all pending jobs for an estimate.
+     * Used when approving an estimate from the admin panel.
+     */
+    public function approveAllPendingJobs(int $estimateId, ?int $actorId = null): int
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            "UPDATE estimate_jobs SET customer_status = 'approved' WHERE estimate_id = :estimate_id AND customer_status = 'pending'"
+        );
+        $stmt->execute(['estimate_id' => $estimateId]);
+
+        $count = $stmt->rowCount();
+        if ($count > 0) {
+            $this->log('estimate.all_jobs_approved', $estimateId, $actorId, [
+                'jobs_approved' => $count,
+            ]);
+        }
+
+        return $count;
+    }
+
     public function reject(int $estimateId, string $reason, ?int $actorId = null): ?Estimate
     {
         $estimate = $this->fetchEstimate($estimateId);
