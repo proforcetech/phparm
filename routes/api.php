@@ -2296,11 +2296,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $jobs[] = $job;
             }
 
+            // Check if a signature already exists
+            $signatureStmt = $connection->pdo()->prepare('SELECT COUNT(*) FROM estimate_signatures WHERE estimate_id = :id');
+            $signatureStmt->execute(['id' => $estimate['id']]);
+            $hasSignature = (int) $signatureStmt->fetchColumn() > 0;
+
             return Response::json([
                 'estimate' => $estimate,
                 'customer' => $customer ?: null,
                 'vehicle' => $vehicle ?: null,
                 'jobs' => $jobs,
+                'has_signature' => $hasSignature,
             ]);
         } catch (\RuntimeException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
@@ -2474,12 +2480,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $jobs[] = $jobRow;
         }
 
+        // Check if a signature already exists
+        $signatureStmt = $connection->pdo()->prepare('SELECT COUNT(*) FROM estimate_signatures WHERE estimate_id = :id');
+        $signatureStmt->execute(['id' => $estimate->id]);
+        $hasSignature = (int) $signatureStmt->fetchColumn() > 0;
+
         return Response::json([
             'estimate' => $estimate->toArray(),
             'customer' => $customer ?: null,
             'vehicle' => $vehicle ?: null,
             'jobs' => $jobs,
             'short_code' => $shortCode,
+            'has_signature' => $hasSignature,
         ]);
     });
 

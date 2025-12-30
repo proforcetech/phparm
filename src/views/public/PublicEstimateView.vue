@@ -157,12 +157,23 @@
         <!-- Actions (if estimate is pending/sent and has pending jobs) -->
         <div v-if="canTakeAction && hasPendingJobs" class="bg-white shadow rounded-lg p-6">
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <p class="text-gray-600 mb-4">
+          <p v-if="isMultiJobEstimate" class="text-gray-600 mb-4">
             You can approve or reject individual jobs above, or use the buttons below to respond to all remaining jobs at once.
           </p>
 
           <div class="flex gap-4">
+            <!-- Single-job estimate: Accept opens signature modal -->
             <button
+              v-if="isSingleJobEstimate"
+              @click="openSignatureModal('accept')"
+              :disabled="submitting"
+              class="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              {{ submitting ? 'Processing...' : 'Accept & Sign Estimate' }}
+            </button>
+            <!-- Multi-job estimate: Approve all button -->
+            <button
+              v-else
               @click="approveAllPendingJobs"
               :disabled="submitting"
               class="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
@@ -174,15 +185,31 @@
               :disabled="submitting"
               class="flex-1 bg-red-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50"
             >
-              Reject All Remaining Jobs
+              {{ isSingleJobEstimate ? 'Decline Estimate' : 'Reject All Remaining Jobs' }}
             </button>
           </div>
         </div>
 
-        <!-- Status Message when all jobs have been responded to -->
-        <div v-if="canTakeAction && !hasPendingJobs && jobs.length > 0" class="bg-green-50 border border-green-200 rounded-lg p-6">
+        <!-- Sign to Complete (for multi-job estimates after all jobs responded) -->
+        <div v-if="needsSignature" class="bg-white shadow rounded-lg p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Complete Your Approval</h2>
+          <p class="text-gray-600 mb-4">
+            You have approved {{ jobApprovalStats?.approved }} of {{ jobApprovalStats?.total }} jobs.
+            Please sign below to complete your approval.
+          </p>
+          <button
+            @click="openSignatureModal('sign')"
+            :disabled="submitting"
+            class="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {{ submitting ? 'Processing...' : 'Sign to Complete' }}
+          </button>
+        </div>
+
+        <!-- Status Message when all jobs have been responded to and signed -->
+        <div v-if="isFullyCompleted" class="bg-green-50 border border-green-200 rounded-lg p-6">
           <h2 class="text-lg font-semibold text-green-800 mb-2">Thank You!</h2>
-          <p class="text-green-700">You have responded to all jobs on this estimate.</p>
+          <p class="text-green-700">You have completed your response to this estimate.</p>
         </div>
       </div>
     </div>
@@ -278,11 +305,99 @@
         </div>
       </div>
     </div>
+
+    <!-- Signature Modal -->
+    <div v-if="showSignatureModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-lg p-6 max-w-lg w-full">
+        <h3 class="text-lg font-semibold mb-4">
+          {{ signatureMode === 'accept' ? 'Accept & Sign Estimate' : 'Sign to Complete' }}
+        </h3>
+        <p class="text-gray-600 mb-4">
+          By signing below, you authorize the work described in this estimate.
+        </p>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Your Name *</label>
+            <input
+              v-model="signatureForm.name"
+              type="text"
+              :placeholder="customer?.name || 'Full Name'"
+              class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Email (optional)</label>
+            <input
+              v-model="signatureForm.email"
+              type="email"
+              :placeholder="customer?.email || 'email@example.com'"
+              class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Signature *</label>
+            <div class="border-2 border-dashed border-gray-300 rounded-lg bg-white relative">
+              <canvas
+                ref="signatureCanvas"
+                class="w-full h-40 touch-none"
+                @mousedown="startDrawing"
+                @mousemove="draw"
+                @mouseup="stopDrawing"
+                @mouseleave="stopDrawing"
+                @touchstart.prevent="startDrawingTouch"
+                @touchmove.prevent="drawTouch"
+                @touchend="stopDrawing"
+              ></canvas>
+              <p v-if="!hasSignature" class="absolute inset-0 flex items-center justify-center text-gray-400 pointer-events-none">
+                Sign here
+              </p>
+            </div>
+            <button
+              @click="clearSignature"
+              class="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+            >
+              Clear Signature
+            </button>
+          </div>
+
+          <div class="flex items-start gap-2">
+            <input
+              id="legal-consent"
+              v-model="signatureForm.legalConsent"
+              type="checkbox"
+              class="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+            />
+            <label for="legal-consent" class="text-sm text-gray-600">
+              I agree that this electronic signature is legally binding and equivalent to my handwritten signature.
+            </label>
+          </div>
+        </div>
+
+        <div class="flex gap-4 mt-6">
+          <button
+            @click="closeSignatureModal"
+            class="flex-1 border border-gray-300 py-2 px-4 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            @click="submitSignature"
+            :disabled="submitting || !canSubmitSignature"
+            class="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {{ submitting ? 'Processing...' : 'Submit Signature' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 
@@ -296,6 +411,7 @@ const vehicle = ref(null)
 const jobs = ref([])
 const token = ref('')
 const shortCode = ref('')
+const hasExistingSignature = ref(false)
 
 const submitting = ref(false)
 const showDeclineModal = ref(false)
@@ -306,6 +422,18 @@ const rejectingJob = ref(null)
 const selectedJobRejectReason = ref('')
 const rejectJobReasonOther = ref('')
 const rejectionReasons = ref([])
+
+// Signature modal state
+const showSignatureModal = ref(false)
+const signatureMode = ref('') // 'accept' for single-job, 'sign' for multi-job completion
+const signatureCanvas = ref(null)
+const isDrawing = ref(false)
+const hasSignature = ref(false)
+const signatureForm = reactive({
+  name: '',
+  email: '',
+  legalConsent: false,
+})
 
 const vehicleDescription = computed(() => {
   if (!vehicle.value) return 'N/A'
@@ -361,6 +489,41 @@ const canTakeAction = computed(() => {
 
 const hasPendingJobs = computed(() => {
   return jobs.value.some(job => jobNeedsResponse(job))
+})
+
+// Check if this is a single-job estimate
+const isSingleJobEstimate = computed(() => {
+  return jobs.value.length === 1
+})
+
+// Check if this is a multi-job estimate
+const isMultiJobEstimate = computed(() => {
+  return jobs.value.length > 1
+})
+
+// Check if the estimate needs a signature (multi-job: all responded, has approvals, no signature yet)
+const needsSignature = computed(() => {
+  if (!canTakeAction.value) return false
+  if (hasPendingJobs.value) return false
+  if (hasExistingSignature.value) return false
+  // Has at least one approved job
+  const hasApprovals = jobs.value.some(j => j.customer_status === 'approved')
+  return hasApprovals
+})
+
+// Check if the estimate is fully completed (all jobs responded and signed)
+const isFullyCompleted = computed(() => {
+  if (hasPendingJobs.value) return false
+  if (jobs.value.length === 0) return false
+  // Either all rejected (no signature needed) or has signature
+  const hasApprovals = jobs.value.some(j => j.customer_status === 'approved')
+  if (!hasApprovals) return true // All rejected, complete
+  return hasExistingSignature.value
+})
+
+// Check if signature form can be submitted
+const canSubmitSignature = computed(() => {
+  return signatureForm.name.trim() !== '' && hasSignature.value && signatureForm.legalConsent
 })
 
 // Check if a job hasn't been approved or rejected yet
@@ -425,6 +588,7 @@ async function loadEstimate() {
     customer.value = response.data.customer
     vehicle.value = response.data.vehicle
     jobs.value = response.data.jobs || []
+    hasExistingSignature.value = response.data.has_signature || false
   } catch (err) {
     console.error('Failed to load estimate:', err)
     error.value = err.response?.data?.error || err.message || 'Failed to load estimate'
@@ -578,6 +742,130 @@ async function loadRejectionReasons() {
       'Vehicle no longer owned',
       'Other'
     ]
+  }
+}
+
+// Signature functions
+function openSignatureModal(mode) {
+  signatureMode.value = mode
+  signatureForm.name = customer.value?.name || ''
+  signatureForm.email = customer.value?.email || ''
+  signatureForm.legalConsent = false
+  hasSignature.value = false
+  showSignatureModal.value = true
+
+  nextTick(() => {
+    initializeCanvas()
+  })
+}
+
+function closeSignatureModal() {
+  showSignatureModal.value = false
+  signatureMode.value = ''
+  hasSignature.value = false
+}
+
+function initializeCanvas() {
+  if (!signatureCanvas.value) return
+
+  const canvas = signatureCanvas.value
+  const rect = canvas.parentElement.getBoundingClientRect()
+  canvas.width = rect.width
+  canvas.height = 160
+
+  const ctx = canvas.getContext('2d')
+  ctx.strokeStyle = '#1f2937'
+  ctx.lineWidth = 2
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+}
+
+function startDrawing(e) {
+  if (!signatureCanvas.value) return
+  isDrawing.value = true
+  const ctx = signatureCanvas.value.getContext('2d')
+  const rect = signatureCanvas.value.getBoundingClientRect()
+  ctx.beginPath()
+  ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top)
+}
+
+function draw(e) {
+  if (!isDrawing.value || !signatureCanvas.value) return
+  const ctx = signatureCanvas.value.getContext('2d')
+  const rect = signatureCanvas.value.getBoundingClientRect()
+  ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top)
+  ctx.stroke()
+  hasSignature.value = true
+}
+
+function stopDrawing() {
+  isDrawing.value = false
+}
+
+function startDrawingTouch(e) {
+  if (!signatureCanvas.value || !e.touches[0]) return
+  isDrawing.value = true
+  const ctx = signatureCanvas.value.getContext('2d')
+  const rect = signatureCanvas.value.getBoundingClientRect()
+  ctx.beginPath()
+  ctx.moveTo(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top)
+}
+
+function drawTouch(e) {
+  if (!isDrawing.value || !signatureCanvas.value || !e.touches[0]) return
+  const ctx = signatureCanvas.value.getContext('2d')
+  const rect = signatureCanvas.value.getBoundingClientRect()
+  ctx.lineTo(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top)
+  ctx.stroke()
+  hasSignature.value = true
+}
+
+function clearSignature() {
+  if (!signatureCanvas.value) return
+  const ctx = signatureCanvas.value.getContext('2d')
+  ctx.clearRect(0, 0, signatureCanvas.value.width, signatureCanvas.value.height)
+  hasSignature.value = false
+}
+
+function getSignatureData() {
+  if (!signatureCanvas.value) return ''
+  return signatureCanvas.value.toDataURL('image/png')
+}
+
+async function submitSignature() {
+  if (!token.value || submitting.value || !canSubmitSignature.value) return
+
+  submitting.value = true
+  error.value = null
+
+  try {
+    // For single-job 'accept' mode, first approve the job
+    if (signatureMode.value === 'accept' && isSingleJobEstimate.value) {
+      const job = jobs.value[0]
+      await api.post('/public/estimate/approve-job', {
+        token: token.value,
+        job_id: job.id
+      })
+    }
+
+    // Capture the signature
+    await api.post('/public/estimate/signature', {
+      token: token.value,
+      name: signatureForm.name,
+      email: signatureForm.email || null,
+      signature_data: getSignatureData(),
+      legal_consent: signatureForm.legalConsent,
+      consent_text: 'I agree that this electronic signature is legally binding and equivalent to my handwritten signature.'
+    })
+
+    closeSignatureModal()
+    // Reload to show updated status
+    await loadEstimate()
+  } catch (err) {
+    console.error('Failed to submit signature:', err)
+    error.value = err.response?.data?.error || 'Failed to submit signature'
+  } finally {
+    submitting.value = false
   }
 }
 
