@@ -259,8 +259,8 @@ class EstimateEditorService
     private function insertEstimate(array $payload, string $status): int
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, subtotal, tax, grand_total, created_at, updated_at)
-            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, 0, 0, 0, NOW(), NOW())
+            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, shop_fee, hazmat_disposal_fee, subtotal, tax, grand_total, created_at, updated_at)
+            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, :shop_fee, :hazmat_disposal_fee, 0, 0, 0, NOW(), NOW())
         SQL);
 
         $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
@@ -279,6 +279,8 @@ class EstimateEditorService
             'call_out_fee' => (float) ($payload['call_out_fee'] ?? 0),
             'mileage_total' => (float) ($payload['mileage_total'] ?? 0),
             'discounts' => (float) ($payload['discounts'] ?? 0),
+            'shop_fee' => (float) ($payload['shop_fee'] ?? 0),
+            'hazmat_disposal_fee' => (float) ($payload['hazmat_disposal_fee'] ?? 0),
         ]);
 
         return (int) $this->connection->pdo()->lastInsertId();
@@ -303,6 +305,8 @@ class EstimateEditorService
                 call_out_fee = :call_out_fee,
                 mileage_total = :mileage_total,
                 discounts = :discounts,
+                shop_fee = :shop_fee,
+                hazmat_disposal_fee = :hazmat_disposal_fee,
                 updated_at = NOW()
             WHERE id = :id
         SQL;
@@ -323,6 +327,8 @@ class EstimateEditorService
             'call_out_fee' => (float) ($payload['call_out_fee'] ?? 0),
             'mileage_total' => (float) ($payload['mileage_total'] ?? 0),
             'discounts' => (float) ($payload['discounts'] ?? 0),
+            'shop_fee' => (float) ($payload['shop_fee'] ?? 0),
+            'hazmat_disposal_fee' => (float) ($payload['hazmat_disposal_fee'] ?? 0),
             'id' => $estimateId,
         ]);
     }
@@ -415,8 +421,8 @@ class EstimateEditorService
     private function insertItems(int $jobId, array $items): void
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimate_items (estimate_job_id, type, description, quantity, unit_price, taxable, line_total, status)
-            VALUES (:estimate_job_id, :type, :description, :quantity, :unit_price, :taxable, :line_total, :status)
+            INSERT INTO estimate_items (estimate_job_id, type, description, quantity, unit_price, list_price, taxable, line_total, status)
+            VALUES (:estimate_job_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :line_total, :status)
         SQL);
 
         foreach ($items as $displayOrder => $item) {
@@ -427,6 +433,7 @@ class EstimateEditorService
                 'description' => $item['description'],
                 'quantity' => (float) $item['quantity'],
                 'unit_price' => (float) $item['unit_price'],
+                'list_price' => (float) ($item['list_price'] ?? 0),
                 'taxable' => array_key_exists('taxable', $item) ? (bool) $item['taxable'] : true,
                 'line_total' => $lineTotal,
                 'status' => $item['status'] ?? 'pending',
@@ -443,6 +450,8 @@ class EstimateEditorService
         $grandTotal = $totals['grand_total']
             + (float) ($payload['call_out_fee'] ?? 0)
             + (float) ($payload['mileage_total'] ?? 0)
+            + (float) ($payload['shop_fee'] ?? 0)
+            + (float) ($payload['hazmat_disposal_fee'] ?? 0)
             - (float) ($payload['discounts'] ?? 0);
 
         $stmt = $this->connection->pdo()->prepare(

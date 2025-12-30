@@ -11,8 +11,8 @@ SET available_credit = GREATEST(0, credit_limit - balance),
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    credit_account_id UNSIGNED INT NOT NULL,
-    customer_id UNSIGNED INT NOT NULL,
+    credit_account_id INT UNSIGNED NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     transaction_type VARCHAR(20) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     balance_after DECIMAL(12,2) NOT NULL,

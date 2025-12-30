@@ -421,7 +421,7 @@ async function loadDashboardData() {
 
     // Load all dashboard data in parallel
     const [statsData, invoicesData, appointmentsData, lowStockData, trendsData, serviceTypesData] = await Promise.all([
-      dashboardService.getStats(technicianParams.value).catch(() => ({})),
+      dashboardService.getStats({ preset: 'this_month', ...technicianParams.value }).catch(() => ({})),
       dashboardService.getRecentInvoices(5, technicianParams.value).catch(() => []),
       dashboardService.getRecentAppointments(5, technicianParams.value).catch(() => []),
       dashboardService.getInventoryLowStockTile().catch(() => null),

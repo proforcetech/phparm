@@ -1,18 +1,14 @@
 <template>
   <div>
-    <!-- Loading State -->
     <div v-if="loading" class="flex justify-center py-12">
       <Loading size="xl" text="Loading estimate..." />
     </div>
 
-    <!-- Error State -->
     <Alert v-else-if="error" variant="danger" class="mb-6">
       {{ error }}
     </Alert>
 
-    <!-- Estimate Details -->
     <div v-else-if="estimate">
-      <!-- Header -->
       <div class="mb-6">
         <div class="flex items-center justify-between mb-2">
           <div class="flex items-center gap-4">
@@ -34,8 +30,28 @@
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="flex gap-2 mt-4">
+        <div class="flex flex-wrap gap-2 mt-4">
+          <Button
+            variant="outline"
+            @click="openShareEmailModal"
+          >
+            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Share via Email
+          </Button>
+          <Button
+            variant="outline"
+            @click="openShareSmsModal"
+          >
+            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            Share via SMS
+          </Button>
+
+          <div class="w-px bg-gray-300 mx-1"></div>
+
           <Button
             v-if="['pending', 'sent'].includes(estimate.status)"
             variant="primary"
@@ -52,6 +68,13 @@
           </Button>
           <Button
             v-if="estimate.status === 'approved'"
+            variant="primary"
+            @click="showWorkorderModal = true"
+          >
+            Create Workorder
+          </Button>
+          <Button
+            v-if="estimate.status === 'approved'"
             @click="showConvertModal = true"
           >
             Convert to Invoice
@@ -65,21 +88,27 @@
           </Button>
           <Button
             variant="outline"
-            @click="$router.push(`/estimates/${estimate.id}/edit`)"
+            @click="$router.push(`/cp/estimates/${estimate.id}/edit`)"
           >
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
             Edit
           </Button>
+          <Button
+            variant="danger"
+            @click="deleteEstimate"
+          >
+            <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete
+          </Button>
         </div>
       </div>
 
-      <!-- Main Content Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Left Column - Estimate Details -->
         <div class="lg:col-span-2 space-y-6">
-          <!-- Customer & Vehicle Info -->
           <Card>
             <template #header>
               <h3 class="text-lg font-medium text-gray-900">Customer & Vehicle</h3>
@@ -87,25 +116,32 @@
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="text-sm font-medium text-gray-500">Customer</label>
-                <p class="mt-1 text-sm text-gray-900">
+                <div class="mt-1 text-sm">
                   <router-link
-                    :to="`/customers/${estimate.customer_id}`"
-                    class="text-primary-600 hover:text-primary-800"
+                    :to="`/cp/customers/${estimate.customer_id}`"
+                    class="text-primary-600 hover:text-primary-800 font-medium"
                   >
-                    Customer #{{ estimate.customer_id }}
+                    {{ estimate.customer?.name || `Customer #${estimate.customer_id}` }}
                   </router-link>
-                </p>
+                  <p v-if="estimate.customer?.phone" class="text-gray-600">{{ estimate.customer.phone }}</p>
+                  <p v-if="estimate.customer?.email" class="text-gray-600">{{ estimate.customer.email }}</p>
+                </div>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Vehicle</label>
-                <p class="mt-1 text-sm text-gray-900">
+                <div class="mt-1 text-sm">
                   <router-link
-                    :to="`/vehicles/${estimate.vehicle_id}`"
-                    class="text-primary-600 hover:text-primary-800"
+                    :to="`/cp/vehicles/${estimate.vehicle_id}`"
+                    class="text-primary-600 hover:text-primary-800 font-medium"
                   >
-                    Vehicle #{{ estimate.vehicle_id }}
+                    <span v-if="estimate.vehicle?.year || estimate.vehicle?.make || estimate.vehicle?.model">
+                      {{ estimate.vehicle.year }} {{ estimate.vehicle.make }} {{ estimate.vehicle.model }}
+                    </span>
+                    <span v-else>Vehicle #{{ estimate.vehicle_id }}</span>
                   </router-link>
-                </p>
+                  <p v-if="estimate.vehicle?.vin" class="text-gray-600">VIN: {{ estimate.vehicle.vin }}</p>
+                  <p v-if="estimate.vehicle?.license_plate" class="text-gray-600">Plate: {{ estimate.vehicle.license_plate }}</p>
+                </div>
               </div>
               <div v-if="estimate.technician_id">
                 <label class="text-sm font-medium text-gray-500">Technician</label>
@@ -125,7 +161,6 @@
             </div>
           </Card>
 
-          <!-- Notes -->
           <Card v-if="estimate.customer_notes || estimate.internal_notes">
             <template #header>
               <h3 class="text-lg font-medium text-gray-900">Notes</h3>
@@ -143,7 +178,6 @@
           </Card>
         </div>
 
-        <!-- Right Column - Financial Summary -->
         <div>
           <Card>
             <template #header>
@@ -180,8 +214,7 @@
       </div>
     </div>
 
-    <!-- Convert to Invoice Modal -->
-    <Modal v-if="showConvertModal" @close="showConvertModal = false">
+    <Modal v-model="showConvertModal" @close="showConvertModal = false">
       <template #title>Convert to Invoice</template>
       <template #content>
         <div class="space-y-4">
@@ -207,10 +240,108 @@
           </div>
         </div>
       </template>
-      <template #actions>
+      <template #footer>
         <Button variant="outline" @click="showConvertModal = false">Cancel</Button>
         <Button @click="confirmConvert" :disabled="!convertForm.issue_date || converting">
           {{ converting ? 'Converting...' : 'Convert to Invoice' }}
+        </Button>
+      </template>
+    </Modal>
+
+    <Modal v-model="showWorkorderModal" @close="showWorkorderModal = false">
+      <template #title>Create Workorder</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Create a workorder from estimate #{{ estimate?.number }}?
+          </p>
+          <Alert variant="info">
+            A workorder will be created with all approved jobs from this estimate.
+            You can then track work progress and assign technicians.
+          </Alert>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Assign Technician (Optional)</label>
+            <Select
+              v-model="workorderForm.technician_id"
+              :options="technicianOptions"
+              placeholder="Select technician"
+              class="mt-1"
+            />
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <Button variant="outline" @click="showWorkorderModal = false">Cancel</Button>
+        <Button @click="confirmCreateWorkorder" :disabled="creatingWorkorder">
+          {{ creatingWorkorder ? 'Creating...' : 'Create Workorder' }}
+        </Button>
+      </template>
+    </Modal>
+
+    <Modal v-model="showShareEmailModal" @close="showShareEmailModal = false">
+      <template #title>Share Estimate via Email</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Send estimate #{{ estimate?.number }} to the customer via email.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Email Address *</label>
+            <Input
+              v-model="shareEmailForm.email"
+              type="email"
+              placeholder="customer@example.com"
+              class="mt-1"
+              required
+            />
+          </div>
+          <Alert variant="info" class="text-xs">
+            The customer will receive a secure link to view and approve/reject this estimate.
+          </Alert>
+        </div>
+      </template>
+      <template #footer>
+        <Button variant="outline" @click="showShareEmailModal = false">Cancel</Button>
+        <Button @click="sendShareEmail" :disabled="!shareEmailForm.email || sendingEmail">
+          <svg v-if="sendingEmail" class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ sendingEmail ? 'Sending...' : 'Send Email' }}
+        </Button>
+      </template>
+    </Modal>
+
+    <Modal v-model="showShareSmsModal" @close="showShareSmsModal = false">
+      <template #title>Share Estimate via SMS</template>
+      <template #content>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600">
+            Send estimate #{{ estimate?.number }} to the customer via SMS.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Phone Number *</label>
+            <Input
+              v-model="sharesSmsForm.phone"
+              type="tel"
+              placeholder="+1 (555) 123-4567"
+              class="mt-1"
+              required
+            />
+          </div>
+          <Alert variant="info" class="text-xs">
+            The customer will receive a text message with a secure link to view this estimate.
+          </Alert>
+        </div>
+      </template>
+      <template #footer>
+        <Button variant="outline" @click="showShareSmsModal = false">Cancel</Button>
+        <Button @click="sendShareSms" :disabled="!sharesSmsForm.phone || sendingSms">
+          <svg v-if="sendingSms" class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ sendingSms ? 'Sending...' : 'Send SMS' }}
         </Button>
       </template>
     </Modal>
@@ -224,10 +355,13 @@ import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Input from '@/components/ui/Input.vue'
+import Select from '@/components/ui/Select.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
 import Modal from '@/components/ui/Modal.vue'
 import estimateService from '@/services/estimate.service'
+import workorderService from '@/services/workorder.service'
+import userService from '@/services/user.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -236,17 +370,39 @@ const toast = useToast()
 
 const loading = ref(true)
 const converting = ref(false)
+const creatingWorkorder = ref(false)
 const error = ref(null)
 const estimate = ref(null)
+const technicians = ref([])
 const showConvertModal = ref(false)
+const showWorkorderModal = ref(false)
+const showShareEmailModal = ref(false)
+const showShareSmsModal = ref(false)
+const sendingEmail = ref(false)
+const sendingSms = ref(false)
 
 const convertForm = reactive({
   issue_date: new Date().toISOString().split('T')[0],
   due_date: ''
 })
 
+const workorderForm = reactive({
+  technician_id: ''
+})
+
+const shareEmailForm = reactive({
+  email: ''
+})
+
+const sharesSmsForm = reactive({
+  phone: ''
+})
+
+const technicianOptions = ref([{ value: '', label: 'Unassigned' }])
+
 onMounted(() => {
   loadEstimate()
+  loadTechnicians()
 })
 
 async function loadEstimate() {
@@ -260,6 +416,42 @@ async function loadEstimate() {
     error.value = err.response?.data?.message || 'Failed to load estimate'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadTechnicians() {
+  try {
+    const users = await userService.listUsers({ role: 'technician' }) || []
+    technicians.value = users
+    technicianOptions.value = [
+      { value: '', label: 'Unassigned' },
+      ...technicians.value.map(u => ({ value: u.id, label: u.name }))
+    ]
+  } catch (err) {
+    console.error('Failed to load technicians:', err)
+  }
+}
+
+async function confirmCreateWorkorder() {
+  try {
+    creatingWorkorder.value = true
+    const response = await workorderService.createFromEstimate(
+      estimate.value.id,
+      workorderForm.technician_id || null
+    )
+
+    toast.success('Workorder created successfully')
+    showWorkorderModal.value = false
+
+    // Redirect to the new workorder
+    if (response.data?.id) {
+      router.push(`/cp/workorders/${response.data.id}`)
+    }
+  } catch (err) {
+    console.error('Failed to create workorder:', err)
+    toast.error(err.response?.data?.error || 'Failed to create workorder')
+  } finally {
+    creatingWorkorder.value = false
   }
 }
 
@@ -324,13 +516,75 @@ async function confirmConvert() {
 
     // Redirect to the new invoice
     if (response.data?.id) {
-      router.push(`/invoices/${response.data.id}`)
+      router.push(`/cp/invoices/${response.data.id}`)
     }
   } catch (err) {
     console.error('Failed to convert estimate:', err)
     toast.error(err.response?.data?.message || 'Failed to convert estimate')
   } finally {
     converting.value = false
+  }
+}
+
+async function deleteEstimate() {
+  if (!confirm('Are you sure you want to delete this estimate? This action cannot be undone.')) return
+
+  try {
+    await estimateService.deleteEstimate(estimate.value.id)
+    toast.success('Estimate deleted successfully')
+    router.push('/cp/estimates')
+  } catch (err) {
+    console.error('Failed to delete estimate:', err)
+    toast.error(err.response?.data?.message || 'Failed to delete estimate')
+  }
+}
+
+function openShareEmailModal() {
+  // Pre-fill with customer email if available
+  shareEmailForm.email = estimate.value?.customer?.email
+    || estimate.value?.customer_email
+    || estimate.value?.customerEmail
+    || ''
+  showShareEmailModal.value = true
+}
+
+function openShareSmsModal() {
+  // Pre-fill with customer phone if available
+  sharesSmsForm.phone = estimate.value?.customer?.phone || ''
+  showShareSmsModal.value = true
+}
+
+async function sendShareEmail() {
+  if (!shareEmailForm.email) return
+
+  try {
+    sendingEmail.value = true
+    await estimateService.shareViaEmail(estimate.value.id, shareEmailForm.email)
+    toast.success('Estimate sent via email successfully')
+    showShareEmailModal.value = false
+    shareEmailForm.email = ''
+  } catch (err) {
+    console.error('Failed to send estimate via email:', err)
+    toast.error(err.response?.data?.message || 'Failed to send email')
+  } finally {
+    sendingEmail.value = false
+  }
+}
+
+async function sendShareSms() {
+  if (!sharesSmsForm.phone) return
+
+  try {
+    sendingSms.value = true
+    await estimateService.shareViaSms(estimate.value.id, sharesSmsForm.phone)
+    toast.success('Estimate sent via SMS successfully')
+    showShareSmsModal.value = false
+    sharesSmsForm.phone = ''
+  } catch (err) {
+    console.error('Failed to send estimate via SMS:', err)
+    toast.error(err.response?.data?.message || 'Failed to send SMS')
+  } finally {
+    sendingSms.value = false
   }
 }
 

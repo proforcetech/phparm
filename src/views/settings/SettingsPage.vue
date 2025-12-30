@@ -88,6 +88,61 @@
         </Card>
       </div>
 
+      <!-- Estimate Sharing Templates -->
+      <div class="grid grid-cols-1 gap-6">
+        <Card>
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Estimate Sharing Templates</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Configure templates for sharing estimates with customers. Available variables:
+            <code class="bg-gray-100 px-1 rounded">{customer}</code>,
+            <code class="bg-gray-100 px-1 rounded">{estimate_number}</code>,
+            <code class="bg-gray-100 px-1 rounded">{total}</code>,
+            <code class="bg-gray-100 px-1 rounded">{vehicle}</code>,
+            <code class="bg-gray-100 px-1 rounded">{expiration_date}</code>,
+            <code class="bg-gray-100 px-1 rounded">{link}</code>,
+            <code class="bg-gray-100 px-1 rounded">{shop_name}</code>,
+            <code class="bg-gray-100 px-1 rounded">{shop_phone}</code>
+          </p>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Email Template</label>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Subject Line</label>
+                <Input
+                  v-model="form.templates.estimateEmailSubject"
+                  placeholder="Your Estimate #{estimate_number} from {shop_name}"
+                  class="mb-2"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Email Body</label>
+                <div class="template-editor">
+                  <QuillEditor
+                    v-model:content="form.templates.estimateEmail"
+                    content-type="html"
+                    theme="snow"
+                    :toolbar="templateToolbar"
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">SMS Template</label>
+              <p class="text-xs text-gray-500 mb-2">Keep SMS messages concise (160 characters recommended)</p>
+              <Textarea
+                v-model="form.templates.estimateSms"
+                :rows="4"
+                placeholder="Hi {customer}, your estimate #{estimate_number} for {total} is ready. View it here: {link} - {shop_name}"
+                class="mt-1"
+              />
+              <p class="text-xs text-gray-400 mt-1">
+                {{ (form.templates.estimateSms || '').length }} characters
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Pricing Defaults</h2>
@@ -155,6 +210,48 @@
             <div class="md:col-span-2">
               <label class="block text-sm font-medium text-gray-700">SMTP Encryption</label>
               <Input v-model="form.smtp.encryption" placeholder="tls" class="mt-1" />
+            </div>
+          </div>
+          <div class="mt-6 border-t border-gray-200 pt-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900">Test Notifications</h3>
+                <p class="text-xs text-gray-500">Save settings before running tests.</p>
+              </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Test Email Recipient</label>
+                <Input v-model="smtpTestRecipient" placeholder="you@example.com" class="mt-1" />
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" :loading="smtpConnectionLoading" @click="runSmtpConnectionTest">
+                    Test SMTP Connection
+                  </Button>
+                  <Button size="sm" :loading="smtpEmailLoading" @click="runSmtpEmailTest">
+                    Send Test Email
+                  </Button>
+                </div>
+                <p v-if="smtpConnectionMessage" class="mt-2 text-xs text-green-600">{{ smtpConnectionMessage }}</p>
+                <p v-if="smtpConnectionError" class="mt-2 text-xs text-red-600">{{ smtpConnectionError }}</p>
+                <p v-if="smtpEmailMessage" class="mt-2 text-xs text-green-600">{{ smtpEmailMessage }}</p>
+                <p v-if="smtpEmailError" class="mt-2 text-xs text-red-600">{{ smtpEmailError }}</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Test SMS Recipient</label>
+                <Input v-model="smsTestRecipient" placeholder="+15551234567" class="mt-1" />
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" :loading="twilioConnectionLoading" @click="runTwilioConnectionTest">
+                    Test Twilio Connection
+                  </Button>
+                  <Button size="sm" :loading="twilioSmsLoading" @click="runTwilioSmsTest">
+                    Send Test SMS
+                  </Button>
+                </div>
+                <p v-if="twilioConnectionMessage" class="mt-2 text-xs text-green-600">{{ twilioConnectionMessage }}</p>
+                <p v-if="twilioConnectionError" class="mt-2 text-xs text-red-600">{{ twilioConnectionError }}</p>
+                <p v-if="twilioSmsMessage" class="mt-2 text-xs text-green-600">{{ twilioSmsMessage }}</p>
+                <p v-if="twilioSmsError" class="mt-2 text-xs text-red-600">{{ twilioSmsError }}</p>
+              </div>
             </div>
           </div>
         </Card>
@@ -274,7 +371,14 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Textarea from '@/components/ui/Textarea.vue'
-import { fetchSettings, saveSettings } from '@/services/settings.service'
+import {
+  fetchSettings,
+  saveSettings,
+  sendTestEmail,
+  sendTestSms,
+  testSmtpConnection,
+  testTwilioConnection,
+} from '@/services/settings.service'
 import { QuillEditor } from '@vueup/vue-quill'
 import '@vueup/vue-quill/dist/vue-quill.snow.css'
 
@@ -282,8 +386,30 @@ const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
 const error = ref('')
+const smtpTestRecipient = ref('')
+const smsTestRecipient = ref('')
+const smtpConnectionLoading = ref(false)
+const smtpEmailLoading = ref(false)
+const twilioConnectionLoading = ref(false)
+const twilioSmsLoading = ref(false)
+const smtpConnectionMessage = ref('')
+const smtpConnectionError = ref('')
+const smtpEmailMessage = ref('')
+const smtpEmailError = ref('')
+const twilioConnectionMessage = ref('')
+const twilioConnectionError = ref('')
+const twilioSmsMessage = ref('')
+const twilioSmsError = ref('')
 
 const termsToolbar = [
+  [{ header: [2, 3, false] }],
+  ['bold', 'italic', 'underline'],
+  [{ list: 'ordered' }, { list: 'bullet' }],
+  ['link'],
+  ['clean'],
+]
+
+const templateToolbar = [
   [{ header: [2, 3, false] }],
   ['bold', 'italic', 'underline'],
   [{ list: 'ordered' }, { list: 'bullet' }],
@@ -300,6 +426,11 @@ const form = reactive({
     address: { street: '', city: '', state: '', postal_code: '', country: '' },
   },
   terms: { estimates: '', invoices: '' },
+  templates: {
+    estimateEmailSubject: '',
+    estimateEmail: '',
+    estimateSms: '',
+  },
   pricing: { taxRate: 0, laborRate: 0, callOutFee: 0, mileageRate: 0 },
   notifications: { fromName: '', fromAddress: '', smsNumber: '', twilioSid: '', twilioToken: '' },
   smtp: { host: '', port: 587, username: '', password: '', encryption: 'tls' },
@@ -350,6 +481,10 @@ const hydrate = async () => {
 
     form.terms.estimates = getSetting(settings, 'documents.terms.estimates', '')
     form.terms.invoices = getSetting(settings, 'documents.terms.invoices', '')
+
+    form.templates.estimateEmailSubject = getSetting(settings, 'templates.estimate.email_subject', 'Your Estimate #{estimate_number} from {shop_name}')
+    form.templates.estimateEmail = getSetting(settings, 'templates.estimate.email_body', '')
+    form.templates.estimateSms = getSetting(settings, 'templates.estimate.sms_body', '')
 
     form.pricing.taxRate = Number(getSetting(settings, 'pricing.tax_rate', 0))
     form.pricing.laborRate = Number(getSetting(settings, 'pricing.labor_rate', 0))
@@ -433,6 +568,9 @@ const save = async () => {
     'shop.address': { ...form.profile.address },
     'documents.terms.estimates': form.terms.estimates,
     'documents.terms.invoices': form.terms.invoices,
+    'templates.estimate.email_subject': form.templates.estimateEmailSubject,
+    'templates.estimate.email_body': form.templates.estimateEmail,
+    'templates.estimate.sms_body': form.templates.estimateSms,
     'pricing.tax_rate': Number(form.pricing.taxRate) || 0,
     'pricing.labor_rate': Number(form.pricing.laborRate) || 0,
     'pricing.call_out_fee': Number(form.pricing.callOutFee) || 0,
@@ -479,16 +617,90 @@ const save = async () => {
   }
 }
 
+const resetTestMessages = () => {
+  smtpConnectionMessage.value = ''
+  smtpConnectionError.value = ''
+  smtpEmailMessage.value = ''
+  smtpEmailError.value = ''
+  twilioConnectionMessage.value = ''
+  twilioConnectionError.value = ''
+  twilioSmsMessage.value = ''
+  twilioSmsError.value = ''
+}
+
+const runSmtpConnectionTest = async () => {
+  resetTestMessages()
+  smtpConnectionLoading.value = true
+
+  try {
+    const result = await testSmtpConnection()
+    smtpConnectionMessage.value = result?.message || 'SMTP connection successful.'
+  } catch (e) {
+    smtpConnectionError.value = e?.response?.data?.error || e?.message || 'Failed to test SMTP connection.'
+  } finally {
+    smtpConnectionLoading.value = false
+  }
+}
+
+const runSmtpEmailTest = async () => {
+  resetTestMessages()
+  smtpEmailLoading.value = true
+
+  try {
+    const result = await sendTestEmail(smtpTestRecipient.value)
+    smtpEmailMessage.value = result?.message || 'Test email sent.'
+  } catch (e) {
+    smtpEmailError.value = e?.response?.data?.error || e?.message || 'Failed to send test email.'
+  } finally {
+    smtpEmailLoading.value = false
+  }
+}
+
+const runTwilioConnectionTest = async () => {
+  resetTestMessages()
+  twilioConnectionLoading.value = true
+
+  try {
+    const result = await testTwilioConnection()
+    twilioConnectionMessage.value = result?.message || 'Twilio connection successful.'
+  } catch (e) {
+    twilioConnectionError.value = e?.response?.data?.error || e?.message || 'Failed to test Twilio connection.'
+  } finally {
+    twilioConnectionLoading.value = false
+  }
+}
+
+const runTwilioSmsTest = async () => {
+  resetTestMessages()
+  twilioSmsLoading.value = true
+
+  try {
+    const result = await sendTestSms(smsTestRecipient.value)
+    twilioSmsMessage.value = result?.message || 'Test SMS sent.'
+  } catch (e) {
+    twilioSmsError.value = e?.response?.data?.error || e?.message || 'Failed to send test SMS.'
+  } finally {
+    twilioSmsLoading.value = false
+  }
+}
+
 onMounted(hydrate)
 </script>
 
 <style scoped>
-:deep(.terms-editor .ql-container) {
+:deep(.terms-editor .ql-container),
+:deep(.template-editor .ql-container) {
   border-radius: 0.375rem;
 }
 
 :deep(.terms-editor .ql-editor) {
   min-height: 140px;
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+:deep(.template-editor .ql-editor) {
+  min-height: 180px;
   font-family: inherit;
   font-size: 0.875rem;
 }

@@ -70,6 +70,7 @@ import {
   ClipboardDocumentListIcon,
   ExclamationTriangleIcon,
   FolderIcon,
+  WrenchScrewdriverIcon,
 } from '@heroicons/vue/24/outline'
 
 const props = defineProps({
@@ -106,6 +107,7 @@ const adminMenuItems = [
   { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
   { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
   { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
+  { path: '/cp/workorders', label: 'Workorders', icon: WrenchScrewdriverIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
@@ -133,6 +135,7 @@ const adminMenuItems = [
 
 const technicianMenuItems = [
   { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/workorders', label: 'My Workorders', icon: WrenchScrewdriverIcon },
   { path: '/cp/my-time', label: 'My Time', icon: ClockIcon },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },

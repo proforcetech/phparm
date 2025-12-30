@@ -264,7 +264,7 @@ class BundleService
     private function persistItems(int $bundleId, array $items): void
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO bundle_items (bundle_id, type, description, quantity, unit_price, taxable, sort_order) VALUES (:bundle_id, :type, :description, :quantity, :unit_price, :taxable, :sort_order)'
+            'INSERT INTO bundle_items (bundle_id, type, description, quantity, unit_price, list_price, taxable, sort_order) VALUES (:bundle_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :sort_order)'
         );
 
         foreach ($items as $index => $item) {
@@ -283,6 +283,7 @@ class BundleService
                 'description' => $item['description'],
                 'quantity' => (float) ($item['quantity'] ?? 1),
                 'unit_price' => (float) ($item['unit_price'] ?? 0),
+                'list_price' => (float) ($item['list_price'] ?? 0),
                 'taxable' => isset($item['taxable']) ? (int) (bool) $item['taxable'] : 1,
                 'sort_order' => isset($item['sort_order']) ? (int) $item['sort_order'] : $index,
             ]);

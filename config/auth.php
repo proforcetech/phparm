@@ -28,10 +28,10 @@ return [
         ],
         'manager' => [
             'label' => 'Manager',
-            'description' => 'Manage shop operations, estimates, invoices, schedules, inventory',
+            'description' => 'Manage shop operations, estimates, workorders, invoices, schedules, inventory',
             'permissions' => [
                 'users.view', 'users.create', 'users.update', 'users.delete', 'users.invite',
-                'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*',
+                'customers.*', 'vehicles.*', 'estimates.*', 'workorders.*', 'invoices.*', 'payments.*', 'appointments.*',
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
                 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*',
                 // Full CMS access (matches admin for CMS operations)
@@ -40,9 +40,10 @@ return [
         ],
         'technician' => [
             'label' => 'Technician',
-            'description' => 'Work estimates, inspections, jobs, and time tracking',
+            'description' => 'Work estimates, workorders, inspections, jobs, and time tracking',
             'permissions' => [
                 'customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update',
+                'workorders.view', 'workorders.manage',
                 'inspections.*', 'time.*', 'appointments.view', 'service_types.view',
                 // CMS content editing (no administrative settings)
                 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete',
@@ -58,7 +59,8 @@ return [
             'label' => 'Customer',
             'description' => 'Customer portal scoped to their profile and documents',
             'permissions' => [
-                'portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.invoices', 'portal.warranty', 'portal.reminders'
+                'portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.workorders', 'portal.invoices', 'portal.warranty', 'portal.reminders',
+                'workorders.view'
             ],
         ],
     ],

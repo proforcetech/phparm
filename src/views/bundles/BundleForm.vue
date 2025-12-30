@@ -20,7 +20,15 @@
             <Input v-model="form.default_job_title" required placeholder="Brake Service" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Service Type</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-gray-700">Service Type</label>
+              <router-link
+                to="/cp/settings/services"
+                class="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Manage Service Types
+              </router-link>
+            </div>
             <select
               v-model="form.service_type_id"
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -71,8 +79,8 @@
             No items added yet.
           </div>
           <div v-for="(item, index) in form.items" :key="index" class="mb-4 rounded-lg border border-gray-200 p-4 shadow-sm">
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-6">
+              <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-gray-700">Type</label>
                 <select
                   v-model="item.type"
@@ -85,13 +93,9 @@
                   <option value="DISCOUNT">Discount</option>
                 </select>
               </div>
-              <div class="md:col-span-2">
+              <div class="md:col-span-4">
                 <label class="block text-sm font-medium text-gray-700">Description</label>
                 <Input v-model="item.description" required placeholder="Pad replacement" />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Sort Order</label>
-                <Input v-model.number="item.sort_order" type="number" min="0" />
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Quantity</label>
@@ -100,6 +104,14 @@
               <div>
                 <label class="block text-sm font-medium text-gray-700">Unit Price</label>
                 <Input v-model.number="item.unit_price" type="number" min="0" step="0.01" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">List Price</label>
+                <Input v-model.number="item.list_price" type="number" min="0" step="0.01" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Sort Order</label>
+                <Input v-model.number="item.sort_order" type="number" min="0" />
               </div>
               <div class="flex items-center gap-2 pt-6">
                 <input v-model="item.taxable" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
@@ -166,6 +178,7 @@ const addItem = () => {
     description: '',
     quantity: 1,
     unit_price: 0,
+    list_price: 0,
     taxable: true,
     sort_order: form.items.length,
   })
@@ -205,6 +218,7 @@ const loadBundle = async () => {
       description: item.description,
       quantity: item.quantity,
       unit_price: item.unit_price,
+      list_price: item.list_price || 0,
       taxable: Boolean(item.taxable),
       sort_order: item.sort_order ?? index,
     })),

@@ -148,6 +148,122 @@ class InventoryItemController
         return $this->csvService->import($csv, $updateExisting);
     }
 
+    /**
+     * Search inventory parts with optional vehicle compatibility filter
+     *
+     * @param User $user
+     * @param array<string, mixed> $params
+     * @return array<int, array<string, mixed>>
+     */
+    public function searchParts(User $user, array $params = []): array
+    {
+        $this->assertViewAccess($user);
+
+        $query = $params['query'] ?? '';
+        $vehicleMasterId = isset($params['vehicle_master_id']) ? (int) $params['vehicle_master_id'] : null;
+        $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 20;
+
+        if (empty($query)) {
+            return [];
+        }
+
+        $items = $this->repository->searchForParts($query, $vehicleMasterId, $limit);
+
+        return array_map(static fn ($item) => $item->toArray(), $items);
+    }
+
+    /**
+     * Get item by SKU (for auto-populate functionality)
+     *
+     * @param User $user
+     * @param string $sku
+     * @return array<string, mixed>|null
+     */
+    public function findBySku(User $user, string $sku): ?array
+    {
+        $this->assertViewAccess($user);
+
+        $item = $this->repository->findBySku($sku);
+
+        return $item?->toArray();
+    }
+
+    /**
+     * Get vehicle compatibility for an inventory item
+     *
+     * @param User $user
+     * @param int $id
+     * @return array<int, array<string, mixed>>
+     */
+    public function getVehicleCompatibility(User $user, int $id): array
+    {
+        $this->assertViewAccess($user);
+
+        return $this->repository->getVehicleCompatibility($id);
+    }
+
+    /**
+     * Add vehicle compatibility entry
+     *
+     * @param User $user
+     * @param int $id
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function addVehicleCompatibility(User $user, int $id, array $data): array
+    {
+        $this->assertManageAccess($user);
+
+        $vehicleMasterId = (int) ($data['vehicle_master_id'] ?? 0);
+        $notes = $data['notes'] ?? null;
+
+        if ($vehicleMasterId <= 0) {
+            throw new \InvalidArgumentException('vehicle_master_id is required');
+        }
+
+        $entry = $this->repository->addVehicleCompatibility($id, $vehicleMasterId, $notes);
+
+        return $entry->toArray();
+    }
+
+    /**
+     * Remove vehicle compatibility entry
+     *
+     * @param User $user
+     * @param int $id
+     * @param int $vehicleMasterId
+     * @return bool
+     */
+    public function removeVehicleCompatibility(User $user, int $id, int $vehicleMasterId): bool
+    {
+        $this->assertManageAccess($user);
+
+        return $this->repository->removeVehicleCompatibility($id, $vehicleMasterId);
+    }
+
+    /**
+     * Bulk add vehicle compatibility entries
+     *
+     * @param User $user
+     * @param int $id
+     * @param array<string, mixed> $data
+     * @return array<string, int>
+     */
+    public function bulkAddVehicleCompatibility(User $user, int $id, array $data): array
+    {
+        $this->assertManageAccess($user);
+
+        $vehicleMasterIds = $data['vehicle_master_ids'] ?? [];
+
+        if (!is_array($vehicleMasterIds) || empty($vehicleMasterIds)) {
+            throw new \InvalidArgumentException('vehicle_master_ids array is required');
+        }
+
+        $count = $this->repository->bulkAddVehicleCompatibility($id, array_map('intval', $vehicleMasterIds));
+
+        return ['added' => $count];
+    }
+
     private function assertManageAccess(User $user): void
     {
         $this->gate->assert($user, 'inventory.*');

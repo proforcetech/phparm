@@ -455,8 +455,8 @@ class InvoiceService
     private function insertInvoiceItem(int $invoiceId, array $payload): void
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, taxable, line_total) '
-            . 'VALUES (:invoice_id, :type, :description, :quantity, :unit_price, :taxable, :line_total)'
+            'INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, list_price, taxable, line_total) '
+            . 'VALUES (:invoice_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :line_total)'
         );
         $stmt->execute([
             'invoice_id' => $invoiceId,
@@ -464,6 +464,7 @@ class InvoiceService
             'description' => $payload['description'],
             'quantity' => $payload['quantity'],
             'unit_price' => $payload['unit_price'],
+            'list_price' => (float) ($payload['list_price'] ?? 0),
             'taxable' => $payload['taxable'] ? 1 : 0,
             'line_total' => $payload['line_total'],
         ]);

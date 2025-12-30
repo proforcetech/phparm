@@ -40,12 +40,14 @@
               class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle"
             >
               <!-- Header -->
-              <div v-if="title || $slots.header" class="px-6 py-4 border-b border-gray-200">
+              <div v-if="title || $slots.header || $slots.title" class="px-6 py-4 border-b border-gray-200">
                 <div class="flex items-center justify-between">
                   <slot name="header">
-                    <h3 id="modal-title" class="text-lg font-medium text-gray-900">
-                      {{ title }}
-                    </h3>
+                    <slot name="title">
+                      <h3 id="modal-title" class="text-lg font-medium text-gray-900">
+                        {{ title }}
+                      </h3>
+                    </slot>
                   </slot>
                   <button
                     v-if="closable"
@@ -63,7 +65,9 @@
 
               <!-- Body -->
               <div class="px-6 py-4">
-                <slot />
+                <slot name="content">
+                  <slot />
+                </slot>
               </div>
 
               <!-- Footer -->

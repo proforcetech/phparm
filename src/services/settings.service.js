@@ -38,3 +38,19 @@ export function fetchSettings() {
 export function saveSettings(payload) {
   return api.put('/settings', normalizePayload(payload)).then((r) => r.data)
 }
+
+export function testSmtpConnection() {
+  return api.post('/settings/notifications/smtp/test-connection').then((r) => r.data)
+}
+
+export function sendTestEmail(recipient) {
+  return api.post('/settings/notifications/smtp/test-email', { recipient }).then((r) => r.data)
+}
+
+export function testTwilioConnection() {
+  return api.post('/settings/notifications/twilio/test-connection').then((r) => r.data)
+}
+
+export function sendTestSms(recipient) {
+  return api.post('/settings/notifications/twilio/test-sms', { recipient }).then((r) => r.data)
+}

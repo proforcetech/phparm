@@ -174,6 +174,27 @@ class VehicleMasterController
     }
 
     /**
+     * Search vehicle master records for compatibility selection
+     *
+     * @param User $user
+     * @param string $query
+     * @param int $limit
+     * @return array<int, array<string, mixed>>
+     */
+    public function search(User $user, string $query, int $limit = 20): array
+    {
+        $this->gate->assert($user, 'inventory.view');
+
+        if (empty($query)) {
+            return [];
+        }
+
+        $results = $this->repository->search(['term' => $query], $limit);
+
+        return array_map(static fn ($vehicle) => $vehicle->toArray(), $results);
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
