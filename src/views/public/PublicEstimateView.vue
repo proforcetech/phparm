@@ -107,7 +107,7 @@
             </div>
 
             <!-- Individual Job Actions -->
-            <div v-if="canTakeAction && !job.customer_status" class="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+            <div v-if="canTakeAction && jobNeedsResponse(job)" class="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
               <button
                 @click="approveJob(job)"
                 :disabled="submitting"
@@ -295,8 +295,13 @@ const canTakeAction = computed(() => {
 })
 
 const hasPendingJobs = computed(() => {
-  return jobs.value.some(job => !job.customer_status)
+  return jobs.value.some(job => jobNeedsResponse(job))
 })
+
+// Check if a job hasn't been approved or rejected yet
+function jobNeedsResponse(job) {
+  return job.customer_status !== 'approved' && job.customer_status !== 'rejected'
+}
 
 function jobStatusClass(status) {
   const classes = {
@@ -425,7 +430,7 @@ async function approveAllPendingJobs() {
   submitting.value = true
   try {
     // Approve only jobs that haven't been responded to
-    const pendingJobs = jobs.value.filter(job => !job.customer_status)
+    const pendingJobs = jobs.value.filter(job => jobNeedsResponse(job))
     for (const job of pendingJobs) {
       await api.post('/public/estimate/approve-job', {
         token: token.value,
@@ -449,7 +454,7 @@ async function rejectAllPendingJobs() {
   submitting.value = true
   try {
     // Reject only jobs that haven't been responded to
-    const pendingJobs = jobs.value.filter(job => !job.customer_status)
+    const pendingJobs = jobs.value.filter(job => jobNeedsResponse(job))
     for (const job of pendingJobs) {
       await api.post('/public/estimate/reject-job', {
         token: token.value,
