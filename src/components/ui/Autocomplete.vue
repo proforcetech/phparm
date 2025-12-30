@@ -319,14 +319,22 @@ watch(() => props.modelValue, async (newValue) => {
     loading.value = true
     try {
       const data = await props.searchFn(String(newValue))
-      const item = data?.find(d => getItemValue(d) === newValue)
+      // Use loose equality to handle type mismatches (e.g., number vs string IDs)
+      const item = data?.find(d => String(getItemValue(d)) === String(newValue))
       if (item) {
         selectedItem.value = item
         // FIX: Ensure this doesn't set searchQuery.value to undefined
         searchQuery.value = getItemLabel(item) || ''
+      } else if (props.freeText) {
+        // For free-text mode, display the value even if no matching item found
+        searchQuery.value = String(newValue)
       }
     } catch (error) {
       console.error('Failed to load initial value:', error)
+      // For free-text mode, still display the value on error
+      if (props.freeText) {
+        searchQuery.value = String(newValue)
+      }
     } finally {
       loading.value = false
     }
