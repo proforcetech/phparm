@@ -434,11 +434,29 @@ class EstimateEditorService
                 'quantity' => (float) $item['quantity'],
                 'unit_price' => (float) $item['unit_price'],
                 'list_price' => (float) ($item['list_price'] ?? 0),
-                'taxable' => array_key_exists('taxable', $item) ? (bool) $item['taxable'] : true,
+                'taxable' => $this->normalizeTaxable($item),
                 'line_total' => $lineTotal,
                 'status' => $item['status'] ?? 'pending',
             ]);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function normalizeTaxable(array $item): int
+    {
+        if (!array_key_exists('taxable', $item) || $item['taxable'] === '' || $item['taxable'] === null) {
+            return 1;
+        }
+
+        $value = filter_var($item['taxable'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        if ($value === null) {
+            return 1;
+        }
+
+        return $value ? 1 : 0;
     }
 
     /**

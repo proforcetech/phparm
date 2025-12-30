@@ -455,7 +455,11 @@ async function loadEstimate() {
   try {
     loading.value = true
     const response = await estimateService.getEstimate(route.params.id)
+    const customerId = response.data.customer_id ?? response.data.customer?.id ?? null
+    const vehicleId = response.data.vehicle_id ?? response.data.vehicle?.id ?? null
     Object.assign(form, response.data, {
+      customer_id: customerId,
+      vehicle_id: vehicleId,
       is_mobile: !!response.data.is_mobile,
       line_items: response.data.line_items?.length
         ? response.data.line_items.map(item => ({
