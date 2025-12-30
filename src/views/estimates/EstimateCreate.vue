@@ -761,6 +761,12 @@ async function loadEstimate() {
     const subtotal = Number(estimateData.subtotal) || 0
     const tax = Number(estimateData.tax) || 0
 
+    // Set initial selections BEFORE assigning form values so that Autocomplete
+    // watchers can access them when triggered by form.vehicle_id change
+    initialSelections.customer = estimateData.customer || null
+    initialSelections.vehicle = estimateData.vehicle || null
+    initialSelections.technician = estimateData.technician || null
+
     // Map the response to the job-based structure
     Object.assign(form, {
       customer_id: estimateData.customer_id,
@@ -824,10 +830,6 @@ async function loadEstimate() {
             }
           ]
     })
-
-    initialSelections.customer = estimateData.customer || null
-    initialSelections.vehicle = estimateData.vehicle || null
-    initialSelections.technician = estimateData.technician || null
 
     calculateTotals()
   } catch (error) {
