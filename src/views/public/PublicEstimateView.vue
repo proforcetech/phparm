@@ -192,21 +192,38 @@
       <div class="bg-white rounded-lg p-6 max-w-md w-full">
         <h3 class="text-lg font-semibold mb-4">Reject All Remaining Jobs</h3>
         <p class="text-gray-600 mb-4">This will reject all jobs that haven't been responded to yet.</p>
-        <textarea
-          v-model="declineReason"
-          placeholder="Please let us know why you're rejecting (optional)"
-          class="w-full border rounded-lg p-3 h-32"
-        ></textarea>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Reason for rejection</label>
+            <select
+              v-model="selectedDeclineReason"
+              class="w-full border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            >
+              <option value="">Select a reason...</option>
+              <option v-for="reason in rejectionReasons" :key="reason" :value="reason">
+                {{ reason }}
+              </option>
+            </select>
+          </div>
+          <div v-if="selectedDeclineReason === 'Other'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Please specify</label>
+            <textarea
+              v-model="declineReasonOther"
+              placeholder="Please let us know why you're rejecting..."
+              class="w-full border border-gray-300 rounded-lg p-3 h-24 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            ></textarea>
+          </div>
+        </div>
         <div class="flex gap-4 mt-4">
           <button
-            @click="showDeclineModal = false"
+            @click="closeDeclineModal"
             class="flex-1 border border-gray-300 py-2 px-4 rounded-lg hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             @click="rejectAllPendingJobs"
-            :disabled="submitting"
+            :disabled="submitting || !selectedDeclineReason"
             class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50"
           >
             {{ submitting ? 'Processing...' : 'Confirm Reject All' }}
@@ -222,11 +239,28 @@
         <p class="text-gray-600 mb-4">
           You are rejecting: <strong>{{ rejectingJob?.title || rejectingJob?.name || 'This job' }}</strong>
         </p>
-        <textarea
-          v-model="rejectJobReason"
-          placeholder="Please let us know why you're rejecting this job (optional)"
-          class="w-full border rounded-lg p-3 h-32"
-        ></textarea>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Reason for rejection</label>
+            <select
+              v-model="selectedJobRejectReason"
+              class="w-full border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            >
+              <option value="">Select a reason...</option>
+              <option v-for="reason in rejectionReasons" :key="reason" :value="reason">
+                {{ reason }}
+              </option>
+            </select>
+          </div>
+          <div v-if="selectedJobRejectReason === 'Other'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Please specify</label>
+            <textarea
+              v-model="rejectJobReasonOther"
+              placeholder="Please let us know why you're rejecting this job..."
+              class="w-full border border-gray-300 rounded-lg p-3 h-24 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            ></textarea>
+          </div>
+        </div>
         <div class="flex gap-4 mt-4">
           <button
             @click="closeRejectJobModal"
@@ -236,7 +270,7 @@
           </button>
           <button
             @click="confirmRejectJob"
-            :disabled="submitting"
+            :disabled="submitting || !selectedJobRejectReason"
             class="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50"
           >
             {{ submitting ? 'Processing...' : 'Confirm Reject' }}
@@ -265,10 +299,13 @@ const shortCode = ref('')
 
 const submitting = ref(false)
 const showDeclineModal = ref(false)
-const declineReason = ref('')
+const selectedDeclineReason = ref('')
+const declineReasonOther = ref('')
 const showRejectJobModal = ref(false)
 const rejectingJob = ref(null)
-const rejectJobReason = ref('')
+const selectedJobRejectReason = ref('')
+const rejectJobReasonOther = ref('')
+const rejectionReasons = ref([])
 
 const vehicleDescription = computed(() => {
   if (!vehicle.value) return 'N/A'
@@ -391,14 +428,37 @@ async function approveJob(job) {
 // Open modal to reject a single job
 function openRejectJobModal(job) {
   rejectingJob.value = job
-  rejectJobReason.value = ''
+  selectedJobRejectReason.value = ''
+  rejectJobReasonOther.value = ''
   showRejectJobModal.value = true
 }
 
 function closeRejectJobModal() {
   showRejectJobModal.value = false
   rejectingJob.value = null
-  rejectJobReason.value = ''
+  selectedJobRejectReason.value = ''
+  rejectJobReasonOther.value = ''
+}
+
+function closeDeclineModal() {
+  showDeclineModal.value = false
+  selectedDeclineReason.value = ''
+  declineReasonOther.value = ''
+}
+
+// Get the final rejection reason text
+function getDeclineReasonText() {
+  if (selectedDeclineReason.value === 'Other') {
+    return declineReasonOther.value || 'Other'
+  }
+  return selectedDeclineReason.value
+}
+
+function getJobRejectReasonText() {
+  if (selectedJobRejectReason.value === 'Other') {
+    return rejectJobReasonOther.value || 'Other'
+  }
+  return selectedJobRejectReason.value
 }
 
 // Confirm rejection of a single job
@@ -410,7 +470,7 @@ async function confirmRejectJob() {
     await api.post('/public/estimate/reject-job', {
       token: token.value,
       job_id: rejectingJob.value.id,
-      rejection_reason: rejectJobReason.value
+      rejection_reason: getJobRejectReasonText()
     })
     closeRejectJobModal()
     // Reload to show updated status
@@ -455,15 +515,15 @@ async function rejectAllPendingJobs() {
   try {
     // Reject only jobs that haven't been responded to
     const pendingJobs = jobs.value.filter(job => jobNeedsResponse(job))
+    const reasonText = getDeclineReasonText()
     for (const job of pendingJobs) {
       await api.post('/public/estimate/reject-job', {
         token: token.value,
         job_id: job.id,
-        rejection_reason: declineReason.value
+        rejection_reason: reasonText
       })
     }
-    showDeclineModal.value = false
-    declineReason.value = ''
+    closeDeclineModal()
     // Reload to show updated status
     await loadEstimate()
   } catch (err) {
@@ -474,7 +534,27 @@ async function rejectAllPendingJobs() {
   }
 }
 
+// Load rejection reasons from settings
+async function loadRejectionReasons() {
+  try {
+    const response = await api.get('/public/estimate/rejection-reasons')
+    rejectionReasons.value = response.data.reasons || []
+  } catch (err) {
+    console.error('Failed to load rejection reasons:', err)
+    // Fallback defaults
+    rejectionReasons.value = [
+      'Price too high',
+      'Found a better deal elsewhere',
+      'Decided not to proceed with repairs',
+      'Going to a different shop',
+      'Vehicle no longer owned',
+      'Other'
+    ]
+  }
+}
+
 onMounted(() => {
   loadEstimate()
+  loadRejectionReasons()
 })
 </script>

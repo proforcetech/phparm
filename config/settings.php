@@ -284,5 +284,18 @@ return [
             'description' => 'SMS body template for estimate sharing.',
             'value' => 'Hi {customer}, your estimate #{estimate_number} for {total} is ready. View: {link} - {shop_name}',
         ],
+        'estimates.rejection_reasons' => [
+            'group' => 'estimates',
+            'type' => 'json',
+            'description' => 'List of predefined rejection reasons customers can select when declining an estimate or job.',
+            'value' => [
+                'Price too high',
+                'Found a better deal elsewhere',
+                'Decided not to proceed with repairs',
+                'Going to a different shop',
+                'Vehicle no longer owned',
+                'Other'
+            ],
+        ],
     ],
 ];

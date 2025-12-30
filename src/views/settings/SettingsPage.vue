@@ -143,6 +143,49 @@
         </Card>
       </div>
 
+      <!-- Estimate Rejection Reasons -->
+      <div class="grid grid-cols-1 gap-6">
+        <Card>
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Estimate Rejection Reasons</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Configure the dropdown options customers see when rejecting an estimate or individual job.
+            The "Other" option should always be last to allow custom input.
+          </p>
+          <div class="space-y-2">
+            <div
+              v-for="(reason, index) in form.estimates.rejectionReasons"
+              :key="index"
+              class="flex items-center gap-2"
+            >
+              <Input
+                v-model="form.estimates.rejectionReasons[index]"
+                :placeholder="`Reason ${index + 1}`"
+                class="flex-1"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                @click="removeRejectionReason(index)"
+                :disabled="form.estimates.rejectionReasons.length <= 1"
+                class="text-red-600 hover:text-red-800"
+              >
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </Button>
+            </div>
+          </div>
+          <div class="mt-4">
+            <Button variant="outline" size="sm" @click="addRejectionReason">
+              <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Reason
+            </Button>
+          </div>
+        </Card>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Pricing Defaults</h2>
@@ -456,6 +499,9 @@ const form = reactive({
     partsTechKey: '',
     partsTechMarkup: '',
   },
+  estimates: {
+    rejectionReasons: [],
+  },
 })
 
 const getSetting = (settings, key, fallback = null) => {
@@ -526,6 +572,9 @@ const hydrate = async () => {
     form.integrations.partsTechKey = getSetting(settings, 'integrations.partstech.api_key', '')
     const markup = getSetting(settings, 'integrations.partstech.markup_tiers', [])
     form.integrations.partsTechMarkup = markup && markup.length ? JSON.stringify(markup, null, 2) : ''
+
+    const defaultReasons = ['Price too high', 'Found a better deal elsewhere', 'Decided not to proceed with repairs', 'Going to a different shop', 'Vehicle no longer owned', 'Other']
+    form.estimates.rejectionReasons = getSetting(settings, 'estimates.rejection_reasons', defaultReasons) || defaultReasons
   } catch (e) {
     error.value = e?.message || 'Unable to load settings.'
   } finally {
@@ -543,6 +592,16 @@ const parseMarkup = () => {
     return Array.isArray(parsed) ? parsed : []
   } catch (e) {
     throw new Error('PartsTech markup tiers must be valid JSON.')
+  }
+}
+
+const addRejectionReason = () => {
+  form.estimates.rejectionReasons.push('')
+}
+
+const removeRejectionReason = (index) => {
+  if (form.estimates.rejectionReasons.length > 1) {
+    form.estimates.rejectionReasons.splice(index, 1)
   }
 }
 
@@ -605,6 +664,7 @@ const save = async () => {
     'integrations.partstech.api_base': form.integrations.partsTechBase,
     'integrations.partstech.api_key': form.integrations.partsTechKey,
     'integrations.partstech.markup_tiers': markupTiers,
+    'estimates.rejection_reasons': form.estimates.rejectionReasons,
   }
 
   try {
