@@ -573,6 +573,12 @@ const totals = reactive({
   grand_total: 0
 })
 
+const initialSelections = reactive({
+  customer: null,
+  vehicle: null,
+  technician: null
+})
+
 const statusOptions = [
   { value: 'sent', label: 'Sent' },
   { value: 'pending', label: 'Pending' },
@@ -749,30 +755,35 @@ async function loadEstimate() {
   try {
     loading.value = true
     const response = await estimateService.getEstimate(route.params.id)
+    const estimateData = response.data || {}
+    const subtotal = Number(estimateData.subtotal) || 0
+    const tax = Number(estimateData.tax) || 0
 
     // Map the response to the job-based structure
     Object.assign(form, {
-      customer_id: response.data.customer_id,
-      vehicle_id: response.data.vehicle_id,
-      is_mobile: !!response.data.is_mobile,
-      technician_id: response.data.technician_id,
-      expiration_date: response.data.expiration_date,
-      tax_rate: 0, // Will need to calculate from tax/subtotal if available
-      call_out_fee: Number(response.data.call_out_fee) || 0,
-      mileage_total: Number(response.data.mileage_total) || 0,
-      discounts: Number(response.data.discounts) || 0,
-      shop_fee: Number(response.data.shop_fee) || 0,
-      hazmat_disposal_fee: Number(response.data.hazmat_disposal_fee) || 0,
-      customer_notes: response.data.customer_notes || '',
-      internal_notes: response.data.internal_notes || '',
-      status: response.data.status || 'pending',
-      jobs: response.data.jobs?.length
-        ? response.data.jobs.map(job => ({
+      customer_id: estimateData.customer_id,
+      vehicle_id: estimateData.vehicle_id,
+      is_mobile: !!estimateData.is_mobile,
+      technician_id: estimateData.technician_id,
+      expiration_date: estimateData.expiration_date,
+      tax_rate: subtotal > 0 ? (tax / subtotal) * 100 : 0,
+      call_out_fee: Number(estimateData.call_out_fee) || 0,
+      mileage_total: Number(estimateData.mileage_total) || 0,
+      discounts: Number(estimateData.discounts) || 0,
+      shop_fee: Number(estimateData.shop_fee) || 0,
+      hazmat_disposal_fee: Number(estimateData.hazmat_disposal_fee) || 0,
+      customer_notes: estimateData.customer_notes || '',
+      internal_notes: estimateData.internal_notes || '',
+      status: estimateData.status || 'pending',
+      jobs: estimateData.jobs?.length
+        ? estimateData.jobs.map(job => ({
             title: job.title || '',
             notes: job.notes || '',
             items: job.items?.length
               ? job.items.map(item => ({
                   type: item.type || 'PART',
+                  sku: item.sku || '',
+                  inventory_item_id: item.inventory_item_id || null,
                   description: item.description || '',
                   quantity: Number(item.quantity) || 1,
                   unit_price: Number(item.unit_price) || 0,
@@ -782,6 +793,8 @@ async function loadEstimate() {
               : [
                   {
                     type: 'LABOR',
+                    sku: '',
+                    inventory_item_id: null,
                     description: '',
                     quantity: 1,
                     unit_price: 0,
@@ -797,6 +810,8 @@ async function loadEstimate() {
               items: [
                 {
                   type: 'LABOR',
+                  sku: '',
+                  inventory_item_id: null,
                   description: '',
                   quantity: 1,
                   unit_price: 0,
@@ -807,6 +822,10 @@ async function loadEstimate() {
             }
           ]
     })
+
+    initialSelections.customer = estimateData.customer || null
+    initialSelections.vehicle = estimateData.vehicle || null
+    initialSelections.technician = estimateData.technician || null
 
     calculateTotals()
   } catch (error) {
@@ -898,6 +917,14 @@ function formatCurrency(amount) {
 
 async function searchCustomers(query) {
   try {
+    const normalizedQuery = String(query || '').trim()
+    if (
+      initialSelections.customer &&
+      normalizedQuery &&
+      String(initialSelections.customer.id) === normalizedQuery
+    ) {
+      return [initialSelections.customer]
+    }
     return await customerService.searchCustomers(query)
   } catch (error) {
     console.error('Customer search failed:', error)
@@ -909,6 +936,14 @@ async function searchVehicles(query) {
   if (!form.customer_id) return []
 
   try {
+    const normalizedQuery = String(query || '').trim()
+    if (
+      initialSelections.vehicle &&
+      normalizedQuery &&
+      String(initialSelections.vehicle.id) === normalizedQuery
+    ) {
+      return [initialSelections.vehicle]
+    }
     const vehicles = await customerService.getCustomerVehicles(form.customer_id)
 
     // Filter by query if provided
@@ -930,6 +965,14 @@ async function searchVehicles(query) {
 
 async function searchTechnicians(query) {
   try {
+    const normalizedQuery = String(query || '').trim()
+    if (
+      initialSelections.technician &&
+      normalizedQuery &&
+      String(initialSelections.technician.id) === normalizedQuery
+    ) {
+      return [initialSelections.technician]
+    }
     const technicians = await technicianService.searchTechnicians(query || '')
     return technicians || []
   } catch (error) {
