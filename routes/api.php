@@ -2051,6 +2051,24 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->post('/api/estimates/{id}/approve', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reason = $request->body()['reason'] ?? null;
+
+            $data = $estimateController->approve($user, $id, $reason);
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates/{id}/decline', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reason = $request->body()['reason'] ?? null;
+
+            $data = $estimateController->reject($user, $id, $reason);
+            return Response::json($data);
+        });
+
         $router->patch('/api/estimates/{id}/items/status', function (Request $request) use ($estimateController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
