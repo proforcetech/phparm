@@ -2301,12 +2301,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $signatureStmt->execute(['id' => $estimate['id']]);
             $hasSignature = (int) $signatureStmt->fetchColumn() > 0;
 
+            // Get estimate terms from settings
+            $settingsRepo = new \App\Support\SettingsRepository($connection);
+            $estimateTerms = $settingsRepo->get('documents.terms.estimates') ?? '';
+
             return Response::json([
                 'estimate' => $estimate,
                 'customer' => $customer ?: null,
                 'vehicle' => $vehicle ?: null,
                 'jobs' => $jobs,
                 'has_signature' => $hasSignature,
+                'terms' => $estimateTerms,
             ]);
         } catch (\RuntimeException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
@@ -2485,6 +2490,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $signatureStmt->execute(['id' => $estimate->id]);
         $hasSignature = (int) $signatureStmt->fetchColumn() > 0;
 
+        // Get estimate terms from settings
+        $settingsRepo = new \App\Support\SettingsRepository($connection);
+        $estimateTerms = $settingsRepo->get('documents.terms.estimates') ?? '';
+
         return Response::json([
             'estimate' => $estimate->toArray(),
             'customer' => $customer ?: null,
@@ -2492,6 +2501,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             'jobs' => $jobs,
             'short_code' => $shortCode,
             'has_signature' => $hasSignature,
+            'terms' => $estimateTerms,
         ]);
     });
 

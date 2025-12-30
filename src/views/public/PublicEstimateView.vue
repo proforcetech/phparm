@@ -110,7 +110,8 @@
             <div v-if="canTakeAction && jobNeedsResponse(job)" class="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
               <button
                 @click="approveJob(job)"
-                :disabled="submitting"
+                :disabled="submitting || termsRequired"
+                :title="termsRequired ? 'Please agree to the terms and conditions first' : ''"
                 class="bg-green-600 text-white text-sm py-1.5 px-4 rounded font-medium hover:bg-green-700 disabled:opacity-50"
               >
                 Approve Job
@@ -154,6 +155,26 @@
           <p class="text-gray-600 whitespace-pre-wrap">{{ estimate.customer_notes }}</p>
         </div>
 
+        <!-- Terms & Conditions -->
+        <div v-if="estimateTerms && canTakeAction" class="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-3">Terms & Conditions</h2>
+          <div
+            class="border border-gray-200 rounded-lg p-4 max-h-48 overflow-y-auto bg-gray-50 text-sm text-gray-700 terms-content"
+            v-html="estimateTerms"
+          ></div>
+          <div class="mt-4 flex items-start gap-2">
+            <input
+              id="terms-agreement"
+              v-model="termsAgreed"
+              type="checkbox"
+              class="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <label for="terms-agreement" class="text-sm text-gray-700">
+              I have read and agree to the terms and conditions stated above.
+            </label>
+          </div>
+        </div>
+
         <!-- Actions (if estimate is pending/sent and has pending jobs) -->
         <div v-if="canTakeAction && hasPendingJobs" class="bg-white shadow rounded-lg p-6">
           <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
@@ -161,12 +182,18 @@
             You can approve or reject individual jobs above, or use the buttons below to respond to all remaining jobs at once.
           </p>
 
+          <!-- Terms agreement reminder -->
+          <p v-if="termsRequired" class="text-amber-600 text-sm mb-4">
+            Please agree to the terms and conditions above before proceeding.
+          </p>
+
           <div class="flex gap-4">
             <!-- Single-job estimate: Accept opens signature modal -->
             <button
               v-if="isSingleJobEstimate"
               @click="openSignatureModal('accept')"
-              :disabled="submitting"
+              :disabled="submitting || termsRequired"
+              :title="termsRequired ? 'Please agree to the terms and conditions first' : ''"
               class="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
             >
               {{ submitting ? 'Processing...' : 'Accept & Sign Estimate' }}
@@ -175,7 +202,8 @@
             <button
               v-else
               @click="approveAllPendingJobs"
-              :disabled="submitting"
+              :disabled="submitting || termsRequired"
+              :title="termsRequired ? 'Please agree to the terms and conditions first' : ''"
               class="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
             >
               {{ submitting ? 'Processing...' : 'Approve All Remaining Jobs' }}
@@ -197,9 +225,13 @@
             You have approved {{ jobApprovalStats?.approved }} of {{ jobApprovalStats?.total }} jobs.
             Please sign below to complete your approval.
           </p>
+          <p v-if="termsRequired" class="text-amber-600 text-sm mb-4">
+            Please agree to the terms and conditions above before signing.
+          </p>
           <button
             @click="openSignatureModal('sign')"
-            :disabled="submitting"
+            :disabled="submitting || termsRequired"
+            :title="termsRequired ? 'Please agree to the terms and conditions first' : ''"
             class="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50"
           >
             {{ submitting ? 'Processing...' : 'Sign to Complete' }}
@@ -412,6 +444,8 @@ const jobs = ref([])
 const token = ref('')
 const shortCode = ref('')
 const hasExistingSignature = ref(false)
+const estimateTerms = ref('')
+const termsAgreed = ref(false)
 
 const submitting = ref(false)
 const showDeclineModal = ref(false)
@@ -526,6 +560,11 @@ const canSubmitSignature = computed(() => {
   return signatureForm.name.trim() !== '' && hasSignature.value && signatureForm.legalConsent
 })
 
+// Check if terms need to be agreed to before taking action
+const termsRequired = computed(() => {
+  return estimateTerms.value && estimateTerms.value.trim() !== '' && !termsAgreed.value
+})
+
 // Check if a job hasn't been approved or rejected yet
 function jobNeedsResponse(job) {
   return job.customer_status !== 'approved' && job.customer_status !== 'rejected'
@@ -589,6 +628,9 @@ async function loadEstimate() {
     vehicle.value = response.data.vehicle
     jobs.value = response.data.jobs || []
     hasExistingSignature.value = response.data.has_signature || false
+    estimateTerms.value = response.data.terms || ''
+    // Reset terms agreement when loading a new estimate
+    termsAgreed.value = false
   } catch (err) {
     console.error('Failed to load estimate:', err)
     error.value = err.response?.data?.error || err.message || 'Failed to load estimate'
