@@ -93,7 +93,7 @@
 
     <!-- Workorders Table -->
     <Card>
-      <Table :columns="columns" :data="workorders" :loading="loading" hoverable>
+      <Table :columns="columns" :data="workorders" :loading="loading" hoverable @row-click="onRowClick">
         <template #cell-number="{ row }">
           <router-link
             :to="`/cp/workorders/${row.id}`"
@@ -135,7 +135,7 @@
         </template>
 
         <template #cell-actions="{ row }">
-          <div class="flex gap-2">
+          <div class="flex gap-2" @click.stop>
             <Button
               variant="ghost"
               size="sm"
@@ -416,6 +416,10 @@ function previousPage() {
 
 function viewWorkorder(id) {
   router.push(`/cp/workorders/${id}`)
+}
+
+function onRowClick(row) {
+  router.push(`/cp/workorders/${row.id}`)
 }
 
 async function startWorkorder(workorder) {
