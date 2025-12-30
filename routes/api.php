@@ -2241,6 +2241,26 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
+    // Public estimate rejection reasons
+    $router->get('/api/public/estimate/rejection-reasons', function () use ($connection) {
+        $settingsRepo = new \App\Support\SettingsRepository($connection);
+        $reasons = $settingsRepo->get('estimates.rejection_reasons');
+
+        // Default reasons if not configured
+        if (empty($reasons) || !is_array($reasons)) {
+            $reasons = [
+                'Price too high',
+                'Found a better deal elsewhere',
+                'Decided not to proceed with repairs',
+                'Going to a different shop',
+                'Vehicle no longer owned',
+                'Other'
+            ];
+        }
+
+        return Response::json(['reasons' => $reasons]);
+    });
+
     // Public estimate routes
     $router->get('/api/public/estimate', function (Request $request) use ($connection, $auditLogger) {
         $token = $request->queryParam('token');
