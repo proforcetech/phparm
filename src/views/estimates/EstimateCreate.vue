@@ -455,24 +455,42 @@ async function loadEstimate() {
   try {
     loading.value = true
     const response = await estimateService.getEstimate(route.params.id)
-    Object.assign(form, response.data, {
-      is_mobile: !!response.data.is_mobile,
-      line_items: response.data.line_items?.length
-        ? response.data.line_items.map(item => ({
-            description: item.description || '',
-            quantity: Number(item.quantity) || 1,
-            unit_price: Number(item.unit_price) || 0,
-            notes: item.notes || ''
-          }))
-        : [
-            {
-              description: '',
-              quantity: 1,
-              unit_price: 0,
-              notes: ''
-            }
-          ]
-    })
+    console.log('Load estimate response:', response)
+
+    // Handle different response structures
+    const estimateData = response.data?.data || response.data
+    console.log('Estimate data:', estimateData)
+
+    if (!estimateData) {
+      throw new Error('No estimate data returned from API')
+    }
+
+    // Populate form fields
+    form.customer_id = estimateData.customer_id || null
+    form.vehicle_id = estimateData.vehicle_id || null
+    form.is_mobile = !!estimateData.is_mobile
+    form.technician_id = estimateData.technician_id || null
+    form.expiration_date = estimateData.expiration_date || form.expiration_date
+    form.subtotal = Number(estimateData.subtotal) || 0
+    form.tax = Number(estimateData.tax) || 0
+    form.call_out_fee = Number(estimateData.call_out_fee) || 0
+    form.mileage_total = Number(estimateData.mileage_total) || 0
+    form.discounts = Number(estimateData.discounts) || 0
+    form.grand_total = Number(estimateData.grand_total) || 0
+    form.customer_notes = estimateData.customer_notes || ''
+    form.internal_notes = estimateData.internal_notes || ''
+    form.status = estimateData.status || 'pending'
+
+    // Populate line items
+    if (estimateData.line_items && estimateData.line_items.length > 0) {
+      form.line_items = estimateData.line_items.map(item => ({
+        description: item.description || '',
+        quantity: Number(item.quantity) || 1,
+        unit_price: Number(item.unit_price) || 0,
+        notes: item.notes || ''
+      }))
+    }
+
     calculateGrandTotal()
   } catch (error) {
     console.error('Failed to load estimate:', error)
