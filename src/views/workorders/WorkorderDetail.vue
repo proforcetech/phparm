@@ -447,11 +447,13 @@
           </div>
         </div>
       </template>
-      <template #actions>
-        <Button variant="outline" @click="showConvertModal = false">Cancel</Button>
-        <Button @click="confirmConvert" :disabled="converting">
-          {{ converting ? 'Converting...' : 'Convert to Invoice' }}
-        </Button>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="outline" @click="showConvertModal = false">Cancel</Button>
+          <Button @click="confirmConvert" :disabled="converting">
+            {{ converting ? 'Converting...' : 'Convert to Invoice' }}
+          </Button>
+        </div>
       </template>
     </Modal>
 
@@ -469,11 +471,13 @@
           />
         </div>
       </template>
-      <template #actions>
-        <Button variant="outline" @click="showAssignModal = false">Cancel</Button>
-        <Button @click="confirmAssign" :disabled="assigning">
-          {{ assigning ? 'Assigning...' : 'Assign' }}
-        </Button>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="outline" @click="showAssignModal = false">Cancel</Button>
+          <Button @click="confirmAssign" :disabled="assigning">
+            {{ assigning ? 'Assigning...' : 'Assign' }}
+          </Button>
+        </div>
       </template>
     </Modal>
 
@@ -494,11 +498,13 @@
           />
         </div>
       </template>
-      <template #actions>
-        <Button variant="outline" @click="showJobAssign = false">Cancel</Button>
-        <Button @click="confirmJobAssign" :disabled="assigning">
-          {{ assigning ? 'Assigning...' : 'Assign' }}
-        </Button>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="outline" @click="showJobAssign = false">Cancel</Button>
+          <Button @click="confirmJobAssign" :disabled="assigning">
+            {{ assigning ? 'Assigning...' : 'Assign' }}
+          </Button>
+        </div>
       </template>
     </Modal>
 
@@ -515,11 +521,13 @@
           />
         </div>
       </template>
-      <template #actions>
-        <Button variant="outline" @click="showPriorityModal = false">Cancel</Button>
-        <Button @click="confirmPriority" :disabled="updatingPriority">
-          {{ updatingPriority ? 'Updating...' : 'Update Priority' }}
-        </Button>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="outline" @click="showPriorityModal = false">Cancel</Button>
+          <Button @click="confirmPriority" :disabled="updatingPriority">
+            {{ updatingPriority ? 'Updating...' : 'Update Priority' }}
+          </Button>
+        </div>
       </template>
     </Modal>
 
@@ -612,11 +620,13 @@
           </Button>
         </div>
       </template>
-      <template #actions>
-        <Button variant="outline" @click="showSubEstimateModal = false">Cancel</Button>
-        <Button @click="confirmSubEstimate" :disabled="creatingSubEstimate || !isSubEstimateValid">
-          {{ creatingSubEstimate ? 'Creating...' : 'Create Sub-Estimate' }}
-        </Button>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="outline" @click="showSubEstimateModal = false">Cancel</Button>
+          <Button @click="confirmSubEstimate" :disabled="creatingSubEstimate || !isSubEstimateValid">
+            {{ creatingSubEstimate ? 'Creating...' : 'Create Sub-Estimate' }}
+          </Button>
+        </div>
       </template>
     </Modal>
   </div>
