@@ -2711,7 +2711,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             // Enrich with vehicle data
             if (!empty($data['vehicle_id'])) {
-                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate, CONCAT(year, " ", make, " ", model) AS display_name FROM vehicles WHERE id = :id');
+                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate, CONCAT(year, " ", make, " ", model) AS display_name FROM customer_vehicles WHERE id = :id');
                 $stmt->execute(['id' => $data['vehicle_id']]);
                 $vehicle = $stmt->fetch(\PDO::FETCH_ASSOC);
                 if ($vehicle) {
