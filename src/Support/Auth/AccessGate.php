@@ -18,6 +18,11 @@ class AccessGate
         return $this->permissions->hasPermission($user->role, $permission);
     }
 
+    public function check(User $user, string $permission): bool
+    {
+        return $this->can($user, $permission);
+    }
+
     public function assert(User $user, string $permission): void
     {
         error_log("AccessGate::assert - User role: {$user->role}, Permission: {$permission}");

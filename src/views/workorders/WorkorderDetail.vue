@@ -207,7 +207,7 @@
               >
                 <div class="flex items-start justify-between mb-2">
                   <div>
-                    <h4 class="font-medium text-gray-900">{{ job.description }}</h4>
+                    <h4 class="font-medium text-gray-900">{{ job.title || job.description }}</h4>
                     <p v-if="job.notes" class="text-sm text-gray-500 mt-1">{{ job.notes }}</p>
                   </div>
                   <div class="flex items-center gap-2">
@@ -236,7 +236,7 @@
                         </td>
                         <td class="py-1 text-right">{{ item.quantity }}</td>
                         <td class="py-1 text-right">{{ formatCurrency(item.unit_price) }}</td>
-                        <td class="py-1 text-right">{{ formatCurrency(item.total) }}</td>
+                        <td class="py-1 text-right">{{ formatCurrency(getItemLineTotal(item)) }}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -620,11 +620,21 @@
     <Modal v-model="showSubEstimateModal" @close="showSubEstimateModal = false" size="lg">
       <template #title>Create Sub-Estimate for Additional Work</template>
       <template #content>
-        <div class="space-y-4">
+        <div class="space-y-6">
           <Alert variant="info">
             Create a sub-estimate for additional work discovered during repair.
             The customer will need to approve this before work can proceed.
           </Alert>
+
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-medium text-gray-700">Jobs</h4>
+            <Button variant="outline" size="sm" @click="addSubEstimateJob" type="button">
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Job
+            </Button>
+          </div>
 
           <div v-for="(job, idx) in subEstimateForm.jobs" :key="idx" class="border border-gray-200 rounded-lg p-4">
             <div class="flex items-start justify-between mb-3">
@@ -634,6 +644,7 @@
                 variant="ghost"
                 size="sm"
                 @click="removeSubEstimateJob(idx)"
+                type="button"
               >
                 <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -643,61 +654,169 @@
 
             <div class="space-y-3">
               <div>
-                <label class="block text-sm font-medium text-gray-700">Description *</label>
                 <Input
-                  v-model="job.description"
-                  placeholder="Job description"
-                  class="mt-1"
+                  v-model="job.title"
+                  label="Job Title *"
+                  placeholder="e.g., Replace brake pads"
                   required
                 />
               </div>
 
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700">Labor Hours</label>
-                  <Input
-                    v-model.number="job.labor_hours"
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    class="mt-1"
-                  />
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700">Labor Rate</label>
-                  <Input
-                    v-model.number="job.labor_rate"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    class="mt-1"
-                  />
-                </div>
-              </div>
-
               <div>
-                <label class="block text-sm font-medium text-gray-700">Parts Cost</label>
-                <Input
-                  v-model.number="job.parts_cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  class="mt-1"
+                <Textarea
+                  v-model="job.notes"
+                  label="Job Notes"
+                  placeholder="Additional notes for this job (optional)"
+                  :rows="2"
                 />
               </div>
 
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Notes</label>
-                <textarea
-                  v-model="job.notes"
-                  rows="2"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                ></textarea>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <h5 class="text-sm font-medium text-gray-700">Line Items</h5>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    @click="addSubEstimateLineItem(idx)"
+                    type="button"
+                  >
+                    <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Item
+                  </Button>
+                </div>
+
+                <div
+                  v-for="(item, itemIndex) in job.items"
+                  :key="itemIndex"
+                  class="bg-white border border-gray-200 rounded p-3"
+                >
+                  <div class="grid grid-cols-12 gap-3">
+                    <div class="col-span-12 md:col-span-2">
+                      <Select
+                        v-model="item.type"
+                        label="Type"
+                        :options="[
+                          { value: 'LABOR', label: 'Labor' },
+                          { value: 'PART', label: 'Part' }
+                        ]"
+                        required
+                        @change="onSubEstimateItemTypeChange(item)"
+                      />
+                    </div>
+
+                    <div v-if="item.type === 'PART'" class="col-span-12 md:col-span-2">
+                      <Input
+                        v-model="item.sku"
+                        label="SKU"
+                        placeholder="SKU / Part #"
+                        @blur="lookupSubEstimateSku(item)"
+                      />
+                    </div>
+
+                    <div :class="item.type === 'PART' ? 'col-span-12 md:col-span-4' : 'col-span-12 md:col-span-6'">
+                      <Autocomplete
+                        v-if="item.type === 'PART'"
+                        v-model="item.description"
+                        label="Description"
+                        placeholder="Search or enter part description..."
+                        :search-fn="(query) => searchSubEstimateInventoryParts(query)"
+                        :item-value="(inv) => inv.name"
+                        :item-label="(inv) => inv.name"
+                        :item-subtext="(inv) => inv.sku ? `SKU: ${inv.sku}` : ''"
+                        @select="(inv) => selectSubEstimateInventoryItem(item, inv)"
+                        required
+                        free-text
+                      />
+                      <Input
+                        v-else
+                        v-model="item.description"
+                        label="Description"
+                        placeholder="Describe the work"
+                        required
+                      />
+                    </div>
+
+                    <div class="col-span-6 md:col-span-2">
+                      <Input
+                        v-model.number="item.quantity"
+                        type="number"
+                        label="Qty"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+
+                    <div class="col-span-6 md:col-span-2">
+                      <Input
+                        v-model.number="item.unit_price"
+                        type="number"
+                        label="Unit Price"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+
+                    <div v-if="item.type === 'PART'" class="col-span-6 md:col-span-2">
+                      <Input
+                        v-model.number="item.list_price"
+                        type="number"
+                        label="List"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+
+                    <div class="col-span-6 md:col-span-2 flex items-end">
+                      <label class="flex items-center gap-2 text-xs">
+                        <input v-model="item.taxable" type="checkbox" class="h-4 w-4 text-indigo-600 rounded" />
+                        <span>Tax</span>
+                      </label>
+                    </div>
+
+                    <div class="col-span-6 md:col-span-2 flex items-end justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        @click="removeSubEstimateLineItem(idx, itemIndex)"
+                        type="button"
+                        :disabled="job.items.length === 1"
+                      >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </Button>
+                    </div>
+
+                    <div class="col-span-12 flex items-center justify-between text-sm">
+                      <span class="text-gray-600">Line Total:</span>
+                      <span class="font-semibold">{{ formatCurrency(calculateSubEstimateLineTotal(item)) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-gray-300 flex justify-between text-sm font-medium">
+                <span>Job Subtotal:</span>
+                <span>{{ formatCurrency(calculateSubEstimateJobSubtotal(job)) }}</span>
               </div>
             </div>
           </div>
 
-          <Button variant="outline" @click="addSubEstimateJob" class="w-full">
+          <div class="border border-gray-200 rounded-lg p-4">
+            <label class="block text-sm font-medium text-gray-700">Tax Rate (%)</label>
+            <Input v-model.number="subEstimateForm.tax_rate" type="number" min="0" step="0.01" class="mt-1" />
+          </div>
+
+          <Button variant="outline" @click="addSubEstimateJob" class="w-full" type="button">
             <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
@@ -841,6 +960,7 @@ import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
 import Modal from '@/components/ui/Modal.vue'
 import Autocomplete from '@/components/ui/Autocomplete.vue'
+import Textarea from '@/components/ui/Textarea.vue'
 import workorderService from '@/services/workorder.service'
 import userService from '@/services/user.service'
 import pullRequestService from '@/services/pull-request.service'
@@ -859,6 +979,27 @@ const subEstimates = ref([])
 const statusHistory = ref([])
 const technicians = ref([])
 const pullRequests = ref([])
+
+function createSubEstimateItem() {
+  return {
+    type: 'LABOR',
+    sku: '',
+    inventory_item_id: null,
+    description: '',
+    quantity: 1,
+    unit_price: 0,
+    list_price: null,
+    taxable: true,
+  }
+}
+
+function createSubEstimateJob() {
+  return {
+    title: '',
+    notes: '',
+    items: [createSubEstimateItem()],
+  }
+}
 
 // Modal states
 const showConvertModal = ref(false)
@@ -894,7 +1035,8 @@ const pullRequestForm = reactive({
 const jobAssignForm = reactive({ technician_id: '' })
 const priorityForm = reactive({ priority: '' })
 const subEstimateForm = reactive({
-  jobs: [{ description: '', labor_hours: 0, labor_rate: 85, parts_cost: 0, notes: '' }]
+  tax_rate: 0,
+  jobs: [createSubEstimateJob()]
 })
 
 const technicianOptions = ref([{ value: '', label: 'Unassigned' }])
@@ -911,13 +1053,17 @@ const completedJobsCount = computed(() => {
 })
 
 const isSubEstimateValid = computed(() => {
-  return subEstimateForm.jobs.every(j => j.description && j.description.trim() !== '')
+  return subEstimateForm.jobs.every((job) => {
+    if (!job.title || !job.title.trim()) return false
+    if (!job.items.length) return false
+    return job.items.every((item) => item.description && item.description.trim() !== '')
+  })
 })
 
 const jobOptions = computed(() => {
   return [
     { value: '', label: 'No specific job' },
-    ...jobs.value.map(j => ({ value: j.id, label: j.description }))
+    ...jobs.value.map(j => ({ value: j.id, label: j.title || j.description }))
   ]
 })
 
@@ -1192,31 +1338,110 @@ async function confirmConvert() {
 }
 
 function addSubEstimateJob() {
-  subEstimateForm.jobs.push({
-    description: '',
-    labor_hours: 0,
-    labor_rate: 85,
-    parts_cost: 0,
-    notes: ''
-  })
+  subEstimateForm.jobs.push(createSubEstimateJob())
 }
 
 function removeSubEstimateJob(idx) {
   subEstimateForm.jobs.splice(idx, 1)
 }
 
+function addSubEstimateLineItem(jobIndex) {
+  subEstimateForm.jobs[jobIndex].items.push(createSubEstimateItem())
+}
+
+function removeSubEstimateLineItem(jobIndex, itemIndex) {
+  subEstimateForm.jobs[jobIndex].items.splice(itemIndex, 1)
+}
+
+function onSubEstimateItemTypeChange(item) {
+  if (item.type === 'LABOR') {
+    item.sku = ''
+    item.inventory_item_id = null
+    item.list_price = null
+  }
+}
+
+async function lookupSubEstimateSku(item) {
+  if (!item.sku || item.sku.trim() === '') {
+    return
+  }
+
+  try {
+    const inventoryItem = await inventoryService.findBySku(item.sku.trim())
+    if (inventoryItem) {
+      populateSubEstimateFromInventory(item, inventoryItem)
+    }
+  } catch (err) {
+    console.log('SKU not found in inventory')
+  }
+}
+
+async function searchSubEstimateInventoryParts(query) {
+  if (!query || query.length < 2) {
+    return []
+  }
+
+  try {
+    const results = await inventoryService.searchParts(query, null, 10)
+    if (!results) return []
+    return Array.isArray(results) ? results : (results.data || [])
+  } catch (err) {
+    console.error('Failed to search inventory:', err)
+    return []
+  }
+}
+
+function selectSubEstimateInventoryItem(item, inventoryItem) {
+  if (inventoryItem) {
+    populateSubEstimateFromInventory(item, inventoryItem)
+  }
+}
+
+function populateSubEstimateFromInventory(item, inventoryItem) {
+  item.sku = inventoryItem.sku || ''
+  item.inventory_item_id = inventoryItem.id
+  item.description = inventoryItem.name
+  item.unit_price = inventoryItem.sale_price || 0
+  item.list_price = inventoryItem.list_price || 0
+}
+
+function calculateSubEstimateLineTotal(item) {
+  const quantity = Number(item.quantity) || 0
+  const unitPrice = Number(item.unit_price) || 0
+  return quantity * unitPrice
+}
+
+function calculateSubEstimateJobSubtotal(job) {
+  return job.items.reduce((sum, item) => sum + calculateSubEstimateLineTotal(item), 0)
+}
+
 async function confirmSubEstimate() {
   try {
     creatingSubEstimate.value = true
     await workorderService.createSubEstimate(workorder.value.id, {
-      jobs: subEstimateForm.jobs
+      jobs: subEstimateForm.jobs.map((job) => ({
+        title: job.title,
+        notes: job.notes,
+        items: job.items.map((item) => ({
+          type: item.type,
+          sku: item.sku || null,
+          inventory_item_id: item.inventory_item_id || null,
+          description: item.description,
+          quantity: Number(item.quantity) || 0,
+          unit_price: Number(item.unit_price) || 0,
+          list_price: item.list_price !== null && item.list_price !== '' ? Number(item.list_price) : null,
+          taxable: item.taxable !== false,
+        })),
+      })),
+      tax_rate: (Number(subEstimateForm.tax_rate) || 0) / 100,
     })
 
     toast.success('Sub-estimate created successfully')
     showSubEstimateModal.value = false
 
     // Reset form
-    subEstimateForm.jobs = [{ description: '', labor_hours: 0, labor_rate: 85, parts_cost: 0, notes: '' }]
+    subEstimateForm.tax_rate = 0
+    subEstimateForm.jobs = [createSubEstimateJob()]
 
     loadWorkorder()
   } catch (err) {
@@ -1309,6 +1534,15 @@ function formatCurrency(amount) {
     style: 'currency',
     currency: 'USD'
   }).format(amount || 0)
+}
+
+function getItemLineTotal(item) {
+  if (item?.line_total !== undefined && item?.line_total !== null) {
+    return item.line_total
+  }
+  const quantity = Number(item?.quantity) || 0
+  const unitPrice = Number(item?.unit_price) || 0
+  return quantity * unitPrice
 }
 
 function formatDate(date) {
