@@ -1121,8 +1121,9 @@ async function loadPullRequests() {
 async function searchInventory(query) {
   if (!query || query.length < 2) return []
   try {
-    const response = await inventoryService.searchParts(query, null, 10)
-    return response.data || []
+    const results = await inventoryService.searchParts(query, null, 10)
+    if (!results) return []
+    return Array.isArray(results) ? results : (results.data || [])
   } catch (err) {
     console.error('Failed to search inventory:', err)
     return []
