@@ -702,11 +702,35 @@
                           { value: 'PART', label: 'Part' }
                         ]"
                         required
+                        @change="onSubEstimateItemTypeChange(item)"
                       />
                     </div>
 
-                    <div :class="item.type === 'PART' ? 'col-span-12 md:col-span-4' : 'col-span-12 md:col-span-6'">
+                    <div v-if="item.type === 'PART'" class="col-span-12 md:col-span-2">
                       <Input
+                        v-model="item.sku"
+                        label="SKU"
+                        placeholder="SKU / Part #"
+                        @blur="lookupSubEstimateBySku(item)"
+                      />
+                    </div>
+
+                    <div :class="item.type === 'PART' ? 'col-span-12 md:col-span-2' : 'col-span-12 md:col-span-4'">
+                      <Autocomplete
+                        v-if="item.type === 'PART'"
+                        v-model="item.description"
+                        label="Description"
+                        placeholder="Search or enter part description..."
+                        :search-fn="(query) => searchSubEstimateParts(query)"
+                        :item-value="(inv) => inv.name"
+                        :item-label="(inv) => inv.name"
+                        :item-subtext="(inv) => inv.sku ? `SKU: ${inv.sku}` : ''"
+                        @select="(inv) => onSubEstimateInventorySelect(item, inv)"
+                        required
+                        free-text
+                      />
+                      <Input
+                        v-else
                         v-model="item.description"
                         label="Description"
                         placeholder="Describe the work or part"
@@ -714,7 +738,7 @@
                       />
                     </div>
 
-                    <div class="col-span-6 md:col-span-2">
+                    <div class="col-span-6 md:col-span-1">
                       <Input
                         v-model.number="item.quantity"
                         type="number"
@@ -736,7 +760,7 @@
                       />
                     </div>
 
-                    <div v-if="item.type === 'PART'" class="col-span-6 md:col-span-2">
+                    <div v-if="item.type === 'PART'" class="col-span-6 md:col-span-1">
                       <Input
                         v-model.number="item.list_price"
                         type="number"
@@ -746,14 +770,14 @@
                       />
                     </div>
 
-                    <div class="col-span-6 md:col-span-2 flex items-end">
+                    <div class="col-span-6 md:col-span-1 flex items-end">
                       <label class="flex items-center gap-2 text-xs">
                         <input v-model="item.taxable" type="checkbox" class="h-4 w-4 text-indigo-600 rounded" />
                         <span>Tax</span>
                       </label>
                     </div>
 
-                    <div class="col-span-6 md:col-span-2 flex items-end justify-end">
+                    <div class="col-span-6 md:col-span-1 flex items-end justify-end">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -959,10 +983,12 @@ const pullRequests = ref([])
 function createSubEstimateItem() {
   return {
     type: 'LABOR',
+    sku: '',
+    inventory_item_id: null,
     description: '',
     quantity: 1,
     unit_price: 0,
-    list_price: null,
+    list_price: 0,
     taxable: true,
   }
 }
@@ -1327,6 +1353,58 @@ function removeSubEstimateLineItem(jobIndex, itemIndex) {
   subEstimateForm.jobs[jobIndex].items.splice(itemIndex, 1)
 }
 
+function onSubEstimateItemTypeChange(item) {
+  if (item.type === 'LABOR') {
+    item.sku = ''
+    item.inventory_item_id = null
+    item.list_price = 0
+  }
+}
+
+async function lookupSubEstimateBySku(item) {
+  if (!item.sku || item.sku.trim() === '') {
+    return
+  }
+
+  try {
+    const inventoryItem = await inventoryService.findBySku(item.sku.trim())
+    if (inventoryItem) {
+      populateSubEstimateFromInventory(item, inventoryItem)
+    }
+  } catch (err) {
+    console.log('SKU not found in inventory')
+  }
+}
+
+async function searchSubEstimateParts(query) {
+  if (!query || query.length < 2) {
+    return []
+  }
+
+  try {
+    const results = await inventoryService.searchParts(query, null)
+    if (!results) return []
+    return Array.isArray(results) ? results : (results.data || [])
+  } catch (err) {
+    console.error('Failed to search inventory:', err)
+    return []
+  }
+}
+
+function onSubEstimateInventorySelect(item, inventoryItem) {
+  if (inventoryItem) {
+    populateSubEstimateFromInventory(item, inventoryItem)
+  }
+}
+
+function populateSubEstimateFromInventory(item, inventoryItem) {
+  item.sku = inventoryItem.sku || ''
+  item.inventory_item_id = inventoryItem.id
+  item.description = inventoryItem.name
+  item.unit_price = inventoryItem.sale_price || 0
+  item.list_price = inventoryItem.list_price || 0
+}
+
 function calculateSubEstimateLineTotal(item) {
   const quantity = Number(item.quantity) || 0
   const unitPrice = Number(item.unit_price) || 0
@@ -1346,6 +1424,8 @@ async function confirmSubEstimate() {
         notes: job.notes,
         items: job.items.map((item) => ({
           type: item.type,
+          sku: item.sku || null,
+          inventory_item_id: item.inventory_item_id || null,
           description: item.description,
           quantity: Number(item.quantity) || 0,
           unit_price: Number(item.unit_price) || 0,
