@@ -23,7 +23,7 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
     {
         $sql = "SELECT pr.*,
                 w.number as workorder_number,
-                wj.description as job_description,
+                wj.title as job_description,
                 ii.name as inventory_item_name,
                 u1.name as requested_by_name,
                 u2.name as fulfilled_by_name
@@ -85,7 +85,7 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
         // Fetch items
         $sql = "SELECT pr.*,
                 w.number as workorder_number,
-                wj.description as job_description,
+                wj.title as job_description,
                 ii.name as inventory_item_name,
                 u1.name as requested_by_name,
                 u2.name as fulfilled_by_name
@@ -123,7 +123,7 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
     {
         $sql = "SELECT pr.*,
                 w.number as workorder_number,
-                wj.description as job_description,
+                wj.title as job_description,
                 ii.name as inventory_item_name,
                 u1.name as requested_by_name,
                 u2.name as fulfilled_by_name
