@@ -1849,7 +1849,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Find inventory by SKU (for auto-populate)
-        $router->get('/api/inventory/by-sku/{sku}', function (Request $request) use ($inventoryController) {
+        $router->get('/api/inventory/by-sku', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $sku = (string) $request->queryParam('sku');
+
+            if ($sku === '') {
+                return Response::json(['error' => 'SKU is required'], 422);
+            }
+
+            $data = $inventoryController->findBySku($user, $sku);
+            if ($data === null) {
+                return Response::json(['error' => 'Item not found'], 404);
+            }
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/by-sku/{sku:.+}', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
             $sku = (string) $request->getAttribute('sku');
 

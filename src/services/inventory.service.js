@@ -53,7 +53,9 @@ export default {
    * @returns {Promise}
    */
   async findBySku(sku) {
-    const response = await api.get(`/inventory/by-sku/${encodeURIComponent(sku)}`)
+    const response = await api.get('/inventory/by-sku', {
+      params: { sku }
+    })
     return response.data
   },
 
