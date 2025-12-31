@@ -102,15 +102,16 @@
         @row-click="onRowClick"
       >
         <template #cell-number="{ row }">
-          <div class="flex items-center gap-2" :class="row.is_sub_workorder ? 'pl-6 text-gray-600' : ''">
-            <span v-if="row.is_sub_workorder" class="text-gray-400">↳</span>
+          <div class="flex items-center gap-2" :class="row.is_sub_workorder ? 'pl-8 text-gray-600' : ''">
+            <span v-if="row.is_sub_workorder" class="text-gray-400 mr-1">└─</span>
             <router-link
               :to="row.is_sub_workorder ? `/cp/estimates/${row.id}` : `/cp/workorders/${row.id}`"
-              class="text-primary-600 hover:text-primary-800 font-medium"
+              class="font-medium"
+              :class="row.is_sub_workorder ? 'text-blue-600 hover:text-blue-800' : 'text-primary-600 hover:text-primary-800'"
             >
               {{ row.number }}
             </router-link>
-            <span v-if="row.is_sub_workorder" class="text-xs text-gray-400">Sub-workorder</span>
+            <span v-if="row.is_sub_workorder" class="text-xs text-gray-500 italic">(Sub)</span>
           </div>
         </template>
 
@@ -521,8 +522,11 @@ async function confirmConvert() {
 }
 
 function getTechnicianName(id) {
-  const tech = technicians.value.find(t => t.id === id)
-  return tech?.name || 'Unassigned'
+  if (!id) return 'Unassigned'
+  // Convert both IDs to numbers for comparison to handle type mismatches
+  const numId = Number(id)
+  const tech = technicians.value.find(t => Number(t.id) === numId)
+  return tech?.name || `Unknown (ID: ${id})`
 }
 
 function getStatusVariant(status) {
