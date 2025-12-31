@@ -58,21 +58,32 @@ return function (Router $router, array $config, $connection) {
     $settingsRepository->seedDefaults($config['settings']['defaults']);
 
     $recaptchaConfigLoader = function () use ($settingsRepository, $config): array {
-        return [
-            'enabled' => (bool) $settingsRepository->get(
-                'integrations.recaptcha.enabled',
-                $config['recaptcha']['enabled'] ?? false
-            ),
-            'site_key' => $settingsRepository->get('integrations.recaptcha.site_key', $config['recaptcha']['site_key'] ?? null),
-            'secret_key' => $settingsRepository->get(
-                'integrations.recaptcha.secret_key',
-                $config['recaptcha']['secret_key'] ?? null
-            ),
-            'score_threshold' => (float) $settingsRepository->get(
-                'integrations.recaptcha.score_threshold',
-                $config['recaptcha']['score_threshold'] ?? 0.5
-            ),
-        ];
+        $fallback = $config['recaptcha'] ?? [];
+
+        try {
+            return [
+                'enabled' => (bool) $settingsRepository->get(
+                    'integrations.recaptcha.enabled',
+                    $fallback['enabled'] ?? false
+                ),
+                'site_key' => $settingsRepository->get('integrations.recaptcha.site_key', $fallback['site_key'] ?? null),
+                'secret_key' => $settingsRepository->get(
+                    'integrations.recaptcha.secret_key',
+                    $fallback['secret_key'] ?? null
+                ),
+                'score_threshold' => (float) $settingsRepository->get(
+                    'integrations.recaptcha.score_threshold',
+                    $fallback['score_threshold'] ?? 0.5
+                ),
+            ];
+        } catch (Throwable $e) {
+            return [
+                'enabled' => (bool) ($fallback['enabled'] ?? false),
+                'site_key' => $fallback['site_key'] ?? null,
+                'secret_key' => $fallback['secret_key'] ?? null,
+                'score_threshold' => (float) ($fallback['score_threshold'] ?? 0.5),
+            ];
+        }
     };
 
     $recaptchaVerifier = function () use ($recaptchaConfigLoader): RecaptchaVerifier {
