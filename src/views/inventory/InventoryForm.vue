@@ -80,14 +80,37 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Stock quantity</label>
-            <Input v-model.number="form.stock_quantity" type="number" min="0" placeholder="50" />
+        <!-- Inventory Tracking Toggle -->
+        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <div class="flex items-start">
+            <div class="flex items-center h-5">
+              <input
+                id="is_tracked"
+                v-model="form.is_tracked"
+                type="checkbox"
+                class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+            </div>
+            <div class="ml-3">
+              <label for="is_tracked" class="font-medium text-gray-900">Track Inventory</label>
+              <p class="text-sm text-gray-500">
+                {{ form.is_tracked
+                  ? 'Stock quantity is tracked. Low stock alerts are enabled.'
+                  : 'Catalog item only. No stock tracking or alerts. Useful for items ordered as-needed.'
+                }}
+              </p>
+            </div>
           </div>
-          <div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div :class="{ 'opacity-50': !form.is_tracked }">
+            <label class="block text-sm font-medium text-gray-700">Stock quantity</label>
+            <Input v-model.number="form.stock_quantity" type="number" min="0" placeholder="50" :disabled="!form.is_tracked" />
+          </div>
+          <div :class="{ 'opacity-50': !form.is_tracked }">
             <label class="block text-sm font-medium text-gray-700">Low stock threshold</label>
-            <Input v-model.number="form.low_stock_threshold" type="number" min="0" placeholder="5" />
+            <Input v-model.number="form.low_stock_threshold" type="number" min="0" placeholder="5" :disabled="!form.is_tracked" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Markup (%)</label>
@@ -239,6 +262,7 @@ const form = reactive({
   sale_price: 0,
   list_price: 0,
   notes: '',
+  is_tracked: true,
 })
 
 const isInitializing = ref(true)

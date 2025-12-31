@@ -291,6 +291,91 @@
             </div>
           </Card>
 
+          <!-- Pull Requests (Parts/Supplies) -->
+          <Card>
+            <template #header>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg font-medium text-gray-900">Parts & Supplies</h3>
+                <Button variant="outline" size="sm" @click="showPullRequestModal = true">
+                  <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Request Part
+                </Button>
+              </div>
+            </template>
+
+            <div v-if="pullRequests.length === 0" class="text-center py-4 text-gray-500">
+              No parts requested yet
+            </div>
+
+            <div v-else class="space-y-3">
+              <div
+                v-for="pr in pullRequests"
+                :key="pr.id"
+                class="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                :class="{
+                  'bg-green-50 border-green-200': pr.status === 'pulled' || pr.status === 'received',
+                  'bg-yellow-50 border-yellow-200': pr.status === 'ordered',
+                  'bg-red-50 border-red-200': pr.status === 'cancelled'
+                }"
+              >
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-gray-900">{{ pr.description }}</span>
+                    <Badge :variant="pr.request_type === 'pull' ? 'success' : 'warning'" size="sm">
+                      {{ pr.request_type === 'pull' ? 'In Stock' : 'Order' }}
+                    </Badge>
+                    <Badge :variant="getPullRequestStatusVariant(pr.status)" size="sm">
+                      {{ formatStatus(pr.status) }}
+                    </Badge>
+                  </div>
+                  <p class="text-sm text-gray-500 mt-1">
+                    Qty: {{ pr.quantity_fulfilled }}/{{ pr.quantity_requested }}
+                    <span v-if="pr.sku" class="ml-2">SKU: {{ pr.sku }}</span>
+                    <span class="ml-2">{{ formatCurrency(pr.unit_price) }} each</span>
+                  </p>
+                </div>
+                <div class="flex gap-2">
+                  <Button
+                    v-if="pr.status === 'pending' && pr.request_type === 'pull'"
+                    size="sm"
+                    variant="success"
+                    @click="pullFromStock(pr)"
+                  >
+                    Pull
+                  </Button>
+                  <Button
+                    v-if="pr.status === 'pending' && pr.request_type === 'order'"
+                    size="sm"
+                    variant="primary"
+                    @click="markAsOrdered(pr)"
+                  >
+                    Order
+                  </Button>
+                  <Button
+                    v-if="pr.status === 'ordered'"
+                    size="sm"
+                    variant="success"
+                    @click="markAsReceived(pr)"
+                  >
+                    Received
+                  </Button>
+                  <Button
+                    v-if="['pending', 'ordered'].includes(pr.status)"
+                    size="sm"
+                    variant="ghost"
+                    @click="cancelPullRequest(pr)"
+                  >
+                    <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <!-- Sub-Estimates -->
           <Card v-if="subEstimates.length > 0">
             <template #header>
@@ -629,6 +714,118 @@
         </div>
       </template>
     </Modal>
+
+    <!-- Request Part Modal -->
+    <Modal v-model="showPullRequestModal" @close="showPullRequestModal = false" size="lg">
+      <template #title>Request Part/Supply</template>
+      <template #content>
+        <div class="space-y-4">
+          <Alert variant="info">
+            Search for an existing inventory item or enter details for a new part.
+          </Alert>
+
+          <!-- Search existing inventory -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Search Inventory</label>
+            <Autocomplete
+              v-model="pullRequestForm.selectedItem"
+              placeholder="Search by name or SKU..."
+              :search-fn="searchInventory"
+              :item-value="(item) => item.id"
+              :item-label="(item) => item.name"
+              :item-subtext="(item) => `SKU: ${item.sku || 'N/A'} | ${item.is_tracked ? `Stock: ${item.stock_quantity}` : 'Catalog Item'} | $${item.sale_price}`"
+              @select="selectInventoryItem"
+              class="mt-1"
+            />
+          </div>
+
+          <div class="border-t border-gray-200 pt-4">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700">Description *</label>
+                <Input
+                  v-model="pullRequestForm.description"
+                  placeholder="Part description"
+                  class="mt-1"
+                  required
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">SKU</label>
+                <Input
+                  v-model="pullRequestForm.sku"
+                  placeholder="SKU-1234"
+                  class="mt-1"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Quantity *</label>
+                <Input
+                  v-model.number="pullRequestForm.quantity_requested"
+                  type="number"
+                  min="1"
+                  class="mt-1"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Unit Cost</label>
+                <Input
+                  v-model.number="pullRequestForm.unit_cost"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="mt-1"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Unit Price</label>
+                <Input
+                  v-model.number="pullRequestForm.unit_price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="mt-1"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Vendor</label>
+                <Input
+                  v-model="pullRequestForm.vendor"
+                  placeholder="Vendor name"
+                  class="mt-1"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Job (Optional)</label>
+                <Select
+                  v-model="pullRequestForm.workorder_job_id"
+                  :options="jobOptions"
+                  placeholder="Select a job"
+                  class="mt-1"
+                />
+              </div>
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700">Notes</label>
+                <textarea
+                  v-model="pullRequestForm.notes"
+                  rows="2"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                  placeholder="Additional notes..."
+                ></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <Button variant="outline" @click="showPullRequestModal = false">Cancel</Button>
+          <Button @click="createPullRequest" :disabled="creatingPullRequest || !pullRequestForm.description">
+            {{ creatingPullRequest ? 'Creating...' : 'Create Request' }}
+          </Button>
+        </div>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -643,8 +840,11 @@ import Select from '@/components/ui/Select.vue'
 import Alert from '@/components/ui/Alert.vue'
 import Loading from '@/components/ui/Loading.vue'
 import Modal from '@/components/ui/Modal.vue'
+import Autocomplete from '@/components/ui/Autocomplete.vue'
 import workorderService from '@/services/workorder.service'
 import userService from '@/services/user.service'
+import pullRequestService from '@/services/pull-request.service'
+import inventoryService from '@/services/inventory.service'
 import { useToast } from '@/stores/toast'
 
 const router = useRouter()
@@ -658,6 +858,7 @@ const jobs = ref([])
 const subEstimates = ref([])
 const statusHistory = ref([])
 const technicians = ref([])
+const pullRequests = ref([])
 
 // Modal states
 const showConvertModal = ref(false)
@@ -665,6 +866,7 @@ const showAssignModal = ref(false)
 const showJobAssign = ref(false)
 const showPriorityModal = ref(false)
 const showSubEstimateModal = ref(false)
+const showPullRequestModal = ref(false)
 const selectedJob = ref(null)
 
 // Loading states
@@ -672,10 +874,23 @@ const converting = ref(false)
 const assigning = ref(false)
 const updatingPriority = ref(false)
 const creatingSubEstimate = ref(false)
+const creatingPullRequest = ref(false)
 
 // Form data
 const convertForm = reactive({ due_date: '' })
 const assignForm = reactive({ technician_id: '' })
+const pullRequestForm = reactive({
+  selectedItem: null,
+  inventory_item_id: null,
+  description: '',
+  sku: '',
+  quantity_requested: 1,
+  unit_cost: 0,
+  unit_price: 0,
+  vendor: '',
+  workorder_job_id: '',
+  notes: '',
+})
 const jobAssignForm = reactive({ technician_id: '' })
 const priorityForm = reactive({ priority: '' })
 const subEstimateForm = reactive({
@@ -699,9 +914,17 @@ const isSubEstimateValid = computed(() => {
   return subEstimateForm.jobs.every(j => j.description && j.description.trim() !== '')
 })
 
+const jobOptions = computed(() => {
+  return [
+    { value: '', label: 'No specific job' },
+    ...jobs.value.map(j => ({ value: j.id, label: j.description }))
+  ]
+})
+
 onMounted(() => {
   loadWorkorder()
   loadTechnicians()
+  loadPullRequests()
 })
 
 async function loadWorkorder() {
@@ -738,6 +961,132 @@ async function loadTechnicians() {
   } catch (err) {
     console.error('Failed to load technicians:', err)
   }
+}
+
+async function loadPullRequests() {
+  try {
+    const response = await pullRequestService.getByWorkorder(route.params.id)
+    pullRequests.value = response.data?.items || []
+  } catch (err) {
+    console.error('Failed to load pull requests:', err)
+  }
+}
+
+async function searchInventory(query) {
+  if (!query || query.length < 2) return []
+  try {
+    const response = await inventoryService.searchParts(query, null, 10)
+    return response.data || []
+  } catch (err) {
+    console.error('Failed to search inventory:', err)
+    return []
+  }
+}
+
+function selectInventoryItem(item) {
+  if (!item) return
+  pullRequestForm.inventory_item_id = item.id
+  pullRequestForm.description = item.name
+  pullRequestForm.sku = item.sku || ''
+  pullRequestForm.unit_cost = item.cost || 0
+  pullRequestForm.unit_price = item.sale_price || 0
+  pullRequestForm.vendor = item.vendor || ''
+}
+
+function resetPullRequestForm() {
+  pullRequestForm.selectedItem = null
+  pullRequestForm.inventory_item_id = null
+  pullRequestForm.description = ''
+  pullRequestForm.sku = ''
+  pullRequestForm.quantity_requested = 1
+  pullRequestForm.unit_cost = 0
+  pullRequestForm.unit_price = 0
+  pullRequestForm.vendor = ''
+  pullRequestForm.workorder_job_id = ''
+  pullRequestForm.notes = ''
+}
+
+async function createPullRequest() {
+  creatingPullRequest.value = true
+  try {
+    await pullRequestService.create({
+      workorder_id: workorder.value.id,
+      workorder_job_id: pullRequestForm.workorder_job_id || null,
+      inventory_item_id: pullRequestForm.inventory_item_id || null,
+      description: pullRequestForm.description,
+      sku: pullRequestForm.sku || null,
+      quantity_requested: pullRequestForm.quantity_requested,
+      unit_cost: pullRequestForm.unit_cost,
+      unit_price: pullRequestForm.unit_price,
+      vendor: pullRequestForm.vendor || null,
+      notes: pullRequestForm.notes || null,
+    })
+    toast.success('Part request created')
+    showPullRequestModal.value = false
+    resetPullRequestForm()
+    loadPullRequests()
+  } catch (err) {
+    console.error('Failed to create pull request:', err)
+    toast.error(err.response?.data?.error || 'Failed to create request')
+  } finally {
+    creatingPullRequest.value = false
+  }
+}
+
+async function pullFromStock(pr) {
+  try {
+    await pullRequestService.markAsPulled(pr.id, pr.quantity_requested - pr.quantity_fulfilled)
+    toast.success('Item pulled from inventory')
+    loadPullRequests()
+  } catch (err) {
+    console.error('Failed to pull from stock:', err)
+    toast.error('Failed to pull from inventory')
+  }
+}
+
+async function markAsOrdered(pr) {
+  try {
+    await pullRequestService.markAsOrdered(pr.id)
+    toast.success('Item marked as ordered')
+    loadPullRequests()
+  } catch (err) {
+    console.error('Failed to mark as ordered:', err)
+    toast.error('Failed to mark as ordered')
+  }
+}
+
+async function markAsReceived(pr) {
+  try {
+    await pullRequestService.markAsReceived(pr.id, pr.quantity_requested - pr.quantity_fulfilled)
+    toast.success('Item marked as received')
+    loadPullRequests()
+  } catch (err) {
+    console.error('Failed to mark as received:', err)
+    toast.error('Failed to mark as received')
+  }
+}
+
+async function cancelPullRequest(pr) {
+  if (!confirm('Cancel this part request?')) return
+  try {
+    await pullRequestService.cancel(pr.id)
+    toast.success('Request cancelled')
+    loadPullRequests()
+  } catch (err) {
+    console.error('Failed to cancel request:', err)
+    toast.error('Failed to cancel request')
+  }
+}
+
+function getPullRequestStatusVariant(status) {
+  const variants = {
+    pending: 'default',
+    pulled: 'success',
+    ordered: 'info',
+    received: 'success',
+    cancelled: 'danger',
+  }
+  return variants[status] || 'default'
 }
 
 async function updateStatus(status, notes = null) {

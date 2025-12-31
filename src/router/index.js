@@ -282,6 +282,12 @@ const routes = [
     meta: { requiresAuth: true, requiresStaff: true },
   },
   {
+    path: '/cp/inventory/pull-requests',
+    name: 'InventoryPullRequests',
+    component: () => import('@/views/inventory/PullRequestList.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
     path: '/cp/financial/entries',
     name: 'FinancialEntries',
     component: () => import('@/views/financial/FinancialEntries.vue'),

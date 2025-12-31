@@ -19,4 +19,5 @@ class InventoryItem extends BaseModel
     public ?string $location = null;
     public ?string $vendor = null;
     public ?string $notes = null;
+    public bool $is_tracked = true;
 }
