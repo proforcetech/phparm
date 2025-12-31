@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS service_types (
 CREATE TABLE IF NOT EXISTS inventory_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
     sku VARCHAR(120) NULL,
     category VARCHAR(120) NULL,
     stock_quantity INT DEFAULT 0,

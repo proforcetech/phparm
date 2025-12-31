@@ -703,7 +703,8 @@ function onInventorySelect(item, inventoryItem) {
 function populateFromInventory(item, inventoryItem) {
   item.sku = inventoryItem.sku || ''
   item.inventory_item_id = inventoryItem.id
-  item.description = inventoryItem.name
+  const description = inventoryItem.description?.trim()
+  item.description = description ? description : inventoryItem.name
   item.unit_price = inventoryItem.sale_price || 0
   item.list_price = inventoryItem.list_price || 0
   calculateTotals()

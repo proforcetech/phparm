@@ -92,6 +92,7 @@ CREATE TABLE service_types (
 CREATE TABLE inventory_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
     sku VARCHAR(120) NULL,
     category VARCHAR(120) NULL,
     stock_quantity INT DEFAULT 0,

@@ -23,6 +23,7 @@ class InventoryItemValidator
 
         $normalized = [
             'name' => $name,
+            'description' => isset($data['description']) && $data['description'] !== '' ? trim((string) $data['description']) : null,
             'sku' => isset($data['sku']) && $data['sku'] !== '' ? $this->sanitize((string) $data['sku'], 120) : null,
             'category' => isset($data['category']) && $data['category'] !== ''
                 ? $this->sanitize((string) $data['category'], 120)

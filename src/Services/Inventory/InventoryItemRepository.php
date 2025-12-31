@@ -168,6 +168,7 @@ class InventoryItemRepository
         $payload = $this->validator->validate($data);
         $columnMap = [
             'name' => 'name',
+            'description' => 'description',
             'sku' => 'sku',
             'manufacturer_part_number' => $this->resolveColumn('manufacturer_part_number'),
             'category' => 'category',
@@ -226,6 +227,7 @@ class InventoryItemRepository
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
         $columnMap = [
             'name' => 'name',
+            'description' => 'description',
             'sku' => 'sku',
             'manufacturer_part_number' => $this->resolveColumn('manufacturer_part_number'),
             'category' => 'category',
