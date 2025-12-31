@@ -93,14 +93,25 @@
 
     <!-- Workorders Table -->
     <Card>
-      <Table :columns="columns" :data="workorders" :loading="loading" hoverable @row-click="onRowClick">
+      <Table
+        :columns="columns"
+        :data="displayWorkorders"
+        :loading="loading"
+        row-key="row_key"
+        hoverable
+        @row-click="onRowClick"
+      >
         <template #cell-number="{ row }">
-          <router-link
-            :to="`/cp/workorders/${row.id}`"
-            class="text-primary-600 hover:text-primary-800 font-medium"
-          >
-            {{ row.number }}
-          </router-link>
+          <div class="flex items-center gap-2" :class="row.is_sub_workorder ? 'pl-6 text-gray-600' : ''">
+            <span v-if="row.is_sub_workorder" class="text-gray-400">↳</span>
+            <router-link
+              :to="row.is_sub_workorder ? `/cp/estimates/${row.id}` : `/cp/workorders/${row.id}`"
+              class="text-primary-600 hover:text-primary-800 font-medium"
+            >
+              {{ row.number }}
+            </router-link>
+            <span v-if="row.is_sub_workorder" class="text-xs text-gray-400">Sub-workorder</span>
+          </div>
         </template>
 
         <template #cell-status="{ row }">
@@ -110,7 +121,8 @@
         </template>
 
         <template #cell-priority="{ row }">
-          <Badge :variant="getPriorityVariant(row.priority)">
+          <span v-if="row.is_sub_workorder" class="text-gray-400">-</span>
+          <Badge v-else :variant="getPriorityVariant(row.priority)">
             {{ formatStatus(row.priority) }}
           </Badge>
         </template>
@@ -135,7 +147,7 @@
         </template>
 
         <template #cell-actions="{ row }">
-          <div class="flex gap-2" @click.stop>
+          <div v-if="!row.is_sub_workorder" class="flex gap-2" @click.stop>
             <Button
               variant="ghost"
               size="sm"
@@ -243,7 +255,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
@@ -263,6 +275,30 @@ const toast = useToast()
 const loading = ref(false)
 const workorders = ref([])
 const technicians = ref([])
+const displayWorkorders = computed(() => {
+  const rows = []
+  workorders.value.forEach((workorder) => {
+    rows.push({
+      ...workorder,
+      row_key: `workorder-${workorder.id}`,
+      is_sub_workorder: false
+    })
+    if (Array.isArray(workorder.sub_estimates)) {
+      workorder.sub_estimates.forEach((subEstimate) => {
+        rows.push({
+          ...subEstimate,
+          row_key: `sub-${workorder.id}-${subEstimate.id}`,
+          is_sub_workorder: true,
+          parent_workorder_id: workorder.id,
+          assigned_technician_id: subEstimate.technician_id ?? null,
+          grand_total: subEstimate.grand_total ?? 0,
+          created_at: subEstimate.created_at ?? null,
+        })
+      })
+    }
+  })
+  return rows
+})
 const currentPage = ref(1)
 const pageSize = 50
 const showConvertModal = ref(false)
@@ -381,11 +417,13 @@ async function loadStats() {
 
 async function loadTechnicians() {
   try {
-    const users = await userService.listUsers({ role: 'technician' }) || []
+    const users = await userService.listUsers() || []
     technicians.value = users
     technicianOptions.value = [
       { value: '', label: 'All Technicians' },
-      ...users.map(u => ({ value: u.id, label: u.name }))
+      ...users
+        .filter((user) => user.role === 'technician')
+        .map(u => ({ value: u.id, label: u.name }))
     ]
   } catch (error) {
     console.error('Failed to load technicians:', error)
@@ -419,6 +457,10 @@ function viewWorkorder(id) {
 }
 
 function onRowClick(row) {
+  if (row.is_sub_workorder) {
+    router.push(`/cp/estimates/${row.id}`)
+    return
+  }
   router.push(`/cp/workorders/${row.id}`)
 }
 
@@ -480,7 +522,7 @@ async function confirmConvert() {
 
 function getTechnicianName(id) {
   const tech = technicians.value.find(t => t.id === id)
-  return tech?.name || `Tech #${id}`
+  return tech?.name || 'Unassigned'
 }
 
 function getStatusVariant(status) {

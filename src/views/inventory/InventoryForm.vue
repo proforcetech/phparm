@@ -15,6 +15,15 @@
             <label class="block text-sm font-medium text-gray-700">Name</label>
             <Input v-model="form.name" required placeholder="Brake pads" />
           </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <textarea
+              v-model="form.description"
+              :rows="3"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              placeholder="Customer-facing description for estimates and invoices"
+            ></textarea>
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">SKU</label>
             <Input v-model="form.sku" placeholder="SKU-1234" />
@@ -249,6 +258,7 @@ const isEditing = ref(false)
 
 const form = reactive({
   name: '',
+  description: '',
   sku: '',
   manufacturer_part_number: '',
   category: '',

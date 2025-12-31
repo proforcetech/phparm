@@ -37,6 +37,7 @@ class InventoryCsvService
             foreach ($batch as $item) {
                 fputcsv($stream, [
                     $item->name,
+                    $item->description,
                     $item->sku,
                     $item->category,
                     $item->stock_quantity,
@@ -149,6 +150,7 @@ class InventoryCsvService
     {
         return [
             'name',
+            'description',
             'sku',
             'category',
             'stock_quantity',
