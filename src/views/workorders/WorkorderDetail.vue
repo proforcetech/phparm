@@ -719,8 +719,7 @@ async function loadWorkorder() {
 
 async function loadTechnicians() {
   try {
-    const response = await userService.getUsers({ role: 'technician' })
-    const users = response.data || []
+    const users = await userService.listUsers({ role: 'technician' }) || []
     technicians.value = users
     technicianOptions.value = [
       { value: '', label: 'Unassigned' },
