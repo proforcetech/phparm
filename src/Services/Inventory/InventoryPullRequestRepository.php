@@ -4,7 +4,7 @@ namespace App\Services\Inventory;
 
 use App\Database\Connection;
 use App\Models\InventoryPullRequest;
-use App\Logging\AuditLogger;
+use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
 use PDO;
 
@@ -13,11 +13,11 @@ class InventoryPullRequestRepository
     private Connection $connection;
     private AuditLogger $auditLogger;
 
-    public function __construct(Connection $connection, AuditLogger $auditLogger)
-    {
-        $this->connection = $connection;
-        $this->auditLogger = $auditLogger;
-    }
+public function __construct(Connection $connection, AuditLogger $auditLogger)
+{
+    $this->connection = $connection;
+    $this->auditLogger = $auditLogger;
+}
 
     public function find(int $id): ?InventoryPullRequest
     {

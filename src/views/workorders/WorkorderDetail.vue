@@ -702,38 +702,14 @@
                           { value: 'PART', label: 'Part' }
                         ]"
                         required
-                        @change="onSubEstimateItemTypeChange(item)"
-                      />
-                    </div>
-
-                    <div v-if="item.type === 'PART'" class="col-span-12 md:col-span-2">
-                      <Input
-                        v-model="item.sku"
-                        label="SKU"
-                        placeholder="SKU / Part #"
-                        @blur="lookupSubEstimateSku(item)"
                       />
                     </div>
 
                     <div :class="item.type === 'PART' ? 'col-span-12 md:col-span-4' : 'col-span-12 md:col-span-6'">
-                      <Autocomplete
-                        v-if="item.type === 'PART'"
-                        v-model="item.description"
-                        label="Description"
-                        placeholder="Search or enter part description..."
-                        :search-fn="(query) => searchSubEstimateInventoryParts(query)"
-                        :item-value="(inv) => inv.name"
-                        :item-label="(inv) => inv.name"
-                        :item-subtext="(inv) => inv.sku ? `SKU: ${inv.sku}` : ''"
-                        @select="(inv) => selectSubEstimateInventoryItem(item, inv)"
-                        required
-                        free-text
-                      />
                       <Input
-                        v-else
                         v-model="item.description"
                         label="Description"
-                        placeholder="Describe the work"
+                        placeholder="Describe the work or part"
                         required
                       />
                     </div>
@@ -983,8 +959,6 @@ const pullRequests = ref([])
 function createSubEstimateItem() {
   return {
     type: 'LABOR',
-    sku: '',
-    inventory_item_id: null,
     description: '',
     quantity: 1,
     unit_price: 0,
@@ -1353,58 +1327,6 @@ function removeSubEstimateLineItem(jobIndex, itemIndex) {
   subEstimateForm.jobs[jobIndex].items.splice(itemIndex, 1)
 }
 
-function onSubEstimateItemTypeChange(item) {
-  if (item.type === 'LABOR') {
-    item.sku = ''
-    item.inventory_item_id = null
-    item.list_price = null
-  }
-}
-
-async function lookupSubEstimateSku(item) {
-  if (!item.sku || item.sku.trim() === '') {
-    return
-  }
-
-  try {
-    const inventoryItem = await inventoryService.findBySku(item.sku.trim())
-    if (inventoryItem) {
-      populateSubEstimateFromInventory(item, inventoryItem)
-    }
-  } catch (err) {
-    console.log('SKU not found in inventory')
-  }
-}
-
-async function searchSubEstimateInventoryParts(query) {
-  if (!query || query.length < 2) {
-    return []
-  }
-
-  try {
-    const results = await inventoryService.searchParts(query, null, 10)
-    if (!results) return []
-    return Array.isArray(results) ? results : (results.data || [])
-  } catch (err) {
-    console.error('Failed to search inventory:', err)
-    return []
-  }
-}
-
-function selectSubEstimateInventoryItem(item, inventoryItem) {
-  if (inventoryItem) {
-    populateSubEstimateFromInventory(item, inventoryItem)
-  }
-}
-
-function populateSubEstimateFromInventory(item, inventoryItem) {
-  item.sku = inventoryItem.sku || ''
-  item.inventory_item_id = inventoryItem.id
-  item.description = inventoryItem.name
-  item.unit_price = inventoryItem.sale_price || 0
-  item.list_price = inventoryItem.list_price || 0
-}
-
 function calculateSubEstimateLineTotal(item) {
   const quantity = Number(item.quantity) || 0
   const unitPrice = Number(item.unit_price) || 0
@@ -1424,8 +1346,6 @@ async function confirmSubEstimate() {
         notes: job.notes,
         items: job.items.map((item) => ({
           type: item.type,
-          sku: item.sku || null,
-          inventory_item_id: item.inventory_item_id || null,
           description: item.description,
           quantity: Number(item.quantity) || 0,
           unit_price: Number(item.unit_price) || 0,
