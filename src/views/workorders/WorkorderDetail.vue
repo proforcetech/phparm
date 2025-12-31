@@ -427,7 +427,7 @@
     </div>
 
     <!-- Convert to Invoice Modal -->
-    <Modal v-if="showConvertModal" @close="showConvertModal = false">
+    <Modal v-model="showConvertModal" @close="showConvertModal = false">
       <template #title>Convert to Invoice</template>
       <template #content>
         <div class="space-y-4">
@@ -456,7 +456,7 @@
     </Modal>
 
     <!-- Assign Technician Modal -->
-    <Modal v-if="showAssignModal" @close="showAssignModal = false">
+    <Modal v-model="showAssignModal" @close="showAssignModal = false">
       <template #title>Assign Technician</template>
       <template #content>
         <div>
@@ -478,7 +478,7 @@
     </Modal>
 
     <!-- Assign Job Technician Modal -->
-    <Modal v-if="showJobAssign" @close="showJobAssign = false">
+    <Modal v-model="showJobAssign" @close="showJobAssign = false">
       <template #title>Assign Technician to Job</template>
       <template #content>
         <div>
@@ -503,7 +503,7 @@
     </Modal>
 
     <!-- Change Priority Modal -->
-    <Modal v-if="showPriorityModal" @close="showPriorityModal = false">
+    <Modal v-model="showPriorityModal" @close="showPriorityModal = false">
       <template #title>Change Priority</template>
       <template #content>
         <div>
@@ -524,7 +524,7 @@
     </Modal>
 
     <!-- Create Sub-Estimate Modal -->
-    <Modal v-if="showSubEstimateModal" @close="showSubEstimateModal = false" size="lg">
+    <Modal v-model="showSubEstimateModal" @close="showSubEstimateModal = false" size="lg">
       <template #title>Create Sub-Estimate for Additional Work</template>
       <template #content>
         <div class="space-y-4">
