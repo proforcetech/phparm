@@ -41,7 +41,13 @@ class WorkorderController
         $total = $this->repository->count($filters);
 
         $data = array_map(function ($workorder) {
-            return $this->enrichWorkorder($workorder);
+            $data = $this->enrichWorkorder($workorder);
+            $data['sub_estimates'] = array_map(
+                static fn($estimate) => $estimate->toArray(),
+                $this->service->getSubEstimates($workorder->id)
+            );
+
+            return $data;
         }, $workorders);
 
         return [
