@@ -732,15 +732,17 @@ class WorkorderService
 
                     $stmt = $pdo->prepare(<<<SQL
                         INSERT INTO estimate_items (
-                            estimate_job_id, type, description, quantity, unit_price, list_price, taxable, line_total
+                            estimate_job_id, type, sku, inventory_item_id, description, quantity, unit_price, list_price, taxable, line_total
                         ) VALUES (
-                            :job_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :line_total
+                            :job_id, :type, :sku, :inventory_item_id, :description, :quantity, :unit_price, :list_price, :taxable, :line_total
                         )
                     SQL);
 
                     $stmt->execute([
                         'job_id' => $jobId,
                         'type' => $item['type'] ?? 'LABOR',
+                        'sku' => $item['sku'] ?? null,
+                        'inventory_item_id' => $item['inventory_item_id'] ?? null,
                         'description' => $item['description'],
                         'quantity' => (float) ($item['quantity'] ?? 0),
                         'unit_price' => (float) ($item['unit_price'] ?? 0),
