@@ -2,16 +2,16 @@
 
 namespace App\Services\Inventory;
 
-use App\Auth\Gate;
+use App\Support\Auth\AccessGate;
 use App\Models\User;
 use InvalidArgumentException;
 
 class InventoryPullRequestController
 {
     private InventoryPullRequestRepository $repository;
-    private Gate $gate;
+    private AccessGate $gate;
 
-    public function __construct(InventoryPullRequestRepository $repository, Gate $gate)
+    public function __construct(InventoryPullRequestRepository $repository, AccessGate $gate)
     {
         $this->repository = $repository;
         $this->gate = $gate;
