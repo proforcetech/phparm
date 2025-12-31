@@ -128,8 +128,10 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import Table from '@/components/ui/Table.vue'
 import inventoryService from '@/services/inventory.service'
+import { useToast } from '@/stores/toast'
 
 const router = useRouter()
+const toast = useToast()
 const loading = ref(false)
 const deletingId = ref(null)
 const items = ref([])
@@ -171,6 +173,10 @@ const loadItems = async () => {
       severity: !item.is_tracked ? 'ok' : item.stock_quantity === 0 ? 'out' : item.stock_quantity <= item.low_stock_threshold ? 'low' : 'ok',
     }))
     hasNextPage.value = data.length === perPage
+  } catch (error) {
+    toast.error(error.response?.data?.message || 'Failed to load inventory items')
+    items.value = []
+    hasNextPage.value = false
   } finally {
     loading.value = false
   }
@@ -198,6 +204,9 @@ const confirmDelete = async (id) => {
   try {
     await inventoryService.remove(id)
     items.value = items.value.filter((item) => item.id !== id)
+    toast.success('Inventory item deleted')
+  } catch (error) {
+    toast.error(error.response?.data?.message || 'Failed to delete inventory item')
   } finally {
     deletingId.value = null
   }
