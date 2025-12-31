@@ -4,6 +4,7 @@ namespace App\Services\Inventory;
 
 use App\Support\Auth\AccessGate;
 use App\Models\User;
+use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
 
 class InventoryPullRequestController
@@ -214,15 +215,15 @@ class InventoryPullRequestController
 
     private function assertViewAccess(User $user): void
     {
-        if (!$this->gate->check($user, 'inventory.view') && !$this->gate->check($user, 'inventory.*')) {
-            throw new InvalidArgumentException('Access denied');
+        if ($this->gate->can($user, 'inventory.view') || $this->gate->can($user, 'inventory.*')) {
+            return;
         }
+
+        throw new UnauthorizedException('User lacks permission to view inventory.');
     }
 
     private function assertManageAccess(User $user): void
     {
-        if (!$this->gate->check($user, 'inventory.manage') && !$this->gate->check($user, 'inventory.*')) {
-            throw new InvalidArgumentException('Access denied');
-        }
+        $this->gate->assert($user, 'inventory.*');
     }
 }
