@@ -1907,9 +1907,25 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'query' => $request->queryParam('query'),
                 'active' => $request->queryParam('active'),
+    // Inventory Pull Requests routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger);
+        $pullRequestController = new \App\Services\Inventory\InventoryPullRequestController($pullRequestRepository, $gate);
+
+        // List all pull requests with filters
+        $router->get('/api/inventory/pull-requests', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'workorder_id' => $request->queryParam('workorder_id'),
+                'status' => $request->queryParam('status'),
+                'request_type' => $request->queryParam('request_type'),
+                'pending_only' => $request->queryParam('pending_only') === 'true',
                 'limit' => $request->queryParam('limit'),
                 'offset' => $request->queryParam('offset'),
             ];
+            $data = $pullRequestController->index($user, $params);
+            return Response::json($data);
+        });
 
             $data = $bundleController->index($user, $filters);
             return Response::json(['data' => $data]);
@@ -1920,6 +1936,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
 
             $data = $bundleController->show($user, $id);
+        // Get pull requests summary (for dashboard)
+        $router->get('/api/inventory/pull-requests/summary', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $data = $pullRequestController->summary($user);
             return Response::json($data);
         });
 
@@ -1927,6 +1947,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $bundleController->store($user, $request->body());
 
+        // Get single pull request
+        $router->get('/api/inventory/pull-requests/{id}', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->show($user, $id);
+            return Response::json($data);
+        });
+
+        // Create pull request
+        $router->post('/api/inventory/pull-requests', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $data = $pullRequestController->store($user, $request->body());
             return Response::created($data);
         });
 
@@ -1935,6 +1967,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
 
             $data = $bundleController->update($user, $id, $request->body());
+        // Update pull request
+        $router->put('/api/inventory/pull-requests/{id}', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->update($user, $id, $request->body());
             return Response::json($data);
         });
 
@@ -1964,6 +2001,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ];
 
             $data = $estimateController->index($user, $filters);
+        // Mark as pulled from inventory
+        $router->post('/api/inventory/pull-requests/{id}/pull', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->pull($user, $id, $request->body());
             return Response::json($data);
         });
 
@@ -1971,6 +2013,334 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
 
+            $data = $estimateController->show($user, $id);
+
+            // Enrich with customer data
+            if (!empty($data['customer_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, first_name, last_name, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
+                $stmt->execute(['id' => $data['customer_id']]);
+                $customer = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($customer) {
+                    $data['customer'] = $customer;
+                }
+            }
+
+            // Enrich with vehicle data
+            if (!empty($data['vehicle_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate FROM customer_vehicles WHERE id = :id');
+                $stmt->execute(['id' => $data['vehicle_id']]);
+                $vehicle = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($vehicle) {
+                    $data['vehicle'] = $vehicle;
+                }
+            }
+
+            // Enrich with technician data
+            if (!empty($data['technician_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, name, email FROM users WHERE id = :id');
+                $stmt->execute(['id' => $data['technician_id']]);
+                $technician = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($technician) {
+                    $data['technician'] = $technician;
+                }
+            }
+
+            // Add estimate jobs and items
+            $jobsStmt = $connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY display_order ASC');
+            $jobsStmt->execute(['estimate_id' => $id]);
+            $jobRows = $jobsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            $itemStmt = $connection->pdo()->prepare('SELECT * FROM estimate_items WHERE estimate_job_id = :job_id ORDER BY id ASC');
+            $jobs = [];
+            foreach ($jobRows as $jobRow) {
+                $itemStmt->execute(['job_id' => $jobRow['id']]);
+                $jobRow['items'] = $itemStmt->fetchAll(\PDO::FETCH_ASSOC);
+                $jobs[] = $jobRow;
+            }
+            $data['jobs'] = $jobs;
+
+        // Mark as ordered
+        $router->post('/api/inventory/pull-requests/{id}/order', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->order($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $data = $estimateController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/estimates/{id}', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $estimateController->update($user, $id, $request->body());
+        // Mark as received
+        $router->post('/api/inventory/pull-requests/{id}/receive', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->receive($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/estimates/{id}', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $success = $estimateController->delete($user, $id);
+            return $success ? Response::noContent() : Response::notFound(['error' => 'Estimate not found']);
+        });
+
+        $router->post('/api/estimates/{id}/reject', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reason = $request->body()['reason'] ?? null;
+
+            $data = $estimateController->reject($user, $id, $reason);
+        // Cancel pull request
+        $router->post('/api/inventory/pull-requests/{id}/cancel', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->cancel($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates/{id}/approve', function (Request $request) use ($estimateController, $connection, $auditLogger, $gate) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reason = $request->body()['reason'] ?? null;
+
+            $data = $estimateController->approve($user, $id, $reason);
+
+            // Auto-create workorder after approval
+            if ($data) {
+                try {
+                    $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
+                    $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+
+                    // Check if workorder already exists
+                    $existingWorkorder = $workorderRepository->findByEstimateId($id);
+                    if ($existingWorkorder === null) {
+                        $workorder = $workorderService->createFromEstimate($id, null, $user->id);
+                        $data['workorder'] = $workorder->toArray();
+                    }
+                } catch (\Exception $e) {
+                    // Log error but don't fail the approval
+                    error_log('Auto workorder creation failed: ' . $e->getMessage());
+                }
+            }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates/{id}/decline', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reason = $request->body()['reason'] ?? null;
+
+            $data = $estimateController->reject($user, $id, $reason);
+            return Response::json($data);
+        });
+
+        $router->patch('/api/estimates/{id}/items/status', function (Request $request) use ($estimateController) {
+        // Delete pull request
+        $router->delete('/api/inventory/pull-requests/{id}', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $pullRequestController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // Get pull requests for a specific workorder
+        $router->get('/api/workorders/{id}/pull-requests', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $workorderId = (int) $request->getAttribute('id');
+            $data = $pullRequestController->getByWorkorder($user, $workorderId);
+            return Response::json($data);
+        });
+    });
+
+    // Estimate routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+
+        $bundleController = new \App\Services\Estimate\BundleController(
+            new \App\Services\Estimate\BundleService($connection),
+            $gate
+        );
+
+        $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $invoiceService = new \App\Services\Invoice\InvoiceService($connection, $auditLogger);
+        $estimateController = new \App\Services\Estimate\EstimateController(
+            $estimateRepository,
+            $gate,
+            $estimateEditor,
+            $invoiceService
+        );
+
+        $router->get('/api/bundles', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'query' => $request->queryParam('query'),
+                'active' => $request->queryParam('active'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $bundleController->index($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/bundles/{id}', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $estimateController->updateItemStatuses($user, $id, $request->body());
+            $data = $bundleController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/estimates/{id}/merge-into-invoice', function (Request $request) use ($estimateController) {
+        $router->post('/api/bundles', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $data = $bundleController->store($user, $request->body());
+
+            return Response::created($data);
+        });
+
+        $router->put('/api/bundles/{id}', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $estimateController->mergeIntoInvoice($user, $id, $request->body());
+            $data = $bundleController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Share estimate via email
+        $router->post('/api/estimates/{id}/share/email', function (Request $request) use ($connection, $auditLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+
+            if (empty($body['email'])) {
+                return Response::badRequest(['error' => 'Email address is required']);
+            }
+
+            $notificationConfig = require __DIR__ . '/../config/notifications.php';
+            $templateEngine = new \App\Support\Notifications\TemplateEngine();
+            $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+            $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+
+            $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+            $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+            $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
+
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+            $result = $shareService->shareViaEmail($id, $body['email'], $baseUrl);
+
+            return Response::json($result);
+        });
+
+        // Share estimate via SMS
+        $router->post('/api/estimates/{id}/share/sms', function (Request $request) use ($connection, $auditLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+
+            if (empty($body['phone'])) {
+                return Response::badRequest(['error' => 'Phone number is required']);
+            }
+
+            $notificationConfig = require __DIR__ . '/../config/notifications.php';
+            $templateEngine = new \App\Support\Notifications\TemplateEngine();
+            $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+            $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+
+            $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+            $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+            $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
+
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+            $result = $shareService->shareViaSms($id, $body['phone'], $baseUrl);
+
+            return Response::json($result);
+        });
+    });
+
+    // Reminder Campaign routes
+    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $config) {
+        $notificationConfig = require __DIR__ . '/../config/notifications.php';
+        $templateEngine = new \App\Support\Notifications\TemplateEngine();
+        $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+        $preferenceService = new \App\Services\Reminder\ReminderPreferenceService($connection);
+        $campaignService = new \App\Services\Reminder\ReminderCampaignService($connection);
+        $logService = new \App\Services\Reminder\ReminderLogService($connection);
+        $scheduler = new \App\Services\Reminder\ReminderScheduler(
+            $connection,
+            $campaignService,
+            $preferenceService,
+            $notifications,
+            $logService,
+            $templateEngine
+        );
+        $controller = new \App\Services\Reminder\ReminderCampaignController($campaignService, $scheduler, $logService);
+
+        $router->get('/api/reminders', function () use ($controller) {
+            $data = $controller->index();
+        $router->delete('/api/bundles/{id}', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $bundleController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        $router->get('/api/estimates/bundles/{id}/items', function (Request $request) use ($bundleController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $items = $bundleController->fetchItemsForEstimate($user, $id);
+            return Response::json(['items' => $items]);
+        });
+
+        $router->get('/api/estimates', function (Request $request) use ($estimateController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'customer_id' => $request->queryParam('customer_id'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $estimateController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/reminders', function (Request $request) use ($controller) {
+            $user = $request->getAttribute('user');
+            $data = $controller->store($request->body(), $user->id);
+            return Response::created($data->toArray());
+        });
+
+        $router->put('/api/reminders/{id}', function (Request $request) use ($controller) {
+        $router->get('/api/estimates/{id}', function (Request $request) use ($estimateController, $connection) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $campaign = $controller->update($id, $request->body(), $user->id);
+            return Response::json($campaign?->toArray());
+        });
+
+        $router->post('/api/reminders/{id}/pause', function (Request $request) use ($controller) {
             $data = $estimateController->show($user, $id);
 
             // Enrich with customer data
@@ -2030,6 +2400,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
 
+            $campaign = $controller->pause($id, $user->id);
+            return Response::json($campaign?->toArray());
+        });
+
+        $router->post('/api/reminders/{id}/activate', function (Request $request) use ($controller) {
             $data = $estimateController->update($user, $id, $request->body());
             return Response::json($data);
         });
@@ -2038,6 +2413,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
 
+            $campaign = $controller->activate($id, $user->id);
+            return Response::json($campaign?->toArray());
+        });
+
+        $router->post('/api/reminders/{id}/run', function (Request $request) use ($controller) {
+            $user = $request->getAttribute('user');
+            $controller->runNow((int) $request->getAttribute('id'), $user->id);
+            return Response::json(['status' => 'queued']);
+        });
+
+        $router->get('/api/reminders/{id}/logs', function (Request $request) use ($controller) {
+            $id = (int) $request->getAttribute('id');
+            $limit = (int) $request->queryParam('limit', 50);
+
+            $logs = $controller->logs($id, $limit);
+            return Response::json($logs);
             $success = $estimateController->delete($user, $id);
             return $success ? Response::noContent() : Response::notFound(['error' => 'Estimate not found']);
         });
@@ -2159,6 +2550,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    // Health Status routes
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection) {
+
+        $router->get('/api/system/health', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            $healthService = new \App\Services\Health\HealthStatusService($connection);
+            $status = $healthService->check();
+            return Response::json($status);
     // Reminder Campaign routes
     $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $config) {
         $notificationConfig = require __DIR__ . '/../config/notifications.php';
