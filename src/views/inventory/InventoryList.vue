@@ -174,6 +174,7 @@ const loadItems = async () => {
     }))
     hasNextPage.value = data.length === perPage
   } catch (error) {
+    console.error('Failed to load inventory list', error)
     toast.error(error.response?.data?.message || 'Failed to load inventory items')
     items.value = []
     hasNextPage.value = false
@@ -206,6 +207,7 @@ const confirmDelete = async (id) => {
     items.value = items.value.filter((item) => item.id !== id)
     toast.success('Inventory item deleted')
   } catch (error) {
+    console.error('Failed to delete inventory item', error)
     toast.error(error.response?.data?.message || 'Failed to delete inventory item')
   } finally {
     deletingId.value = null
