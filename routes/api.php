@@ -2694,10 +2694,31 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->get('/api/workorders/{id}', function (Request $request) use ($workorderController) {
+        $router->get('/api/workorders/{id}', function (Request $request) use ($workorderController, $connection) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $data = $workorderController->show($user, $id);
+
+            // Enrich with customer data
+            if (!empty($data['customer_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, first_name, last_name, CONCAT(first_name, " ", last_name) AS name, email, phone FROM customers WHERE id = :id');
+                $stmt->execute(['id' => $data['customer_id']]);
+                $customer = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($customer) {
+                    $data['customer'] = $customer;
+                }
+            }
+
+            // Enrich with vehicle data
+            if (!empty($data['vehicle_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, year, make, model, vin, license_plate, CONCAT(year, " ", make, " ", model) AS display_name FROM vehicles WHERE id = :id');
+                $stmt->execute(['id' => $data['vehicle_id']]);
+                $vehicle = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($vehicle) {
+                    $data['vehicle'] = $vehicle;
+                }
+            }
+
             return Response::json($data);
         });
 

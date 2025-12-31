@@ -132,7 +132,7 @@
                     :to="`/cp/customers/${workorder.customer_id}`"
                     class="text-primary-600 hover:text-primary-800"
                   >
-                    Customer #{{ workorder.customer_id }}
+                    {{ workorder.customer?.name || `Customer #${workorder.customer_id}` }}
                   </router-link>
                 </p>
               </div>
@@ -143,7 +143,7 @@
                     :to="`/cp/vehicles/${workorder.vehicle_id}`"
                     class="text-primary-600 hover:text-primary-800"
                   >
-                    Vehicle #{{ workorder.vehicle_id }}
+                    {{ workorder.vehicle?.display_name || `Vehicle #${workorder.vehicle_id}` }}
                   </router-link>
                 </p>
               </div>
