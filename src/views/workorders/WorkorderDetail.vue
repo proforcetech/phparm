@@ -848,7 +848,7 @@
             <label class="block text-sm font-medium text-gray-700">Search Inventory</label>
             <Autocomplete
               v-model="pullRequestForm.selectedItem"
-              placeholder="Search by name or SKU..."
+              placeholder="Search by name, SKU, or description..."
               :search-fn="searchInventory"
               :item-value="(item) => item.id"
               :item-label="(item) => item.name"

@@ -408,7 +408,7 @@ class InventoryItemRepository
     /**
      * Search inventory items with optional vehicle compatibility filter
      *
-     * @param string $query Search query (name, SKU, or manufacturer part number)
+     * @param string $query Search query (name, SKU, description, or manufacturer part number)
      * @param int|null $vehicleMasterId Optional vehicle master ID to filter compatible parts
      * @param int $limit Maximum number of results
      * @return array<int, InventoryItem>
@@ -417,19 +417,29 @@ class InventoryItemRepository
     {
         $bindings = ['query' => '%' . $query . '%'];
 
+        // Build search conditions for all searchable fields
+        $searchConditions = '(i.name LIKE :query OR i.sku LIKE :query OR i.description LIKE :query';
+
+        // Include manufacturer_part_number if column exists
+        if ($this->columnExists('manufacturer_part_number')) {
+            $searchConditions .= ' OR i.manufacturer_part_number LIKE :query';
+        }
+
+        $searchConditions .= ')';
+
         if ($vehicleMasterId !== null) {
             // Search only parts compatible with the specified vehicle
             $sql = 'SELECT DISTINCT i.* FROM inventory_items i
                     INNER JOIN inventory_vehicle_compatibility ivc ON i.id = ivc.inventory_item_id
                     WHERE ivc.vehicle_master_id = :vehicle_master_id
-                    AND (i.name LIKE :query OR i.sku LIKE :query)
+                    AND ' . $searchConditions . '
                     ORDER BY i.name ASC
                     LIMIT :limit';
             $bindings['vehicle_master_id'] = $vehicleMasterId;
         } else {
-            $sql = 'SELECT * FROM inventory_items
-                    WHERE (name LIKE :query OR sku LIKE :query)
-                    ORDER BY name ASC
+            $sql = 'SELECT * FROM inventory_items i
+                    WHERE ' . $searchConditions . '
+                    ORDER BY i.name ASC
                     LIMIT :limit';
         }
 
