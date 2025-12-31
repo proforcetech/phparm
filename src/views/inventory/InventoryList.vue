@@ -49,11 +49,15 @@
               </div>
             </template>
             <template #cell(stock_quantity)="{ row }">
-              <div class="flex items-center gap-2">
+              <div v-if="row.is_tracked" class="flex items-center gap-2">
                 <Badge :variant="row.severity === 'out' ? 'danger' : row.severity === 'low' ? 'warning' : 'secondary'">
                   {{ row.stock_quantity }}
                 </Badge>
                 <span class="text-xs text-gray-500">Threshold {{ row.low_stock_threshold }}</span>
+              </div>
+              <div v-else class="flex items-center gap-2">
+                <Badge variant="info">Catalog</Badge>
+                <span class="text-xs text-gray-500">Not tracked</span>
               </div>
             </template>
             <template #cell(pricing)="{ row }">
@@ -101,6 +105,7 @@
           Low stock alerting is enabled. Use the toggle above to triage items that need restocking.
         </div>
         <Button variant="secondary" @click="goToAlerts">View Alerts</Button>
+        <Button variant="secondary" @click="$router.push('/cp/inventory/pull-requests')">Pull Requests</Button>
         <div class="pt-2 border-t border-gray-100 space-y-2">
           <h4 class="text-sm font-semibold text-gray-900">Manage lists</h4>
           <div class="flex flex-wrap gap-2">
@@ -162,7 +167,8 @@ const loadItems = async () => {
     const data = await inventoryService.list(params)
     items.value = data.map((item) => ({
       ...item,
-      severity: item.stock_quantity === 0 ? 'out' : item.stock_quantity <= item.low_stock_threshold ? 'low' : 'ok',
+      is_tracked: item.is_tracked !== false && item.is_tracked !== 0, // Handle boolean or int from API
+      severity: !item.is_tracked ? 'ok' : item.stock_quantity === 0 ? 'out' : item.stock_quantity <= item.low_stock_threshold ? 'low' : 'ok',
     }))
     hasNextPage.value = data.length === perPage
   } finally {

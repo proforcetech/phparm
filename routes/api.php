@@ -1884,6 +1884,105 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    // Inventory Pull Requests routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger);
+        $pullRequestController = new \App\Services\Inventory\InventoryPullRequestController($pullRequestRepository, $gate);
+
+        // List all pull requests with filters
+        $router->get('/api/inventory/pull-requests', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'workorder_id' => $request->queryParam('workorder_id'),
+                'status' => $request->queryParam('status'),
+                'request_type' => $request->queryParam('request_type'),
+                'pending_only' => $request->queryParam('pending_only') === 'true',
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+            $data = $pullRequestController->index($user, $params);
+            return Response::json($data);
+        });
+
+        // Get pull requests summary (for dashboard)
+        $router->get('/api/inventory/pull-requests/summary', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $data = $pullRequestController->summary($user);
+            return Response::json($data);
+        });
+
+        // Get single pull request
+        $router->get('/api/inventory/pull-requests/{id}', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->show($user, $id);
+            return Response::json($data);
+        });
+
+        // Create pull request
+        $router->post('/api/inventory/pull-requests', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $data = $pullRequestController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Update pull request
+        $router->put('/api/inventory/pull-requests/{id}', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Mark as pulled from inventory
+        $router->post('/api/inventory/pull-requests/{id}/pull', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->pull($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Mark as ordered
+        $router->post('/api/inventory/pull-requests/{id}/order', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->order($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Mark as received
+        $router->post('/api/inventory/pull-requests/{id}/receive', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->receive($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Cancel pull request
+        $router->post('/api/inventory/pull-requests/{id}/cancel', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $pullRequestController->cancel($user, $id);
+            return Response::json($data);
+        });
+
+        // Delete pull request
+        $router->delete('/api/inventory/pull-requests/{id}', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $pullRequestController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // Get pull requests for a specific workorder
+        $router->get('/api/workorders/{id}/pull-requests', function (Request $request) use ($pullRequestController) {
+            $user = $request->getAttribute('user');
+            $workorderId = (int) $request->getAttribute('id');
+            $data = $pullRequestController->getByWorkorder($user, $workorderId);
+            return Response::json($data);
+        });
+    });
+
     // Estimate routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 

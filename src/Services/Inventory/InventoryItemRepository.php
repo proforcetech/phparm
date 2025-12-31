@@ -110,8 +110,8 @@ class InventoryItemRepository
         $payload = $this->validator->validate($data);
 
         $sql = 'INSERT INTO inventory_items (name, sku, manufacturer_part_number, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, '
-            . 'sale_price, list_price, markup, location, vendor, notes) VALUES (:name, :sku, :manufacturer_part_number, :category, :stock_quantity, '
-            . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes)';
+            . 'sale_price, list_price, markup, location, vendor, notes, is_tracked) VALUES (:name, :sku, :manufacturer_part_number, :category, :stock_quantity, '
+            . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes, :is_tracked)';
 
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
@@ -128,6 +128,7 @@ class InventoryItemRepository
             'location' => $payload['location'],
             'vendor' => $payload['vendor'],
             'notes' => $payload['notes'],
+            'is_tracked' => $payload['is_tracked'] ?? 1,
         ]);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
@@ -153,8 +154,8 @@ class InventoryItemRepository
         $sql = 'UPDATE inventory_items SET name = :name, sku = :sku, manufacturer_part_number = :manufacturer_part_number, '
             . 'category = :category, stock_quantity = :stock_quantity, '
             . 'low_stock_threshold = :low_stock_threshold, reorder_quantity = :reorder_quantity, cost = :cost, '
-            . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes '
-            . 'WHERE id = :id';
+            . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes, '
+            . 'is_tracked = :is_tracked WHERE id = :id';
 
         $this->connection->pdo()->prepare($sql)->execute([
             'name' => $payload['name'],
@@ -171,6 +172,7 @@ class InventoryItemRepository
             'location' => $payload['location'],
             'vendor' => $payload['vendor'],
             'notes' => $payload['notes'],
+            'is_tracked' => $payload['is_tracked'] ?? 1,
             'id' => $id,
         ]);
 
@@ -300,6 +302,7 @@ class InventoryItemRepository
         $row['cost'] = (float) $row['cost'];
         $row['sale_price'] = (float) $row['sale_price'];
         $row['markup'] = $row['markup'] === null ? null : (float) $row['markup'];
+        $row['is_tracked'] = (bool) ($row['is_tracked'] ?? 1);
 
         return new InventoryItem($row);
     }
