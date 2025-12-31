@@ -54,6 +54,9 @@ class EstimateRepository
         $clauses = [];
         $bindings = [];
 
+        // Filter out sub-estimates (they belong to workorders and are displayed there)
+        $clauses[] = "estimate_type = 'standard'";
+
         if (!empty($filters['status'])) {
             $clauses[] = 'status = :status';
             $bindings['status'] = $filters['status'];
