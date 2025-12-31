@@ -12,6 +12,10 @@ class InventoryItemRepository
     private Connection $connection;
     private InventoryItemValidator $validator;
     private ?bool $hasIsTrackedColumn = null;
+    /**
+     * @var array<int, string>|null
+     */
+    private ?array $inventoryColumns = null;
 
     /**
      * @var array<int, InventoryItem>
@@ -35,16 +39,51 @@ class InventoryItemRepository
     private function hasIsTrackedColumn(): bool
     {
         if ($this->hasIsTrackedColumn === null) {
-            try {
-                $stmt = $this->connection->pdo()->query(
-                    "SHOW COLUMNS FROM inventory_items LIKE 'is_tracked'"
-                );
-                $this->hasIsTrackedColumn = $stmt->rowCount() > 0;
-            } catch (\Exception $e) {
-                $this->hasIsTrackedColumn = false;
-            }
+            $this->hasIsTrackedColumn = $this->columnExists('is_tracked');
         }
+
         return $this->hasIsTrackedColumn;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getInventoryColumns(): array
+    {
+        if ($this->inventoryColumns !== null) {
+            return $this->inventoryColumns;
+        }
+
+        try {
+            $stmt = $this->connection->pdo()->query('SHOW COLUMNS FROM inventory_items');
+            $columns = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $columns[] = $row['Field'];
+            }
+            $this->inventoryColumns = $columns;
+        } catch (\Exception $e) {
+            $this->inventoryColumns = [];
+        }
+
+        return $this->inventoryColumns;
+    }
+
+    private function columnExists(string $column): bool
+    {
+        return in_array($column, $this->getInventoryColumns(), true);
+    }
+
+    private function resolveColumn(string $primary, ?string $fallback = null): ?string
+    {
+        if ($this->columnExists($primary)) {
+            return $primary;
+        }
+
+        if ($fallback !== null && $this->columnExists($fallback)) {
+            return $fallback;
+        }
+
+        return null;
     }
 
     public function find(int $id): ?InventoryItem
@@ -127,34 +166,43 @@ class InventoryItemRepository
     public function create(array $data): InventoryItem
     {
         $payload = $this->validator->validate($data);
-
-        $columns = 'name, sku, manufacturer_part_number, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, sale_price, list_price, markup, location, vendor, notes';
-        $placeholders = ':name, :sku, :manufacturer_part_number, :category, :stock_quantity, :low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes';
-
-        $params = [
-            'name' => $payload['name'],
-            'sku' => $payload['sku'],
-            'manufacturer_part_number' => $payload['manufacturer_part_number'] ?? null,
-            'category' => $payload['category'],
-            'stock_quantity' => $payload['stock_quantity'],
-            'low_stock_threshold' => $payload['low_stock_threshold'],
-            'reorder_quantity' => $payload['reorder_quantity'],
-            'cost' => $payload['cost'],
-            'sale_price' => $payload['sale_price'],
-            'list_price' => $payload['list_price'] ?? 0,
-            'markup' => $payload['markup'],
-            'location' => $payload['location'],
-            'vendor' => $payload['vendor'],
-            'notes' => $payload['notes'],
+        $columnMap = [
+            'name' => 'name',
+            'sku' => 'sku',
+            'manufacturer_part_number' => $this->resolveColumn('manufacturer_part_number'),
+            'category' => 'category',
+            'stock_quantity' => $this->resolveColumn('stock_quantity', 'quantity'),
+            'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
+            'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
+            'cost' => 'cost',
+            'sale_price' => $this->resolveColumn('sale_price', 'price'),
+            'list_price' => $this->resolveColumn('list_price'),
+            'markup' => 'markup',
+            'location' => 'location',
+            'vendor' => 'vendor',
+            'notes' => 'notes',
         ];
 
+        $columns = [];
+        $placeholders = [];
+        $params = [];
+        foreach ($columnMap as $payloadKey => $columnName) {
+            if ($columnName === null || !$this->columnExists($columnName)) {
+                continue;
+            }
+
+            $columns[] = $columnName;
+            $placeholders[] = ':' . $columnName;
+            $params[$columnName] = $payload[$payloadKey] ?? null;
+        }
+
         if ($this->hasIsTrackedColumn()) {
-            $columns .= ', is_tracked';
-            $placeholders .= ', :is_tracked';
+            $columns[] = 'is_tracked';
+            $placeholders[] = ':is_tracked';
             $params['is_tracked'] = $payload['is_tracked'] ?? 1;
         }
 
-        $sql = "INSERT INTO inventory_items ($columns) VALUES ($placeholders)";
+        $sql = 'INSERT INTO inventory_items (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
         $this->connection->pdo()->prepare($sql)->execute($params);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
@@ -176,36 +224,40 @@ class InventoryItemRepository
         }
 
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
-
-        $setClause = 'name = :name, sku = :sku, manufacturer_part_number = :manufacturer_part_number, '
-            . 'category = :category, stock_quantity = :stock_quantity, '
-            . 'low_stock_threshold = :low_stock_threshold, reorder_quantity = :reorder_quantity, cost = :cost, '
-            . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes';
-
-        $params = [
-            'name' => $payload['name'],
-            'sku' => $payload['sku'],
-            'manufacturer_part_number' => $payload['manufacturer_part_number'] ?? null,
-            'category' => $payload['category'],
-            'stock_quantity' => $payload['stock_quantity'],
-            'low_stock_threshold' => $payload['low_stock_threshold'],
-            'reorder_quantity' => $payload['reorder_quantity'],
-            'cost' => $payload['cost'],
-            'sale_price' => $payload['sale_price'],
-            'list_price' => $payload['list_price'] ?? 0,
-            'markup' => $payload['markup'],
-            'location' => $payload['location'],
-            'vendor' => $payload['vendor'],
-            'notes' => $payload['notes'],
-            'id' => $id,
+        $columnMap = [
+            'name' => 'name',
+            'sku' => 'sku',
+            'manufacturer_part_number' => $this->resolveColumn('manufacturer_part_number'),
+            'category' => 'category',
+            'stock_quantity' => $this->resolveColumn('stock_quantity', 'quantity'),
+            'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
+            'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
+            'cost' => 'cost',
+            'sale_price' => $this->resolveColumn('sale_price', 'price'),
+            'list_price' => $this->resolveColumn('list_price'),
+            'markup' => 'markup',
+            'location' => 'location',
+            'vendor' => 'vendor',
+            'notes' => 'notes',
         ];
 
+        $setClauses = [];
+        $params = ['id' => $id];
+        foreach ($columnMap as $payloadKey => $columnName) {
+            if ($columnName === null || !$this->columnExists($columnName)) {
+                continue;
+            }
+
+            $setClauses[] = $columnName . ' = :' . $columnName;
+            $params[$columnName] = $payload[$payloadKey] ?? null;
+        }
+
         if ($this->hasIsTrackedColumn()) {
-            $setClause .= ', is_tracked = :is_tracked';
+            $setClauses[] = 'is_tracked = :is_tracked';
             $params['is_tracked'] = $payload['is_tracked'] ?? 1;
         }
 
-        $sql = "UPDATE inventory_items SET $setClause WHERE id = :id";
+        $sql = 'UPDATE inventory_items SET ' . implode(', ', $setClauses) . ' WHERE id = :id';
         $this->connection->pdo()->prepare($sql)->execute($params);
 
         $item = new InventoryItem(array_merge($payload, ['id' => $id]));
@@ -317,7 +369,11 @@ class InventoryItemRepository
         }
 
         if (!empty($filters['low_stock_only'])) {
-            $clauses[] = '(stock_quantity <= low_stock_threshold)';
+            $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
+            $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
+            if ($stockColumn !== null && $thresholdColumn !== null) {
+                $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+            }
         }
 
         return [$clauses, $bindings];
@@ -328,12 +384,20 @@ class InventoryItemRepository
      */
     private function mapRow(array $row): InventoryItem
     {
-        $row['stock_quantity'] = (int) $row['stock_quantity'];
-        $row['low_stock_threshold'] = (int) $row['low_stock_threshold'];
-        $row['reorder_quantity'] = (int) $row['reorder_quantity'];
-        $row['cost'] = (float) $row['cost'];
-        $row['sale_price'] = (float) $row['sale_price'];
-        $row['markup'] = $row['markup'] === null ? null : (float) $row['markup'];
+        $row['stock_quantity'] = isset($row['stock_quantity'])
+            ? (int) $row['stock_quantity']
+            : (int) ($row['quantity'] ?? 0);
+        $row['low_stock_threshold'] = isset($row['low_stock_threshold'])
+            ? (int) $row['low_stock_threshold']
+            : (int) ($row['reorder_threshold'] ?? 0);
+        $row['reorder_quantity'] = (int) ($row['reorder_quantity'] ?? 0);
+        $row['cost'] = (float) ($row['cost'] ?? 0);
+        $row['sale_price'] = isset($row['sale_price'])
+            ? (float) $row['sale_price']
+            : (float) ($row['price'] ?? 0);
+        $row['list_price'] = (float) ($row['list_price'] ?? 0);
+        $row['manufacturer_part_number'] = $row['manufacturer_part_number'] ?? null;
+        $row['markup'] = isset($row['markup']) && $row['markup'] !== null ? (float) $row['markup'] : null;
         $row['is_tracked'] = (bool) ($row['is_tracked'] ?? 1);
 
         return new InventoryItem($row);
