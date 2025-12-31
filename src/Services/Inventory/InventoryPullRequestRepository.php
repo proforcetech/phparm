@@ -402,23 +402,28 @@ class InventoryPullRequestRepository
             return InventoryPullRequest::TYPE_ORDER;
         }
 
-        // Check inventory item
-        $stmt = $this->connection->pdo()->prepare(
-            'SELECT is_tracked, stock_quantity FROM inventory_items WHERE id = :id'
-        );
-        $stmt->execute(['id' => (int) $data['inventory_item_id']]);
-        $item = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Check inventory item - handle case where is_tracked column may not exist
+        try {
+            $stmt = $this->connection->pdo()->prepare(
+                'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+            );
+            $stmt->execute(['id' => (int) $data['inventory_item_id']]);
+            $item = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$item) {
+            if (!$item) {
+                return InventoryPullRequest::TYPE_ORDER;
+            }
+
+            // Check if out of stock
+            if ((int) $item['stock_quantity'] < (int) ($data['quantity_requested'] ?? 1)) {
+                return InventoryPullRequest::TYPE_ORDER;
+            }
+
+            return InventoryPullRequest::TYPE_PULL;
+        } catch (\Exception $e) {
+            // Fallback to order type if query fails
             return InventoryPullRequest::TYPE_ORDER;
         }
-
-        // If not tracked or out of stock, it's an order
-        if (!$item['is_tracked'] || (int) $item['stock_quantity'] < (int) ($data['quantity_requested'] ?? 1)) {
-            return InventoryPullRequest::TYPE_ORDER;
-        }
-
-        return InventoryPullRequest::TYPE_PULL;
     }
 
     /**

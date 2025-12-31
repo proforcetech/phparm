@@ -11,6 +11,7 @@ class InventoryItemRepository
 {
     private Connection $connection;
     private InventoryItemValidator $validator;
+    private ?bool $hasIsTrackedColumn = null;
 
     /**
      * @var array<int, InventoryItem>
@@ -26,6 +27,24 @@ class InventoryItemRepository
     {
         $this->connection = $connection;
         $this->validator = $validator ?? new InventoryItemValidator();
+    }
+
+    /**
+     * Check if the is_tracked column exists (for backwards compatibility)
+     */
+    private function hasIsTrackedColumn(): bool
+    {
+        if ($this->hasIsTrackedColumn === null) {
+            try {
+                $stmt = $this->connection->pdo()->query(
+                    "SHOW COLUMNS FROM inventory_items LIKE 'is_tracked'"
+                );
+                $this->hasIsTrackedColumn = $stmt->rowCount() > 0;
+            } catch (\Exception $e) {
+                $this->hasIsTrackedColumn = false;
+            }
+        }
+        return $this->hasIsTrackedColumn;
     }
 
     public function find(int $id): ?InventoryItem
@@ -109,11 +128,10 @@ class InventoryItemRepository
     {
         $payload = $this->validator->validate($data);
 
-        $sql = 'INSERT INTO inventory_items (name, sku, manufacturer_part_number, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, '
-            . 'sale_price, list_price, markup, location, vendor, notes, is_tracked) VALUES (:name, :sku, :manufacturer_part_number, :category, :stock_quantity, '
-            . ':low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes, :is_tracked)';
+        $columns = 'name, sku, manufacturer_part_number, category, stock_quantity, low_stock_threshold, reorder_quantity, cost, sale_price, list_price, markup, location, vendor, notes';
+        $placeholders = ':name, :sku, :manufacturer_part_number, :category, :stock_quantity, :low_stock_threshold, :reorder_quantity, :cost, :sale_price, :list_price, :markup, :location, :vendor, :notes';
 
-        $this->connection->pdo()->prepare($sql)->execute([
+        $params = [
             'name' => $payload['name'],
             'sku' => $payload['sku'],
             'manufacturer_part_number' => $payload['manufacturer_part_number'] ?? null,
@@ -128,8 +146,16 @@ class InventoryItemRepository
             'location' => $payload['location'],
             'vendor' => $payload['vendor'],
             'notes' => $payload['notes'],
-            'is_tracked' => $payload['is_tracked'] ?? 1,
-        ]);
+        ];
+
+        if ($this->hasIsTrackedColumn()) {
+            $columns .= ', is_tracked';
+            $placeholders .= ', :is_tracked';
+            $params['is_tracked'] = $payload['is_tracked'] ?? 1;
+        }
+
+        $sql = "INSERT INTO inventory_items ($columns) VALUES ($placeholders)";
+        $this->connection->pdo()->prepare($sql)->execute($params);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
         $item = new InventoryItem(array_merge($payload, ['id' => $id]));
@@ -151,13 +177,12 @@ class InventoryItemRepository
 
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
 
-        $sql = 'UPDATE inventory_items SET name = :name, sku = :sku, manufacturer_part_number = :manufacturer_part_number, '
+        $setClause = 'name = :name, sku = :sku, manufacturer_part_number = :manufacturer_part_number, '
             . 'category = :category, stock_quantity = :stock_quantity, '
             . 'low_stock_threshold = :low_stock_threshold, reorder_quantity = :reorder_quantity, cost = :cost, '
-            . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes, '
-            . 'is_tracked = :is_tracked WHERE id = :id';
+            . 'sale_price = :sale_price, list_price = :list_price, markup = :markup, location = :location, vendor = :vendor, notes = :notes';
 
-        $this->connection->pdo()->prepare($sql)->execute([
+        $params = [
             'name' => $payload['name'],
             'sku' => $payload['sku'],
             'manufacturer_part_number' => $payload['manufacturer_part_number'] ?? null,
@@ -172,9 +197,16 @@ class InventoryItemRepository
             'location' => $payload['location'],
             'vendor' => $payload['vendor'],
             'notes' => $payload['notes'],
-            'is_tracked' => $payload['is_tracked'] ?? 1,
             'id' => $id,
-        ]);
+        ];
+
+        if ($this->hasIsTrackedColumn()) {
+            $setClause .= ', is_tracked = :is_tracked';
+            $params['is_tracked'] = $payload['is_tracked'] ?? 1;
+        }
+
+        $sql = "UPDATE inventory_items SET $setClause WHERE id = :id";
+        $this->connection->pdo()->prepare($sql)->execute($params);
 
         $item = new InventoryItem(array_merge($payload, ['id' => $id]));
         $this->cache[$id] = $item;
