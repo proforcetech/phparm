@@ -200,7 +200,7 @@ class InventoryItemRepository
         if ($this->hasIsTrackedColumn()) {
             $columns[] = 'is_tracked';
             $placeholders[] = ':is_tracked';
-            $params['is_tracked'] = $payload['is_tracked'] ?? 1;
+            $params['is_tracked'] = isset($payload['is_tracked']) ? (int) (bool) $payload['is_tracked'] : 1;
         }
 
         $sql = 'INSERT INTO inventory_items (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
@@ -256,7 +256,7 @@ class InventoryItemRepository
 
         if ($this->hasIsTrackedColumn()) {
             $setClauses[] = 'is_tracked = :is_tracked';
-            $params['is_tracked'] = $payload['is_tracked'] ?? 1;
+            $params['is_tracked'] = isset($payload['is_tracked']) ? (int) (bool) $payload['is_tracked'] : 1;
         }
 
         $sql = 'UPDATE inventory_items SET ' . implode(', ', $setClauses) . ' WHERE id = :id';

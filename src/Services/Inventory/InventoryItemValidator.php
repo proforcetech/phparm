@@ -25,6 +25,9 @@ class InventoryItemValidator
             'name' => $name,
             'description' => isset($data['description']) && $data['description'] !== '' ? trim((string) $data['description']) : null,
             'sku' => isset($data['sku']) && $data['sku'] !== '' ? $this->sanitize((string) $data['sku'], 120) : null,
+            'manufacturer_part_number' => isset($data['manufacturer_part_number']) && $data['manufacturer_part_number'] !== ''
+                ? $this->sanitize((string) $data['manufacturer_part_number'], 120)
+                : null,
             'category' => isset($data['category']) && $data['category'] !== ''
                 ? $this->sanitize((string) $data['category'], 120)
                 : null,
@@ -33,6 +36,7 @@ class InventoryItemValidator
             'reorder_quantity' => isset($data['reorder_quantity']) ? max(0, (int) $data['reorder_quantity']) : 0,
             'cost' => isset($data['cost']) ? max(0.0, (float) $data['cost']) : 0.0,
             'sale_price' => isset($data['sale_price']) ? max(0.0, (float) $data['sale_price']) : 0.0,
+            'list_price' => isset($data['list_price']) ? max(0.0, (float) $data['list_price']) : 0.0,
             'location' => isset($data['location']) && $data['location'] !== ''
                 ? $this->sanitize((string) $data['location'], 160)
                 : null,
@@ -40,6 +44,7 @@ class InventoryItemValidator
                 ? $this->sanitize((string) $data['vendor'], 160)
                 : null,
             'notes' => isset($data['notes']) && $data['notes'] !== '' ? trim((string) $data['notes']) : null,
+            'is_tracked' => isset($data['is_tracked']) ? (bool) $data['is_tracked'] : true,
         ];
 
         if ($normalized['sale_price'] < $normalized['cost']) {
