@@ -4,18 +4,13 @@
  * Run with: php test-inventory-search.php
  */
 
-require_once __DIR__ . '/bootstrap.php';
+$config = require_once __DIR__ . '/bootstrap.php';
 
 use App\Database\Connection;
 use App\Services\Inventory\InventoryItemRepository;
 
-// Create database connection
-$connection = new Connection(
-    getenv('DB_HOST') ?: 'localhost',
-    getenv('DB_NAME') ?: 'phparm',
-    getenv('DB_USER') ?: 'root',
-    getenv('DB_PASS') ?: 'root'
-);
+// Create database connection using config
+$connection = new Connection($config['database']);
 
 // Create repository
 $repository = new InventoryItemRepository($connection);
