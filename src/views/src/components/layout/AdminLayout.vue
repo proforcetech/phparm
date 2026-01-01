@@ -27,6 +27,7 @@
         <main class="p-4 sm:p-6 lg:p-8">
           <slot />
         </main>
+        <ChatWidget />
       </div>
     </div>
   </div>
@@ -34,6 +35,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import ChatWidget from '@/components/chat/ChatWidget.vue'
 import Navbar from './Navbar.vue'
 import Sidebar from './Sidebar.vue'
 
