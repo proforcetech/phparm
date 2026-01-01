@@ -7,6 +7,7 @@ use App\Models\WarrantyClaim;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use App\Support\Notifications\NotificationDispatcher;
+use App\Services\Messaging\MessagingNotificationService;
 use InvalidArgumentException;
 use PDO;
 
@@ -15,12 +16,19 @@ class WarrantyManagementService
     private Connection $connection;
     private ?AuditLogger $audit;
     private ?NotificationDispatcher $notifications;
+    private ?MessagingNotificationService $messagingNotifications;
 
-    public function __construct(Connection $connection, ?AuditLogger $audit = null, ?NotificationDispatcher $notifications = null)
+    public function __construct(
+        Connection $connection,
+        ?AuditLogger $audit = null,
+        ?NotificationDispatcher $notifications = null,
+        ?MessagingNotificationService $messagingNotifications = null
+    )
     {
         $this->connection = $connection;
         $this->audit = $audit;
         $this->notifications = $notifications;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     /**
@@ -84,6 +92,12 @@ class WarrantyManagementService
         }
 
         $this->log($actorId, 'warranty_claim.status_changed', $claimId, $context);
+        $this->messagingNotifications?->dispatch('warranty.status_changed', [
+            'claim_id' => $claimId,
+            'status' => $status,
+            'message' => $message,
+            'actor_id' => $actorId,
+        ]);
 
         return true;
     }

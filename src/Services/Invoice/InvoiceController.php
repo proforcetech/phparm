@@ -3,6 +3,7 @@
 namespace App\Services\Invoice;
 
 use App\Models\User;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -14,17 +15,20 @@ class InvoiceController
     private PaymentProcessingService $payments;
     private AccessGate $gate;
     private ?\App\Support\Pdf\InvoicePdfGenerator $pdfGenerator;
+    private ?MessagingNotificationService $messagingNotifications;
 
     public function __construct(
         InvoiceService $service,
         PaymentProcessingService $payments,
         AccessGate $gate,
-        ?\App\Support\Pdf\InvoicePdfGenerator $pdfGenerator = null
+        ?\App\Support\Pdf\InvoicePdfGenerator $pdfGenerator = null,
+        ?MessagingNotificationService $messagingNotifications = null
     ) {
         $this->service = $service;
         $this->payments = $payments;
         $this->gate = $gate;
         $this->pdfGenerator = $pdfGenerator;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     /**
@@ -132,11 +136,19 @@ class InvoiceController
             throw new InvalidArgumentException('status is required');
         }
 
+        $before = $this->service->findById($id);
         $invoice = $this->service->updateStatus($id, (string) $data['status'], $user->id);
 
         if ($invoice === null) {
             throw new InvalidArgumentException('Invoice not found');
         }
+
+        $this->messagingNotifications?->dispatch('invoice.status_changed', [
+            'invoice_id' => $invoice->id,
+            'status' => $invoice->status,
+            'previous_status' => $before?->status ?? '',
+            'actor_id' => $user->id,
+        ]);
 
         return $invoice->toArray();
     }

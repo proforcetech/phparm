@@ -3,6 +3,7 @@
 namespace App\Services\Estimate;
 
 use App\Database\Connection;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Notifications\NotificationDispatcher;
 
 class EstimateShareService
@@ -11,6 +12,7 @@ class EstimateShareService
     private EstimateRepository $estimates;
     private EstimatePublicLinkService $links;
     private NotificationDispatcher $notifications;
+    private ?MessagingNotificationService $messagingNotifications;
     private array $settings;
 
     public function __construct(
@@ -18,16 +20,18 @@ class EstimateShareService
         EstimateRepository $estimates,
         EstimatePublicLinkService $links,
         NotificationDispatcher $notifications,
+        ?MessagingNotificationService $messagingNotifications = null,
         array $settings = []
     ) {
         $this->connection = $connection;
         $this->estimates = $estimates;
         $this->links = $links;
         $this->notifications = $notifications;
+        $this->messagingNotifications = $messagingNotifications;
         $this->settings = $settings;
     }
 
-    public function shareViaEmail(int $estimateId, string $email, string $baseUrl): array
+    public function shareViaEmail(int $estimateId, string $email, string $baseUrl, ?int $actorId = null): array
     {
         $estimate = $this->estimates->find($estimateId);
         if ($estimate === null) {
@@ -51,6 +55,13 @@ class EstimateShareService
         // Send the email directly using SMTP
         $this->sendDirectEmail($email, $subject, $body);
 
+        $this->messagingNotifications?->dispatch('estimate.link_sent', [
+            'estimate_id' => $estimateId,
+            'channel' => 'email',
+            'recipient' => $email,
+            'actor_id' => $actorId,
+        ]);
+
         return [
             'success' => true,
             'recipient' => $email,
@@ -58,7 +69,7 @@ class EstimateShareService
         ];
     }
 
-    public function shareViaSms(int $estimateId, string $phone, string $baseUrl): array
+    public function shareViaSms(int $estimateId, string $phone, string $baseUrl, ?int $actorId = null): array
     {
         $estimate = $this->estimates->find($estimateId);
         if ($estimate === null) {
@@ -79,6 +90,13 @@ class EstimateShareService
 
         // Send the SMS directly using Twilio
         $this->sendDirectSms($phone, $message);
+
+        $this->messagingNotifications?->dispatch('estimate.link_sent', [
+            'estimate_id' => $estimateId,
+            'channel' => 'sms',
+            'recipient' => $phone,
+            'actor_id' => $actorId,
+        ]);
 
         return [
             'success' => true,

@@ -3,6 +3,7 @@
 namespace App\Services\Warranty;
 
 use App\Models\User;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -11,11 +12,17 @@ class WarrantyController
 {
     private WarrantyClaimService $service;
     private AccessGate $gate;
+    private ?MessagingNotificationService $messagingNotifications;
 
-    public function __construct(WarrantyClaimService $service, AccessGate $gate)
+    public function __construct(
+        WarrantyClaimService $service,
+        AccessGate $gate,
+        ?MessagingNotificationService $messagingNotifications = null
+    )
     {
         $this->service = $service;
         $this->gate = $gate;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     /**
@@ -138,6 +145,12 @@ class WarrantyController
             throw new InvalidArgumentException('Warranty claim not found');
         }
 
+        $this->messagingNotifications?->dispatch('warranty.status_changed', [
+            'claim_id' => $claim->id,
+            'status' => $claim->status,
+            'actor_id' => $user->id,
+        ]);
+
         return $claim->toArray();
     }
 
@@ -158,7 +171,8 @@ class WarrantyController
         }
 
         $customerId = $this->customerIdOrFail($user);
-        $claim = $this->service->replyAsCustomer($id, $customerId, (string) $data['message']);
+        $message = (string) $data['message'];
+        $claim = $this->service->replyAsCustomer($id, $customerId, $message);
 
         if ($claim === null) {
             throw new InvalidArgumentException('Warranty claim not found');
@@ -166,6 +180,12 @@ class WarrantyController
 
         $data = $claim->toArray();
         $data['messages'] = array_map(static fn ($m) => $m->toArray(), $this->service->messages($claim->id));
+
+        $this->messagingNotifications?->dispatch('warranty.customer_reply', [
+            'claim_id' => $claim->id,
+            'message' => $message,
+            'actor_id' => $user->id,
+        ]);
 
         return $data;
     }

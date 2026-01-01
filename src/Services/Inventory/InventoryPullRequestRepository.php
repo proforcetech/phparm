@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\InventoryPullRequest;
 use App\Support\Audit\AuditLogger;
 use App\Support\Audit\AuditEntry;
+use App\Services\Messaging\MessagingNotificationService;
 use InvalidArgumentException;
 use PDO;
 
@@ -13,12 +14,17 @@ class InventoryPullRequestRepository
 {
     private Connection $connection;
     private AuditLogger $auditLogger;
+    private ?MessagingNotificationService $messagingNotifications;
 
-public function __construct(Connection $connection, AuditLogger $auditLogger)
-{
-    $this->connection = $connection;
-    $this->auditLogger = $auditLogger;
-}
+    public function __construct(
+        Connection $connection,
+        AuditLogger $auditLogger,
+        ?MessagingNotificationService $messagingNotifications = null
+    ) {
+        $this->connection = $connection;
+        $this->auditLogger = $auditLogger;
+        $this->messagingNotifications = $messagingNotifications;
+    }
 
     public function find(int $id): ?InventoryPullRequest
     {
@@ -195,6 +201,15 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
             'request_type' => $requestType,
         ]);
 
+        $this->messagingNotifications?->dispatch('inventory.pull_request.created', [
+            'pull_request_id' => $id,
+            'workorder_id' => $data['workorder_id'],
+            'request_type' => $requestType,
+            'description' => $data['description'],
+            'quantity_requested' => (int) ($data['quantity_requested'] ?? 1),
+            'actor_id' => $actorId,
+        ]);
+
         return $this->find($id);
     }
 
@@ -275,6 +290,13 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
             'total_fulfilled' => $totalFulfilled,
         ]);
 
+        $this->messagingNotifications?->dispatch('inventory.pull_request.pulled', [
+            'pull_request_id' => $id,
+            'quantity_pulled' => $quantityFulfilled,
+            'total_fulfilled' => $totalFulfilled,
+            'actor_id' => $actorId,
+        ]);
+
         return $this->find($id);
     }
 
@@ -297,6 +319,12 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
 
         $this->log('pull_request.ordered', $id, $actorId, [
             'order_reference' => $orderReference,
+        ]);
+
+        $this->messagingNotifications?->dispatch('inventory.pull_request.ordered', [
+            'pull_request_id' => $id,
+            'order_reference' => $orderReference,
+            'actor_id' => $actorId,
         ]);
 
         return $this->find($id);
@@ -337,6 +365,13 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
             'total_fulfilled' => $totalFulfilled,
         ]);
 
+        $this->messagingNotifications?->dispatch('inventory.pull_request.received', [
+            'pull_request_id' => $id,
+            'quantity_received' => $quantityReceived,
+            'total_fulfilled' => $totalFulfilled,
+            'actor_id' => $actorId,
+        ]);
+
         return $this->find($id);
     }
 
@@ -356,6 +391,11 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
         ]);
 
         $this->log('pull_request.cancelled', $id, $actorId);
+
+        $this->messagingNotifications?->dispatch('inventory.pull_request.cancelled', [
+            'pull_request_id' => $id,
+            'actor_id' => $actorId,
+        ]);
 
         return $this->find($id);
     }
