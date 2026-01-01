@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
@@ -7,7 +8,7 @@ import path from 'path'
 // const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [react(), vue()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -37,6 +38,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
+        react: path.resolve(__dirname, 'src/react/main.jsx'),
       },
     },
   },
