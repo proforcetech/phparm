@@ -1,4 +1,5 @@
 import { createBrowserRouter, redirect, Outlet } from 'react-router-dom'
+import CustomerPortalInvoices from '../views/customer-portal/Invoices'
 
 const routePaths = {
   login: '/react/login',
@@ -6,6 +7,7 @@ const routePaths = {
   forgotPassword: '/react/forgot-password',
   dashboard: '/react/cp/dashboard',
   invoices: '/react/cp/invoices',
+  customerPortalInvoices: '/react/portal/invoices',
 }
 
 const authTokenKey = 'auth_token'
@@ -83,6 +85,11 @@ export const reactRouteSubset = [
     name: 'InvoiceList',
     auth: 'requiresAuth',
   },
+  {
+    path: routePaths.customerPortalInvoices,
+    name: 'CustomerPortalInvoices',
+    auth: 'requiresAuth',
+  },
 ]
 
 export const router = createBrowserRouter([
@@ -143,6 +150,11 @@ export const router = createBrowserRouter([
             description="React mirror of Vue /cp/invoices (requires auth)."
           />
         ),
+      },
+      {
+        path: routePaths.customerPortalInvoices,
+        loader: requireAuth,
+        element: <CustomerPortalInvoices />,
       },
     ],
   },
