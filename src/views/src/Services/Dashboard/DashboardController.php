@@ -128,7 +128,7 @@ class DashboardController
         $timezone = $params['timezone'] ?? 'UTC';
 
         if (isset($params['preset'])) {
-            [$start, $end] = $this->service->resolvePreset((string) $params['preset'], (string) $timezone);
+            ['start' => $start, 'end' => $end] = $this->service->resolvePreset((string) $params['preset'], (string) $timezone);
         } elseif (isset($params['start'], $params['end'])) {
             $start = new DateTimeImmutable((string) $params['start']);
             $end = new DateTimeImmutable((string) $params['end']);
