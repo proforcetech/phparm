@@ -233,6 +233,15 @@ Use a **strangler approach** where Vue and React coexist while routes are migrat
 4. **Fallback strategy if server split is not possible.**
    - Mount React under a new base path (e.g., `/react/*`) and use in-app links from Vue for migrated screens until server routing can be updated.
 
+### URL ownership and mapping rules (React + Vue)
+- **Vue owns all legacy URLs** until a route is explicitly migrated.
+- **React owns `/react/*` during migration** to avoid collisions with Vue.
+- **React route mapping mirrors Vue paths** by prefixing the Vue path with `/react`.
+  - Example: Vue `/login` → React `/react/login`
+  - Example: Vue `/cp/dashboard` → React `/react/cp/dashboard`
+- **Auth/public parity rule:** React routes must keep the same `guest` vs `requiresAuth` split as the Vue route metadata, even if the React view is a placeholder.
+- **Cutover rule:** once a Vue route is migrated, switch server-side routing so the original Vue URL serves the React bundle, then remove the `/react` alias for that route.
+
 ### PHP entry points: loading the React bundle for staged routes
 Use the Vite manifest to select the React entry (`src/react/main.jsx`) for route prefixes that have migrated to React. Keep the existing Vue entry for legacy routes until cutover.
 
