@@ -1837,15 +1837,27 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         // Inventory search for parts (with optional vehicle compatibility filter)
         $router->get('/api/inventory/search-parts', function (Request $request) use ($inventoryController) {
+            error_log('[INVENTORY SEARCH DEBUG] Route handler called');
+
             $user = $request->getAttribute('user');
+            error_log('[INVENTORY SEARCH DEBUG] User ID: ' . ($user ? $user->id : 'NULL'));
+
             $params = [
                 'query' => $request->queryParam('query'),
                 'vehicle_master_id' => $request->queryParam('vehicle_master_id'),
                 'limit' => $request->queryParam('limit'),
             ];
+            error_log('[INVENTORY SEARCH DEBUG] Query param: ' . ($params['query'] ?? 'NULL'));
+            error_log('[INVENTORY SEARCH DEBUG] Limit param: ' . ($params['limit'] ?? 'NULL'));
 
             $data = $inventoryController->searchParts($user, $params);
-            return Response::json(['data' => $data]);
+            error_log('[INVENTORY SEARCH DEBUG] Results count: ' . (is_array($data) ? count($data) : 'NOT ARRAY - ' . gettype($data)));
+            error_log('[INVENTORY SEARCH DEBUG] Results: ' . json_encode($data));
+
+            $response = ['data' => $data];
+            error_log('[INVENTORY SEARCH DEBUG] Response structure: ' . json_encode($response));
+
+            return Response::json($response);
         });
 
         // Find inventory by SKU (for auto-populate)
