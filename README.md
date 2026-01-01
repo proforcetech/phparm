@@ -718,6 +718,12 @@ Run Vue component tests:
 npm run test
 ```
 
+Run React component tests (Vitest + React Testing Library):
+
+```bash
+npm run test:react
+```
+
 Run E2E tests:
 
 ```bash
