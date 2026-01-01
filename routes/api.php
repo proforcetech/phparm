@@ -1809,6 +1809,44 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::noContent();
         });
 
+        // CSV Export
+        $router->get('/api/inventory/export', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'query' => $request->queryParam('query'),
+                'category' => $request->queryParam('category'),
+                'location' => $request->queryParam('location'),
+                'low_stock_only' => $request->queryParam('low_stock') === 'true',
+            ];
+
+            $csv = $inventoryController->export($user, $filters);
+
+            return new Response(
+                200,
+                [
+                    'Content-Type' => 'text/csv',
+                    'Content-Disposition' => 'attachment; filename="inventory_export_' . date('Y-m-d') . '.csv"'
+                ],
+                $csv
+            );
+        });
+
+        // CSV Import
+        $router->post('/api/inventory/import', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+
+            $csv = $body['csv'] ?? '';
+            $updateExisting = isset($body['update_existing']) && $body['update_existing'] === true;
+
+            if (empty($csv)) {
+                return Response::json(['error' => 'CSV content is required'], 422);
+            }
+
+            $result = $inventoryController->import($user, $csv, $updateExisting);
+            return Response::json($result);
+        });
+
         $router->post('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
             $user = $request->getAttribute('user');
             $type = (string) $request->getAttribute('type');

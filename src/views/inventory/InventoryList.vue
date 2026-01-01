@@ -107,6 +107,42 @@
         <Button variant="secondary" @click="goToAlerts">View Alerts</Button>
         <Button variant="secondary" @click="$router.push('/cp/inventory/pull-requests')">Pull Requests</Button>
         <div class="pt-2 border-t border-gray-100 space-y-2">
+          <h4 class="text-sm font-semibold text-gray-900">CSV Import/Export</h4>
+          <div class="space-y-2">
+            <Button size="sm" variant="secondary" :loading="exportingCsv" @click="handleExportCsv" class="w-full">
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export to CSV
+            </Button>
+            <Button size="sm" variant="secondary" :loading="importingCsv" @click="triggerFileUpload" class="w-full">
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Import from CSV
+            </Button>
+            <Button size="sm" variant="secondary" @click="downloadTemplate" class="w-full">
+              <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download Template
+            </Button>
+            <input
+              ref="csvFileInput"
+              type="file"
+              accept=".csv"
+              class="hidden"
+              @change="handleFileSelect"
+            />
+          </div>
+          <div v-if="importResult" class="mt-2 text-xs">
+            <div v-if="importResult.created > 0" class="text-green-700">✓ Created: {{ importResult.created }}</div>
+            <div v-if="importResult.updated > 0" class="text-blue-700">✓ Updated: {{ importResult.updated }}</div>
+            <div v-if="importResult.duplicates > 0" class="text-yellow-700">⚠ Duplicates: {{ importResult.duplicates }}</div>
+            <div v-if="importResult.failed > 0" class="text-red-700">✗ Failed: {{ importResult.failed }}</div>
+          </div>
+        </div>
+        <div class="pt-2 border-t border-gray-100 space-y-2">
           <h4 class="text-sm font-semibold text-gray-900">Manage lists</h4>
           <div class="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" @click="$router.push('/cp/inventory/categories')">Categories</Button>
@@ -138,6 +174,10 @@ const items = ref([])
 const page = ref(1)
 const perPage = 10
 const hasNextPage = ref(false)
+const exportingCsv = ref(false)
+const importingCsv = ref(false)
+const csvFileInput = ref(null)
+const importResult = ref(null)
 
 const filters = reactive({ query: '', category: '', location: '', low_stock_only: false })
 
@@ -211,6 +251,96 @@ const confirmDelete = async (id) => {
     toast.error(error.response?.data?.message || 'Failed to delete inventory item')
   } finally {
     deletingId.value = null
+  }
+}
+
+const handleExportCsv = async () => {
+  exportingCsv.value = true
+  try {
+    const blob = await inventoryService.exportCsv(filters)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `inventory_export_${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    toast.success('Inventory exported successfully')
+  } catch (error) {
+    console.error('Failed to export inventory', error)
+    toast.error(error.response?.data?.message || 'Failed to export inventory')
+  } finally {
+    exportingCsv.value = false
+  }
+}
+
+const downloadTemplate = () => {
+  try {
+    inventoryService.downloadTemplate()
+    toast.success('Template downloaded')
+  } catch (error) {
+    console.error('Failed to download template', error)
+    toast.error('Failed to download template')
+  }
+}
+
+const triggerFileUpload = () => {
+  importResult.value = null
+  csvFileInput.value?.click()
+}
+
+const handleFileSelect = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  if (!file.name.endsWith('.csv')) {
+    toast.error('Please select a CSV file')
+    return
+  }
+
+  importingCsv.value = true
+  try {
+    const csvContent = await file.text()
+
+    const updateExisting = confirm(
+      'Update existing items?\n\n' +
+      'Click OK to update existing items (matched by SKU).\n' +
+      'Click Cancel to skip duplicates and only create new items.'
+    )
+
+    const result = await inventoryService.importCsv(csvContent, updateExisting)
+    importResult.value = result
+
+    const messages = []
+    if (result.created > 0) messages.push(`${result.created} created`)
+    if (result.updated > 0) messages.push(`${result.updated} updated`)
+    if (result.duplicates > 0 && !updateExisting) messages.push(`${result.duplicates} skipped (duplicates)`)
+    if (result.failed > 0) messages.push(`${result.failed} failed`)
+
+    if (result.failed === 0) {
+      toast.success(`Import complete: ${messages.join(', ')}`)
+    } else {
+      toast.warning(`Import finished with errors: ${messages.join(', ')}`)
+      if (result.errors?.length > 0) {
+        console.error('Import errors:', result.errors)
+      }
+    }
+
+    // Refresh the list after import
+    if (result.created > 0 || result.updated > 0) {
+      await loadItems()
+    }
+  } catch (error) {
+    console.error('Failed to import CSV', error)
+    toast.error(error.response?.data?.message || 'Failed to import CSV')
+    importResult.value = null
+  } finally {
+    importingCsv.value = false
+    // Reset file input
+    if (csvFileInput.value) {
+      csvFileInput.value.value = ''
+    }
   }
 }
 
