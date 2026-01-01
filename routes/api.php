@@ -1962,7 +1962,15 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
     // Inventory Pull Requests routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
-        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger);
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
+            $connection,
+            $auditLogger,
+            $messagingNotifications
+        );
         $pullRequestController = new \App\Services\Inventory\InventoryPullRequestController($pullRequestRepository, $gate);
 
         // List all pull requests with filters
@@ -2293,15 +2301,25 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $templateEngine = new \App\Support\Notifications\TemplateEngine();
             $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
             $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+            $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+                $connection,
+                new \App\Services\Messaging\MessagingService($connection)
+            );
 
             $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
             $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
             $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
-            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
+            $shareService = new \App\Services\Estimate\EstimateShareService(
+                $connection,
+                $estimateRepository,
+                $linkService,
+                $notifications,
+                $messagingNotifications
+            );
 
             $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
-            $result = $shareService->shareViaEmail($id, $body['email'], $baseUrl);
+            $result = $shareService->shareViaEmail($id, $body['email'], $baseUrl, $user->id);
 
             return Response::json($result);
         });
@@ -2320,15 +2338,25 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $templateEngine = new \App\Support\Notifications\TemplateEngine();
             $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
             $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
+            $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+                $connection,
+                new \App\Services\Messaging\MessagingService($connection)
+            );
 
             $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
             $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
             $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
-            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications);
+            $shareService = new \App\Services\Estimate\EstimateShareService(
+                $connection,
+                $estimateRepository,
+                $linkService,
+                $notifications,
+                $messagingNotifications
+            );
 
             $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
-            $result = $shareService->shareViaSms($id, $body['phone'], $baseUrl);
+            $result = $shareService->shareViaSms($id, $body['phone'], $baseUrl, $user->id);
 
             return Response::json($result);
         });
@@ -2746,11 +2774,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         // Payment gateway setup
         $gatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
 
+        $invoiceMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
         $invoiceController = new \App\Services\Invoice\InvoiceController(
             new \App\Services\Invoice\InvoiceService($connection),
             new \App\Services\Invoice\PaymentProcessingService($connection, $gatewayFactory),
             $gate,
-            new \App\Support\Pdf\InvoicePdfGenerator($connection)
+            new \App\Support\Pdf\InvoicePdfGenerator($connection),
+            $invoiceMessagingNotifications
         );
 
         $router->get('/api/invoices', function (Request $request) use ($invoiceController) {
@@ -2844,7 +2877,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
-        $workorderController = new \App\Services\Workorder\WorkorderController($workorderRepository, $workorderService, $gate);
+        $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
+        $workorderController = new \App\Services\Workorder\WorkorderController(
+            $workorderRepository,
+            $workorderService,
+            $gate,
+            $workorderMessagingNotifications
+        );
 
         $router->get('/api/workorders', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
@@ -2979,8 +3021,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $appointmentAudit
     );
 
+    $appointmentMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+        $connection,
+        new \App\Services\Messaging\MessagingService($connection)
+    );
     $appointmentController = new \App\Services\Appointment\AppointmentController(
-        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks),
+        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks, $appointmentMessagingNotifications),
         new \App\Services\Appointment\AvailabilityService($connection),
         $gate
     );
@@ -3349,9 +3395,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     // Warranty routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
+        $warrantyMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
         $warrantyController = new \App\Services\Warranty\WarrantyController(
             new \App\Services\Warranty\WarrantyClaimService($connection),
-            $gate
+            $gate,
+            $warrantyMessagingNotifications
         );
 
         $router->get('/api/warranty-claims', function (Request $request) use ($warrantyController) {

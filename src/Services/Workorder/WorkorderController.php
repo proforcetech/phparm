@@ -4,6 +4,7 @@ namespace App\Services\Workorder;
 
 use App\Models\User;
 use App\Models\Workorder;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -13,15 +14,18 @@ class WorkorderController
     private WorkorderRepository $repository;
     private WorkorderService $service;
     private AccessGate $gate;
+    private ?MessagingNotificationService $messagingNotifications;
 
     public function __construct(
         WorkorderRepository $repository,
         WorkorderService $service,
-        AccessGate $gate
+        AccessGate $gate,
+        ?MessagingNotificationService $messagingNotifications = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
         $this->gate = $gate;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     /**
@@ -136,10 +140,18 @@ class WorkorderController
             );
         }
 
+        $before = $this->repository->find($id);
         $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes);
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
+
+        $this->messagingNotifications?->dispatch('workorder.status_changed', [
+            'workorder_id' => $workorder->id,
+            'status' => $workorder->status,
+            'previous_status' => $before?->status ?? '',
+            'actor_id' => $user->id,
+        ]);
 
         return $this->enrichWorkorder($workorder);
     }
@@ -155,6 +167,7 @@ class WorkorderController
 
         $technicianId = $payload['technician_id'] ?? null;
 
+        $before = $this->repository->find($id);
         $workorder = $this->repository->assignTechnician(
             $id,
             $technicianId ? (int) $technicianId : null,
@@ -164,6 +177,13 @@ class WorkorderController
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
+
+        $this->messagingNotifications?->dispatch('workorder.assignment_changed', [
+            'workorder_id' => $workorder->id,
+            'previous_technician_id' => $before?->assigned_technician_id,
+            'new_technician_id' => $technicianId ? (int) $technicianId : null,
+            'actor_id' => $user->id,
+        ]);
 
         return $this->enrichWorkorder($workorder);
     }
@@ -324,6 +344,7 @@ class WorkorderController
 
         $technicianId = $payload['technician_id'] ?? null;
 
+        $beforeJob = $this->repository->findJob($jobId);
         $job = $this->repository->assignJobTechnician(
             $jobId,
             $technicianId ? (int) $technicianId : null,
@@ -333,6 +354,14 @@ class WorkorderController
         if ($job === null) {
             throw new InvalidArgumentException('Workorder job not found');
         }
+
+        $this->messagingNotifications?->dispatch('workorder.job_assignment_changed', [
+            'workorder_id' => $job->workorder_id,
+            'job_id' => $job->id,
+            'previous_technician_id' => $beforeJob?->assigned_technician_id,
+            'new_technician_id' => $technicianId ? (int) $technicianId : null,
+            'actor_id' => $user->id,
+        ]);
 
         return $job->toArray();
     }

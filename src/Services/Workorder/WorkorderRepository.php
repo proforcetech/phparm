@@ -365,6 +365,15 @@ class WorkorderRepository
         return $row ? new WorkorderJob($row) : null;
     }
 
+    public function findJob(int $jobId): ?WorkorderJob
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM workorder_jobs WHERE id = :id');
+        $stmt->execute(['id' => $jobId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? new WorkorderJob($row) : null;
+    }
+
     /**
      * @return array<int, WorkorderStatusHistory>
      */

@@ -7,6 +7,7 @@ use App\Models\Appointment;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
+use App\Services\Messaging\MessagingNotificationService;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use PDO;
@@ -16,14 +17,21 @@ class AppointmentService
     private Connection $connection;
     private ?AuditLogger $audit;
     private ?WebhookDispatcher $webhooks;
+    private ?MessagingNotificationService $messagingNotifications;
     /**
      * @param array<string, mixed> $config
      */
-    public function __construct(Connection $connection, ?AuditLogger $audit = null, ?WebhookDispatcher $webhooks = null)
+    public function __construct(
+        Connection $connection,
+        ?AuditLogger $audit = null,
+        ?WebhookDispatcher $webhooks = null,
+        ?MessagingNotificationService $messagingNotifications = null
+    )
     {
         $this->connection = $connection;
         $this->audit = $audit;
         $this->webhooks = $webhooks;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     /**
@@ -157,6 +165,13 @@ class AppointmentService
             $this->log('appointment.status_changed', $appointmentId, $actorId, ['status' => $status]);
             $current = $this->fetch($appointmentId);
             $this->notify('appointment.status_changed', $current, ['status' => $status, 'actor_id' => $actorId]);
+            if ($status === 'cancelled') {
+                $this->messagingNotifications?->dispatch('appointment.cancelled', [
+                    'appointment_id' => $appointmentId,
+                    'status' => $status,
+                    'actor_id' => $actorId,
+                ]);
+            }
         }
 
         return $updated;
@@ -179,6 +194,11 @@ class AppointmentService
         if ($deleted) {
             $this->log('appointment.deleted', $appointmentId, $actorId, ['appointment' => $appointment?->toArray()]);
             $this->notify('appointment.deleted', $appointment, ['actor_id' => $actorId]);
+            $this->messagingNotifications?->dispatch('appointment.cancelled', [
+                'appointment_id' => $appointmentId,
+                'status' => 'deleted',
+                'actor_id' => $actorId,
+            ]);
         }
 
         return $deleted;
