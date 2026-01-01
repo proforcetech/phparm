@@ -376,6 +376,11 @@ class InventoryItemRepository
             if ($stockColumn !== null && $thresholdColumn !== null) {
                 $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
             }
+
+            // Only include tracked items in low stock alerts
+            if ($this->hasIsTrackedColumn()) {
+                $clauses[] = 'is_tracked = 1';
+            }
         }
 
         return [$clauses, $bindings];
