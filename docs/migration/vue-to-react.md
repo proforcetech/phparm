@@ -233,6 +233,58 @@ Use a **strangler approach** where Vue and React coexist while routes are migrat
 4. **Fallback strategy if server split is not possible.**
    - Mount React under a new base path (e.g., `/react/*`) and use in-app links from Vue for migrated screens until server routing can be updated.
 
+### PHP entry points: loading the React bundle for staged routes
+Use the Vite manifest to select the React entry (`src/react/main.jsx`) for route prefixes that have migrated to React. Keep the existing Vue entry for legacy routes until cutover.
+
+**Build-time output**
+- `vite build` writes `dist/manifest.json` with two entries:
+  - `main` → Vue SPA entry from `index.html`
+  - `react` → React SPA entry from `src/react/main.jsx`
+
+**Production PHP example (router split)**
+```php
+<?php
+$manifest = json_decode(file_get_contents(__DIR__ . '/../dist/manifest.json'), true);
+
+$isReactRoute = str_starts_with($normalizedPath, '/cp/settings')
+    || str_starts_with($normalizedPath, '/portal');
+
+$entry = $isReactRoute ? $manifest['react'] : $manifest['main'];
+
+// Render the appropriate root element and bundle tags.
+?>
+<?php if ($isReactRoute): ?>
+  <div id="react-root"></div>
+<?php else: ?>
+  <div id="app"></div>
+<?php endif; ?>
+
+<?php if (!empty($entry['css'])): ?>
+  <?php foreach ($entry['css'] as $css): ?>
+    <link rel="stylesheet" href="/<?= $css ?>">
+  <?php endforeach; ?>
+<?php endif; ?>
+
+<script type="module" src="/<?= $entry['file'] ?>"></script>
+```
+
+**Development PHP example (Vite dev server)**
+```php
+<?php
+$isReactRoute = str_starts_with($normalizedPath, '/cp/settings')
+    || str_starts_with($normalizedPath, '/portal');
+?>
+<?php if ($isReactRoute): ?>
+  <div id="react-root"></div>
+  <script type="module" src="http://localhost:3000/@vite/client"></script>
+  <script type="module" src="http://localhost:3000/src/react/main.jsx"></script>
+<?php else: ?>
+  <div id="app"></div>
+  <script type="module" src="http://localhost:3000/@vite/client"></script>
+  <script type="module" src="http://localhost:3000/src/main.js"></script>
+<?php endif; ?>
+```
+
 ### Phased execution (high level)
 1. **Foundation:** add React tooling, shared design system primitives, and API client reuse.
 2. **Pilot:** migrate a low-risk route group (e.g., `/cp/settings/**`).
