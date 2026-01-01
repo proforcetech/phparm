@@ -99,6 +99,9 @@
 - `/` → `Home` → `src/views/public/CMSPage.vue`
 - `/:pathMatch(.*)*` → `CMSPage` → `src/views/public/CMSPage.vue`
 
+## React route progress
+- [x] `/portal/invoices` → React `src/react/views/customer-portal/Invoices.jsx` (mounted at `/react/portal/invoices`)
+
 ## Referenced view files (`src/views/**`)
 - `src/views/appointments/AppointmentBook.vue`
 - `src/views/appointments/AppointmentCalendar.vue`
