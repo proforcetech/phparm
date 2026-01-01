@@ -315,6 +315,37 @@ $isReactRoute = str_starts_with($normalizedPath, '/cp/settings')
 - **Incremental migration:** easy to introduce alongside Vue/Pinia stores without forcing a global migration decision.
 - **Extensible later:** can wrap or replace with Zustand/Redux once the React portion grows and needs shared tooling.
 
+### CMS embedded widgets (React replacement for `createApp` mounts)
+`src/views/public/CMSPage.vue` currently searches for `[data-vue-component]` and mounts Vue apps via `createApp`. The React migration should replace this with a **CMS widget registry + DOM mount manager** so CMS authors can keep embedding widgets inside rendered HTML.
+
+**Recommended design**
+- **Registry:** a single `cmsComponentRegistry` mapping string names to React components (e.g., `{ EstimateRequestForm: EstimateRequestForm }`).
+- **DOM scan + mount:** after CMS HTML is injected, scan the DOM for mount points and `createRoot` per element, similar to Vue’s current `createApp` usage.
+- **Portals (optional):** for overlays/modals that need to render outside the CMS node, mount a portal to `document.body` but keep a local wrapper div inside the CMS content for scoping.
+- **Cleanup:** store roots in a map and unmount on route change or CMS page cleanup to avoid leaks.
+
+**Data-attribute mapping (Vue ➜ React)**
+- **Primary attribute:** migrate to `data-react-component="EstimateRequestForm"` in CMS content.
+- **Compatibility alias:** during transition, allow `data-vue-component` to map to the same registry entries so legacy CMS pages continue to work.
+- **Props input:**
+  - `data-component-props='{"foo":"bar"}'` (JSON) is parsed and passed to the React component.
+  - Additional `data-prop-*` attributes can be merged into props for simple values.
+- **Example CMS snippet:**
+  ```html
+  <div
+    data-react-component="EstimateRequestForm"
+    data-component-props='{"serviceType":"Brake Repair"}'
+  ></div>
+  ```
+  During migration, the same element can continue to use `data-vue-component="EstimateRequestForm"` and will still resolve to the React registry entry.
+
+**Implementation sketch (React)**
+1. Inject CMS HTML into a container with `dangerouslySetInnerHTML`.
+2. On `useEffect`, find `[data-react-component], [data-vue-component]`.
+3. Resolve the name from `data-react-component || data-vue-component`.
+4. Look up the component in the registry; if found, `createRoot(element).render(<Component {...props} />)`.
+5. On cleanup, unmount all roots.
+
 ### Risks
 - **Route conflicts:** overlapping path prefixes can cause incorrect bundle delivery if server routing is misconfigured.
 - **Auth/guards divergence:** Vue route guards and React route protection can drift; requires strict parity tests.
@@ -334,3 +365,4 @@ $isReactRoute = str_starts_with($normalizedPath, '/cp/settings')
 - [ ] Swap Vue-specific dependencies with React equivalents (see list above).
 - [ ] Verify feature parity for FullCalendar, Quill editor, Chart.js, and Heroicons usage.
 - [ ] Validate auth/role navigation guards in React routing layer.
+- [ ] Implement CMS widget registry + mount manager to replace Vue `createApp` mounts, including support for `data-react-component` and a `data-vue-component` compatibility alias.
