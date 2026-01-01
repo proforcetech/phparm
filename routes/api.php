@@ -2998,6 +2998,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate
     );
 
+    $messagingController = new \App\Services\Messaging\MessagingController(
+        new \App\Services\Messaging\MessagingService($connection),
+        $gate
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -3007,7 +3012,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -3191,6 +3196,46 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/permissions', function (Request $request) use ($roleController) {
             $user = $request->getAttribute('user');
             $data = $roleController->getAvailablePermissions($user);
+            return Response::json($data);
+        });
+
+        // Messaging routes (staff only)
+        $router->get('/api/messages/threads', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $data = $messagingController->threads($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/messages/threads', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $data = $messagingController->createThread($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/messages/threads/{id}/messages', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $data = $messagingController->messages($user, $threadId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/messages/threads/{id}/messages', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $data = $messagingController->postMessage($user, $threadId, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/messages/threads/{id}/read', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $data = $messagingController->markRead($user, $threadId);
+            return Response::json($data);
+        });
+
+        $router->get('/api/messages/unread', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $data = $messagingController->unreadCounts($user);
             return Response::json($data);
         });
     });
