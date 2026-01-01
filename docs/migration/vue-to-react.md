@@ -306,6 +306,15 @@ $isReactRoute = str_starts_with($normalizedPath, '/cp/settings')
 - **Shared services:** a unified API client, auth/token handling, and shared design tokens to keep UI consistent across frameworks.
 - **State integration:** for cross-app navigation, ensure auth/session state is persisted in shared storage (cookies/localStorage).
 
+### React state approach
+**Chosen approach: React Context + hooks for UI-local state (toast/messages).**
+
+**Rationale**
+- **Minimal surface area:** no additional dependency while the React surface area remains small.
+- **Clear ownership:** UI-scoped state (toasts, panels, modals) maps well to co-located providers and hooks.
+- **Incremental migration:** easy to introduce alongside Vue/Pinia stores without forcing a global migration decision.
+- **Extensible later:** can wrap or replace with Zustand/Redux once the React portion grows and needs shared tooling.
+
 ### Risks
 - **Route conflicts:** overlapping path prefixes can cause incorrect bundle delivery if server routing is misconfigured.
 - **Auth/guards divergence:** Vue route guards and React route protection can drift; requires strict parity tests.
