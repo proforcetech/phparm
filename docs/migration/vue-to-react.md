@@ -219,6 +219,43 @@
 - `@heroicons/vue` → `@heroicons/react`
 - `vue-chartjs` → `react-chartjs-2`
 
+## Migration plan (strangler vs full cutover)
+### Recommendation
+Use a **strangler approach** where Vue and React coexist while routes are migrated incrementally. This reduces risk by letting the team port routes in slices (e.g., admin settings first, then customer portal) while keeping the legacy Vue app operational.
+
+### Routing during transition
+1. **Keep Vue Router for legacy routes.**
+   - Existing Vue routes (all current `src/router/index.js` paths) continue to be served by the Vue SPA.
+2. **Mount React for new or migrated routes.**
+   - Introduce a React entry point that handles a subset of paths (e.g., `/cp/settings/**` or `/portal/**`) using `react-router-dom`.
+3. **Server-side routing split (preferred).**
+   - Use the backend router (e.g., PHP `routes` or web server rewrite rules) to serve the React bundle on the new/migrated path prefixes and the Vue bundle on legacy paths.
+4. **Fallback strategy if server split is not possible.**
+   - Mount React under a new base path (e.g., `/react/*`) and use in-app links from Vue for migrated screens until server routing can be updated.
+
+### Phased execution (high level)
+1. **Foundation:** add React tooling, shared design system primitives, and API client reuse.
+2. **Pilot:** migrate a low-risk route group (e.g., `/cp/settings/**`).
+3. **Scale:** migrate larger domains (inventory, invoices, customer portal).
+4. **Cutover:** once route parity is complete, remove Vue app and switch all routing to React.
+
+### Dependencies
+- **Build tooling:** ensure Vite config supports parallel Vue + React bundles or a single build with multiple entry points.
+- **Routing split:** backend or reverse-proxy rule updates to decide which SPA bundle to serve per path.
+- **Shared services:** a unified API client, auth/token handling, and shared design tokens to keep UI consistent across frameworks.
+- **State integration:** for cross-app navigation, ensure auth/session state is persisted in shared storage (cookies/localStorage).
+
+### Risks
+- **Route conflicts:** overlapping path prefixes can cause incorrect bundle delivery if server routing is misconfigured.
+- **Auth/guards divergence:** Vue route guards and React route protection can drift; requires strict parity tests.
+- **UX inconsistency:** styling and layout differences between Vue and React components during coexistence.
+- **Operational complexity:** two build pipelines, two bundles, and deployment coordination.
+
+### Rollback plan
+- **Immediate rollback:** revert routing split to serve the Vue bundle for all SPA routes.
+- **Feature rollback:** keep Vue routes intact and disable React links/feature flags pointing to migrated pages.
+- **Data safety:** no schema changes are required for frontend-only migrations; if API changes are introduced for React, keep backward-compatible endpoints until full cutover is stable.
+
 ## Migration checklist
 - [ ] Recreate route table in `react-router-dom` (including nested settings routes and auth/role gating).
 - [ ] Port each view in the referenced `src/views/**` list to React pages.
