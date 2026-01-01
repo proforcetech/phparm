@@ -5,6 +5,7 @@ namespace App\Services\Inventory;
 use App\Database\Connection;
 use App\Models\InventoryPullRequest;
 use App\Support\Audit\AuditLogger;
+use App\Support\Audit\AuditEntry;
 use InvalidArgumentException;
 use PDO;
 
@@ -468,6 +469,7 @@ public function __construct(Connection $connection, AuditLogger $auditLogger)
 
     private function log(string $action, int $subjectId, ?int $actorId, array $context = []): void
     {
-        $this->auditLogger->log($action, 'inventory_pull_request', $subjectId, $actorId, $context);
+        $entry = new AuditEntry($action, 'inventory_pull_request', $subjectId, $actorId, $context);
+        $this->auditLogger->log($entry);
     }
 }
