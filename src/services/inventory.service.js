@@ -107,4 +107,103 @@ export default {
     const response = await api.delete(`/inventory/${id}/vehicle-compatibility/${vehicleMasterId}`)
     return response.data
   },
+
+  /**
+   * Export inventory to CSV
+   * @param {Object} filters - Optional filters (category, location, query, low_stock)
+   * @returns {Promise<Blob>}
+   */
+  async exportCsv(filters = {}) {
+    const params = {}
+    if (filters.category) params.category = filters.category
+    if (filters.location) params.location = filters.location
+    if (filters.query) params.query = filters.query
+    if (filters.low_stock_only) params.low_stock = 'true'
+
+    const response = await api.get('/inventory/export', {
+      params,
+      responseType: 'blob'
+    })
+    return response.data
+  },
+
+  /**
+   * Import inventory from CSV
+   * @param {string} csvContent - CSV file content as string
+   * @param {boolean} updateExisting - Whether to update existing items (by SKU)
+   * @returns {Promise}
+   */
+  async importCsv(csvContent, updateExisting = false) {
+    const response = await api.post('/inventory/import', {
+      csv: csvContent,
+      update_existing: updateExisting
+    })
+    return response.data
+  },
+
+  /**
+   * Generate a CSV template for importing inventory
+   * @returns {string} - CSV template with headers and sample data
+   */
+  getTemplateContent() {
+    const headers = [
+      'name',
+      'description',
+      'sku',
+      'category',
+      'stock_quantity',
+      'low_stock_threshold',
+      'reorder_quantity',
+      'cost',
+      'sale_price',
+      'markup',
+      'location',
+      'vendor',
+      'notes'
+    ]
+
+    const sampleRow = [
+      'Sample Part',
+      'This is a sample description',
+      'SAMPLE-001',
+      'Brakes',
+      '100',
+      '10',
+      '50',
+      '25.00',
+      '49.99',
+      '100',
+      'Aisle 3',
+      'ABC Parts Co',
+      'Sample notes here'
+    ]
+
+    // Convert to CSV format
+    const headerLine = headers.join(',')
+    const sampleLine = sampleRow.map(field => {
+      // Escape fields with commas or quotes
+      if (field.includes(',') || field.includes('"') || field.includes('\n')) {
+        return `"${field.replace(/"/g, '""')}"`
+      }
+      return field
+    }).join(',')
+
+    return `${headerLine}\n${sampleLine}\n`
+  },
+
+  /**
+   * Download CSV template file
+   */
+  downloadTemplate() {
+    const content = this.getTemplateContent()
+    const blob = new Blob([content], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'inventory_template.csv'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
 }
