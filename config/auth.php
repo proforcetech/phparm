@@ -55,6 +55,26 @@ return [
                 'cms.templates.view', 'messages.*'
             ],
         ],
+        'parts' => [
+            'label' => 'Parts',
+            'description' => 'Manage inventory alerts and pull/order requests',
+            'permissions' => [
+                'inventory.view',
+                'inventory.*',
+            ],
+        ],
+        'roadside' => [
+            'label' => 'Roadside',
+            'description' => 'Roadside assistance access (placeholder)',
+            'permissions' => [],
+        ],
+        'cms' => [
+            'label' => 'CMS',
+            'description' => 'Manage CMS content, 404 logs, and redirects',
+            'permissions' => [
+                'cms.*',
+            ],
+        ],
         'customer' => [
             'label' => 'Customer',
             'description' => 'Customer portal scoped to their profile and documents',

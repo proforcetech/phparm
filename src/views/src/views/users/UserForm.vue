@@ -159,6 +159,9 @@ const roleOptions = [
   { label: 'Admin', value: 'admin' },
   { label: 'Manager', value: 'manager' },
   { label: 'Technician', value: 'technician' },
+  { label: 'Parts', value: 'parts' },
+  { label: 'Roadside', value: 'roadside' },
+  { label: 'CMS', value: 'cms' },
   { label: 'Customer', value: 'customer' }
 ]
 
@@ -184,6 +187,21 @@ const roleInfo = {
     label: 'Technician',
     description: 'Work estimates, inspections, jobs, and time tracking',
     permissions: ['customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view']
+  },
+  parts: {
+    label: 'Parts',
+    description: 'Manage inventory alerts and pull/order requests',
+    permissions: ['inventory.view', 'inventory.*']
+  },
+  roadside: {
+    label: 'Roadside',
+    description: 'Roadside assistance access (placeholder)',
+    permissions: []
+  },
+  cms: {
+    label: 'CMS',
+    description: 'Manage CMS content, 404 logs, and redirects',
+    permissions: ['cms.*']
   },
   customer: {
     label: 'Customer',

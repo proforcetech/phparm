@@ -191,6 +191,9 @@ const roleOptions = [
   { label: 'Admin', value: 'admin' },
   { label: 'Manager', value: 'manager' },
   { label: 'Technician', value: 'technician' },
+  { label: 'Parts', value: 'parts' },
+  { label: 'Roadside', value: 'roadside' },
+  { label: 'CMS', value: 'cms' },
   { label: 'Customer', value: 'customer' }
 ]
 
@@ -199,6 +202,9 @@ function getRoleLabel(role) {
     admin: 'Admin',
     manager: 'Manager',
     technician: 'Technician',
+    parts: 'Parts',
+    roadside: 'Roadside',
+    cms: 'CMS',
     customer: 'Customer'
   }
   return roleMap[role] || role
@@ -209,6 +215,9 @@ function getRoleBadgeVariant(role) {
     admin: 'danger',
     manager: 'warning',
     technician: 'primary',
+    parts: 'info',
+    roadside: 'secondary',
+    cms: 'success',
     customer: 'secondary'
   }
   return variantMap[role] || 'secondary'

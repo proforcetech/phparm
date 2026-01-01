@@ -42,8 +42,8 @@ class AuthService
     public function registerStaff(string $name, string $email, string $password, string $role): User
     {
         $role = strtolower($role);
-        if (!in_array($role, ['admin', 'manager', 'technician'], true)) {
-            throw new InvalidArgumentException('Staff role must be admin, manager, or technician.');
+        if (!in_array($role, ['admin', 'manager', 'technician', 'parts', 'roadside', 'cms'], true)) {
+            throw new InvalidArgumentException('Staff role must be admin, manager, technician, parts, roadside, or cms.');
         }
 
         $this->roles->validateRole($role);
@@ -96,7 +96,7 @@ class AuthService
     public function staffLogin(string $email, string $password): ?User
     {
         $user = $this->findByEmail($email);
-        if (!$user || !in_array($user->role, ['admin', 'manager', 'technician'], true)) {
+        if (!$user || !in_array($user->role, ['admin', 'manager', 'technician', 'parts', 'roadside', 'cms'], true)) {
             return null;
         }
 

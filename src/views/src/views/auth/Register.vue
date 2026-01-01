@@ -79,7 +79,9 @@
               <option value="admin">Administrator</option>
               <option value="manager">Manager</option>
               <option value="technician">Technician</option>
-              <option value="receptionist">Receptionist</option>
+              <option value="parts">Parts</option>
+              <option value="roadside">Roadside</option>
+              <option value="cms">CMS</option>
             </select>
           </div>
 
