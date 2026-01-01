@@ -113,6 +113,7 @@ const adminMenuItems = [
   { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
   { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
   { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/cp/inventory/pull-requests', label: 'Pull Requests', icon: ClipboardDocumentListIcon },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
   // Inspections Section
@@ -138,6 +139,26 @@ const technicianMenuItems = [
   { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
 ]
 
+const partsMenuItems = [
+  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
+  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/cp/inventory/pull-requests', label: 'Pull Requests', icon: ClipboardDocumentListIcon },
+]
+
+const cmsMenuItems = [
+  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon },
+  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon },
+  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon },
+  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon },
+  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon },
+  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon },
+  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon },
+]
+
+const roadsideMenuItems = [
+  { path: '/cp/roadside', label: 'Roadside Assistance', icon: TruckIcon },
+]
+
 // Customer menu items
 const customerMenuItems = [
   { path: '/portal', label: 'Dashboard', icon: HomeIcon },
@@ -159,6 +180,18 @@ const menuItems = computed(() => {
     return technicianMenuItems
   }
 
+  if (authStore.user?.role === 'parts') {
+    return partsMenuItems
+  }
+
+  if (authStore.user?.role === 'cms') {
+    return cmsMenuItems
+  }
+
+  if (authStore.user?.role === 'roadside') {
+    return roadsideMenuItems
+  }
+
   return adminMenuItems
 })
 
@@ -172,6 +205,9 @@ function isActive(path) {
   // Handle CMS routes - exact match for /cp/cms, startsWith for others
   if (path === '/cp/cms') {
     return route.path === '/cp/cms'
+  }
+  if (path === '/cp/roadside') {
+    return route.path === '/cp/roadside'
   }
   return route.path.startsWith(path)
 }

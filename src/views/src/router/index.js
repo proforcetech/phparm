@@ -221,46 +221,52 @@ const routes = [
     path: '/cp/inventory',
     name: 'InventoryList',
     component: () => import('@/views/inventory/InventoryList.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'parts'] },
   },
   {
     path: '/cp/inventory/categories',
     name: 'InventoryCategories',
     component: () => import('@/views/inventory/InventoryLookupManager.vue'),
     props: { type: 'categories' },
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician'] },
   },
   {
     path: '/cp/inventory/vendors',
     name: 'InventoryVendors',
     component: () => import('@/views/inventory/InventoryLookupManager.vue'),
     props: { type: 'vendors' },
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician'] },
   },
   {
     path: '/cp/inventory/locations',
     name: 'InventoryLocations',
     component: () => import('@/views/inventory/InventoryLookupManager.vue'),
     props: { type: 'locations' },
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician'] },
   },
   {
     path: '/cp/inventory/create',
     name: 'InventoryCreate',
     component: () => import('@/views/inventory/InventoryForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician'] },
   },
   {
     path: '/cp/inventory/:id/edit',
     name: 'InventoryEdit',
     component: () => import('@/views/inventory/InventoryForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician'] },
   },
   {
     path: '/cp/inventory/alerts',
     name: 'InventoryAlerts',
     component: () => import('@/views/inventory/InventoryAlerts.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'parts'] },
+  },
+  {
+    path: '/cp/inventory/pull-requests',
+    name: 'InventoryPullRequests',
+    component: () => import('@/views/inventory/InventoryPullRequests.vue'),
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'parts'] },
   },
   {
     path: '/cp/financial/entries',
@@ -315,103 +321,109 @@ const routes = [
     path: '/cp/cms',
     name: 'CMSDashboard',
     component: () => import('@/views/cms/CMSDashboard.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/pages',
     name: 'CMSPageList',
     component: () => import('@/views/cms/CMSPageList.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/pages/create',
     name: 'CMSPageCreate',
     component: () => import('@/views/cms/CMSPageForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/pages/:id',
     name: 'CMSPageEdit',
     component: () => import('@/views/cms/CMSPageForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/categories',
     name: 'CMSCategoryList',
     component: () => import('@/views/cms/CMSCategoryList.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/categories/create',
     name: 'CMSCategoryCreate',
     component: () => import('@/views/cms/CMSCategoryForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/categories/:id',
     name: 'CMSCategoryEdit',
     component: () => import('@/views/cms/CMSCategoryForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/menus',
     name: 'CMSMenuList',
     component: () => import('@/views/cms/CMSMenuList.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/menus/create',
     name: 'CMSMenuCreate',
     component: () => import('@/views/cms/CMSMenuForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/menus/:id',
     name: 'CMSMenuEdit',
     component: () => import('@/views/cms/CMSMenuForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/components',
     name: 'CMSComponentList',
     component: () => import('@/views/cms/CMSComponentList.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/components/create',
     name: 'CMSComponentCreate',
     component: () => import('@/views/cms/CMSComponentForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/components/:id',
     name: 'CMSComponentEdit',
     component: () => import('@/views/cms/CMSComponentForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/templates',
     name: 'CMSTemplateList',
     component: () => import('@/views/cms/CMSTemplateList.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/templates/create',
     name: 'CMSTemplateCreate',
     component: () => import('@/views/cms/CMSTemplateForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/templates/:id',
     name: 'CMSTemplateEdit',
     component: () => import('@/views/cms/CMSTemplateForm.vue'),
-    meta: { requiresAuth: true, requiresStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, allowedRoles: ['admin', 'manager', 'technician', 'cms'] },
   },
   {
     path: '/cp/cms/404-manager',
     name: 'NotFoundManager',
     component: () => import('@/views/cms/NotFoundManager.vue'),
-    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager'] },
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager', 'cms'] },
+  },
+  {
+    path: '/cp/roadside',
+    name: 'RoadsidePlaceholder',
+    component: () => import('@/views/roadside/RoadsidePlaceholder.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager', 'roadside'] },
   },
   {
     path: '/portal',
@@ -496,6 +508,29 @@ const router = createRouter({
   routes,
 })
 
+const roleRedirects = {
+  parts: {
+    defaultPath: '/cp/inventory',
+    isAllowed: (path) => (
+      path === '/cp/inventory'
+      || path === '/cp/inventory/alerts'
+      || path === '/cp/inventory/pull-requests'
+    ),
+  },
+  cms: {
+    defaultPath: '/cp/cms',
+    isAllowed: (path) => path.startsWith('/cp/cms'),
+  },
+  roadside: {
+    defaultPath: '/cp/roadside',
+    isAllowed: (path) => path.startsWith('/cp/roadside'),
+  },
+}
+
+function getRoleDefaultPath(role) {
+  return roleRedirects[role]?.defaultPath || '/cp/cms'
+}
+
 // Navigation guards
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
@@ -521,7 +556,7 @@ router.beforeEach(async (to, from, next) => {
     if (authStore.isCustomer) {
       return next('/portal')
     }
-    return next('/cp/cms')
+    return next(getRoleDefaultPath(authStore.user?.role))
   }
 
   // Check if route requires staff access
@@ -532,7 +567,14 @@ router.beforeEach(async (to, from, next) => {
   if (Array.isArray(to.meta.allowedRoles) && authStore.user) {
     const { role } = authStore.user
     if (!to.meta.allowedRoles.includes(role)) {
-      return next('/cp/cms')
+      return next(getRoleDefaultPath(role))
+    }
+  }
+
+  if (authStore.user && roleRedirects[authStore.user.role]) {
+    const { role } = authStore.user
+    if (!roleRedirects[role].isAllowed(to.path)) {
+      return next(roleRedirects[role].defaultPath)
     }
   }
 
@@ -554,7 +596,7 @@ router.beforeEach(async (to, from, next) => {
 
   // Check if route requires admin access
   if (to.meta.requiresAdmin && !authStore.isAdmin) {
-    return next('/cp/cms')
+    return next(getRoleDefaultPath(authStore.user?.role))
   }
 
   next()
