@@ -2067,6 +2067,38 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    // Roadside assistance routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
+        $roadsideService = new \App\Services\Roadside\RoadsideService($messagingNotifications);
+        $roadsideController = new \App\Services\Roadside\RoadsideController($roadsideService, $gate);
+
+        $router->get('/api/roadside/dashboard', function (Request $request) use ($roadsideController) {
+            $user = $request->getAttribute('user');
+            $data = $roadsideController->dashboard($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/roadside/requests', function (Request $request) use ($roadsideController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'priority' => $request->queryParam('priority'),
+            ];
+            $data = $roadsideController->listRequests($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/roadside/requests', function (Request $request) use ($roadsideController) {
+            $user = $request->getAttribute('user');
+            $data = $roadsideController->createRequest($user, $request->body());
+            return Response::created($data);
+        });
+    });
+
     // Estimate routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 

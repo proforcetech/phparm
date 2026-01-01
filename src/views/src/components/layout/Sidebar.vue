@@ -156,7 +156,8 @@ const cmsMenuItems = [
 ]
 
 const roadsideMenuItems = [
-  { path: '/cp/roadside', label: 'Roadside Assistance', icon: TruckIcon },
+  { path: '/cp/roadside', label: 'Roadside Dashboard', icon: TruckIcon },
+  { path: '/cp/roadside/requests', label: 'Requests', icon: ClipboardDocumentListIcon },
 ]
 
 // Customer menu items
