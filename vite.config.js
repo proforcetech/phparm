@@ -14,6 +14,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/react/test/setup.js',
+    globals: true,
+    include: ['src/react/**/*.test.{js,jsx,ts,tsx}'],
+  },
   server: {
     host: true, 
     port: 3000,
