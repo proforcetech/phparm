@@ -34,6 +34,7 @@ return [
                 'customers.*', 'vehicles.*', 'estimates.*', 'workorders.*', 'invoices.*', 'payments.*', 'appointments.*',
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
                 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*', 'messages.*',
+                'roadside.*',
                 // Full CMS access (matches admin for CMS operations)
                 'cms.*'
             ],
@@ -66,7 +67,9 @@ return [
         'roadside' => [
             'label' => 'Roadside',
             'description' => 'Roadside assistance access (placeholder)',
-            'permissions' => [],
+            'permissions' => [
+                'roadside.*',
+            ],
         ],
         'cms' => [
             'label' => 'CMS',

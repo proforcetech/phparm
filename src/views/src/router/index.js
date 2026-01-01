@@ -421,8 +421,14 @@ const routes = [
   },
   {
     path: '/cp/roadside',
-    name: 'RoadsidePlaceholder',
-    component: () => import('@/views/roadside/RoadsidePlaceholder.vue'),
+    name: 'RoadsideDashboard',
+    component: () => import('@/views/roadside/RoadsideDashboard.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'manager', 'roadside'] },
+  },
+  {
+    path: '/cp/roadside/requests',
+    name: 'RoadsideRequestList',
+    component: () => import('@/views/roadside/RoadsideRequestList.vue'),
     meta: { requiresAuth: true, allowedRoles: ['admin', 'manager', 'roadside'] },
   },
   {
