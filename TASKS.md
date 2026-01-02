@@ -45,7 +45,7 @@ As each section is complete it will marked as such.
 - [x] Remove Vue plugin usage from `vite.config.js`.
 - [x] Remove Vue entrypoints and source files: `src/main.js`, `src/App.vue`, `src/router/`, `src/views/**/*.vue`.
 - [x] Remove other Vue-only directories if unused: `src/components/`, `src/composables/`, `src/stores/`, and any Vue-specific CMS assets.
-- [ ] Update `index.html` and build config to reference only React entry points.
+- [x] Update `index.html` and build config to reference only React entry points.
 - [ ] Update backend comments/references that mention Vue SPA in `routes/cms.php` and `routes/api.php`.
 - [ ] Run `npm install` to update lockfile after dependency cleanup.
 - [ ] Verify `npm run build` and `npm run test:react`.
