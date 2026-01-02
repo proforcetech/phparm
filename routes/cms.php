@@ -122,7 +122,7 @@ return function (Router $router, array $config, $connection) {
     // Public CMS Routes
     // These routes handle the front-end website pages
 
-    // Homepage - serve Vue SPA
+    // Homepage - serve the SPA entry point
     $router->get('/', function (Request $request) use ($pageController, $renderCmsPage) {
         $response = $renderCmsPage($pageController, 'home');
         if ($response !== null) {
@@ -468,8 +468,8 @@ return function (Router $router, array $config, $connection) {
         return Response::make($content, 200, ['Content-Type' => $contentType]);
     });
 
-    // Catch-all route - serve Vue SPA for all non-reserved paths
-    // The Vue SPA will handle routing client-side and make API calls to fetch CMS content
+    // Catch-all route - serve the SPA entry point for all non-reserved paths
+    // The SPA will handle routing client-side and make API calls to fetch CMS content
     $router->get('/{path:.+}', function (Request $request) use ($isReservedPath, $pageController, $renderCmsPage) {
         if ($isReservedPath($request->path())) {
             return Response::notFound('Route not found');
@@ -482,8 +482,8 @@ return function (Router $router, array $config, $connection) {
             return $response;
         }
 
-        // Serve the Vue SPA entry point for all public routes when no CMS page exists
-        // Vue Router will handle routing on the client
+        // Serve the SPA entry point for all public routes when no CMS page exists
+        // Client-side routing will handle navigation on the front end
         $indexPath = __DIR__ . '/../index.html';
         if (file_exists($indexPath)) {
             return Response::html(file_get_contents($indexPath));
