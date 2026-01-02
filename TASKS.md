@@ -44,7 +44,7 @@ As each section is complete it will marked as such.
 - [x] Remove Vue dependencies from `package.json` (`vue`, `vue-router`, `pinia`, `vue-chartjs`, `@vueup/vue-quill`, `@fullcalendar/vue3`, `@vitejs/plugin-vue`, `@heroicons/vue`).
 - [x] Remove Vue plugin usage from `vite.config.js`.
 - [x] Remove Vue entrypoints and source files: `src/main.js`, `src/App.vue`, `src/router/`, `src/views/**/*.vue`.
-- [ ] Remove other Vue-only directories if unused: `src/components/`, `src/composables/`, `src/stores/`, and any Vue-specific CMS assets.
+- [x] Remove other Vue-only directories if unused: `src/components/`, `src/composables/`, `src/stores/`, and any Vue-specific CMS assets.
 - [ ] Update `index.html` and build config to reference only React entry points.
 - [ ] Update backend comments/references that mention Vue SPA in `routes/cms.php` and `routes/api.php`.
 - [ ] Run `npm install` to update lockfile after dependency cleanup.
