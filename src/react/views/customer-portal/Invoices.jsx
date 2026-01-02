@@ -4,7 +4,7 @@ import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Loading from '../../components/ui/Loading'
-import { useToast } from '../../stores/toast'
+import { useToast } from '../../stores/toast.jsx'
 import { portalService } from '../../../services/portal.service'
 
 const perPage = 10
