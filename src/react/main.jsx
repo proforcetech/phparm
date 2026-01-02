@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
-import { ToastProvider } from './stores/toast'
+import { ToastProvider } from './stores/toast.jsx'
 
 const container = document.getElementById('react-root')
 
