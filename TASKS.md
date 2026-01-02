@@ -49,4 +49,4 @@ As each section is complete it will marked as such.
 - [x] Update backend comments/references that mention Vue SPA in `routes/cms.php` and `routes/api.php`.
 - [x] Run `npm install` to update lockfile after dependency cleanup.
 - [x] Verify `npm run build` and `npm run test:react`.
-- [ ] Document final cutover steps and rollback plan.
+- [x] Document final cutover steps and rollback plan. (See docs/cutover-plan.md)
