@@ -1,4 +1,4 @@
-import { useToast } from '../stores/toast'
+import { useToast } from '../stores/toast.jsx'
 
 export default function ToastDemo() {
   const { messages, success, error, info, dismiss } = useToast()
