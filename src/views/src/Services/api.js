@@ -1,5 +1,4 @@
 import axios from 'axios'
-import router from '@/router'
 import env from '@/config/env'
 
 const api = axios.create({
@@ -68,18 +67,17 @@ api.interceptors.response.use(
       // Redirect to appropriate login page based on user role
       const loginPath = isCustomer ? '/customer-login' : '/login'
 
-      router.push({
-        path: loginPath,
-        query: {
-          expired: isSessionExpired ? '1' : '0',
-          message: message
-        }
-      }).then(() => {
-        // Reset flag after navigation completes
-        setTimeout(() => {
-          isHandlingSessionExpiration = false
-        }, 1000)
+      const params = new URLSearchParams({
+        expired: isSessionExpired ? '1' : '0',
+        message: message,
       })
+
+      window.location.assign(`${loginPath}?${params.toString()}`)
+
+      // Reset flag after navigation completes
+      setTimeout(() => {
+        isHandlingSessionExpiration = false
+      }, 1000)
     }
 
     return Promise.reject(error)

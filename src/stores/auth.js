@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth.service'
 import { portalService } from '@/services/portal.service'
-import router from '@/router'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -93,11 +92,11 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         // Redirect based on role
-      if (data.user.role === 'customer') {
-        router.push('/portal')
-      } else {
-        router.push('/cp/dashboard')
-      }
+        if (data.user.role === 'customer') {
+          window.location.assign('/portal')
+        } else {
+          window.location.assign('/cp/dashboard')
+        }
 
         return data
       }
@@ -145,11 +144,11 @@ export const useAuthStore = defineStore('auth', () => {
           localStorage.removeItem('portal_nonce')
         }
 
-      if (data.user.role === 'customer') {
-        router.push('/portal')
-      } else {
-        router.push('/cp/dashboard')
-      }
+        if (data.user.role === 'customer') {
+          window.location.assign('/portal')
+        } else {
+          window.location.assign('/cp/dashboard')
+        }
       }
 
       return data
@@ -176,7 +175,7 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.removeItem('auth_token')
       localStorage.removeItem('user')
       localStorage.removeItem('portal_nonce')
-      router.push('/login')
+      window.location.assign('/login')
     }
   }
 

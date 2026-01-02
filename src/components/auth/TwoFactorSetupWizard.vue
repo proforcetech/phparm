@@ -137,7 +137,6 @@
 import { ref, onMounted } from 'vue'
 import { authService } from '@/services/auth.service'
 import { useAuthStore } from '@/stores/auth'
-import router from '@/router'
 
 const authStore = useAuthStore()
 
@@ -214,9 +213,9 @@ function copyRecoveryCodes() {
 function finishSetup() {
   // Redirect based on user role
   if (authStore.isCustomer) {
-    router.push('/portal')
+    window.location.assign('/portal')
   } else {
-    router.push('/cp/dashboard')
+    window.location.assign('/cp/dashboard')
   }
 }
 </script>
