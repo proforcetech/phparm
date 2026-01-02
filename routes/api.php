@@ -1226,7 +1226,7 @@ return Response::json([
         return Response::json($page);
     });
 
-    // Get fully rendered HTML for a page (for Vue SPA)
+    // Get fully rendered HTML for a page (for the SPA)
     $router->get('/api/cms/page/{slug}/rendered', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
