@@ -34,7 +34,7 @@ export default function Navbar() {
         <div className="flex justify-between h-16">
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-              <Link to="/react/cp/dashboard" className="text-xl font-bold text-primary-600">
+              <Link to="/cp/dashboard" className="text-xl font-bold text-primary-600">
                 Auto Repair Shop
               </Link>
             </div>
@@ -78,7 +78,7 @@ export default function Navbar() {
                 >
                   {isCustomer ? (
                     <Link
-                      to="/react/portal/profile"
+                      to="/portal/profile"
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       role="menuitem"
                       onClick={() => setMenuOpen(false)}
@@ -88,7 +88,7 @@ export default function Navbar() {
                   ) : null}
                   {isAdmin ? (
                     <Link
-                      to="/react/cp/settings"
+                      to="/cp/settings"
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       role="menuitem"
                       onClick={() => setMenuOpen(false)}
