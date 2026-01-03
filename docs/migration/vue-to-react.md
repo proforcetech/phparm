@@ -54,7 +54,7 @@
 - `/cp/financial/vendors/:id/edit` → `FinancialVendorEdit` → `old-views/financial/VendorForm.vue`
 - `/cp/reports` → `FinancialReports` → `old-views/financial/Reports.vue`
 - `/cp/settings` (layout) → `old-views/settings/SettingsLayout.vue`
-  - `/cp/settings` → `Settings` → `old-views/settings/SettingsShopProfile.vue`
+  - `/cp/settings` → `Settings` → `old-views/src/views/settings/SettingsPage.vue`
   - `/cp/settings/terms` → `SettingsTerms` → `old-views/settings/SettingsTerms.vue`
   - `/cp/settings/templates` → `SettingsTemplates` → `old-views/settings/SettingsTemplates.vue`
   - `/cp/settings/rejection-reasons` → `SettingsRejectionReasons` → `old-views/settings/SettingsRejectionReasons.vue`
@@ -171,6 +171,7 @@
 - `old-views/settings/SettingsShopProfile.vue`
 - `old-views/settings/SettingsTemplates.vue`
 - `old-views/settings/SettingsTerms.vue`
+- `old-views/src/views/settings/SettingsPage.vue`
 - `old-views/time/TechnicianPortal.vue`
 - `old-views/time/TimeLogs.vue`
 - `old-views/users/Profile.vue`
@@ -188,7 +189,7 @@
 - **Duplicates resolved to top-level:** any view that exists in both `old-views/*` and `old-views/src/views/**` should be sourced from `old-views/*`.
 
 ### Exceptions (top-level missing or incomplete)
-- `old-views/src/views/settings/SettingsPage.vue` (no top-level equivalent; review required).
+- `old-views/src/views/settings/SettingsPage.vue` (no top-level equivalent; used for `/cp/settings`).
 
 ### Top-level-only pages (migration priority)
 - `old-views/financial/VendorForm.vue`

@@ -365,6 +365,9 @@ The frontend will be available at: `http://localhost:3000`
 
 API requests to `/api/*` are automatically proxied to `http://localhost:8000`
 
+React migration routes are mounted under `/react` (for example, the settings page is at
+`http://localhost:3000/react/cp/settings`).
+
 ### Production Mode
 
 #### Build Frontend
