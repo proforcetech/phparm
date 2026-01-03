@@ -1,0 +1,14 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Redirect all requests to public directory except existing files/directories
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ public/index.php [L,QSA]
+</IfModule>
+
+# Deny access to sensitive files
+<FilesMatch "^\.env|composer\.(json|lock)|\.git">
+    Require all denied
+</FilesMatch>
