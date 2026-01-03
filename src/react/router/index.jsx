@@ -88,17 +88,11 @@ import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
 import NotFound from '../views/NotFound'
 
-const reactPrefix = '/react'
-
-const withReactPrefix = (path) => {
-  if (path === '/') return reactPrefix
-  if (path === '/*') return `${reactPrefix}/*`
-  return `${reactPrefix}${path}`
-}
+const reactBasename = import.meta.env.VITE_REACT_BASE || ''
 
 const routePaths = {
-  login: withReactPrefix('/login'),
-  dashboard: withReactPrefix('/cp/dashboard'),
+  login: '/login',
+  dashboard: '/cp/dashboard',
 }
 
 const authTokenKey = 'auth_token'
@@ -242,7 +236,7 @@ const settingsRoutes = [
 ]
 
 const withAuthLoader = (route) => ({
-  path: withReactPrefix(route.path),
+  path: route.path,
   loader: route.auth === 'guest' ? requireGuest : route.auth === 'requiresAuth' ? requireAuth : undefined,
   element: route.element,
 })
@@ -296,7 +290,7 @@ export const reactRouteSubset = [
   ...protectedRoutes,
   ...settingsRoutes.map((route) => ({ ...route, auth: 'requiresAuth' })),
 ].map((route) => ({
-  path: withReactPrefix(route.path),
+  path: route.path,
   name: route.name,
   auth: route.auth || 'requiresAuth',
 }))
@@ -307,15 +301,15 @@ export const router = createBrowserRouter([
     children: publicChildren,
   },
   {
-    path: withReactPrefix('/cp'),
+    path: '/cp',
     loader: requireAuth,
     element: <AdminLayout />,
     children: adminChildren,
   },
   {
-    path: withReactPrefix('/portal'),
+    path: '/portal',
     loader: requireAuth,
     element: <CustomerLayout />,
     children: customerChildren,
   },
-])
+], { basename: reactBasename })
