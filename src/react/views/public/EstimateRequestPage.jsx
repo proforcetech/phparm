@@ -2,11 +2,7 @@ import EstimateRequestForm from '../../components/public/EstimateRequestForm'
 
 export default function EstimateRequestPage() {
   return (
-    <div className="space-y-4">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Estimate request</h1>
-        <p className="text-sm text-gray-500">React mirror of Vue /request-estimate.</p>
-      </header>
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <EstimateRequestForm />
     </div>
   )
