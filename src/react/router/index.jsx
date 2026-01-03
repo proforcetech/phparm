@@ -45,6 +45,7 @@ import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
 import SettingsLayout from '../views/settings/SettingsLayout'
+import SettingsPage from '../views/settings/SettingsPage'
 import SettingsShopProfile from '../views/settings/SettingsShopProfile'
 import SettingsTerms from '../views/settings/SettingsTerms'
 import SettingsTemplates from '../views/settings/SettingsTemplates'
@@ -229,7 +230,7 @@ const protectedRoutes = [
 ]
 
 const settingsRoutes = [
-  { path: '/cp/settings', name: 'Settings', element: <SettingsShopProfile /> },
+  { path: '/cp/settings', name: 'Settings', element: <SettingsPage /> },
   { path: '/cp/settings/terms', name: 'SettingsTerms', element: <SettingsTerms /> },
   { path: '/cp/settings/templates', name: 'SettingsTemplates', element: <SettingsTemplates /> },
   { path: '/cp/settings/rejection-reasons', name: 'SettingsRejectionReasons', element: <SettingsRejectionReasons /> },
@@ -267,7 +268,7 @@ adminChildren.push({
   path: 'settings',
   element: <SettingsLayout />,
   children: [
-    { index: true, element: <SettingsShopProfile /> },
+    { index: true, element: <SettingsPage /> },
     { path: 'terms', element: <SettingsTerms /> },
     { path: 'templates', element: <SettingsTemplates /> },
     { path: 'rejection-reasons', element: <SettingsRejectionReasons /> },
