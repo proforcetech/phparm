@@ -1,19 +1,118 @@
-import { Bars3Icon } from '@heroicons/react/24/outline'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ChevronDownIcon } from '@heroicons/react/24/outline'
 
-export default function Navbar({ title = 'Shop Portal', onMenuToggle }) {
+import { useAuthStore } from '../../stores/auth'
+
+export default function Navbar() {
+  const { user, isCustomer, isAdmin, logout } = useAuthStore()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const buttonRef = useRef(null)
+
+  const initials = useMemo(() => {
+    if (!user) return '?'
+    const firstName = user.first_name || user.name?.split(' ')[0] || ''
+    const lastName = user.last_name || user.name?.split(' ')[1] || ''
+    const value = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
+    return value || '?'
+  }, [user])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (buttonRef.current && !buttonRef.current.contains(event.target)) {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
+
   return (
-    <header className="flex items-center justify-between px-4 py-3 border-b bg-white">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          className="text-gray-600 hover:text-gray-900"
-          onClick={onMenuToggle}
-        >
-          <Bars3Icon className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <span className="text-sm font-semibold text-gray-900">{title}</span>
+    <nav className="bg-white shadow-sm border-b border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          <div className="flex">
+            <div className="flex-shrink-0 flex items-center">
+              <Link to="/react/cp/dashboard" className="text-xl font-bold text-primary-600">
+                Auto Repair Shop
+              </Link>
+            </div>
+          </div>
+
+          <div className="flex items-center">
+            <div className="ml-3 relative">
+              <div>
+                <button
+                  ref={buttonRef}
+                  type="button"
+                  className="flex items-center max-w-xs text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  id="user-menu-button"
+                  aria-expanded={menuOpen}
+                  aria-haspopup="true"
+                  onClick={() => setMenuOpen((prev) => !prev)}
+                >
+                  <span className="sr-only">Open user menu</span>
+                  <div className="flex items-center space-x-3">
+                    <div className="hidden md:block text-right">
+                      <div className="text-sm font-medium text-gray-900">
+                        {user?.name || `${user?.first_name || ''} ${user?.last_name || ''}`.trim()}
+                      </div>
+                      <div className="text-xs text-gray-500 capitalize">{user?.role}</div>
+                    </div>
+                    <div className="h-8 w-8 rounded-full bg-primary-600 flex items-center justify-center">
+                      <span className="text-sm font-medium text-white">{initials}</span>
+                    </div>
+                    <ChevronDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                  </div>
+                </button>
+              </div>
+
+              {menuOpen ? (
+                <div
+                  className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-50"
+                  role="menu"
+                  aria-orientation="vertical"
+                  aria-labelledby="user-menu-button"
+                  tabIndex="-1"
+                >
+                  {isCustomer ? (
+                    <Link
+                      to="/react/portal/profile"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      My Profile
+                    </Link>
+                  ) : null}
+                  {isAdmin ? (
+                    <Link
+                      to="/react/cp/settings"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Settings
+                    </Link>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      logout()
+                    }}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    role="menuitem"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="text-xs text-gray-500">React migration</div>
-    </header>
+    </nav>
   )
 }

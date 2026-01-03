@@ -83,6 +83,8 @@ import CustomerProfile from '../views/customer-portal/Profile'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import CMSPage from '../views/public/CMSPage'
+import AdminLayout from '../components/layout/AdminLayout'
+import CustomerLayout from '../components/layout/CustomerLayout'
 
 const reactPrefix = '/react'
 
@@ -124,16 +126,6 @@ const PublicLayout = () => (
     <header>
       <h1>React migration staging</h1>
       <p>Public route (matches Vue guest/public routes)</p>
-    </header>
-    <Outlet />
-  </div>
-)
-
-const ProtectedLayout = () => (
-  <div className="react-app">
-    <header>
-      <h1>React migration staging</h1>
-      <p>Protected route (matches Vue requiresAuth routes)</p>
     </header>
     <Outlet />
   </div>
@@ -255,11 +247,23 @@ const withAuthLoader = (route) => ({
 
 const publicChildren = [...guestRoutes, ...publicRoutes].map(withAuthLoader)
 
-const protectedChildren = protectedRoutes.map(withAuthLoader)
+const adminRoutes = protectedRoutes.filter((route) => route.path.startsWith('/cp'))
+const customerRoutes = protectedRoutes.filter((route) => route.path.startsWith('/portal'))
 
-protectedChildren.push({
-  path: withReactPrefix('/cp/settings'),
-  loader: requireAuth,
+const toChildRoute = (route, basePath) => {
+  const suffix = route.path.replace(basePath, '')
+  if (!suffix || suffix === '/') {
+    return { index: true, element: route.element }
+  }
+
+  return { path: suffix.replace(/^\//, ''), element: route.element }
+}
+
+const adminChildren = adminRoutes.map((route) => toChildRoute(route, '/cp'))
+const customerChildren = customerRoutes.map((route) => toChildRoute(route, '/portal'))
+
+adminChildren.push({
+  path: 'settings',
   element: <SettingsLayout />,
   children: [
     { index: true, element: <SettingsShopProfile /> },
@@ -291,7 +295,15 @@ export const router = createBrowserRouter([
     children: publicChildren,
   },
   {
-    element: <ProtectedLayout />,
-    children: protectedChildren,
+    path: withReactPrefix('/cp'),
+    loader: requireAuth,
+    element: <AdminLayout />,
+    children: adminChildren,
+  },
+  {
+    path: withReactPrefix('/portal'),
+    loader: requireAuth,
+    element: <CustomerLayout />,
+    children: customerChildren,
   },
 ])
