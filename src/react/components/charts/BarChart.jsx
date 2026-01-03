@@ -1,17 +1,27 @@
+import { useMemo } from 'react'
 import { Bar } from 'react-chartjs-2'
 import './chartSetup'
 
-const defaultData = {
-  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-  datasets: [
-    {
-      label: 'Sales',
-      data: [12, 19, 3, 5, 2],
-      backgroundColor: '#4f46e5',
+const defaultOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'top',
     },
-  ],
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+    },
+  },
 }
 
-export default function BarChart({ data = defaultData, options, height, width }) {
-  return <Bar data={data} options={options} height={height} width={width} />
+export default function BarChart({ data, options, height, width }) {
+  const mergedOptions = useMemo(() => ({
+    ...defaultOptions,
+    ...(options ?? {}),
+  }), [options])
+
+  return <Bar data={data} options={mergedOptions} height={height} width={width} />
 }
