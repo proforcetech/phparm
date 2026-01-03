@@ -1,258 +1,301 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
-import Loading from '../../components/ui/Loading'
-import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
+import Table from '../../components/ui/Table'
 import appointmentService from '../../../services/appointment.service'
-import { useToast } from '../../stores/toast.jsx'
 
-const perPage = 20
+const statusOptions = [
+  { label: 'Scheduled', value: 'scheduled' },
+  { label: 'Confirmed', value: 'confirmed' },
+  { label: 'In progress', value: 'in_progress' },
+  { label: 'Completed', value: 'completed' },
+  { label: 'Cancelled', value: 'cancelled' },
+]
 
-const formatDate = (date) => {
-  if (!date) return '—'
-  return new Date(date).toLocaleDateString()
-}
-
-const formatTime = (date) => {
-  if (!date) return ''
-  return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
+const columns = [
+  { key: 'id', label: 'ID' },
+  { key: 'start_time', label: 'When' },
+  { key: 'customer_id', label: 'Customer' },
+  { key: 'vehicle_id', label: 'Vehicle' },
+  { key: 'technician_id', label: 'Technician' },
+  { key: 'status', label: 'Status' },
+]
 
 const statusVariant = (status) => {
   switch (status) {
+    case 'confirmed':
+    case 'in_progress':
+      return 'primary'
     case 'completed':
       return 'success'
-    case 'scheduled':
-    case 'confirmed':
-      return 'info'
-    case 'pending':
-      return 'warning'
     case 'cancelled':
-    case 'no-show':
       return 'danger'
     default:
-      return 'default'
+      return 'secondary'
   }
 }
 
-const statusOptions = [
-  { value: '', label: 'All Statuses' },
-  { value: 'scheduled', label: 'Scheduled' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-]
+const formatTime = (value) => new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+const formatDate = (value) => new Date(value).toLocaleDateString()
 
 export default function AppointmentList() {
   const navigate = useNavigate()
-  const { success, error } = useToast()
+  const [loading, setLoading] = useState(false)
   const [appointments, setAppointments] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
-  const [page, setPage] = useState(1)
-  const [deleteModal, setDeleteModal] = useState({ open: false, appointment: null })
-  const [deleting, setDeleting] = useState(false)
+  const [filters, setFilters] = useState({
+    status: '',
+    date: '',
+    customer_id: '',
+    vehicle_id: '',
+    technician_id: '',
+  })
 
   const loadAppointments = useCallback(async () => {
     setLoading(true)
+    const params = {}
+    if (filters.status) params.status = filters.status
+    if (filters.date) params.date = filters.date
+    if (filters.customer_id) params.customer_id = filters.customer_id
+    if (filters.vehicle_id) params.vehicle_id = filters.vehicle_id
+    if (filters.technician_id) params.technician_id = filters.technician_id
+
     try {
-      const params = {
-        limit: perPage,
-        offset: (page - 1) * perPage,
-      }
-      if (search.trim()) {
-        params.query = search.trim()
-      }
-      if (status) {
-        params.status = status
-      }
       const response = await appointmentService.getAppointments(params)
-      const data = response?.data
-      setAppointments(Array.isArray(data) ? data : data?.data || [])
-    } catch {
-      error('Failed to load appointments')
-      setAppointments([])
+      setAppointments(response.data?.data || [])
     } finally {
       setLoading(false)
     }
-  }, [page, search, status, error])
+  }, [filters])
+
+  const changeStatus = async (id, status) => {
+    await appointmentService.updateAppointmentStatus(id, status)
+    await loadAppointments()
+  }
+
+  const cancelAppointment = async (id) => {
+    await changeStatus(id, 'cancelled')
+  }
+
+  const calendarSummary = useMemo(() => {
+    const days = []
+    const today = new Date()
+    for (let i = 0; i < 7; i += 1) {
+      const date = new Date(today)
+      date.setDate(today.getDate() + i)
+      const key = date.toISOString().substring(0, 10)
+      const items = appointments.filter((appt) => appt.start_time.startsWith(key))
+      days.push({
+        date: key,
+        label: date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+        count: items.length,
+        items: items.slice(0, 3),
+      })
+    }
+    return days
+  }, [appointments])
 
   useEffect(() => {
     loadAppointments()
-  }, [loadAppointments])
-
-  const handleSearch = (e) => {
-    e.preventDefault()
-    setPage(1)
-    loadAppointments()
-  }
-
-  const handleDelete = async () => {
-    if (!deleteModal.appointment) return
-    setDeleting(true)
-    try {
-      await appointmentService.deleteAppointment(deleteModal.appointment.id)
-      success('Appointment deleted successfully')
-      setDeleteModal({ open: false, appointment: null })
-      loadAppointments()
-    } catch {
-      error('Failed to delete appointment')
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  const hasNext = appointments.length === perPage
+  }, [filters, loadAppointments])
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage scheduled appointments</p>
+          <p className="mt-1 text-sm text-gray-500">Track booked work and availability</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => navigate('/cp/appointments/calendar')}>
-            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          <Button variant="ghost" onClick={() => navigate('/cp/appointments/calendar')}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
             </svg>
-            Calendar
+            Calendar View
           </Button>
-          <Button onClick={() => navigate('/cp/appointments/book')}>
-            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          <Button variant="ghost" onClick={() => navigate('/cp/appointments/availability-settings')}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3z M19.4 15a1.65 1.65 0 01-.33.5l1.5 2.6-1.73 1-1.5-2.6a6.99 6.99 0 01-1.7.7V20h-2v-2.8a6.99 6.99 0 01-1.7-.7l-1.5 2.6-1.73-1 1.5-2.6a1.65 1.65 0 01-.33-.5L4 14v-2l2.2-.4c.09-.25.2-.49.33-.72l-1.5-2.6 1.73-1 1.5 2.6c.54-.29 1.11-.51 1.7-.65V4h2v2.63c.59.14 1.16.36 1.7.65l1.5-2.6 1.73 1-1.5 2.6c.13.23.24.47.33.72L20 12v2z"
+              />
             </svg>
-            Book Appointment
+            Availability
+          </Button>
+          <Button onClick={() => navigate('/cp/appointments/create')}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            New Appointment
           </Button>
         </div>
       </div>
 
-      <Card>
-        <form onSubmit={handleSearch} className="mb-4">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Input
-              value={search}
-              onUpdateModelValue={setSearch}
-              placeholder="Search by customer name..."
-              className="flex-1"
-            />
-            <Select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              options={statusOptions}
-            />
-            <Button type="submit" variant="secondary">Search</Button>
-          </div>
-        </form>
-
-        {loading ? (
-          <div className="py-10 flex justify-center">
-            <Loading text="Loading appointments..." />
-          </div>
-        ) : appointments.length === 0 ? (
-          <div className="text-center py-12">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No appointments found</h3>
-            <p className="mt-1 text-sm text-gray-500">Get started by booking a new appointment.</p>
-            <div className="mt-4">
-              <Button onClick={() => navigate('/cp/appointments/book')}>Book Appointment</Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {appointments.map((appointment) => (
-                    <tr key={appointment.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <Link to={`/cp/appointments/${appointment.id}`} className="text-primary-600 hover:text-primary-500 font-medium">
-                          {appointment.customer?.name || 'Unknown Customer'}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {formatDate(appointment.scheduled_date)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {formatTime(appointment.scheduled_date)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {appointment.service_type || appointment.notes || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge size="sm" variant={statusVariant(appointment.status)}>
-                          {appointment.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => navigate(`/cp/appointments/${appointment.id}`)}>
-                            View
-                          </Button>
-                          <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => setDeleteModal({ open: true, appointment })}>
-                            Cancel
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex justify-between items-center mt-4 pt-4 border-t">
-              <span className="text-sm text-gray-500">
-                Page {page}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
-                  Previous
-                </Button>
-                <Button variant="ghost" size="sm" disabled={!hasNext} onClick={() => setPage(page + 1)}>
-                  Next
-                </Button>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <Card className="lg:col-span-2">
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Date</label>
+                <Input
+                  modelValue={filters.date}
+                  type="date"
+                  className="mt-1"
+                  onUpdateModelValue={(value) => {
+                    setFilters((prev) => ({ ...prev, date: value }))
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Customer ID</label>
+                <Input
+                  modelValue={filters.customer_id}
+                  type="number"
+                  min="0"
+                  placeholder="#"
+                  onUpdateModelValue={(value) => {
+                    setFilters((prev) => ({ ...prev, customer_id: value }))
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Vehicle ID</label>
+                <Input
+                  modelValue={filters.vehicle_id}
+                  type="number"
+                  min="0"
+                  placeholder="#"
+                  onUpdateModelValue={(value) => {
+                    setFilters((prev) => ({ ...prev, vehicle_id: value }))
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Technician ID</label>
+                <Input
+                  modelValue={filters.technician_id}
+                  type="number"
+                  min="0"
+                  placeholder="#"
+                  onUpdateModelValue={(value) => {
+                    setFilters((prev) => ({ ...prev, technician_id: value }))
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Status</label>
+                <Select
+                  modelValue={filters.status}
+                  options={statusOptions}
+                  placeholder="Any"
+                  onUpdateModelValue={(value) => {
+                    setFilters((prev) => ({ ...prev, status: value }))
+                  }}
+                />
               </div>
             </div>
-          </>
-        )}
-      </Card>
 
-      <Modal
-        open={deleteModal.open}
-        title="Cancel Appointment"
-        onClose={() => setDeleteModal({ open: false, appointment: null })}
-      >
-        <p className="text-sm text-gray-600 mb-4">
-          Are you sure you want to cancel this appointment for <strong>{deleteModal.appointment?.customer?.name}</strong>?
-        </p>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setDeleteModal({ open: false, appointment: null })}>
-            Keep
-          </Button>
-          <Button variant="danger" loading={deleting} onClick={handleDelete}>
-            Cancel Appointment
-          </Button>
-        </div>
-      </Modal>
+            <Table
+              columns={columns}
+              data={appointments}
+              loading={loading}
+              hoverable
+              cellRenderers={{
+                status: ({ value }) => <Badge variant={statusVariant(value)}>{value}</Badge>,
+                start_time: ({ row }) => (
+                  <div className="flex flex-col">
+                    <span className="font-semibold">{formatDate(row.start_time)}</span>
+                    <span className="text-xs text-gray-500">
+                      {formatTime(row.start_time)} - {formatTime(row.end_time)}
+                    </span>
+                  </div>
+                ),
+                customer_id: ({ value }) =>
+                  value ? <span className="text-sm">#{value}</span> : <span className="text-xs text-gray-500">Unassigned</span>,
+                vehicle_id: ({ value }) =>
+                  value ? <span className="text-sm">#{value}</span> : <span className="text-xs text-gray-500">N/A</span>,
+                technician_id: ({ value }) =>
+                  value ? <span>Tech {value}</span> : <span className="text-xs text-gray-500">Unassigned</span>,
+              }}
+              renderActions={(row) => (
+                <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                  <Select
+                    modelValue={row.status}
+                    options={statusOptions}
+                    className="w-36"
+                    onUpdateModelValue={(value) => changeStatus(row.id, value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      navigate(`/cp/appointments/create?clone=${row.id}`)
+                    }}
+                  >
+                    Clone
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      cancelAppointment(row.id)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+              renderEmpty={<p className="text-sm text-gray-500">No appointments match the current filters.</p>}
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Upcoming calendar</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {calendarSummary.map((day) => (
+              <div key={day.date} className="border rounded-lg p-3 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{day.label}</p>
+                    <p className="text-xs text-gray-500">{day.date}</p>
+                  </div>
+                  <Badge variant={day.count ? 'primary' : 'secondary'}>{day.count}</Badge>
+                </div>
+                {day.items.length ? (
+                  <ul className="text-xs text-gray-700 space-y-1">
+                    {day.items.map((item) => (
+                      <li key={item.id} className="flex items-center justify-between">
+                        <span>
+                          {formatTime(item.start_time)} • #{item.id}
+                        </span>
+                        <Badge size="sm" variant={statusVariant(item.status)}>
+                          {item.status}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-gray-500">No bookings</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
     </div>
   )
 }
