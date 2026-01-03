@@ -1,3 +1,4 @@
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Bars3Icon,
@@ -27,72 +28,107 @@ import {
 import { useAuthStore } from '../../stores/auth'
 
 const adminMenuItems = [
-  { path: '/react/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/react/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
-  { path: '/react/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
-  { path: '/react/cp/appointments', label: 'Appointments', icon: CalendarIcon },
-  { path: '/react/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
-  { path: '/react/cp/customers', label: 'Customers', icon: UserGroupIcon },
-  { path: '/react/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
-  { path: '/react/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
-  { path: '/react/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
-  { path: '/react/cp/inventory', label: 'Inventory', icon: CubeIcon },
-  { path: '/react/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
-  { path: '/react/cp/reports', label: 'Reports', icon: ChartBarIcon },
-  { path: '/react/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
-  { path: '/react/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
-  { path: '/react/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
-  { path: '/react/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
-  { path: '/react/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
-  { path: '/react/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms' },
-  { path: '/react/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
-  { path: '/react/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
-  { path: '/react/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms' },
-  { path: '/react/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
-  { path: '/react/cp/users', label: 'Users', icon: UsersIcon },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
+  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
+  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
+  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
+  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
+  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
+  { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
+  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
+  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
+  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms' },
+  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
+  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
+  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms' },
+  { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/users', label: 'Users', icon: UsersIcon },
 ]
 
 const technicianMenuItems = [
-  { path: '/react/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/react/cp/my-time', label: 'My Time', icon: ClockIcon },
-  { path: '/react/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
-  { path: '/react/cp/appointments', label: 'Appointments', icon: CalendarIcon },
-  { path: '/react/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/my-time', label: 'My Time', icon: ClockIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
 ]
 
 const customerMenuItems = [
-  { path: '/react/portal', label: 'Dashboard', icon: HomeIcon },
-  { path: '/react/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
-  { path: '/react/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
-  { path: '/react/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
-  { path: '/react/portal/inspections', label: 'My Inspections', icon: ClipboardDocumentCheckIcon },
-  { path: '/react/portal/credit', label: 'Credit Account', icon: CreditCardIcon },
-  { path: '/react/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon },
-  { path: '/react/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
+  { path: '/portal', label: 'Dashboard', icon: HomeIcon },
+  { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
+  { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
+  { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
+  { path: '/portal/inspections', label: 'My Inspections', icon: ClipboardDocumentCheckIcon },
+  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon },
+  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon },
+  { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
 const isActiveRoute = (currentPath, targetPath) => {
-  if (targetPath === '/react/cp/dashboard' || targetPath === '/react/portal') {
+  if (targetPath === '/cp/dashboard' || targetPath === '/portal') {
     return currentPath === targetPath
   }
-  if (targetPath === '/react/cp/inventory') {
-    return currentPath === '/react/cp/inventory'
+  if (targetPath === '/cp/inventory') {
+    return currentPath === '/cp/inventory'
   }
-  if (targetPath === '/react/cp/cms') {
-    return currentPath === '/react/cp/cms'
+  if (targetPath === '/cp/cms') {
+    return currentPath === '/cp/cms'
   }
   return currentPath.startsWith(targetPath)
 }
 
-export default function Sidebar({ type = 'admin', isOpen, onToggle }) {
+const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
   const { user } = useAuthStore()
   const { pathname } = useLocation()
+  const [isOpen, setIsOpen] = useState(true)
 
-  const menuItems = type === 'customer'
-    ? customerMenuItems
-    : user?.role === 'technician'
-      ? technicianMenuItems
-      : adminMenuItems
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsOpen(false)
+    }
+
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsOpen(true)
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const menuItems = useMemo(() => {
+    if (type === 'customer') {
+      return customerMenuItems
+    }
+
+    if (user?.role === 'technician') {
+      return technicianMenuItems
+    }
+
+    return adminMenuItems
+  }, [type, user?.role])
+
+  const toggleSidebar = () => {
+    setIsOpen((prev) => !prev)
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleSidebar,
+      isOpen,
+    }),
+    [isOpen]
+  )
 
   return (
     <>
@@ -106,7 +142,7 @@ export default function Sidebar({ type = 'admin', isOpen, onToggle }) {
             <span className="text-lg font-semibold text-white">Menu</span>
             <button
               type="button"
-              onClick={onToggle}
+              onClick={toggleSidebar}
               className="lg:hidden text-gray-400 hover:text-white focus:outline-none"
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -138,18 +174,20 @@ export default function Sidebar({ type = 'admin', isOpen, onToggle }) {
                   <Icon className="h-5 w-5 mr-3" />
                   {item.label}
                 </Link>
-              )
-            })}
+              )}
+            )}
           </nav>
         </div>
       </aside>
 
       {isOpen ? (
         <div
-          onClick={onToggle}
+          onClick={toggleSidebar}
           className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-20"
         ></div>
       ) : null}
     </>
   )
-}
+})
+
+export default Sidebar
