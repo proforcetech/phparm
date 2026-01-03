@@ -1,52 +1,91 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import Alert from '../../components/ui/Alert'
 import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Loading from '../../components/ui/Loading'
 import LineChart from '../../components/charts/LineChart'
 import DoughnutChart from '../../components/charts/DoughnutChart'
 import dashboardService from '../../../services/dashboard.service'
+import { useAuthStore } from '../../stores/auth.jsx'
 import { useToast } from '../../stores/toast.jsx'
 
-const formatCurrency = (value) => {
-  return new Intl.NumberFormat('en-US', {
+const formatCurrency = (value) =>
+  new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
   }).format(value || 0)
-}
 
 const formatDate = (date) => {
-  if (!date) return '—'
-  return new Date(date).toLocaleDateString()
+  if (!date) return ''
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(date))
 }
 
-const statusVariant = (status) => {
-  switch (status) {
-    case 'paid':
-    case 'completed':
-      return 'success'
-    case 'pending':
-    case 'scheduled':
-      return 'warning'
-    case 'sent':
-    case 'confirmed':
-      return 'info'
-    case 'cancelled':
-    case 'overdue':
-      return 'danger'
-    default:
-      return 'default'
+const formatTime = (value) => {
+  if (!value) return ''
+  if (typeof value === 'string' && value.includes(':') && value.length <= 8) {
+    return value
   }
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
-function StatCard({ title, value, icon, trend, trendUp }) {
+const getInvoiceStatusVariant = (status) => {
+  const variants = {
+    paid: 'success',
+    pending: 'warning',
+    overdue: 'danger',
+    draft: 'default',
+    cancelled: 'default',
+  }
+  return variants[status?.toLowerCase()] || 'default'
+}
+
+const getAppointmentStatusVariant = (status) => {
+  const variants = {
+    confirmed: 'success',
+    pending: 'warning',
+    completed: 'info',
+    cancelled: 'danger',
+    'no-show': 'default',
+  }
+  return variants[status?.toLowerCase()] || 'default'
+}
+
+const getSeverityVariant = (severity) => {
+  const variants = {
+    out: 'danger',
+    low: 'warning',
+  }
+
+  return variants[severity] || 'default'
+}
+
+const formatMonthLabel = (yearMonth) => {
+  if (!yearMonth) return ''
+  const [year, month] = yearMonth.split('-')
+  const date = new Date(Number(year), Number(month) - 1)
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
+function StatCard({ title, value, icon, trend, trendUp, secondaryText, secondaryClassName = '' }) {
   return (
     <Card className="relative overflow-hidden">
       <div className="flex items-center">
         <div className="flex-1">
           <p className="text-sm font-medium text-gray-500">{title}</p>
           <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
+          {secondaryText ? (
+            <p className={`mt-1 text-sm text-gray-500 ${secondaryClassName}`}>{secondaryText}</p>
+          ) : null}
           {trend ? (
             <p className={`mt-1 text-sm ${trendUp ? 'text-green-600' : 'text-red-600'}`}>
               {trendUp ? '+' : ''}{trend}% from last month
@@ -62,262 +101,421 @@ function StatCard({ title, value, icon, trend, trendUp }) {
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState(null)
+  const { user } = useAuthStore()
+  const toast = useToast()
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    revenueChange: 0,
+    pendingInvoices: 0,
+    pendingAmount: 0,
+    todayAppointments: 0,
+    upcomingAppointments: 0,
+    activeCustomers: 0,
+    newCustomers: 0,
+  })
   const [recentInvoices, setRecentInvoices] = useState([])
   const [recentAppointments, setRecentAppointments] = useState([])
-  const [chartData, setChartData] = useState(null)
-  const [serviceData, setServiceData] = useState(null)
+  const [inventoryAlerts, setInventoryAlerts] = useState({
+    counts: { out_of_stock: 0, low_stock: 0 },
+    items: [],
+  })
+  const [revenueChartData, setRevenueChartData] = useState({ labels: [], datasets: [] })
+  const [serviceTypeChartData, setServiceTypeChartData] = useState({ labels: [], datasets: [] })
   const [loading, setLoading] = useState(true)
-  const { error } = useToast()
+  const [errorMessage, setErrorMessage] = useState(null)
+
+  const technicianId = useMemo(() => (user?.role === 'technician' ? user.id : null), [user])
+  const technicianParams = useMemo(() => (technicianId ? { technician_id: technicianId } : {}), [technicianId])
+  const chartRange = useMemo(() => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setMonth(startDate.getMonth() - 6)
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0],
+    }
+  }, [])
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
     try {
-      const [statsRes, invoicesRes, appointmentsRes, trendsRes, servicesRes] = await Promise.all([
-        dashboardService.getStats(),
-        dashboardService.getRecentInvoices(5),
-        dashboardService.getRecentAppointments(5),
-        dashboardService.getMonthlyTrendsChart().catch(() => null),
-        dashboardService.getServiceTypeChart().catch(() => null),
+      setErrorMessage(null)
+      const [statsRes, invoicesRes, appointmentsRes, lowStockRes, trendsRes, servicesRes] = await Promise.all([
+        dashboardService.getStats(technicianParams).catch(() => ({})),
+        dashboardService.getRecentInvoices(5, technicianParams).catch(() => []),
+        dashboardService.getRecentAppointments(5, technicianParams).catch(() => []),
+        dashboardService.getInventoryLowStockTile(5).catch(() => null),
+        dashboardService
+          .getMonthlyTrendsChart({ start: chartRange.start, end: chartRange.end, ...technicianParams })
+          .catch(() => []),
+        dashboardService
+          .getServiceTypeChart({ start: chartRange.start, end: chartRange.end, limit: 8, ...technicianParams })
+          .catch(() => ({ categories: [], data: [] })),
       ])
 
-      setStats(statsRes)
-      setRecentInvoices(Array.isArray(invoicesRes) ? invoicesRes : invoicesRes?.data || [])
-      setRecentAppointments(Array.isArray(appointmentsRes) ? appointmentsRes : appointmentsRes?.data || [])
+      setStats({
+        totalRevenue: statsRes.total_revenue || 0,
+        revenueChange: statsRes.revenue_change || 0,
+        pendingInvoices: statsRes.pending_invoices || 0,
+        pendingAmount: statsRes.pending_amount || 0,
+        todayAppointments: statsRes.today_appointments || 0,
+        upcomingAppointments: statsRes.upcoming_appointments || 0,
+        activeCustomers: statsRes.active_customers || 0,
+        newCustomers: statsRes.new_customers || 0,
+      })
 
-      if (trendsRes?.labels && trendsRes?.datasets) {
-        setChartData({
-          labels: trendsRes.labels,
-          datasets: trendsRes.datasets.map((ds) => ({
-            ...ds,
-            borderColor: ds.borderColor || '#3b82f6',
-            backgroundColor: ds.backgroundColor || 'rgba(59,130,246,0.3)',
+      setRecentInvoices(invoicesRes?.data || invoicesRes || [])
+      setRecentAppointments(appointmentsRes?.data || appointmentsRes || [])
+      setInventoryAlerts({
+        counts: lowStockRes?.counts || { out_of_stock: 0, low_stock: 0 },
+        items: lowStockRes?.items || [],
+      })
+
+      const trendSeries = Array.isArray(trendsRes)
+        ? trendsRes
+        : Array.isArray(trendsRes?.data)
+          ? trendsRes.data
+          : []
+
+      if (trendSeries.length > 0) {
+        const categories = Array.isArray(trendsRes?.categories)
+          ? trendsRes.categories
+          : trendSeries[0]?.categories || []
+        setRevenueChartData({
+          labels: categories.map(formatMonthLabel),
+          datasets: trendSeries.map((series, index) => ({
+            label: series.label,
+            data: series.data,
+            borderColor: index === 0 ? '#3B82F6' : '#10B981',
+            backgroundColor: index === 0 ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)',
             tension: 0.4,
+            fill: true,
           })),
         })
+      } else {
+        setRevenueChartData({ labels: [], datasets: [] })
       }
 
-      if (servicesRes?.labels && servicesRes?.data) {
-        setServiceData({
-          labels: servicesRes.labels,
+      const serviceCategories = Array.isArray(servicesRes?.categories)
+        ? servicesRes.categories
+        : Array.isArray(servicesRes?.labels)
+          ? servicesRes.labels
+          : []
+      if (serviceCategories.length > 0) {
+        setServiceTypeChartData({
+          labels: serviceCategories,
           datasets: [
             {
-              data: servicesRes.data,
-              backgroundColor: servicesRes.colors || [
-                '#3b82f6',
-                '#10b981',
-                '#f59e0b',
-                '#ef4444',
-                '#8b5cf6',
-                '#ec4899',
+              data: servicesRes.data || [],
+              backgroundColor: [
+                '#3B82F6',
+                '#10B981',
+                '#F59E0B',
+                '#EF4444',
+                '#8B5CF6',
+                '#EC4899',
+                '#14B8A6',
+                '#F97316',
               ],
             },
           ],
         })
+      } else {
+        setServiceTypeChartData({ labels: [], datasets: [] })
       }
     } catch {
-      error('Failed to load dashboard data')
+      setErrorMessage('Failed to load dashboard data. Please try again.')
+      toast.error('Failed to load dashboard data')
     } finally {
       setLoading(false)
     }
-  }, [error])
+  }, [chartRange.end, chartRange.start, technicianParams, toast])
 
   useEffect(() => {
     loadDashboard()
   }, [loadDashboard])
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-96">
-        <Loading text="Loading dashboard..." />
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6">
-      <div>
+    <div>
+      <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">Welcome back! Here&apos;s what&apos;s happening.</p>
+        <p className="mt-1 text-sm text-gray-500">Overview of your auto repair shop</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Revenue"
-          value={formatCurrency(stats?.total_revenue)}
-          trend={stats?.revenue_trend}
-          trendUp={stats?.revenue_trend > 0}
-          icon={
-            <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-        />
-        <StatCard
-          title="Appointments Today"
-          value={stats?.appointments_today ?? 0}
-          icon={
-            <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          }
-        />
-        <StatCard
-          title="Pending Invoices"
-          value={stats?.pending_invoices ?? 0}
-          icon={
-            <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          }
-        />
-        <StatCard
-          title="Total Customers"
-          value={stats?.total_customers ?? 0}
-          trend={stats?.customers_trend}
-          trendUp={stats?.customers_trend > 0}
-          icon={
-            <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          }
-        />
-      </div>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loading size="xl" text="Loading dashboard..." />
+        </div>
+      ) : errorMessage ? (
+        <Alert variant="danger" className="mb-6" closable={false}>
+          {errorMessage}
+        </Alert>
+      ) : (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              title="Total Revenue"
+              value={formatCurrency(stats.totalRevenue)}
+              trend={stats.revenueChange}
+              trendUp={stats.revenueChange >= 0}
+              icon={
+                <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              }
+            />
+            <StatCard
+              title="Pending Invoices"
+              value={stats.pendingInvoices || 0}
+              secondaryText={formatCurrency(stats.pendingAmount || 0)}
+              icon={
+                <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              }
+            />
+            <StatCard
+              title="Today&apos;s Appointments"
+              value={stats.todayAppointments || 0}
+              secondaryText={`${stats.upcomingAppointments || 0} upcoming`}
+              icon={
+                <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              }
+            />
+            <StatCard
+              title="Active Customers"
+              value={stats.activeCustomers || 0}
+              secondaryText={stats.newCustomers ? `+${stats.newCustomers} new` : ''}
+              secondaryClassName={stats.newCustomers ? 'text-green-600' : ''}
+              icon={
+                <svg className="w-6 h-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              }
+            />
+          </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Revenue Trends</h3>
-          <div className="h-64">
-            {chartData ? (
-              <LineChart
-                data={chartData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { position: 'bottom' } },
-                }}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">
-                No trend data available
+          <Card
+            className="mb-8"
+            header={
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Inventory Alerts</h3>
+                  <p className="text-sm text-gray-500">Low and out-of-stock items that need attention</p>
+                </div>
+                <Link to="/cp/inventory/alerts">
+                  <Button variant="outline">View alerts</Button>
+                </Link>
               </div>
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Services Breakdown</h3>
-          <div className="h-64">
-            {serviceData ? (
-              <DoughnutChart
-                data={serviceData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { legend: { position: 'bottom' } },
-                }}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">
-                No service data available
+            }
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="p-4 rounded-lg bg-red-50 border border-red-100">
+                <p className="text-sm font-medium text-red-700">Out of Stock</p>
+                <p className="mt-2 text-3xl font-bold text-red-800">
+                  {inventoryAlerts.counts.out_of_stock || 0}
+                </p>
+                <p className="text-sm text-red-600">Items unavailable for sale</p>
               </div>
-            )}
-          </div>
-        </Card>
-      </div>
+              <div className="p-4 rounded-lg bg-amber-50 border border-amber-100">
+                <p className="text-sm font-medium text-amber-700">Low Stock</p>
+                <p className="mt-2 text-3xl font-bold text-amber-800">
+                  {inventoryAlerts.counts.low_stock || 0}
+                </p>
+                <p className="text-sm text-amber-600">Items approaching threshold</p>
+              </div>
+            </div>
+            <div className="mt-6">
+              {inventoryAlerts.items.length === 0 ? (
+                <div className="text-sm text-gray-600">All tracked items are above their low-stock thresholds.</div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {inventoryAlerts.items.map((item) => (
+                    <div key={item.id} className="py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {item.stock_quantity} in stock • Threshold {item.low_stock_threshold}
+                        </p>
+                      </div>
+                      <Badge variant={getSeverityVariant(item.severity)}>
+                        {item.severity === 'out' ? 'Out of Stock' : 'Low Stock'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
 
-      {/* Tables Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Invoices */}
-        <Card>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Recent Invoices</h3>
-            <Link to="/cp/invoices" className="text-sm text-primary-600 hover:text-primary-500">
-              View all
-            </Link>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card
+              header={
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Monthly Revenue Trends</h3>
+                  <p className="text-sm text-gray-500">Last 6 months</p>
+                </div>
+              }
+            >
+              <div className="h-64">
+                {revenueChartData.labels.length ? (
+                  <LineChart data={revenueChartData} />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data available</div>
+                )}
+              </div>
+            </Card>
+
+            <Card
+              header={
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Top Service Types</h3>
+                  <p className="text-sm text-gray-500">Last 6 months</p>
+                </div>
+              }
+            >
+              <div className="h-64">
+                {serviceTypeChartData.labels.length ? (
+                  <DoughnutChart data={serviceTypeChartData} />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data available</div>
+                )}
+              </div>
+            </Card>
           </div>
-          {recentInvoices.length === 0 ? (
-            <p className="text-gray-500 text-sm py-4">No recent invoices</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Invoice #</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card
+              header={
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-medium text-gray-900">Recent Invoices</h3>
+                  <Link to="/cp/invoices" className="text-sm font-medium text-primary-600 hover:text-primary-500">
+                    View all
+                  </Link>
+                </div>
+              }
+            >
+              {recentInvoices.length === 0 ? (
+                <div className="text-center py-6 text-gray-500">No recent invoices</div>
+              ) : (
+                <div className="divide-y divide-gray-200">
                   {recentInvoices.map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td className="px-3 py-2 text-sm">
-                        <Link to={`/cp/invoices/${invoice.id}`} className="text-primary-600 hover:text-primary-500">
-                          {invoice.number}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 text-sm">
-                        <Badge size="sm" variant={statusVariant(invoice.status)}>
-                          {invoice.status}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-900">
-                        {formatCurrency(invoice.total)}
-                      </td>
-                    </tr>
+                    <Link
+                      key={invoice.id}
+                      to={`/cp/invoices/${invoice.id}`}
+                      className="block py-4 flex items-center justify-between hover:bg-gray-50 px-4 -mx-4"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3">
+                          <p className="text-sm font-medium text-gray-900">
+                            #{invoice.invoice_number ?? invoice.number ?? invoice.id}
+                          </p>
+                          <Badge variant={getInvoiceStatusVariant(invoice.status)}>{invoice.status}</Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {invoice.customer_name || invoice.customer?.name || 'Unknown'} -{' '}
+                          {formatDate(invoice.created_at)}
+                        </p>
+                      </div>
+                      <div className="ml-4 flex-shrink-0 text-right">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {formatCurrency(invoice.total_amount ?? invoice.total ?? 0)}
+                        </p>
+                      </div>
+                    </Link>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+                </div>
+              )}
+            </Card>
 
-        {/* Recent Appointments */}
-        <Card>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Upcoming Appointments</h3>
-            <Link to="/cp/appointments" className="text-sm text-primary-600 hover:text-primary-500">
-              View all
-            </Link>
-          </div>
-          {recentAppointments.length === 0 ? (
-            <p className="text-gray-500 text-sm py-4">No upcoming appointments</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
+            <Card
+              header={
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-medium text-gray-900">Upcoming Appointments</h3>
+                  <Link to="/cp/appointments" className="text-sm font-medium text-primary-600 hover:text-primary-500">
+                    View all
+                  </Link>
+                </div>
+              }
+            >
+              {recentAppointments.length === 0 ? (
+                <div className="text-center py-6 text-gray-500">No upcoming appointments</div>
+              ) : (
+                <div className="divide-y divide-gray-200">
                   {recentAppointments.map((appointment) => (
-                    <tr key={appointment.id}>
-                      <td className="px-3 py-2 text-sm">
-                        <Link to={`/cp/appointments/${appointment.id}`} className="text-primary-600 hover:text-primary-500">
-                          {appointment.customer?.name || 'Unknown'}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-500">
-                        {formatDate(appointment.scheduled_date)}
-                      </td>
-                      <td className="px-3 py-2 text-sm">
-                        <Badge size="sm" variant={statusVariant(appointment.status)}>
-                          {appointment.status}
-                        </Badge>
-                      </td>
-                    </tr>
+                    <Link
+                      key={appointment.id}
+                      to={`/cp/appointments/${appointment.id}`}
+                      className="block py-4 hover:bg-gray-50 px-4 -mx-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3">
+                            <p className="text-sm font-medium text-gray-900">
+                              {appointment.customer_name || appointment.customer?.name || 'Unknown'}
+                            </p>
+                            <Badge variant={getAppointmentStatusVariant(appointment.status)}>{appointment.status}</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-gray-500">
+                            {appointment.service_type || appointment.service?.name || 'Service'}
+                          </p>
+                        </div>
+                        <div className="ml-4 flex-shrink-0 text-right">
+                          <p className="text-sm font-medium text-gray-900">
+                            {formatDate(appointment.scheduled_date || appointment.start_time)}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {formatTime(appointment.scheduled_time || appointment.start_time)}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <Card title="Quick Actions">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Link to="/cp/invoices/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Invoice
+                </Button>
+              </Link>
+              <Link to="/cp/appointments/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  New Appointment
+                </Button>
+              </Link>
+              <Link to="/cp/customers/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                  New Customer
+                </Button>
+              </Link>
+              <Link to="/cp/vehicles/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Vehicle
+                </Button>
+              </Link>
             </div>
-          )}
-        </Card>
-      </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
