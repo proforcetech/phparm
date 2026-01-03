@@ -10,6 +10,7 @@ const embeddedComponentMap = {
 }
 
 const defaultTitleMatchers = ['Auto Repair Shop Management', 'fixitfor.us']
+const reactBasename = (import.meta.env.VITE_REACT_BASE || '').replace(/\/$/, '')
 
 export default function CMSPage() {
   const location = useLocation()
@@ -26,15 +27,17 @@ export default function CMSPage() {
   const slug = useMemo(() => {
     const pathMatch = params['*']
 
-    if (location.pathname === '/react' || location.pathname === '/react/') {
-      return 'home'
+    if (typeof pathMatch === 'string') {
+      return pathMatch || 'home'
     }
 
-    if (pathMatch) {
-      return pathMatch
+    let path = location.pathname
+
+    if (reactBasename && path.startsWith(reactBasename)) {
+      path = path.slice(reactBasename.length) || '/'
     }
 
-    const trimmed = location.pathname.replace(/^\/react\/?/, '')
+    const trimmed = path.replace(/^\/+/, '')
     return trimmed || 'home'
   }, [location.pathname, params['*']])
 
