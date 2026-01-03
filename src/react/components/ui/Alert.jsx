@@ -97,7 +97,8 @@ export default function Alert({
     return null
   }
 
-  const config = variantConfig[variant] || variantConfig.info
+  const normalizedVariant = variant === 'error' ? 'danger' : variant
+  const config = variantConfig[normalizedVariant] || variantConfig.info
   const Icon = config.icon
   const alertClasses = `rounded-md p-4 ${config.bg} ${className}`
   const titleClasses = `text-sm font-medium ${config.titleColor}`
