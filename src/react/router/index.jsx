@@ -85,6 +85,7 @@ import PublicEstimateView from '../views/public/PublicEstimateView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
+import NotFound from '../views/NotFound'
 
 const reactPrefix = '/react'
 
@@ -276,6 +277,16 @@ adminChildren.push({
     { path: 'integrations', element: <SettingsIntegrations /> },
     { path: 'services', element: <ServiceTypes /> },
   ],
+})
+
+adminChildren.push({
+  path: '*',
+  element: <NotFound />,
+})
+
+customerChildren.push({
+  path: '*',
+  element: <NotFound />,
 })
 
 export const reactRouteSubset = [
