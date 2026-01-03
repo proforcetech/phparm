@@ -46,12 +46,13 @@ export default function AppointmentBook() {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   }, [])
 
-  const loadAvailability = useCallback(async () => {
+  const loadAvailability = useCallback(async (overrides = {}) => {
     setLoading(true)
     try {
-      const params = { date: form.date }
-      if (form.technician_id) {
-        params.technician_id = form.technician_id
+      const params = { date: overrides.date ?? form.date }
+      const technicianId = overrides.technician_id ?? form.technician_id
+      if (technicianId) {
+        params.technician_id = technicianId
       }
       const response = await appointmentService.fetchAvailability(params)
       const data = response.data
@@ -90,7 +91,7 @@ export default function AppointmentBook() {
         notes: form.notes,
       })
       setSelectedSlot(null)
-      // availability reload happens via effect when form state updates
+      await loadAvailability()
     } finally {
       setSaving(false)
     }
@@ -128,9 +129,12 @@ export default function AppointmentBook() {
 
   const onCustomerSelect = async (customer) => {
     console.log('Selected customer:', customer)
+    await loadCustomerVehicles(customer.id)
   }
 
-  const onTechnicianSelect = () => {}
+  const onTechnicianSelect = (technician) => {
+    loadAvailability({ technician_id: technician.id })
+  }
 
   const searchTechnicians = async (query) => {
     try {
