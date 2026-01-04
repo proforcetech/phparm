@@ -19,6 +19,9 @@ export default function Login() {
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState(null)
   const [recaptchaEnabled, setRecaptchaEnabled] = useState(false)
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('')
+  const [recaptchaReady, setRecaptchaReady] = useState(false)
+  const [recaptchaLoading, setRecaptchaLoading] = useState(false)
+  const [recaptchaLoadError, setRecaptchaLoadError] = useState(null)
 
   const isVerifying = useMemo(() => !!pendingChallenge, [pendingChallenge])
 
@@ -81,6 +84,47 @@ export default function Login() {
     loadSettings()
   }, [])
 
+  useEffect(() => {
+    if (!recaptchaEnabled || !recaptchaSiteKey) {
+      setRecaptchaReady(false)
+      setRecaptchaLoading(false)
+      setRecaptchaLoadError(null)
+      return
+    }
+
+    let isActive = true
+    setRecaptchaLoading(true)
+    setRecaptchaLoadError(null)
+
+    loadRecaptcha()
+      .then((grecaptcha) => {
+        if (!grecaptcha?.ready || !grecaptcha?.execute) {
+          throw new Error('reCAPTCHA is not available')
+        }
+
+        return new Promise((resolve) => {
+          grecaptcha.ready(resolve)
+        })
+      })
+      .then(() => {
+        if (!isActive) return
+        setRecaptchaReady(true)
+      })
+      .catch((err) => {
+        if (!isActive) return
+        setRecaptchaReady(false)
+        setRecaptchaLoadError(err)
+      })
+      .finally(() => {
+        if (!isActive) return
+        setRecaptchaLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
+  }, [loadRecaptcha, recaptchaEnabled, recaptchaSiteKey])
+
   const handleChange = (field) => (event) => {
     const value = field === 'remember' ? event.target.checked : event.target.value
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -108,6 +152,10 @@ export default function Login() {
           throw new Error('reCAPTCHA is not configured')
         }
 
+        if (!recaptchaReady) {
+          throw new Error('reCAPTCHA is still loading. Please wait a moment and try again.')
+        }
+
         const grecaptcha = await loadRecaptcha()
 
         if (!grecaptcha?.execute) {
@@ -132,6 +180,7 @@ export default function Login() {
   }
 
   const displayError = errorMessage || error
+  const disableSubmit = loading || (!isVerifying && recaptchaEnabled && !recaptchaReady)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -244,12 +293,26 @@ export default function Login() {
           <div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={disableSubmit}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{loading ? 'Logging in...' : 'Sign in'}</span>
+              <span>
+                {loading
+                  ? 'Logging in...'
+                  : !isVerifying && recaptchaEnabled && !recaptchaReady
+                    ? 'Loading security check...'
+                    : 'Sign in'}
+              </span>
             </button>
           </div>
+
+          {!isVerifying && recaptchaEnabled && (recaptchaLoading || recaptchaLoadError) ? (
+            <p className="text-xs text-gray-500 text-center">
+              {recaptchaLoadError
+                ? 'Trouble loading reCAPTCHA. Please wait a moment and try again.'
+                : 'Loading reCAPTCHA...'}
+            </p>
+          ) : null}
 
           <div className="text-center">
             <Link to="/customer-login" className="text-sm text-primary-600 hover:text-primary-500">
