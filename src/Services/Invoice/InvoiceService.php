@@ -3,9 +3,12 @@
 namespace App\Services\Invoice;
 
 use App\Database\Connection;
+use App\Models\Customer;
+use App\Models\CustomerVehicle;
 use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\ServiceType;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -237,6 +240,27 @@ class InvoiceService
     public function findById(int $id): ?Invoice
     {
         return $this->fetchInvoice($id);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findDetailedById(int $id): ?array
+    {
+        $invoice = $this->fetchInvoice($id);
+        if ($invoice === null) {
+            return null;
+        }
+
+        $data = $invoice->toArray();
+        $data['customer'] = $this->fetchCustomer($invoice->customer_id);
+        $data['vehicle'] = $invoice->vehicle_id ? $this->fetchVehicle($invoice->vehicle_id) : null;
+        $data['service_type'] = $invoice->service_type_id ? $this->fetchServiceType($invoice->service_type_id) : null;
+        $data['items'] = $this->fetchInvoiceItems($invoice->id);
+        $data['line_items'] = $data['items'];
+        $data['payments'] = $this->fetchPayments($invoice->id);
+
+        return $data;
     }
 
     public function findByPublicToken(string $token): ?Invoice
@@ -546,6 +570,111 @@ class InvoiceService
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
 
         return new Invoice($row);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchCustomer(int $customerId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM customers WHERE id = :id');
+        $stmt->execute(['id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $row['is_commercial'] = isset($row['is_commercial']) ? (bool) $row['is_commercial'] : false;
+        $row['tax_exempt'] = isset($row['tax_exempt']) ? (bool) $row['tax_exempt'] : false;
+
+        $customer = new Customer($row);
+        $data = $customer->toArray();
+        $data['name'] = $customer->business_name ?: trim($customer->first_name . ' ' . $customer->last_name);
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchVehicle(int $vehicleId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM customer_vehicles WHERE id = :id');
+        $stmt->execute(['id' => $vehicleId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $vehicle = new CustomerVehicle($row);
+
+        return $vehicle->toArray();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchServiceType(int $serviceTypeId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM service_types WHERE id = :id');
+        $stmt->execute(['id' => $serviceTypeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $serviceType = new ServiceType($row);
+
+        return $serviceType->toArray();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchInvoiceItems(int $invoiceId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM invoice_items WHERE invoice_id = :invoice_id ORDER BY id ASC'
+        );
+        $stmt->execute(['invoice_id' => $invoiceId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_map(static function (array $row): array {
+            if (array_key_exists('taxable', $row)) {
+                $row['taxable'] = (bool) $row['taxable'];
+            }
+
+            foreach (['quantity', 'unit_price', 'list_price', 'line_total'] as $field) {
+                if (array_key_exists($field, $row)) {
+                    $row[$field] = (float) $row[$field];
+                }
+            }
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchPayments(int $invoiceId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM payments WHERE invoice_id = :invoice_id ORDER BY created_at DESC, id DESC'
+        );
+        $stmt->execute(['invoice_id' => $invoiceId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_map(static function (array $row): array {
+            if (array_key_exists('amount', $row)) {
+                $row['amount'] = (float) $row['amount'];
+            }
+
+            return $row;
+        }, $rows);
     }
 
     private function fetchEstimate(int $id): ?Estimate

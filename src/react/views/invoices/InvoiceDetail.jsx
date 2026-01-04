@@ -21,6 +21,26 @@ const formatDate = (date) => {
   return new Date(date).toLocaleDateString()
 }
 
+const formatDateTime = (date) => {
+  if (!date) return '—'
+  return new Date(date).toLocaleString()
+}
+
+const formatAddress = (customer) => {
+  if (!customer) return '—'
+  const line1 = customer.street
+  const cityState = [customer.city, customer.state].filter(Boolean).join(', ')
+  const line2 = [cityState, customer.postal_code].filter(Boolean).join(' ')
+  const parts = [line1, line2, customer.country].filter(Boolean)
+  return parts.length ? parts.join('\n') : '—'
+}
+
+const formatVehicle = (vehicle) => {
+  if (!vehicle) return '—'
+  const parts = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean)
+  return parts.length ? parts.join(' ') : '—'
+}
+
 const statusVariant = (status) => {
   switch (status) {
     case 'paid':
@@ -131,6 +151,10 @@ export default function InvoiceDetail() {
   }
 
   const lineItems = invoice.items || invoice.line_items || []
+  const payments = invoice.payments || []
+  const customer = invoice.customer || null
+  const vehicle = invoice.vehicle || null
+  const serviceType = invoice.service_type || null
 
   return (
     <div className="space-y-6">
@@ -195,12 +219,54 @@ export default function InvoiceDetail() {
             <div>
               <dt className="text-sm font-medium text-gray-500">Customer</dt>
               <dd className="mt-1 text-sm text-gray-900">
-                {invoice.customer ? (
-                  <Link to={`/cp/customers/${invoice.customer.id}`} className="text-primary-600 hover:text-primary-500">
-                    {invoice.customer.name}
+                {customer ? (
+                  <Link to={`/cp/customers/${customer.id}`} className="text-primary-600 hover:text-primary-500">
+                    {customer.name}
                   </Link>
                 ) : '—'}
               </dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Service Type</dt>
+              <dd className="mt-1 text-sm text-gray-900">{serviceType?.name || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Vehicle</dt>
+              <dd className="mt-1 text-sm text-gray-900">{formatVehicle(vehicle)}</dd>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Customer Contact</h4>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p>{customer?.email || '—'}</p>
+                <p>{customer?.phone || '—'}</p>
+              </div>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Customer Address</h4>
+              <p className="text-sm text-gray-600 whitespace-pre-line">
+                {formatAddress(customer)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Vehicle Details</h4>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p>{formatVehicle(vehicle)}</p>
+                <p>VIN: {vehicle?.vin || '—'}</p>
+                <p>License Plate: {vehicle?.license_plate || '—'}</p>
+              </div>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Service Info</h4>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p>Service Type: {serviceType?.name || '—'}</p>
+                <p>Mobile Service: {invoice.is_mobile ? 'Yes' : 'No'}</p>
+              </div>
             </div>
           </div>
 
@@ -233,6 +299,38 @@ export default function InvoiceDetail() {
               </table>
             </div>
           )}
+
+          <h4 className="text-sm font-medium text-gray-900 mb-3 mt-8">Payment History</h4>
+          {payments.length === 0 ? (
+            <p className="text-gray-500 text-sm py-4">No payments recorded</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {payments.map((payment) => (
+                    <tr key={payment.id || payment.reference}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{formatDateTime(payment.created_at || payment.paid_at)}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{payment.method || payment.gateway || '—'}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{payment.reference || payment.transaction_id || '—'}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{payment.status || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         <Card>
@@ -242,16 +340,22 @@ export default function InvoiceDetail() {
               <dt className="text-sm text-gray-500">Subtotal</dt>
               <dd className="text-sm text-gray-900">{formatCurrency(invoice.subtotal)}</dd>
             </div>
-            {invoice.tax_amount ? (
+            {invoice.tax ? (
               <div className="flex justify-between">
                 <dt className="text-sm text-gray-500">Tax</dt>
-                <dd className="text-sm text-gray-900">{formatCurrency(invoice.tax_amount)}</dd>
+                <dd className="text-sm text-gray-900">{formatCurrency(invoice.tax)}</dd>
               </div>
             ) : null}
-            {invoice.discount_amount ? (
+            {invoice.shop_fee ? (
               <div className="flex justify-between">
-                <dt className="text-sm text-gray-500">Discount</dt>
-                <dd className="text-sm text-green-600">-{formatCurrency(invoice.discount_amount)}</dd>
+                <dt className="text-sm text-gray-500">Shop Fee</dt>
+                <dd className="text-sm text-gray-900">{formatCurrency(invoice.shop_fee)}</dd>
+              </div>
+            ) : null}
+            {invoice.hazmat_disposal_fee ? (
+              <div className="flex justify-between">
+                <dt className="text-sm text-gray-500">Hazmat Disposal Fee</dt>
+                <dd className="text-sm text-gray-900">{formatCurrency(invoice.hazmat_disposal_fee)}</dd>
               </div>
             ) : null}
             <div className="flex justify-between pt-3 border-t">
@@ -267,7 +371,7 @@ export default function InvoiceDetail() {
                 <div className="flex justify-between pt-3 border-t">
                   <dt className="text-base font-medium text-gray-900">Balance Due</dt>
                   <dd className="text-base font-medium text-gray-900">
-                    {formatCurrency((invoice.total || 0) - (invoice.amount_paid || 0))}
+                    {formatCurrency(invoice.balance_due ?? (invoice.total || 0) - (invoice.amount_paid || 0))}
                   </dd>
                 </div>
               </>
