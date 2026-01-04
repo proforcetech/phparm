@@ -4136,6 +4136,135 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->post('/api/storage/templates/preview', function (Request $request) use ($settingsRepository) {
+            $payload = $request->body();
+            $templateKey = (string) ($payload['template_key'] ?? '');
+            $template = $payload['template'] ?? null;
+
+            if ($templateKey === '') {
+                return Response::badRequest('template_key is required.');
+            }
+
+            $address = $settingsRepository->get('shop.address', []);
+            $shopAddress = '';
+            if (is_array($address)) {
+                $lines = array_filter([
+                    trim((string) ($address['street'] ?? '')),
+                    trim(sprintf(
+                        '%s%s%s',
+                        (string) ($address['city'] ?? ''),
+                        !empty($address['state']) ? ', ' . $address['state'] : '',
+                        !empty($address['postal_code']) ? ' ' . $address['postal_code'] : ''
+                    )),
+                    trim((string) ($address['country'] ?? '')),
+                ]);
+                $shopAddress = implode('<br>', $lines);
+            } elseif (is_string($address)) {
+                $shopAddress = $address;
+            }
+
+            $settings = [
+                'shop_name' => $settingsRepository->get('shop.name', 'Storage Facility'),
+                'shop_address' => $shopAddress,
+                'shop_phone' => $settingsRepository->get('shop.phone', ''),
+            ];
+
+            if (is_string($template)) {
+                $settings[$templateKey] = $template;
+            } else {
+                $settings[$templateKey] = $settingsRepository->get($templateKey);
+            }
+
+            $case = [
+                'case_number' => 'IMP-2024-017',
+                'notice_date' => new \DateTimeImmutable('now'),
+                'status' => 'draft',
+                'intake_location' => 'Main Storage Yard',
+            ];
+            $owner = [
+                'name' => 'Alex Parker',
+                'address' => '1234 Market St',
+                'city' => 'Austin',
+                'state' => 'TX',
+                'zip' => '78701',
+                'phone' => '(512) 555-0172',
+            ];
+            $vehicle = [
+                'year' => '2019',
+                'make' => 'Honda',
+                'model' => 'Civic',
+                'vin' => '19XFC2F69KE000000',
+                'license_plate' => 'TX-9031',
+            ];
+            $fees = [
+                'billable_days' => 12,
+                'daily_rate' => 35.0,
+                'daily_amount' => 420.0,
+                'gate_fee' => 65.0,
+                'total' => 485.0,
+            ];
+            $notice = [
+                'notice_date' => new \DateTimeImmutable('now'),
+                'due_date' => (new \DateTimeImmutable('now'))->modify('+10 days'),
+                'notice_type' => 'Lien Notice',
+            ];
+
+            switch ($templateKey) {
+                case 'storage.notice.notice_of_claim':
+                    $generator = new \App\Support\Pdf\LienNoticePdfGenerator();
+                    $pdf = $generator->generateNoticeOfClaim($case, $owner, $vehicle, $fees, $settings);
+                    break;
+                case 'storage.notice.lien_notice':
+                    $generator = new \App\Support\Pdf\LienNoticePdfGenerator();
+                    $pdf = $generator->generateLienNotice($notice, $case, $owner, $vehicle, $fees, $settings);
+                    break;
+                case 'storage.notice.tow_authorization':
+                    $generator = new \App\Support\Pdf\StorageFormPdfGenerator();
+                    $pdf = $generator->generateTowAuthorization([
+                        'shop_name' => $settings['shop_name'],
+                        'shop_address' => $settings['shop_address'],
+                        'shop_phone' => $settings['shop_phone'],
+                        'notice_date' => (new \DateTimeImmutable('now'))->format('M d, Y'),
+                        'case_number' => $case['case_number'],
+                        'owner_name' => $owner['name'],
+                        'owner_address' => $owner['address'],
+                        'owner_city' => $owner['city'],
+                        'owner_state' => $owner['state'],
+                        'owner_zip' => $owner['zip'],
+                        'owner_phone' => $owner['phone'],
+                        'vehicle_year' => $vehicle['year'],
+                        'vehicle_make' => $vehicle['make'],
+                        'vehicle_model' => $vehicle['model'],
+                        'vehicle_vin' => $vehicle['vin'],
+                        'vehicle_license_plate' => $vehicle['license_plate'],
+                        'tow_provider' => 'Metro Tow Services',
+                        'intake_location' => $case['intake_location'],
+                    ], is_string($settings[$templateKey] ?? null) ? (string) $settings[$templateKey] : null);
+                    break;
+                case 'storage.notice.lien_ack':
+                    $generator = new \App\Support\Pdf\StorageFormPdfGenerator();
+                    $pdf = $generator->generateLienAcknowledgment([
+                        'shop_name' => $settings['shop_name'],
+                        'shop_address' => $settings['shop_address'],
+                        'shop_phone' => $settings['shop_phone'],
+                        'notice_date' => (new \DateTimeImmutable('now'))->format('M d, Y'),
+                        'case_number' => $case['case_number'],
+                        'owner_name' => $owner['name'],
+                        'vehicle_year' => $vehicle['year'],
+                        'vehicle_make' => $vehicle['make'],
+                        'vehicle_model' => $vehicle['model'],
+                        'vehicle_vin' => $vehicle['vin'],
+                        'vehicle_license_plate' => $vehicle['license_plate'],
+                        'fees_total' => '$' . number_format((float) $fees['total'], 2),
+                    ], is_string($settings[$templateKey] ?? null) ? (string) $settings[$templateKey] : null);
+                    break;
+                default:
+                    return Response::badRequest('Unknown template_key.');
+            }
+
+            return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
+        });
+
         $router->post('/api/settings/notifications/smtp/test-connection', function (Request $request) use ($notificationTests) {
             try {
                 $data = $notificationTests->testSmtpConnection();
