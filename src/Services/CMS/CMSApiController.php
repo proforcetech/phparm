@@ -153,12 +153,42 @@ class CMSApiController
     public function getPageBySlug(string $slug): ?array
     {
         $pdo = $this->connection->pdo();
-        $stmt = $pdo->prepare("
-            SELECT *
-            FROM {$this->table('pages')}
-            WHERE slug = :slug AND status = 'published'
-        ");
-        $stmt->execute(['slug' => $slug]);
+        $lookupSlug = $this->normalizeSlugPath($slug);
+        if ($lookupSlug === '') {
+            return null;
+        }
+
+        $parts = explode('/', $lookupSlug);
+
+        if (count($parts) > 1) {
+            $pageSlug = array_pop($parts);
+            $categoryId = $this->resolveCategoryPath($parts);
+
+            if ($categoryId === null) {
+                return null;
+            }
+
+            $stmt = $pdo->prepare("
+                SELECT *
+                FROM {$this->table('pages')}
+                WHERE slug = :slug AND category_id = :category_id AND status = 'published'
+                AND (publish_start_at IS NULL OR publish_start_at <= NOW())
+                AND (publish_end_at IS NULL OR publish_end_at >= NOW())
+            ");
+            $stmt->execute([
+                'slug' => $pageSlug,
+                'category_id' => $categoryId,
+            ]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT *
+                FROM {$this->table('pages')}
+                WHERE slug = :slug AND status = 'published' AND category_id IS NULL
+                AND (publish_start_at IS NULL OR publish_start_at <= NOW())
+                AND (publish_end_at IS NULL OR publish_end_at >= NOW())
+            ");
+            $stmt->execute(['slug' => $lookupSlug]);
+        }
 
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
@@ -811,7 +841,7 @@ class CMSApiController
         ")->fetchAll(PDO::FETCH_ASSOC);
 
         $categories = $pdo->query("
-            SELECT id, name, slug FROM {$this->table('categories')}
+            SELECT id, name, slug, parent_id FROM {$this->table('categories')}
             WHERE status = 'published' ORDER BY sort_order, name
         ")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -864,6 +894,55 @@ class CMSApiController
         $slug = trim($slug, '-');
 
         return $slug ?: 'untitled-' . time();
+    }
+
+    /**
+     * Normalize incoming slug paths by trimming whitespace and leading slashes.
+     */
+    private function normalizeSlugPath(string $slug): string
+    {
+        return ltrim(trim($slug), '/');
+    }
+
+    /**
+     * Resolve a category path to its deepest category ID.
+     *
+     * @param array<int, string> $segments
+     */
+    private function resolveCategoryPath(array $segments): ?int
+    {
+        $pdo = $this->connection->pdo();
+        $parentId = null;
+
+        foreach ($segments as $segment) {
+            if ($parentId === null) {
+                $stmt = $pdo->prepare("
+                    SELECT id FROM {$this->table('categories')}
+                    WHERE slug = :slug AND status = 'published' AND parent_id IS NULL
+                    LIMIT 1
+                ");
+                $stmt->execute(['slug' => $segment]);
+            } else {
+                $stmt = $pdo->prepare("
+                    SELECT id FROM {$this->table('categories')}
+                    WHERE slug = :slug AND status = 'published' AND parent_id = :parent_id
+                    LIMIT 1
+                ");
+                $stmt->execute([
+                    'slug' => $segment,
+                    'parent_id' => $parentId,
+                ]);
+            }
+
+            $categoryId = $stmt->fetchColumn();
+            if (!$categoryId) {
+                return null;
+            }
+
+            $parentId = (int) $categoryId;
+        }
+
+        return $parentId;
     }
 
     private function invalidatePageCache(string $slug): void

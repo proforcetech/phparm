@@ -99,7 +99,7 @@ const isActiveRoute = (currentPath, targetPath) => {
   return currentPath.startsWith(targetPath)
 }
 
-const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
+const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
   const { user } = useAuthStore()
   const { pathname } = useLocation()
   const [isOpen, setIsOpen] = useState(true)
@@ -194,13 +194,19 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 bg-gray-900 w-64 transform transition-transform duration-300 ease-in-out z-30 ${
+        className={`fixed inset-y-0 left-0 bg-gray-900 w-64 ${
+          isCollapsed ? 'lg:w-20' : 'lg:w-64'
+        } transform transition-transform duration-300 ease-in-out z-30 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
-            <span className="text-lg font-semibold text-white">Menu</span>
+            <span
+              className={`text-lg font-semibold text-white ${isCollapsed ? 'lg:hidden' : ''}`}
+            >
+              Menu
+            </span>
             <button
               type="button"
               onClick={toggleSidebar}
@@ -219,6 +225,26 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
 
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
             {menuItems.map((item) => renderMenuItem(item))}
+            {menuItems.map((item) => {
+              const Icon = item.icon
+              const isActive = isActiveRoute(pathname, item.path)
+
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  title={isCollapsed ? item.label : undefined}
+                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  } ${isCollapsed ? 'lg:justify-center' : ''}`}
+                >
+                  <Icon className={`h-5 w-5 ${isCollapsed ? 'lg:mr-0' : 'mr-3'}`} />
+                  <span className={isCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
+                </Link>
+              )}
+            )}
           </nav>
         </div>
       </aside>

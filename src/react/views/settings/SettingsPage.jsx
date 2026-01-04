@@ -1,27 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
-import Alert from '../../components/ui/Alert'
-import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
-import Textarea from '../../components/ui/Textarea'
 import { fetchSettings, saveSettings } from '../../../services/settings.service'
 
-const initialFormState = {
-  profile: {
-    name: '',
-    email: '',
-    phone: '',
-    logoUrl: '',
-    address: {
-      street: '',
-      city: '',
-      state: '',
-      postal_code: '',
-      country: '',
-    },
+const settingsLinks = [
+  {
+    title: 'Shop profile',
+    description: 'Update shop contact details, branding, and address information.',
+    to: '/cp/settings/profile',
   },
-  terms: { estimates: '', invoices: '' },
   pricing: { taxRate: 0, laborRate: 0, callOutFee: 0, mileageRate: 0 },
   notifications: { fromName: '', fromAddress: '', smsNumber: '', twilioSid: '', twilioToken: '' },
   smtp: { host: '', port: 587, username: '', password: '', encryption: 'tls' },
@@ -36,20 +24,42 @@ const initialFormState = {
     paypalClientId: '',
     paypalClientSecret: '',
     paypalWebhook: '',
+  {
+    title: 'Terms & Documents',
+    description: 'Manage estimate and invoice terms shown to customers.',
+    to: '/cp/settings/terms',
   },
-  security: { recaptchaEnabled: false, recaptchaSiteKey: '', recaptchaSecretKey: '' },
-  integrations: {
-    zohoClientId: '',
-    zohoClientSecret: '',
-    zohoRefreshToken: '',
-    zohoOrgId: '',
-    partsTechBase: '',
-    partsTechKey: '',
-    partsTechMarkup: '',
+  {
+    title: 'Rejection reasons',
+    description: 'Maintain the predefined reasons customers can select when declining work.',
+    to: '/cp/settings/rejection-reasons',
   },
-}
-
-const getSetting = (settings, key, fallback = null) => settings?.[key]?.value ?? fallback
+  {
+    title: 'Pricing',
+    description: 'Set default tax, labor, and fee values for new work.',
+    to: '/cp/settings/pricing',
+  },
+  {
+    title: 'Notifications',
+    description: 'Configure outbound email and SMS settings.',
+    to: '/cp/settings/notifications',
+  },
+  {
+    title: 'Payments',
+    description: 'Connect payment processors and update redirect URLs.',
+    to: '/cp/settings/payments',
+  },
+  {
+    title: 'Integrations',
+    description: 'Manage third-party integrations like Zoho, reCAPTCHA, and PartsTech.',
+    to: '/cp/settings/integrations',
+  },
+  {
+    title: 'Service types',
+    description: 'Add and organize service categories used across estimates and bundles.',
+    to: '/cp/settings/services',
+  },
+]
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -84,10 +94,6 @@ export default function SettingsPage() {
               postal_code: addressSetting?.postal_code ?? '',
               country: addressSetting?.country ?? '',
             },
-          },
-          terms: {
-            estimates: getSetting(settings, 'documents.terms.estimates', ''),
-            invoices: getSetting(settings, 'documents.terms.invoices', ''),
           },
           pricing: {
             taxRate: Number(getSetting(settings, 'pricing.tax_rate', 0)),
@@ -181,8 +187,6 @@ export default function SettingsPage() {
       'shop.phone': form.profile.phone,
       'shop.logo_url': form.profile.logoUrl,
       'shop.address': { ...form.profile.address },
-      'documents.terms.estimates': form.terms.estimates,
-      'documents.terms.invoices': form.terms.invoices,
       'pricing.tax_rate': Number(form.pricing.taxRate) || 0,
       'pricing.labor_rate': Number(form.pricing.laborRate) || 0,
       'pricing.call_out_fee': Number(form.pricing.callOutFee) || 0,
@@ -248,14 +252,11 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage shop profile, terms, pricing defaults, and integrations.
-          </p>
-        </div>
-        <Button loading={saving} onClick={handleSave}>Save Settings</Button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Settings overview</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Jump into a category to update your shop settings.
+        </p>
       </div>
 
       {message ? <Alert variant="success" className="mb-4">{message}</Alert> : null}
@@ -355,28 +356,9 @@ export default function SettingsPage() {
 
             <Card>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Terms &amp; Documents</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Estimate Terms</label>
-                  <Textarea
-                    value={form.terms.estimates}
-                    rows={4}
-                    placeholder="Terms shown on estimates"
-                    className="mt-1"
-                    onChange={(event) => updateField(['terms', 'estimates'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Invoice Terms</label>
-                  <Textarea
-                    value={form.terms.invoices}
-                    rows={4}
-                    placeholder="Terms shown on invoices"
-                    className="mt-1"
-                    onChange={(event) => updateField(['terms', 'invoices'], event.target.value)}
-                  />
-                </div>
-              </div>
+              <p className="text-sm text-gray-500">
+                Terms and conditions are now managed in the Terms settings page.
+              </p>
             </Card>
           </div>
 
@@ -429,307 +411,19 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {settingsLinks.map((link) => (
+          <Link key={link.to} to={link.to} className="group">
+            <Card className="h-full transition group-hover:shadow-md">
+              <h2 className="text-lg font-semibold text-gray-900">{link.title}</h2>
+              <p className="mt-2 text-sm text-gray-500">{link.description}</p>
+              <span className="mt-4 inline-flex text-sm font-medium text-primary-600">
+                Manage settings →
+              </span>
             </Card>
-
-            <Card>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Notifications &amp; Mail</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">From Name</label>
-                  <Input
-                    value={form.notifications.fromName}
-                    placeholder="Demo Auto Shop"
-                    className="mt-1"
-                    onChange={(event) => updateField(['notifications', 'fromName'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">From Email</label>
-                  <Input
-                    value={form.notifications.fromAddress}
-                    placeholder="noreply@example.com"
-                    className="mt-1"
-                    onChange={(event) => updateField(['notifications', 'fromAddress'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">SMS From Number</label>
-                  <Input
-                    value={form.notifications.smsNumber}
-                    placeholder="+15551234567"
-                    className="mt-1"
-                    onChange={(event) => updateField(['notifications', 'smsNumber'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Twilio SID</label>
-                  <Input
-                    value={form.notifications.twilioSid}
-                    placeholder="ACXXXXXXXXXXXXXXXX"
-                    className="mt-1"
-                    onChange={(event) => updateField(['notifications', 'twilioSid'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Twilio Token</label>
-                  <Input
-                    value={form.notifications.twilioToken}
-                    placeholder="••••••••"
-                    className="mt-1"
-                    onChange={(event) => updateField(['notifications', 'twilioToken'], event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">SMTP Host</label>
-                  <Input
-                    value={form.smtp.host}
-                    placeholder="smtp.mailgun.org"
-                    className="mt-1"
-                    onChange={(event) => updateField(['smtp', 'host'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">SMTP Port</label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={form.smtp.port}
-                    className="mt-1"
-                    onChange={(event) => updateField(['smtp', 'port'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">SMTP Username</label>
-                  <Input
-                    value={form.smtp.username}
-                    placeholder="user"
-                    className="mt-1"
-                    onChange={(event) => updateField(['smtp', 'username'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">SMTP Password</label>
-                  <Input
-                    value={form.smtp.password}
-                    placeholder="••••••••"
-                    className="mt-1"
-                    onChange={(event) => updateField(['smtp', 'password'], event.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">SMTP Encryption</label>
-                  <Input
-                    value={form.smtp.encryption}
-                    placeholder="tls"
-                    className="mt-1"
-                    onChange={(event) => updateField(['smtp', 'encryption'], event.target.value)}
-                  />
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Payments</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">Success URL</label>
-                  <Input
-                    value={form.payments.successUrl}
-                    placeholder="https://app.example.com/payment/success"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'successUrl'], event.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">Cancel URL</label>
-                  <Input
-                    value={form.payments.cancelUrl}
-                    placeholder="https://app.example.com/payment/cancel"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'cancelUrl'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Stripe Publishable Key</label>
-                  <Input
-                    value={form.payments.stripePublic}
-                    placeholder="pk_live_"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'stripePublic'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Stripe Secret Key</label>
-                  <Input
-                    value={form.payments.stripeSecret}
-                    placeholder="sk_live_"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'stripeSecret'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Stripe Webhook Secret</label>
-                  <Input
-                    value={form.payments.stripeWebhook}
-                    placeholder="whsec_"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'stripeWebhook'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Square Token</label>
-                  <Input
-                    value={form.payments.squareToken}
-                    placeholder="sq0atp-"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'squareToken'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Square Webhook Signature Key</label>
-                  <Input
-                    value={form.payments.squareSignature}
-                    placeholder="sig_key"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'squareSignature'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">PayPal Client ID</label>
-                  <Input
-                    value={form.payments.paypalClientId}
-                    placeholder="paypal client id"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'paypalClientId'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">PayPal Client Secret</label>
-                  <Input
-                    value={form.payments.paypalClientSecret}
-                    placeholder="paypal secret"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'paypalClientSecret'], event.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">PayPal Webhook ID</label>
-                  <Input
-                    value={form.payments.paypalWebhook}
-                    placeholder="WH-XXXX"
-                    className="mt-1"
-                    onChange={(event) => updateField(['payments', 'paypalWebhook'], event.target.value)}
-                  />
-                </div>
-              </div>
-            </Card>
-
-            <Card>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Integrations</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center space-x-2 md:col-span-2">
-                  <input
-                    id="recaptcha-enabled"
-                    type="checkbox"
-                    checked={form.security.recaptchaEnabled}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                    onChange={(event) => updateField(['security', 'recaptchaEnabled'], event.target.checked)}
-                  />
-                  <label htmlFor="recaptcha-enabled" className="block text-sm font-medium text-gray-700">
-                    Enable reCAPTCHA
-                  </label>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">reCAPTCHA Site Key</label>
-                  <Input
-                    value={form.security.recaptchaSiteKey}
-                    placeholder="site key"
-                    className="mt-1"
-                    onChange={(event) => updateField(['security', 'recaptchaSiteKey'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">reCAPTCHA Secret Key</label>
-                  <Input
-                    value={form.security.recaptchaSecretKey}
-                    placeholder="secret key"
-                    className="mt-1"
-                    onChange={(event) => updateField(['security', 'recaptchaSecretKey'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Zoho Client ID</label>
-                  <Input
-                    value={form.integrations.zohoClientId}
-                    placeholder="Zoho client id"
-                    className="mt-1"
-                    onChange={(event) => updateField(['integrations', 'zohoClientId'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Zoho Client Secret</label>
-                  <Input
-                    value={form.integrations.zohoClientSecret}
-                    placeholder="Zoho client secret"
-                    className="mt-1"
-                    onChange={(event) => updateField(['integrations', 'zohoClientSecret'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Zoho Refresh Token</label>
-                  <Input
-                    value={form.integrations.zohoRefreshToken}
-                    placeholder="Zoho refresh token"
-                    className="mt-1"
-                    onChange={(event) => updateField(['integrations', 'zohoRefreshToken'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Zoho Org ID</label>
-                  <Input
-                    value={form.integrations.zohoOrgId}
-                    placeholder="Zoho org id"
-                    className="mt-1"
-                    onChange={(event) => updateField(['integrations', 'zohoOrgId'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">PartsTech API Base</label>
-                  <Input
-                    value={form.integrations.partsTechBase}
-                    placeholder="https://api.partstech.com"
-                    className="mt-1"
-                    onChange={(event) => updateField(['integrations', 'partsTechBase'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">PartsTech API Key</label>
-                  <Input
-                    value={form.integrations.partsTechKey}
-                    placeholder="PartsTech key"
-                    className="mt-1"
-                    onChange={(event) => updateField(['integrations', 'partsTechKey'], event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700">PartsTech Markup Tiers (JSON)</label>
-                <Textarea
-                  value={form.integrations.partsTechMarkup}
-                  rows={3}
-                  placeholder='[{"threshold":0,"markup":0.2}]'
-                  className="mt-1"
-                  onChange={(event) => updateField(['integrations', 'partsTechMarkup'], event.target.value)}
-                />
-              </div>
-            </Card>
-          </div>
-        </div>
-      )}
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

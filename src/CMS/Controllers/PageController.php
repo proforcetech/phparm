@@ -207,17 +207,20 @@ class PageController
         $lookupSlug = $this->normalizedSlug($slug);
 
         try {
-            // Check if this is a nested URI (category/page)
+            // Check if this is a nested URI (category/path/page)
             $parts = explode('/', $lookupSlug);
 
-            if (count($parts) === 2) {
-                // Nested URI: /category-slug/page-slug
-                [$categorySlug, $pageSlug] = $parts;
+            if (count($parts) > 1) {
+                $pageSlug = array_pop($parts);
+                $categoryId = $this->resolveCategoryPath($parts);
+
+                if ($categoryId === null) {
+                    return null;
+                }
 
                 $sql = 'SELECT p.* FROM cms_pages p '
-                    . 'INNER JOIN cms_categories c ON p.category_id = c.id '
-                    . 'WHERE p.slug = :page_slug AND c.slug = :category_slug '
-                    . 'AND p.status = "published" AND c.status = "published" '
+                    . 'WHERE p.slug = :page_slug AND p.category_id = :category_id '
+                    . 'AND p.status = "published" '
                     . 'AND (p.publish_start_at IS NULL OR p.publish_start_at <= NOW()) '
                     . 'AND (p.publish_end_at IS NULL OR p.publish_end_at >= NOW()) '
                     . 'ORDER BY p.published_at DESC LIMIT 1';
@@ -225,7 +228,7 @@ class PageController
                 $stmt = $this->connection->pdo()->prepare($sql);
                 $stmt->execute([
                     'page_slug' => $pageSlug,
-                    'category_slug' => $categorySlug
+                    'category_id' => $categoryId,
                 ]);
             } else {
                 // Base URI: /page-slug (pages without category or with category_id = NULL)
@@ -389,5 +392,42 @@ class PageController
         $trimmed = trim($slug);
 
         return ltrim($trimmed, '/');
+    }
+
+    /**
+     * Resolve a nested category path to its deepest category ID.
+     *
+     * @param array<int, string> $segments
+     */
+    private function resolveCategoryPath(array $segments): ?int
+    {
+        $parentId = null;
+        $pdo = $this->connection->pdo();
+
+        foreach ($segments as $segment) {
+            if ($parentId === null) {
+                $stmt = $pdo->prepare(
+                    'SELECT id FROM cms_categories WHERE slug = :slug AND status = "published" AND parent_id IS NULL LIMIT 1'
+                );
+                $stmt->execute(['slug' => $segment]);
+            } else {
+                $stmt = $pdo->prepare(
+                    'SELECT id FROM cms_categories WHERE slug = :slug AND status = "published" AND parent_id = :parent_id LIMIT 1'
+                );
+                $stmt->execute([
+                    'slug' => $segment,
+                    'parent_id' => $parentId,
+                ]);
+            }
+
+            $categoryId = $stmt->fetchColumn();
+            if (!$categoryId) {
+                return null;
+            }
+
+            $parentId = (int) $categoryId;
+        }
+
+        return $parentId;
     }
 }

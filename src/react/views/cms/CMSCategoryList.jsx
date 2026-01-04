@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FolderIcon, PlusIcon } from '@heroicons/react/24/outline'
 
@@ -16,6 +16,51 @@ export default function CMSCategoryList() {
   const [error, setError] = useState('')
   const [filters, setFilters] = useState({ search: '', status: '' })
   const searchTimeout = useRef(null)
+
+  const hierarchicalCategories = useMemo(() => {
+    if (!categories.length) return []
+    const categoryMap = new Map()
+    categories.forEach((category) => {
+      categoryMap.set(category.id, { ...category, children: [] })
+    })
+
+    categoryMap.forEach((category) => {
+      if (category.parent_id && categoryMap.has(category.parent_id)) {
+        categoryMap.get(category.parent_id).children.push(category)
+      }
+    })
+
+    const sortCategories = (list) => {
+      list.sort((a, b) => {
+        if (a.sort_order !== b.sort_order) {
+          return a.sort_order - b.sort_order
+        }
+        return a.name.localeCompare(b.name)
+      })
+      list.forEach((item) => sortCategories(item.children))
+    }
+
+    const roots = Array.from(categoryMap.values()).filter(
+      (category) => !category.parent_id || !categoryMap.has(category.parent_id)
+    )
+    sortCategories(roots)
+
+    const flattened = []
+    const walk = (category, depth, path, slugPath) => {
+      flattened.push({
+        ...category,
+        depth,
+        path,
+        slugPath,
+      })
+      category.children.forEach((child) =>
+        walk(child, depth + 1, [...path, child.name], [...slugPath, child.slug])
+      )
+    }
+
+    roots.forEach((category) => walk(category, 0, [category.name], [category.slug]))
+    return flattened
+  }, [categories])
 
   const loadCategories = useCallback(async (nextFilters) => {
     setLoading(true)
@@ -172,17 +217,23 @@ export default function CMSCategoryList() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {categories.map((category) => (
+                  {hierarchicalCategories.map((category) => (
                     <tr
                       key={category.id}
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => navigate(`/cp/cms/categories/${category.id}`)}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{category.name}</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          <span className="text-gray-400">{'— '.repeat(category.depth)}</span>
+                          {category.name}
+                        </div>
+                        {category.depth > 0 ? (
+                          <div className="text-xs text-gray-400">{category.path.slice(0, -1).join(' / ')}</div>
+                        ) : null}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-500">/{category.slug}</div>
+                        <div className="text-sm text-gray-500">/{category.slugPath.join('/')}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-500">{category.sort_order}</div>

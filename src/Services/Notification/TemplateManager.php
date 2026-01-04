@@ -47,6 +47,17 @@ class TemplateManager
         return $row ?: null;
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function all(): array
+    {
+        $stmt = $this->connection->pdo()->query(
+            'SELECT template_key, subject, body, channel FROM notification_templates ORDER BY template_key ASC'
+        );
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
     public function testSend(string $key, string $channel, string $recipient, array $variables = []): bool
     {
         $template = $this->get($key);

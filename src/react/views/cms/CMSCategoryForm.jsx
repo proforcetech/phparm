@@ -13,6 +13,7 @@ import { cmsService } from '../../../services/cms.service'
 const defaultForm = {
   name: '',
   slug: '',
+  parent_id: null,
   description: '',
   sort_order: 0,
   status: 'published',
@@ -32,6 +33,59 @@ export default function CMSCategoryForm() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [validationErrors, setValidationErrors] = useState([])
+  const [availableCategories, setAvailableCategories] = useState([])
+
+  const parentCategoryOptions = useMemo(() => {
+    const categoryMap = new Map()
+    availableCategories.forEach((category) => {
+      categoryMap.set(category.id, { ...category, children: [] })
+    })
+
+    categoryMap.forEach((category) => {
+      if (category.parent_id && categoryMap.has(category.parent_id)) {
+        categoryMap.get(category.parent_id).children.push(category)
+      }
+    })
+
+    const sortCategories = (list) => {
+      list.sort((a, b) => {
+        if (a.sort_order !== b.sort_order) {
+          return a.sort_order - b.sort_order
+        }
+        return a.name.localeCompare(b.name)
+      })
+      list.forEach((item) => sortCategories(item.children))
+    }
+
+    const roots = Array.from(categoryMap.values()).filter(
+      (category) => !category.parent_id || !categoryMap.has(category.parent_id)
+    )
+    sortCategories(roots)
+
+    const flattened = []
+    const walk = (category, depth, path, slugPath) => {
+      if (category.id !== categoryId) {
+        flattened.push({
+          ...category,
+          depth,
+          path,
+          slugPath,
+        })
+      }
+      category.children.forEach((child) =>
+        walk(child, depth + 1, [...path, child.name], [...slugPath, child.slug])
+      )
+    }
+
+    roots.forEach((category) => walk(category, 0, [category.name], [category.slug]))
+    return flattened
+  }, [availableCategories, categoryId])
+
+  const parseNullableId = (value) => {
+    if (value === '') return null
+    const parsed = Number(value)
+    return Number.isNaN(parsed) ? value : parsed
+  }
 
   const generateSlug = (name) => {
     if (isEditing || !name) return
@@ -54,6 +108,7 @@ export default function CMSCategoryForm() {
       setForm({
         name: category.name || '',
         slug: category.slug || '',
+        parent_id: category.parent_id ?? null,
         description: category.description || '',
         sort_order: category.sort_order || 0,
         status: category.status || 'published',
@@ -68,11 +123,27 @@ export default function CMSCategoryForm() {
     }
   }, [categoryId])
 
+  const loadCategories = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await cmsService.getCategories()
+      setAvailableCategories(data || [])
+    } catch (err) {
+      setError(err.message || 'Failed to load categories')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (isEditing) {
       loadCategory()
+    } else {
+      setForm(defaultForm)
     }
-  }, [isEditing, loadCategory])
+    loadCategories()
+  }, [isEditing, loadCategory, loadCategories])
 
   const validate = () => {
     const errors = []
@@ -179,6 +250,30 @@ export default function CMSCategoryForm() {
                       />
                     </div>
                     <p className="mt-1 text-xs text-gray-500">Used in URLs: /{form.slug}/page-name</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Parent Category</label>
+                    <select
+                      value={form.parent_id ?? ''}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, parent_id: parseNullableId(event.target.value) }))
+                      }
+                    >
+                      <option value="">No Parent (Top Level)</option>
+                      {parentCategoryOptions.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {'— '.repeat(category.depth)}
+                          {category.path.join(' / ')}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {form.parent_id
+                        ? `Category will be nested under ${parentCategoryOptions.find((cat) => cat.id === form.parent_id)?.path.join(' / ') || 'selected parent'}`
+                        : 'Category will appear at the top level'}
+                    </p>
                   </div>
 
                   <Textarea

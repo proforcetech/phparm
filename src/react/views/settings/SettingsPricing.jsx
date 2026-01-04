@@ -1,10 +1,17 @@
-import PlaceholderPage from '../PlaceholderPage'
+import SettingsFormShell from './SettingsFormShell'
+import { PricingForm } from './SettingsFormSections'
 
 export default function SettingsPricing() {
   return (
-    <PlaceholderPage
-      title="Pricing settings"
-      description="React mirror of Vue /cp/settings/pricing."
-    />
+    <SettingsFormShell
+      title="Pricing"
+      description="Set default pricing values applied to new estimates and invoices."
+    >
+      {({ form, updateField }) => (
+        <div className="space-y-6">
+          <PricingForm form={form} updateField={updateField} />
+        </div>
+      )}
+    </SettingsFormShell>
   )
 }
