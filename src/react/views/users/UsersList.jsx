@@ -1,10 +1,290 @@
-import PlaceholderPage from '../PlaceholderPage'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
+import Card from '../../components/ui/Card'
+import Input from '../../components/ui/Input'
+import Loading from '../../components/ui/Loading'
+import Modal from '../../components/ui/Modal'
+import Select from '../../components/ui/Select'
+import userService from '../../../services/user.service'
+import { useToast } from '../../stores/toast.jsx'
+
+const roleOptions = [
+  { label: 'All Roles', value: '' },
+  { label: 'Admin', value: 'admin' },
+  { label: 'Manager', value: 'manager' },
+  { label: 'Technician', value: 'technician' },
+  { label: 'Customer', value: 'customer' },
+]
+
+const roleLabels = {
+  admin: 'Admin',
+  manager: 'Manager',
+  technician: 'Technician',
+  customer: 'Customer',
+}
+
+const roleVariants = {
+  admin: 'danger',
+  manager: 'warning',
+  technician: 'primary',
+  customer: 'secondary',
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return '—'
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
 
 export default function UsersList() {
+  const navigate = useNavigate()
+  const toast = useToast()
+
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [resetting2FA, setResetting2FA] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showReset2FAModal, setShowReset2FAModal] = useState(false)
+  const [userToDelete, setUserToDelete] = useState(null)
+  const [userToReset2FA, setUserToReset2FA] = useState(null)
+  const [filters, setFilters] = useState({ query: '', role: '' })
+
+  const loadUsers = async (nextFilters = filters) => {
+    setLoading(true)
+    try {
+      const data = await userService.listUsers(nextFilters)
+      setUsers(data)
+    } catch (error) {
+      console.error('Failed to load users:', error)
+      toast.error('Failed to load users')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadUsers()
+  }, [])
+
+  const confirmDelete = (user) => {
+    setUserToDelete(user)
+    setShowDeleteModal(true)
+  }
+
+  const handleDelete = async () => {
+    if (!userToDelete) return
+
+    setDeleting(true)
+    try {
+      await userService.deleteUser(userToDelete.id)
+      toast.success('User deleted successfully')
+      setShowDeleteModal(false)
+      setUserToDelete(null)
+      loadUsers()
+    } catch (error) {
+      console.error('Failed to delete user:', error)
+      toast.error(error.response?.data?.message || 'Failed to delete user')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const confirmReset2FA = (user) => {
+    setUserToReset2FA(user)
+    setShowReset2FAModal(true)
+  }
+
+  const handleReset2FA = async () => {
+    if (!userToReset2FA) return
+
+    setResetting2FA(true)
+    try {
+      await userService.reset2FA(userToReset2FA.id)
+      toast.success('2FA reset successfully')
+      setShowReset2FAModal(false)
+      setUserToReset2FA(null)
+      loadUsers()
+    } catch (error) {
+      console.error('Failed to reset 2FA:', error)
+      toast.error(error.response?.data?.message || 'Failed to reset 2FA')
+    } finally {
+      setResetting2FA(false)
+    }
+  }
+
   return (
-    <PlaceholderPage
-      title="Users"
-      description="React mirror of Vue /cp/users."
-    />
+    <div>
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+            <p className="mt-1 text-sm text-gray-500">Manage system users, roles, and permissions</p>
+          </div>
+          <Button onClick={() => navigate('/cp/users/create')}>
+            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Create User
+          </Button>
+        </div>
+      </div>
+
+      <Card className="mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <Input
+              modelValue={filters.query}
+              placeholder="Search by name, email, or ID..."
+              onUpdateModelValue={(value) => {
+                const nextFilters = { ...filters, query: value }
+                setFilters(nextFilters)
+                loadUsers(nextFilters)
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <Select
+              modelValue={filters.role}
+              options={roleOptions}
+              onUpdateModelValue={(value) => {
+                const nextFilters = { ...filters, role: value }
+                setFilters(nextFilters)
+                loadUsers(nextFilters)
+              }}
+            />
+          </div>
+        </div>
+      </Card>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loading size="xl" text="Loading users..." />
+        </div>
+      ) : (
+        <Card>
+          <h3 className="text-lg font-medium text-gray-900">Users ({users.length})</h3>
+
+          {users.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">No users found</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {users.map((user) => (
+                    <tr key={user.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                            <div className="text-sm text-gray-500">{user.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <Badge variant={roleVariants[user.role] || 'secondary'}>
+                          {roleLabels[user.role] || user.role}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          {user.email_verified ? (
+                            <Badge variant="success" size="sm">Email Verified</Badge>
+                          ) : (
+                            <Badge variant="secondary" size="sm">Email Not Verified</Badge>
+                          )}
+                          {user.two_factor_enabled ? (
+                            <Badge variant="primary" size="sm">2FA Enabled</Badge>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(user.created_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => navigate(`/cp/users/${user.id}`)}>
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </Button>
+                          {user.two_factor_enabled ? (
+                            <Button variant="ghost" size="sm" onClick={() => confirmReset2FA(user)}>
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                            </Button>
+                          ) : null}
+                          <Button variant="ghost" size="sm" onClick={() => confirmDelete(user)}>
+                            <svg className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Modal
+        open={showDeleteModal}
+        title="Confirm Delete"
+        onClose={() => setShowDeleteModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleDelete} loading={deleting}>Delete User</Button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          Are you sure you want to delete <strong>{userToDelete?.name}</strong>? This action cannot be undone.
+        </p>
+      </Modal>
+
+      <Modal
+        open={showReset2FAModal}
+        title="Reset Two-Factor Authentication"
+        onClose={() => setShowReset2FAModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowReset2FAModal(false)}>Cancel</Button>
+            <Button onClick={handleReset2FA} loading={resetting2FA}>Reset 2FA</Button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          Are you sure you want to reset 2FA for <strong>{userToReset2FA?.name}</strong>? They will need to set it up again.
+        </p>
+      </Modal>
+    </div>
   )
 }

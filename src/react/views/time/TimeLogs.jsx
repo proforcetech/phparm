@@ -1,10 +1,594 @@
-import PlaceholderPage from '../PlaceholderPage'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
+import Card from '../../components/ui/Card'
+import Input from '../../components/ui/Input'
+import Table from '../../components/ui/Table'
+import timeTrackingService from '../../../services/time-tracking.service'
+
+const perPage = 25
+
+const statusVariant = (value) => {
+  if (value === 'pending') return 'warning'
+  if (value === 'rejected') return 'danger'
+  return 'success'
+}
+
+const statusLabel = (value) => {
+  if (!value) return 'Unknown'
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+const formatDate = (value) => {
+  if (!value) return '—'
+  return new Date(value).toLocaleString()
+}
+
+const formatLocation = (lat, lng) => {
+  if (lat == null || lng == null) return '—'
+  return `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
+}
 
 export default function TimeLogs() {
+  const [loading, setLoading] = useState(false)
+  const [entries, setEntries] = useState([])
+  const [total, setTotal] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [listError, setListError] = useState('')
+  const [manualError, setManualError] = useState('')
+  const [editError, setEditError] = useState('')
+  const [savingManual, setSavingManual] = useState(false)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [selectedEntry, setSelectedEntry] = useState(null)
+  const [reviewNotes, setReviewNotes] = useState('')
+  const [reviewError, setReviewError] = useState('')
+  const [reviewing, setReviewing] = useState(false)
+
+  const [filters, setFilters] = useState({
+    search: '',
+    start_date: '',
+    end_date: '',
+    technician_id: '',
+  })
+
+  const [manualForm, setManualForm] = useState({
+    technician_id: '',
+    estimate_job_id: '',
+    started_at: '',
+    ended_at: '',
+    notes: '',
+    manual_override: true,
+    reason: '',
+  })
+
+  const [editForm, setEditForm] = useState({
+    id: null,
+    started_at: '',
+    ended_at: '',
+    estimate_job_id: '',
+    notes: '',
+    manual_override: true,
+    reason: '',
+  })
+
+  const debounceRef = useRef(null)
+
+  const columns = useMemo(() => ([
+    { key: 'technician', label: 'Technician' },
+    { key: 'window', label: 'Window' },
+    { key: 'duration_minutes', label: 'Duration' },
+    { key: 'location', label: 'Location' },
+    { key: 'status', label: 'Status' },
+    { key: 'context', label: 'Context' },
+    { key: 'manual_override', label: 'Source' },
+    { key: 'adjustments', label: 'Adjustments' },
+  ]), [])
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setListError('')
+    try {
+      const response = await timeTrackingService.list({
+        ...filters,
+        page: currentPage,
+        per_page: perPage,
+      })
+      setEntries(response.data)
+      setTotal(response.pagination.total)
+      setCurrentPage(Math.floor(response.pagination.offset / response.pagination.limit) + 1)
+
+      if (selectedEntry) {
+        const updated = response.data.find((entry) => entry.id === selectedEntry.id)
+        if (updated) {
+          handleSelectEntry(updated)
+        }
+      }
+    } catch (error) {
+      setListError(error.response?.data?.message || 'Unable to load time entries. Check your filters and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }, [filters, currentPage, selectedEntry])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const handleSelectEntry = (row) => {
+    setSelectedEntry(row)
+    setEditForm({
+      id: row.id,
+      started_at: row.started_at?.slice(0, 16) || '',
+      ended_at: row.ended_at?.slice(0, 16) || '',
+      estimate_job_id: row.estimate_job_id || '',
+      notes: row.notes || '',
+      manual_override: row.manual_override,
+      reason: '',
+    })
+    setReviewNotes('')
+    setReviewError('')
+  }
+
+  const debouncedRefresh = () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    debounceRef.current = setTimeout(() => refresh(), 300)
+  }
+
+  const updateFilter = (key, value) => {
+    setCurrentPage(1)
+    setFilters((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const submitManual = async (event) => {
+    event.preventDefault()
+    setManualError('')
+    setSavingManual(true)
+    try {
+      await timeTrackingService.create({
+        technician_id: manualForm.technician_id,
+        estimate_job_id: manualForm.estimate_job_id || null,
+        started_at: manualForm.started_at,
+        ended_at: manualForm.ended_at,
+        notes: manualForm.notes,
+        manual_override: manualForm.manual_override,
+        reason: manualForm.reason,
+      })
+      refresh()
+      setManualForm({
+        technician_id: '',
+        estimate_job_id: '',
+        started_at: '',
+        ended_at: '',
+        notes: '',
+        manual_override: true,
+        reason: '',
+      })
+    } catch (error) {
+      setManualError(error.response?.data?.message || 'Unable to save entry')
+    } finally {
+      setSavingManual(false)
+    }
+  }
+
+  const submitUpdate = async (event) => {
+    event.preventDefault()
+    if (!editForm.id) return
+    setEditError('')
+    setSavingEdit(true)
+    try {
+      await timeTrackingService.update(editForm.id, {
+        started_at: editForm.started_at,
+        ended_at: editForm.ended_at || null,
+        estimate_job_id: editForm.estimate_job_id || null,
+        notes: editForm.notes,
+        manual_override: editForm.manual_override,
+        reason: editForm.reason,
+      })
+      refresh()
+      setEditForm((prev) => ({ ...prev, reason: '' }))
+    } catch (error) {
+      setEditError(error.response?.data?.message || 'Unable to update entry')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const review = async (decision) => {
+    if (!selectedEntry) return
+    setReviewError('')
+    setReviewing(true)
+    try {
+      const payload = reviewNotes ? { notes: reviewNotes } : {}
+      if (decision === 'approved') {
+        await timeTrackingService.approve(selectedEntry.id, payload)
+      } else {
+        await timeTrackingService.reject(selectedEntry.id, payload)
+      }
+      setReviewNotes('')
+      await refresh()
+    } catch (error) {
+      setReviewError(error.response?.data?.message || 'Unable to update status')
+    } finally {
+      setReviewing(false)
+    }
+  }
+
   return (
-    <PlaceholderPage
-      title="Time logs"
-      description="React mirror of Vue /cp/time-logs."
-    />
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Time Logs</h1>
+          <p className="text-sm text-gray-600">Filter technician activity with adjustment history.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={refresh}>Refresh</Button>
+        </div>
+      </div>
+
+      {listError ? <p className="text-sm text-red-600">{listError}</p> : null}
+
+      <Card>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700">Search</label>
+            <Input
+              modelValue={filters.search}
+              placeholder="Technician, job, or customer"
+              onUpdateModelValue={(value) => {
+                updateFilter('search', value)
+                debouncedRefresh()
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Technician ID</label>
+            <Input
+              modelValue={filters.technician_id}
+              placeholder="123"
+              onUpdateModelValue={(value) => {
+                updateFilter('technician_id', value)
+                debouncedRefresh()
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Start Date</label>
+            <Input
+              modelValue={filters.start_date}
+              type="date"
+              onUpdateModelValue={(value) => {
+                updateFilter('start_date', value)
+                refresh()
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">End Date</label>
+            <Input
+              modelValue={filters.end_date}
+              type="date"
+              onUpdateModelValue={(value) => {
+                updateFilter('end_date', value)
+                refresh()
+              }}
+            />
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="hidden md:block">
+          <Table
+            columns={columns}
+            data={entries}
+            loading={loading}
+            hoverable
+            pagination
+            perPage={perPage}
+            total={total}
+            currentPage={currentPage}
+            onPageChange={(page) => {
+              setCurrentPage(page)
+            }}
+            onRowClick={handleSelectEntry}
+            cellRenderers={{
+              technician: ({ row }) => (
+                <div>
+                  <p className="font-semibold text-gray-900">{row.technician_name || `Tech #${row.technician_id}`}</p>
+                  <p className="text-xs text-gray-500">Job: {row.job_title || 'Unassigned'}</p>
+                </div>
+              ),
+              window: ({ row }) => (
+                <div className="text-sm text-gray-900">
+                  <div>Start: {formatDate(row.started_at)}</div>
+                  {row.ended_at ? <div>End: {formatDate(row.ended_at)}</div> : <div className="text-amber-700">Active</div>}
+                </div>
+              ),
+              duration_minutes: ({ value }) => (
+                <span className="font-semibold text-gray-900">{Number(value ?? 0).toFixed(2)} mins</span>
+              ),
+              location: ({ row }) => (
+                <div className="text-xs text-gray-700">
+                  {row.is_mobile ? (
+                    <>
+                      <div>Start: {formatLocation(row.start_latitude, row.start_longitude)}</div>
+                      <div>End: {row.ended_at ? formatLocation(row.end_latitude, row.end_longitude) : '—'}</div>
+                    </>
+                  ) : (
+                    <div className="text-gray-500">In-shop</div>
+                  )}
+                </div>
+              ),
+              status: ({ value, row }) => (
+                <div className="flex items-center gap-2">
+                  <Badge variant={statusVariant(value)} size="sm">{statusLabel(value)}</Badge>
+                  {row.reviewed_at ? (
+                    <span className="text-xs text-gray-500">
+                      {row.reviewer_name || `User #${row.reviewed_by}`}
+                    </span>
+                  ) : null}
+                </div>
+              ),
+              context: ({ row }) => (
+                <div className="text-sm text-gray-800">
+                  <div className="text-xs text-gray-500">Estimate: {row.estimate_number || '—'}</div>
+                  <div className="text-xs text-gray-500">Customer: {row.customer_name || '—'}</div>
+                  <div className="text-xs text-gray-500">Vehicle: {row.vehicle_vin || '—'}</div>
+                </div>
+              ),
+              manual_override: ({ value }) => (
+                <Badge variant={value ? 'warning' : 'secondary'}>{value ? 'Manual' : 'Timer'}</Badge>
+              ),
+              adjustments: ({ row }) => (
+                <div className="space-y-2">
+                  {row.adjustments?.length === 0 ? (
+                    <div className="text-xs text-gray-500">No adjustments</div>
+                  ) : (
+                    row.adjustments?.map((adj) => (
+                      <div key={adj.id} className="rounded bg-gray-50 p-2">
+                        <div className="text-xs font-semibold text-gray-800">{adj.actor_name || `User #${adj.actor_id}`}</div>
+                        <div className="text-xs text-gray-600">{adj.reason}</div>
+                        <div className="text-[11px] text-gray-500">{formatDate(adj.created_at)}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ),
+            }}
+          />
+        </div>
+
+        <div className="space-y-3 md:hidden">
+          {entries.map((row) => (
+            <div
+              key={row.id}
+              className="rounded border border-gray-200 bg-gray-50 p-4 shadow-sm"
+              onClick={() => handleSelectEntry(row)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-gray-900">{row.technician_name || `Tech #${row.technician_id}`}</p>
+                  <p className="text-xs text-gray-600">Job: {row.job_title || 'Unassigned'}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge variant={row.manual_override ? 'warning' : 'secondary'}>{row.manual_override ? 'Manual' : 'Timer'}</Badge>
+                  <Badge variant={statusVariant(row.status)} size="sm">{statusLabel(row.status)}</Badge>
+                </div>
+              </div>
+              <div className="mt-2 text-sm text-gray-800">
+                <div className="font-semibold">{Number(row.duration_minutes ?? 0).toFixed(2)} mins</div>
+                <div className="text-xs text-gray-600">Start: {formatDate(row.started_at)}</div>
+                <div className="text-xs text-gray-600">
+                  End:{' '}
+                  <span className={row.ended_at ? '' : 'text-amber-700'}>
+                    {row.ended_at ? formatDate(row.ended_at) : 'Active'}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600">
+                  Location:{' '}
+                  {row.is_mobile
+                    ? `${formatLocation(row.start_latitude, row.start_longitude)} → ${row.ended_at ? formatLocation(row.end_latitude, row.end_longitude) : '—'}`
+                    : 'In-shop'}
+                </div>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-gray-600">
+                <div>Estimate: {row.estimate_number || '—'}</div>
+                <div>Customer: {row.customer_name || '—'}</div>
+                <div>Vehicle: {row.vehicle_vin || '—'}</div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {row.adjustments?.length === 0 ? (
+                  <div className="text-xs text-gray-500">No adjustments</div>
+                ) : (
+                  row.adjustments?.map((adj) => (
+                    <div key={adj.id} className="rounded bg-white p-2">
+                      <div className="text-xs font-semibold text-gray-800">{adj.actor_name || `User #${adj.actor_id}`}</div>
+                      <div className="text-xs text-gray-600">{adj.reason}</div>
+                      <div className="text-[11px] text-gray-500">{formatDate(adj.created_at)}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          ))}
+          {entries.length === 0 && !loading ? (
+            <div className="py-4 text-center text-sm text-gray-500">No entries found.</div>
+          ) : null}
+          {loading ? <div className="py-4 text-center text-sm text-gray-500">Loading...</div> : null}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <h3 className="text-lg font-semibold text-gray-900">Add manual entry</h3>
+          <p className="mt-1 text-sm text-gray-600">Manual submissions default to pending until reviewed.</p>
+          <form className="mt-4 space-y-3" onSubmit={submitManual}>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                modelValue={manualForm.technician_id}
+                label="Technician ID"
+                required
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, technician_id: value }))}
+              />
+              <Input
+                modelValue={manualForm.estimate_job_id}
+                label="Estimate Job ID"
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, estimate_job_id: value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                modelValue={manualForm.started_at}
+                type="datetime-local"
+                label="Started"
+                required
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, started_at: value }))}
+              />
+              <Input
+                modelValue={manualForm.ended_at}
+                type="datetime-local"
+                label="Ended"
+                required
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, ended_at: value }))}
+              />
+            </div>
+            <Input
+              modelValue={manualForm.reason}
+              label="Adjustment Reason"
+              required
+              onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, reason: value }))}
+            />
+            <textarea
+              value={manualForm.notes}
+              onChange={(event) => setManualForm((prev) => ({ ...prev, notes: event.target.value }))}
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              rows={3}
+              placeholder="Notes"
+            />
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                checked={manualForm.manual_override}
+                onChange={(event) => setManualForm((prev) => ({ ...prev, manual_override: event.target.checked }))}
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+              />
+              Manual override
+            </label>
+            <div className="flex gap-2">
+              <Button type="submit" loading={savingManual}>Save Entry</Button>
+              {manualError ? <p className="text-sm text-red-600">{manualError}</p> : null}
+            </div>
+          </form>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Edit selected entry</h3>
+            {selectedEntry ? <Badge variant="secondary">ID {selectedEntry.id}</Badge> : null}
+          </div>
+          <p className="mt-1 text-sm text-gray-600">Click a row to load it into the editor.</p>
+
+          {selectedEntry ? (
+            <div className="mt-3 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant={statusVariant(selectedEntry.status)} size="sm" rounded>
+                    {statusLabel(selectedEntry.status)}
+                  </Badge>
+                  {selectedEntry.manual_override ? <Badge variant="warning" size="sm">Manual</Badge> : null}
+                </div>
+                {selectedEntry.reviewed_at ? (
+                  <span className="text-xs text-gray-600">
+                    {selectedEntry.reviewer_name || `User #${selectedEntry.reviewed_by}`} · {formatDate(selectedEntry.reviewed_at)}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-xs text-gray-600">
+                {selectedEntry.status === 'pending'
+                  ? 'Pending entries are excluded from billable totals until approval.'
+                  : selectedEntry.review_notes || 'Reviewed'}
+              </p>
+              {selectedEntry.status === 'pending' ? (
+                <div className="space-y-2 pt-1">
+                  <textarea
+                    value={reviewNotes}
+                    onChange={(event) => setReviewNotes(event.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    rows={2}
+                    placeholder="Review notes (optional)"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="primary" size="sm" loading={reviewing} onClick={() => review('approved')}>Approve</Button>
+                    <Button variant="danger" size="sm" loading={reviewing} onClick={() => review('rejected')}>Reject</Button>
+                  </div>
+                </div>
+              ) : null}
+              {selectedEntry.status !== 'pending' && selectedEntry.review_notes ? (
+                <p className="text-xs text-gray-600">Notes: {selectedEntry.review_notes}</p>
+              ) : null}
+              {reviewError ? <p className="text-sm text-red-600">{reviewError}</p> : null}
+            </div>
+          ) : null}
+
+          <form className="mt-4 space-y-3" onSubmit={submitUpdate}>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                modelValue={editForm.started_at}
+                type="datetime-local"
+                label="Started"
+                disabled={!selectedEntry}
+                required
+                onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, started_at: value }))}
+              />
+              <Input
+                modelValue={editForm.ended_at}
+                type="datetime-local"
+                label="Ended"
+                disabled={!selectedEntry}
+                onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, ended_at: value }))}
+              />
+            </div>
+            <Input
+              modelValue={editForm.estimate_job_id}
+              label="Estimate Job ID"
+              disabled={!selectedEntry}
+              onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, estimate_job_id: value }))}
+            />
+            <Input
+              modelValue={editForm.reason}
+              label="Adjustment Reason"
+              disabled={!selectedEntry}
+              required
+              onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, reason: value }))}
+            />
+            <textarea
+              value={editForm.notes}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, notes: event.target.value }))}
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              rows={3}
+              disabled={!selectedEntry}
+              placeholder="Notes"
+            />
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                checked={editForm.manual_override}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, manual_override: event.target.checked }))}
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                disabled={!selectedEntry}
+              />
+              Manual override
+            </label>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={!selectedEntry} loading={savingEdit}>Update Entry</Button>
+              {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
+            </div>
+          </form>
+        </Card>
+      </div>
+    </div>
   )
 }
