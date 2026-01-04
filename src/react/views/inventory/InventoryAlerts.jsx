@@ -9,6 +9,27 @@ import Loading from '../../components/ui/Loading'
 import inventoryService from '../../../services/inventory.service'
 import dashboardService from '../../../services/dashboard.service'
 
+const STATUS_LABELS = {
+  out_of_stock: 'Out of stock',
+  backorder: 'Backorder',
+  on_order: 'On order',
+}
+
+const STATUS_VARIANTS = {
+  out_of_stock: 'danger',
+  backorder: 'warning',
+  on_order: 'info',
+}
+
+const formatDate = (value) => {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleDateString()
+}
+
 export default function InventoryAlerts() {
   const navigate = useNavigate()
   const [items, setItems] = useState([])
@@ -85,7 +106,10 @@ export default function InventoryAlerts() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory Alerts</h1>
           <p className="mt-1 text-sm text-gray-500">Track low and out-of-stock items from the dashboard</p>
         </div>
-        <Button variant="outline" onClick={() => navigate('/cp/inventory')}>Back to inventory</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate('/cp/inventory/stock-orders')}>Stock orders</Button>
+          <Button variant="outline" onClick={() => navigate('/cp/inventory')}>Back to inventory</Button>
+        </div>
       </div>
 
       <Card className="mb-6">
@@ -149,6 +173,7 @@ export default function InventoryAlerts() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Threshold</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ETA</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -160,9 +185,12 @@ export default function InventoryAlerts() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.stock_quantity}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.low_stock_threshold}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <Badge variant={item.severity === 'out' ? 'danger' : 'warning'}>
-                            {item.severity === 'out' ? 'Out of Stock' : 'Low Stock'}
+                          <Badge variant={STATUS_VARIANTS[item.status] || (item.severity === 'out' ? 'danger' : 'warning')}>
+                            {STATUS_LABELS[item.status] || (item.severity === 'out' ? 'Out of Stock' : 'Low Stock')}
                           </Badge>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatDate(item.expected_arrival_date)}
                         </td>
                       </tr>
                     ))}

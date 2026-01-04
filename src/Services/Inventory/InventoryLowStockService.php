@@ -9,15 +9,18 @@ use InvalidArgumentException;
 class InventoryLowStockService
 {
     private InventoryItemRepository $repository;
+    private ?InventoryStockOrderRepository $stockOrderRepository;
     private ?NotificationDispatcher $notifications;
     private string $templateKey;
 
     public function __construct(
         InventoryItemRepository $repository,
+        ?InventoryStockOrderRepository $stockOrderRepository = null,
         ?NotificationDispatcher $notifications = null,
         string $templateKey = 'inventory.low_stock_alert'
     ) {
         $this->repository = $repository;
+        $this->stockOrderRepository = $stockOrderRepository;
         $this->notifications = $notifications;
         $this->templateKey = $templateKey;
     }
@@ -50,11 +53,27 @@ class InventoryLowStockService
     {
         $filters['low_stock_only'] = true;
         $items = $this->repository->list($filters, $limit, $offset);
+        $stockOrders = [];
 
-        return array_map(static function (InventoryItem $item) {
+        if ($this->stockOrderRepository !== null && $items !== []) {
+            $itemIds = array_map(static fn (InventoryItem $item) => $item->id, $items);
+            $stockOrders = $this->stockOrderRepository->getOpenOrdersByItemIds($itemIds);
+        }
+
+        return array_map(static function (InventoryItem $item) use ($stockOrders) {
             $data = $item->toArray();
             $data['severity'] = $item->stock_quantity === 0 ? 'out' : 'low';
             $data['recommended_reorder'] = max(0, $item->reorder_quantity - $item->stock_quantity);
+            $data['expected_arrival_date'] = null;
+
+            $status = $item->stock_quantity === 0 ? 'out_of_stock' : 'backorder';
+            if (isset($stockOrders[$item->id])) {
+                $order = $stockOrders[$item->id];
+                $status = $order['status'] ?? $status;
+                $data['expected_arrival_date'] = $order['expected_arrival_date'] ?? null;
+            }
+
+            $data['status'] = $status;
 
             return $data;
         }, $items);
