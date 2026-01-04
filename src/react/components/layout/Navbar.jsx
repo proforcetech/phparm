@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDownIcon } from '@heroicons/react/24/outline'
+import { Bars3Icon, ChevronDownIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 import OfflineStatusBadge from '../OfflineStatusBadge'
 
-export default function Navbar() {
+export default function Navbar({
+  showSidebarToggle = false,
+  isSidebarCollapsed = false,
+  onToggleSidebarCollapsed = () => {},
+}) {
   const { user, isCustomer, isAdmin, logout } = useAuthStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const buttonRef = useRef(null)
@@ -33,7 +37,20 @@ export default function Navbar() {
     <nav className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
-          <div className="flex">
+          <div className="flex items-center space-x-3">
+            {showSidebarToggle ? (
+              <button
+                type="button"
+                onClick={onToggleSidebarCollapsed}
+                className="hidden lg:inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                aria-pressed={isSidebarCollapsed}
+              >
+                <span className="sr-only">
+                  {isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                </span>
+                <Bars3Icon className="h-5 w-5" aria-hidden="true" />
+              </button>
+            ) : null}
             <div className="flex-shrink-0 flex items-center">
               <Link to="/cp/dashboard" className="text-xl font-bold text-primary-600">
                 Auto Repair Shop
