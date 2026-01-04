@@ -119,10 +119,6 @@ const requireGuest = () => {
 
 const PublicLayout = () => (
   <div className="react-app">
-    <header>
-      <h1>React migration staging</h1>
-      <p>Public route (matches Vue guest/public routes)</p>
-    </header>
     <Outlet />
   </div>
 )
