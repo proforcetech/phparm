@@ -1,14 +1,24 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import Alert from '../../components/ui/Alert'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import { fetchSettings, saveSettings } from '../../../services/settings.service'
 
-const settingsLinks = [
-  {
-    title: 'Shop profile',
-    description: 'Update shop contact details, branding, and address information.',
-    to: '/cp/settings/profile',
+const initialFormState = {
+  profile: {
+    name: '',
+    email: '',
+    phone: '',
+    logoUrl: '',
+    address: {
+      street: '',
+      city: '',
+      state: '',
+      postal_code: '',
+      country: '',
+    },
   },
   pricing: { taxRate: 0, laborRate: 0, callOutFee: 0, mileageRate: 0 },
   storageFees: { dailyStorage: 0, gateFee: 0, impoundFee: 0 },
@@ -25,6 +35,27 @@ const settingsLinks = [
     paypalClientId: '',
     paypalClientSecret: '',
     paypalWebhook: '',
+  },
+  security: { recaptchaEnabled: false, recaptchaSiteKey: '', recaptchaSecretKey: '' },
+  integrations: {
+    zohoClientId: '',
+    zohoClientSecret: '',
+    zohoRefreshToken: '',
+    zohoOrgId: '',
+    partsTechBase: '',
+    partsTechKey: '',
+    partsTechMarkup: '',
+  },
+}
+
+const getSetting = (settings, key, fallback = null) => settings?.[key]?.value ?? fallback
+
+const settingsLinks = [
+  {
+    title: 'Shop profile',
+    description: 'Update shop contact details, branding, and address information.',
+    to: '/cp/settings/profile',
+  },
   {
     title: 'Terms & Documents',
     description: 'Manage estimate and invoice terms shown to customers.',
@@ -453,19 +484,24 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {settingsLinks.map((link) => (
-          <Link key={link.to} to={link.to} className="group">
-            <Card className="h-full transition group-hover:shadow-md">
-              <h2 className="text-lg font-semibold text-gray-900">{link.title}</h2>
-              <p className="mt-2 text-sm text-gray-500">{link.description}</p>
-              <span className="mt-4 inline-flex text-sm font-medium text-primary-600">
-                Manage settings →
-              </span>
             </Card>
-          </Link>
-        ))}
-      </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {settingsLinks.map((link) => (
+              <Link key={link.to} to={link.to} className="group">
+                <Card className="h-full transition group-hover:shadow-md">
+                  <h2 className="text-lg font-semibold text-gray-900">{link.title}</h2>
+                  <p className="mt-2 text-sm text-gray-500">{link.description}</p>
+                  <span className="mt-4 inline-flex text-sm font-medium text-primary-600">
+                    Manage settings →
+                  </span>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
