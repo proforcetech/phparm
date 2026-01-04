@@ -1,10 +1,17 @@
-import PlaceholderPage from '../PlaceholderPage'
+import SettingsFormShell from './SettingsFormShell'
+import { NotificationsForm } from './SettingsFormSections'
 
 export default function SettingsNotifications() {
   return (
-    <PlaceholderPage
-      title="Notifications settings"
-      description="React mirror of Vue /cp/settings/notifications."
-    />
+    <SettingsFormShell
+      title="Notifications"
+      description="Configure outbound email and SMS messaging settings."
+    >
+      {({ form, updateField }) => (
+        <div className="space-y-6">
+          <NotificationsForm form={form} updateField={updateField} />
+        </div>
+      )}
+    </SettingsFormShell>
   )
 }

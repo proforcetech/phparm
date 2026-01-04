@@ -1,10 +1,17 @@
-import PlaceholderPage from '../PlaceholderPage'
+import SettingsFormShell from './SettingsFormShell'
+import { RejectionReasonsForm } from './SettingsFormSections'
 
 export default function SettingsRejectionReasons() {
   return (
-    <PlaceholderPage
-      title="Rejection reasons settings"
-      description="React mirror of Vue /cp/settings/rejection-reasons."
-    />
+    <SettingsFormShell
+      title="Rejection reasons"
+      description="Maintain the list of reasons customers can choose when declining a job."
+    >
+      {({ form, updateField }) => (
+        <div className="space-y-6">
+          <RejectionReasonsForm form={form} updateField={updateField} />
+        </div>
+      )}
+    </SettingsFormShell>
   )
 }
