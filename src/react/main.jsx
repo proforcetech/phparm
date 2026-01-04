@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
+import { AuthProvider } from './stores/auth.jsx'
 import { ToastProvider } from './stores/toast.jsx'
 
 const container = document.getElementById('app')
@@ -10,7 +11,9 @@ if (!container) {
 }
 
 createRoot(container).render(
-  <ToastProvider>
-    <App />
-  </ToastProvider>
+  <AuthProvider>
+    <ToastProvider>
+      <App />
+    </ToastProvider>
+  </AuthProvider>
 )
