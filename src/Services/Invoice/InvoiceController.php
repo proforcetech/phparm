@@ -63,15 +63,15 @@ class InvoiceController
     {
         $this->assertViewAccess($user);
 
-        $invoice = $this->service->findById($id);
+        $invoice = $this->service->findDetailedById($id);
 
         if ($invoice === null) {
             throw new InvalidArgumentException('Invoice not found');
         }
 
-        $this->assertCustomerOwnership($user, $invoice->customer_id);
+        $this->assertCustomerOwnership($user, (int) ($invoice['customer_id'] ?? 0));
 
-        return $invoice->toArray();
+        return $invoice;
     }
 
     /**
