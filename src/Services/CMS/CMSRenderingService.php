@@ -26,25 +26,34 @@ class CMSRenderingService
     {
         $cacheKey = 'page:rendered:' . $slug;
 
-        if ($this->cache) {
-            $cached = $this->cache->get($cacheKey);
-            if ($cached !== null) {
-                return $cached;
+        try {
+            if ($this->cache) {
+                $cached = $this->cache->get($cacheKey);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
-        }
 
-        $page = $this->loadPublishedPageBySlug($slug);
-        if ($page === null) {
+            $page = $this->loadPublishedPageBySlug($slug);
+            if ($page === null) {
+                return null;
+            }
+
+            $html = $this->renderPageContent($page);
+
+            if ($this->cache && $html !== null) {
+                $this->cache->set($cacheKey, $html, 3600);
+            }
+
+            return $html;
+        } catch (\Throwable $exception) {
+            error_log(sprintf(
+                'CMS renderPage failed for slug "%s": %s',
+                $slug,
+                $exception->getMessage()
+            ));
             return null;
         }
-
-        $html = $this->renderPageContent($page);
-
-        if ($this->cache && $html !== null) {
-            $this->cache->set($cacheKey, $html, 3600);
-        }
-
-        return $html;
     }
 
     public function renderPageContent(Page $page): ?string
