@@ -16,6 +16,7 @@ import EstimateDetail from '../views/estimates/EstimateDetail'
 import EstimateEdit from '../views/estimates/EstimateEdit'
 import WorkorderList from '../views/workorders/WorkorderList'
 import WorkorderDetail from '../views/workorders/WorkorderDetail'
+import DispatchView from '../views/dispatch/DispatchView'
 import BundleList from '../views/bundles/BundleList'
 import BundleForm from '../views/bundles/BundleForm'
 import AppointmentList from '../views/appointments/AppointmentList'
@@ -153,6 +154,7 @@ const protectedRoutes = [
   { path: '/cp/estimates/:id/edit', name: 'EstimateEdit', auth: 'requiresAuth', element: <EstimateEdit /> },
   { path: '/cp/workorders', name: 'WorkorderList', auth: 'requiresAuth', element: <WorkorderList /> },
   { path: '/cp/workorders/:id', name: 'WorkorderDetail', auth: 'requiresAuth', element: <WorkorderDetail /> },
+  { path: '/cp/dispatch', name: 'Dispatch', auth: 'requiresAuth', element: <DispatchView /> },
   { path: '/cp/bundles', name: 'BundleList', auth: 'requiresAuth', element: <BundleList /> },
   { path: '/cp/bundles/create', name: 'BundleCreate', auth: 'requiresAuth', element: <BundleForm /> },
   { path: '/cp/bundles/:id/edit', name: 'BundleEdit', auth: 'requiresAuth', element: <BundleForm /> },

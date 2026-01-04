@@ -58,8 +58,11 @@ export default {
    * @param {number} technicianId - Technician user ID
    * @returns {Promise}
    */
-  assignTechnician(id, technicianId) {
-    return api.patch(`/workorders/${id}/assign`, { technician_id: technicianId })
+  assignTechnician(id, technicianId, recommendedDriver = null) {
+    return api.patch(`/workorders/${id}/assign`, {
+      technician_id: technicianId,
+      ...(recommendedDriver ? { recommended_driver: recommendedDriver } : {}),
+    })
   },
 
   /**
@@ -129,7 +132,10 @@ export default {
    * @param {number} technicianId - Technician user ID
    * @returns {Promise}
    */
-  assignJobTechnician(workorderId, jobId, technicianId) {
-    return api.patch(`/workorders/${workorderId}/jobs/${jobId}/assign`, { technician_id: technicianId })
+  assignJobTechnician(workorderId, jobId, technicianId, recommendedDriver = null) {
+    return api.patch(`/workorders/${workorderId}/jobs/${jobId}/assign`, {
+      technician_id: technicianId,
+      ...(recommendedDriver ? { recommended_driver: recommendedDriver } : {}),
+    })
   }
 }

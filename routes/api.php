@@ -3066,6 +3066,29 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    // Dispatch recommendation routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection) {
+        $dispatchRecommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection);
+
+        $router->get('/api/dispatch/suggestions', function (Request $request) use ($dispatchRecommendationService) {
+            $params = [
+                'dispatch_requirement_id' => $request->queryParam('dispatch_requirement_id'),
+                'scheduled_start' => $request->queryParam('scheduled_start'),
+                'estimated_duration_hours' => $request->queryParam('estimated_duration_hours'),
+                'required_capacity' => $request->queryParam('required_capacity'),
+                'required_equipment_class' => $request->queryParam('required_equipment_class'),
+                'required_certifications' => $request->queryParam('required_certifications'),
+                'pickup_latitude' => $request->queryParam('pickup_latitude'),
+                'pickup_longitude' => $request->queryParam('pickup_longitude'),
+                'dropoff_latitude' => $request->queryParam('dropoff_latitude'),
+                'dropoff_longitude' => $request->queryParam('dropoff_longitude'),
+            ];
+            $limit = (int) ($request->queryParam('limit') ?? 5);
+            $data = $dispatchRecommendationService->suggest($params, $limit);
+            return Response::json($data);
+        });
+    });
+
     // Appointment routes
     $appointmentAudit = new AuditLogger($connection, $config['audit']);
     $webhookConfig = $config['appointments']['webhooks'] ?? [];
