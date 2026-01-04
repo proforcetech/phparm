@@ -1336,6 +1336,10 @@ return Response::json([
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
+        $inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
+            $connection,
+            $auditLogger
+        );
 
         $router->get('/api/dashboard', function (Request $request) use ($dashboardController) {
             /** @var \App\Models\User|null $user */
@@ -1413,6 +1417,22 @@ return Response::json([
             }
 
             $data = $dashboardController->handleServiceTypeBreakdown($params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/dashboard/inventory/pull-requests', function (Request $request) use ($inventoryPullRequestRepository) {
+            $statusesParam = $request->queryParam('statuses');
+            $statuses = $statusesParam
+                ? array_filter(array_map('trim', explode(',', $statusesParam)))
+                : [
+                    \App\Models\InventoryPullRequest::STATUS_PENDING,
+                    \App\Models\InventoryPullRequest::STATUS_ORDERED,
+                    \App\Models\InventoryPullRequest::STATUS_RECEIVED,
+                ];
+
+            $limit = (int) ($request->queryParam('limit') ?? 5);
+
+            $data = $inventoryPullRequestRepository->getDashboardNotifications($statuses, $limit);
             return Response::json($data);
         });
 

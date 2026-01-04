@@ -54,4 +54,16 @@ export default {
     })
     return response.data
   },
+
+  /**
+   * Get inventory pull request notifications for the dashboard
+   */
+  async getInventoryPullRequests(limit = 5, statuses = []) {
+    const params = { limit }
+    if (statuses.length > 0) {
+      params.statuses = statuses.join(',')
+    }
+    const response = await api.get('/dashboard/inventory/pull-requests', { params })
+    return response.data
+  },
 }
