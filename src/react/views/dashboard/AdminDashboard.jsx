@@ -141,7 +141,9 @@ export default function AdminDashboard() {
     try {
       setErrorMessage(null)
       const [statsRes, invoicesRes, appointmentsRes, lowStockRes, trendsRes, servicesRes] = await Promise.all([
-        dashboardService.getStats(technicianParams).catch(() => ({})),
+        dashboardService
+          .getStats({ start: chartRange.start, end: chartRange.end, ...technicianParams })
+          .catch(() => ({})),
         dashboardService.getRecentInvoices(5, technicianParams).catch(() => []),
         dashboardService.getRecentAppointments(5, technicianParams).catch(() => []),
         dashboardService.getInventoryLowStockTile(5).catch(() => null),
