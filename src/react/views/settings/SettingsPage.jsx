@@ -11,6 +11,7 @@ const settingsLinks = [
     to: '/cp/settings/profile',
   },
   pricing: { taxRate: 0, laborRate: 0, callOutFee: 0, mileageRate: 0 },
+  storageFees: { dailyStorage: 0, gateFee: 0, impoundFee: 0 },
   notifications: { fromName: '', fromAddress: '', smsNumber: '', twilioSid: '', twilioToken: '' },
   smtp: { host: '', port: 587, username: '', password: '', encryption: 'tls' },
   payments: {
@@ -100,6 +101,11 @@ export default function SettingsPage() {
             laborRate: Number(getSetting(settings, 'pricing.labor_rate', 0)),
             callOutFee: Number(getSetting(settings, 'pricing.call_out_fee', 0)),
             mileageRate: Number(getSetting(settings, 'pricing.mileage_rate', 0)),
+          },
+          storageFees: {
+            dailyStorage: Number(getSetting(settings, 'storage.daily_fee', 0)),
+            gateFee: Number(getSetting(settings, 'storage.gate_fee', 0)),
+            impoundFee: Number(getSetting(settings, 'impound.default_fee', 0)),
           },
           notifications: {
             fromName: getSetting(settings, 'notifications.mail.from_name', ''),
@@ -191,6 +197,9 @@ export default function SettingsPage() {
       'pricing.labor_rate': Number(form.pricing.laborRate) || 0,
       'pricing.call_out_fee': Number(form.pricing.callOutFee) || 0,
       'pricing.mileage_rate': Number(form.pricing.mileageRate) || 0,
+      'storage.daily_fee': Number(form.storageFees.dailyStorage) || 0,
+      'storage.gate_fee': Number(form.storageFees.gateFee) || 0,
+      'impound.default_fee': Number(form.storageFees.impoundFee) || 0,
       'notifications.mail.from_name': form.notifications.fromName,
       'notifications.mail.from_address': form.notifications.fromAddress,
       'notifications.sms.from_number': form.notifications.smsNumber,
@@ -408,6 +417,39 @@ export default function SettingsPage() {
                     value={form.pricing.mileageRate}
                     className="mt-1"
                     onChange={(event) => updateField(['pricing', 'mileageRate'], event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Storage Daily Fee</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.storageFees.dailyStorage}
+                    className="mt-1"
+                    onChange={(event) => updateField(['storageFees', 'dailyStorage'], event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Storage Gate Fee</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.storageFees.gateFee}
+                    className="mt-1"
+                    onChange={(event) => updateField(['storageFees', 'gateFee'], event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Impound Fee</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.storageFees.impoundFee}
+                    className="mt-1"
+                    onChange={(event) => updateField(['storageFees', 'impoundFee'], event.target.value)}
                   />
                 </div>
               </div>
