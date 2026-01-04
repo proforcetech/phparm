@@ -20,6 +20,7 @@ import { useToast } from '../../stores/toast.jsx'
 export default function CMSPageList() {
   const navigate = useNavigate()
   const pageStore = useCmsPageStore()
+  const { fetchPages } = pageStore
   const toast = useToast()
   const [error, setError] = useState(null)
   const [filters, setFilters] = useState({ search: '', status: '' })
@@ -28,18 +29,18 @@ export default function CMSPageList() {
   const [deleting, setDeleting] = useState(false)
   const searchTimeout = useRef(null)
 
-  const loadPages = useCallback(async (nextFilters) => {
+  const loadPages = useCallback(async (nextFilters = filters) => {
     try {
       setError(null)
-      await pageStore.fetchPages(nextFilters)
+      await fetchPages(nextFilters)
     } catch (err) {
       console.error('Failed to load pages:', err)
       setError(err.response?.data?.message || 'Failed to load pages')
     }
-  }, [pageStore])
+  }, [fetchPages, filters])
 
   useEffect(() => {
-    loadPages(filters)
+    loadPages()
 
     return () => {
       if (searchTimeout.current) {

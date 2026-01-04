@@ -20,6 +20,7 @@ import { useToast } from '../../stores/toast.jsx'
 export default function CMSMenuList() {
   const navigate = useNavigate()
   const menuStore = useCmsMenuStore()
+  const { fetchMenus } = menuStore
   const toast = useToast()
 
   const [error, setError] = useState(null)
@@ -29,18 +30,18 @@ export default function CMSMenuList() {
   const [deleting, setDeleting] = useState(false)
   const searchTimeout = useRef(null)
 
-  const loadMenus = useCallback(async (nextFilters) => {
+  const loadMenus = useCallback(async (nextFilters = filters) => {
     try {
       setError(null)
-      await menuStore.fetchMenus(nextFilters)
+      await fetchMenus(nextFilters)
     } catch (err) {
       console.error('Failed to load menus:', err)
       setError(err.response?.data?.message || 'Failed to load menus')
     }
-  }, [menuStore])
+  }, [fetchMenus, filters])
 
   useEffect(() => {
-    loadMenus(filters)
+    loadMenus()
 
     return () => {
       if (searchTimeout.current) {
