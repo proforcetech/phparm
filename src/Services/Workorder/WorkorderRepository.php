@@ -217,7 +217,12 @@ class WorkorderRepository
         return $workorder;
     }
 
-    public function assignTechnician(int $id, ?int $technicianId, ?int $actorId = null): ?Workorder
+    public function assignTechnician(
+        int $id,
+        ?int $technicianId,
+        ?int $actorId = null,
+        ?array $recommendedDriver = null
+    ): ?Workorder
     {
         $workorder = $this->find($id);
         if ($workorder === null) {
@@ -234,6 +239,7 @@ class WorkorderRepository
         $this->log('workorder.technician_assigned', $id, $actorId, [
             'previous_technician_id' => $previousTechnicianId,
             'new_technician_id' => $technicianId,
+            'recommended_driver' => $recommendedDriver,
         ]);
 
         return $this->find($id);

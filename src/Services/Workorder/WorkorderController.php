@@ -166,12 +166,14 @@ class WorkorderController
         $this->assertManageAccess($user);
 
         $technicianId = $payload['technician_id'] ?? null;
+        $recommendedDriver = $payload['recommended_driver'] ?? null;
 
         $before = $this->repository->find($id);
         $workorder = $this->repository->assignTechnician(
             $id,
             $technicianId ? (int) $technicianId : null,
-            $user->id
+            $user->id,
+            is_array($recommendedDriver) ? $recommendedDriver : null
         );
 
         if ($workorder === null) {
@@ -183,6 +185,7 @@ class WorkorderController
             'previous_technician_id' => $before?->assigned_technician_id,
             'new_technician_id' => $technicianId ? (int) $technicianId : null,
             'actor_id' => $user->id,
+            'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
 
         return $this->enrichWorkorder($workorder);
@@ -343,6 +346,7 @@ class WorkorderController
         $this->assertManageAccess($user);
 
         $technicianId = $payload['technician_id'] ?? null;
+        $recommendedDriver = $payload['recommended_driver'] ?? null;
 
         $beforeJob = $this->repository->findJob($jobId);
         $job = $this->repository->assignJobTechnician(
@@ -361,6 +365,7 @@ class WorkorderController
             'previous_technician_id' => $beforeJob?->assigned_technician_id,
             'new_technician_id' => $technicianId ? (int) $technicianId : null,
             'actor_id' => $user->id,
+            'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
 
         return $job->toArray();
