@@ -12,6 +12,8 @@ const initialFormState = {
 }
 
 const getSetting = (settings, key, fallback = '') => settings?.[key]?.value ?? fallback
+import SettingsFormShell from './SettingsFormShell'
+import { TermsForm } from './SettingsFormSections'
 
 export default function SettingsTerms() {
   const [loading, setLoading] = useState(true)
@@ -97,5 +99,15 @@ export default function SettingsTerms() {
         </div>
       )}
     </div>
+    <SettingsFormShell
+      title="Terms & Documents"
+      description="Control the terms that appear on estimates and invoices."
+    >
+      {({ form, updateField }) => (
+        <div className="space-y-6">
+          <TermsForm form={form} updateField={updateField} />
+        </div>
+      )}
+    </SettingsFormShell>
   )
 }
