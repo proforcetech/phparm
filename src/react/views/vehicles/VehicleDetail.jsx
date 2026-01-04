@@ -5,8 +5,6 @@ import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import { getVehicle } from '../../../services/vehicle.service'
 
-const pretty = (value) => JSON.stringify(value, null, 2)
-
 export default function VehicleDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -31,6 +29,30 @@ export default function VehicleDetail() {
   useEffect(() => {
     loadVehicle()
   }, [loadVehicle])
+
+  const formatMileage = (value) => (value !== null && value !== undefined ? `${value} mi` : null)
+
+  const renderSection = (title, items, emptyMessage) => {
+    const filteredItems = items.filter((item) => item.value !== null && item.value !== undefined && item.value !== '')
+
+    return (
+      <div className="rounded-md border border-gray-100 bg-gray-50 p-4">
+        <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+        {filteredItems.length ? (
+          <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            {filteredItems.map((item) => (
+              <div key={item.label}>
+                <dt className="text-xs uppercase text-gray-500">{item.label}</dt>
+                <dd className="text-sm font-medium text-gray-900">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="mt-3 text-sm text-gray-500">{emptyMessage}</p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -62,7 +84,7 @@ export default function VehicleDetail() {
         {loading ? (
           <div className="py-6 text-center text-sm text-gray-500">Loading vehicle...</div>
         ) : vehicle ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <p className="text-xs text-gray-500">Year</p>
@@ -97,9 +119,52 @@ export default function VehicleDetail() {
               </div>
             </div>
 
-            <div className="rounded-md bg-gray-50 p-4">
-              <p className="text-sm font-semibold text-gray-800">Raw payload</p>
-              <pre className="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{pretty(vehicle)}</pre>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {renderSection(
+                'Customer Info',
+                [
+                  { label: 'Customer ID', value: vehicle.customer_id ? `#${vehicle.customer_id}` : null },
+                  { label: 'Vehicle ID', value: vehicle.id ? `#${vehicle.id}` : null },
+                  { label: 'Last Service Date', value: vehicle.last_service_date },
+                  { label: 'Last Service Mileage', value: formatMileage(vehicle.last_service_mileage) },
+                ],
+                'No customer details available.'
+              )}
+
+              {renderSection(
+                'VIN Details',
+                [
+                  { label: 'VIN', value: vehicle.vin },
+                  { label: 'Trim', value: vehicle.trim },
+                  { label: 'Engine', value: vehicle.engine },
+                  { label: 'Transmission', value: vehicle.transmission },
+                  { label: 'Drive', value: vehicle.drive },
+                ],
+                'No VIN details available.'
+              )}
+
+              {renderSection(
+                'Registration & Insurance',
+                [
+                  { label: 'License Plate', value: vehicle.license_plate },
+                  { label: 'Mileage In', value: formatMileage(vehicle.mileage_in) },
+                  { label: 'Mileage Out', value: formatMileage(vehicle.mileage_out) },
+                  { label: 'Registration Expires', value: vehicle.registration_expires },
+                  { label: 'Insurance Provider', value: vehicle.insurance_provider },
+                  { label: 'Policy Number', value: vehicle.insurance_policy_number },
+                  { label: 'Insurance Expires', value: vehicle.insurance_expires },
+                ],
+                'No registration or insurance details available.'
+              )}
+
+              <div className="rounded-md border border-gray-100 bg-gray-50 p-4">
+                <h2 className="text-sm font-semibold text-gray-800">Notes</h2>
+                {vehicle.notes ? (
+                  <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">{vehicle.notes}</p>
+                ) : (
+                  <p className="mt-3 text-sm text-gray-500">No notes available.</p>
+                )}
+              </div>
             </div>
           </div>
         ) : (
