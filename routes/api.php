@@ -3878,6 +3878,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/financial/reports/summary', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $financialController->reportSummary($user, $params);
+            return Response::json($data);
+        });
+
         $router->get('/api/financial/reports/export', function (Request $request) use ($financialController) {
             $user = $request->getAttribute('user');
             $params = [

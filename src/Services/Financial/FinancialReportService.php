@@ -120,6 +120,127 @@ class FinancialReportService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function summaryMetrics(string $startDate, string $endDate): array
+    {
+        $start = DateTimeImmutable::createFromFormat('Y-m-d', $startDate) ?: null;
+        $end = DateTimeImmutable::createFromFormat('Y-m-d', $endDate) ?: null;
+
+        if ($start === null || $end === null) {
+            throw new InvalidArgumentException('Invalid date range');
+        }
+
+        $startRange = $start->setTime(0, 0, 0);
+        $endRange = $end->setTime(23, 59, 59);
+
+        $pdo = $this->connection->pdo();
+
+        $taxStmt = $pdo->prepare('SELECT SUM(tax) FROM invoices WHERE issue_date BETWEEN :start AND :end');
+        $taxStmt->execute([
+            'start' => $startRange->format('Y-m-d'),
+            'end' => $endRange->format('Y-m-d'),
+        ]);
+        $taxCollected = (float) ($taxStmt->fetchColumn() ?: 0);
+
+        $billableStmt = $pdo->prepare(
+            'SELECT SUM(duration_minutes) FROM time_entries WHERE started_at BETWEEN :start AND :end AND status != "rejected"'
+        );
+        $billableStmt->execute([
+            'start' => $startRange->format('Y-m-d H:i:s'),
+            'end' => $endRange->format('Y-m-d H:i:s'),
+        ]);
+        $billableMinutes = (float) ($billableStmt->fetchColumn() ?: 0);
+
+        $paidStmt = $pdo->prepare(
+            'SELECT SUM(duration_minutes) FROM time_entries WHERE started_at BETWEEN :start AND :end AND status = "approved"'
+        );
+        $paidStmt->execute([
+            'start' => $startRange->format('Y-m-d H:i:s'),
+            'end' => $endRange->format('Y-m-d H:i:s'),
+        ]);
+        $paidMinutes = (float) ($paidStmt->fetchColumn() ?: 0);
+
+        $warrantyStmt = $pdo->prepare(
+            'SELECT status, COUNT(*) AS total FROM warranty_claims WHERE created_at BETWEEN :start AND :end GROUP BY status'
+        );
+        $warrantyStmt->execute([
+            'start' => $startRange->format('Y-m-d H:i:s'),
+            'end' => $endRange->format('Y-m-d H:i:s'),
+        ]);
+        $warrantyCounts = [];
+        $warrantyTotal = 0;
+        foreach ($warrantyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $count = (int) ($row['total'] ?? 0);
+            $warrantyCounts[$row['status']] = $count;
+            $warrantyTotal += $count;
+        }
+
+        $inventoryRow = $pdo->query(
+            'SELECT '
+            . 'SUM(stock_quantity) AS on_hand, '
+            . 'SUM(cost * stock_quantity) AS total_cost, '
+            . 'SUM(sale_price * stock_quantity) AS total_value '
+            . 'FROM inventory_items'
+        )->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $inventory = [
+            'on_hand' => (int) ($inventoryRow['on_hand'] ?? 0),
+            'total_cost' => (float) ($inventoryRow['total_cost'] ?? 0),
+            'total_value' => (float) ($inventoryRow['total_value'] ?? 0),
+        ];
+
+        $serviceStmt = $pdo->prepare(
+            'SELECT st.id, COALESCE(st.name, "Unassigned") AS name, COUNT(i.id) AS invoice_count, '
+            . 'COALESCE(SUM(i.total), 0) AS revenue '
+            . 'FROM invoices i '
+            . 'LEFT JOIN service_types st ON st.id = i.service_type_id '
+            . 'WHERE i.issue_date BETWEEN :start AND :end '
+            . 'GROUP BY st.id, st.name '
+            . 'ORDER BY revenue DESC '
+            . 'LIMIT :limit'
+        );
+        $serviceStmt->bindValue(':start', $startRange->format('Y-m-d'));
+        $serviceStmt->bindValue(':end', $endRange->format('Y-m-d'));
+        $serviceStmt->bindValue(':limit', 10, PDO::PARAM_INT);
+        $serviceStmt->execute();
+        $serviceTypeStats = array_map(static function (array $row) {
+            return [
+                'id' => $row['id'] !== null ? (int) $row['id'] : null,
+                'name' => $row['name'],
+                'count' => (int) ($row['invoice_count'] ?? 0),
+                'revenue' => (float) ($row['revenue'] ?? 0),
+            ];
+        }, $serviceStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+
+        $yearStart = $end->setDate((int) $end->format('Y'), 1, 1)->setTime(0, 0, 0);
+        $ytdMonthly = $this->monthlyBreakdown($yearStart, $endRange, null, null);
+        $ytdTrends = array_map(static function (array $row) {
+            return [
+                'month' => $row['month'],
+                'income' => (float) ($row['summary']['income'] ?? 0),
+                'expense' => (float) ($row['summary']['expense'] ?? 0),
+                'purchase' => (float) ($row['summary']['purchase'] ?? 0),
+                'net' => (float) ($row['net'] ?? 0),
+            ];
+        }, $ytdMonthly);
+
+        return [
+            'range' => [$startRange->format('Y-m-d'), $endRange->format('Y-m-d')],
+            'ytd_trends' => $ytdTrends,
+            'tax_collected' => $taxCollected,
+            'billable_hours' => round($billableMinutes / 60, 2),
+            'paid_hours' => round($paidMinutes / 60, 2),
+            'warranty_claims' => [
+                'total' => $warrantyTotal,
+                'by_status' => $warrantyCounts,
+            ],
+            'inventory' => $inventory,
+            'service_type_stats' => $serviceTypeStats,
+        ];
+    }
+
+    /**
      * @param array<int, array<int, string>> $rows
      */
     private function toCsv(array $rows): string
