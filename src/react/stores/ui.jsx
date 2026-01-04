@@ -7,6 +7,7 @@ export function UIProvider({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [modals, setModals] = useState({})
   const [notifications, setNotifications] = useState([])
+  const [chatNotifications, setChatNotifications] = useState([])
   const [globalLoading, setGlobalLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState('')
   const [theme, setThemeState] = useState('light')
@@ -89,6 +90,32 @@ export function UIProvider({ children }) {
     setNotifications([])
   }, [])
 
+  const addChatNotification = useCallback((notification) => {
+    const id = notification?.id ?? `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setChatNotifications((prev) => [
+      {
+        id,
+        createdAt: notification?.createdAt ?? new Date().toISOString(),
+        read: false,
+        ...notification,
+      },
+      ...prev,
+    ])
+    return id
+  }, [])
+
+  const markChatNotificationRead = useCallback((id) => {
+    setChatNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === id ? { ...notification, read: true } : notification
+      )
+    )
+  }, [])
+
+  const clearChatNotifications = useCallback(() => {
+    setChatNotifications([])
+  }, [])
+
   const showGlobalLoading = useCallback((message = 'Loading...') => {
     setGlobalLoading(true)
     setLoadingMessage(message)
@@ -155,6 +182,7 @@ export function UIProvider({ children }) {
       sidebarCollapsed,
       modals,
       notifications,
+      chatNotifications,
       globalLoading,
       loadingMessage,
       theme,
@@ -173,6 +201,9 @@ export function UIProvider({ children }) {
       addNotification,
       removeNotification,
       clearNotifications,
+      addChatNotification,
+      markChatNotificationRead,
+      clearChatNotifications,
       showGlobalLoading,
       hideGlobalLoading,
       setTheme: applyTheme,
@@ -182,7 +213,9 @@ export function UIProvider({ children }) {
     }),
     [
       addNotification,
+      addChatNotification,
       applyTheme,
+      clearChatNotifications,
       cleanup,
       closeModal,
       closeSidebar,
@@ -199,8 +232,10 @@ export function UIProvider({ children }) {
       modals,
       notificationCount,
       notifications,
+      chatNotifications,
       openModal,
       openSidebar,
+      markChatNotificationRead,
       removeNotification,
       sidebarCollapsed,
       sidebarOpen,
