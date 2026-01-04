@@ -34,6 +34,7 @@ const adminMenuItems = [
   { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
   { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon },
+  { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
   { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
