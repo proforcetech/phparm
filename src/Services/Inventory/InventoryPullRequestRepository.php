@@ -123,6 +123,78 @@ class InventoryPullRequestRepository
     }
 
     /**
+     * @param string[] $statuses
+     * @return array{counts: array<string, int>, items: InventoryPullRequest[]}
+     */
+    public function getDashboardNotifications(array $statuses, int $limit = 5): array
+    {
+        $filteredStatuses = array_values(array_filter(
+            $statuses,
+            fn (string $status) => in_array($status, InventoryPullRequest::ALLOWED_STATUSES, true)
+        ));
+
+        if ($filteredStatuses === []) {
+            $filteredStatuses = [
+                InventoryPullRequest::STATUS_PENDING,
+                InventoryPullRequest::STATUS_ORDERED,
+                InventoryPullRequest::STATUS_RECEIVED,
+            ];
+        }
+
+        $placeholders = [];
+        foreach ($filteredStatuses as $index => $status) {
+            $placeholders[] = ':status_' . $index;
+        }
+        $placeholdersSql = implode(', ', $placeholders);
+
+        $counts = array_fill_keys($filteredStatuses, 0);
+        $countSql = "SELECT pr.status, COUNT(*) as count
+            FROM inventory_pull_requests pr
+            WHERE pr.status IN ($placeholdersSql)
+            GROUP BY pr.status";
+
+        $stmt = $this->connection->pdo()->prepare($countSql);
+        foreach ($filteredStatuses as $index => $status) {
+            $stmt->bindValue(':status_' . $index, $status);
+        }
+        $stmt->execute();
+
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $counts[$row['status']] = (int) $row['count'];
+        }
+
+        $sql = "SELECT pr.*,
+                w.number as workorder_number,
+                wj.title as job_description,
+                ii.name as inventory_item_name,
+                u1.name as requested_by_name,
+                u2.name as fulfilled_by_name
+            FROM inventory_pull_requests pr
+            LEFT JOIN workorders w ON pr.workorder_id = w.id
+            LEFT JOIN workorder_jobs wj ON pr.workorder_job_id = wj.id
+            LEFT JOIN inventory_items ii ON pr.inventory_item_id = ii.id
+            LEFT JOIN users u1 ON pr.requested_by = u1.id
+            LEFT JOIN users u2 ON pr.fulfilled_by = u2.id
+            WHERE pr.status IN ($placeholdersSql)
+            ORDER BY pr.created_at DESC
+            LIMIT :limit";
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($filteredStatuses as $index => $status) {
+            $stmt->bindValue(':status_' . $index, $status);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $items = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $items[] = $this->mapRow($row);
+        }
+
+        return ['counts' => $counts, 'items' => $items];
+    }
+
+    /**
      * Get all pull requests for a workorder
      * @return InventoryPullRequest[]
      */

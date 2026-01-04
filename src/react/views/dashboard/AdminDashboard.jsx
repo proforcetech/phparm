@@ -69,6 +69,24 @@ const getSeverityVariant = (severity) => {
   return variants[severity] || 'default'
 }
 
+const getPullRequestStatusVariant = (status) => {
+  const variants = {
+    pending: 'warning',
+    ordered: 'info',
+    received: 'success',
+    pulled: 'success',
+    cancelled: 'default',
+  }
+  return variants[status?.toLowerCase()] || 'default'
+}
+
+const formatPullRequestStatus = (status) => {
+  const normalized = status?.toLowerCase()
+  if (normalized === 'pending') return 'Requested'
+  if (!normalized) return ''
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+}
+
 const formatMonthLabel = (yearMonth) => {
   if (!yearMonth) return ''
   const [year, month] = yearMonth.split('-')
@@ -119,6 +137,10 @@ export default function AdminDashboard() {
     counts: { out_of_stock: 0, low_stock: 0 },
     items: [],
   })
+  const [inventoryPullRequests, setInventoryPullRequests] = useState({
+    counts: { pending: 0, ordered: 0, received: 0 },
+    items: [],
+  })
   const [revenueChartData, setRevenueChartData] = useState({ labels: [], datasets: [] })
   const [serviceTypeChartData, setServiceTypeChartData] = useState({ labels: [], datasets: [] })
   const [loading, setLoading] = useState(true)
@@ -140,13 +162,22 @@ export default function AdminDashboard() {
     setLoading(true)
     try {
       setErrorMessage(null)
-      const [statsRes, invoicesRes, appointmentsRes, lowStockRes, trendsRes, servicesRes] = await Promise.all([
+      const [
+        statsRes,
+        invoicesRes,
+        appointmentsRes,
+        lowStockRes,
+        pullRequestRes,
+        trendsRes,
+        servicesRes,
+      ] = await Promise.all([
         dashboardService
           .getStats({ start: chartRange.start, end: chartRange.end, ...technicianParams })
           .catch(() => ({})),
         dashboardService.getRecentInvoices(5, technicianParams).catch(() => []),
         dashboardService.getRecentAppointments(5, technicianParams).catch(() => []),
         dashboardService.getInventoryLowStockTile(5).catch(() => null),
+        dashboardService.getInventoryPullRequests(5).catch(() => null),
         dashboardService
           .getMonthlyTrendsChart({ start: chartRange.start, end: chartRange.end, ...technicianParams })
           .catch(() => []),
@@ -171,6 +202,10 @@ export default function AdminDashboard() {
       setInventoryAlerts({
         counts: lowStockRes?.counts || { out_of_stock: 0, low_stock: 0 },
         items: lowStockRes?.items || [],
+      })
+      setInventoryPullRequests({
+        counts: pullRequestRes?.counts || { pending: 0, ordered: 0, received: 0 },
+        items: pullRequestRes?.items || [],
       })
 
       const trendSeries = Array.isArray(trendsRes)
@@ -299,6 +334,43 @@ export default function AdminDashboard() {
             />
           </div>
 
+          <Card title="Quick Actions">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Link to="/cp/invoices/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Invoice
+                </Button>
+              </Link>
+              <Link to="/cp/appointments/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  New Appointment
+                </Button>
+              </Link>
+              <Link to="/cp/customers/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                  New Customer
+                </Button>
+              </Link>
+              <Link to="/cp/vehicles/create">
+                <Button variant="outline" className="justify-center w-full">
+                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Vehicle
+                </Button>
+              </Link>
+            </div>
+          </Card>
+
           <Card
             className="mb-8"
             header={
@@ -344,6 +416,68 @@ export default function AdminDashboard() {
                       </div>
                       <Badge variant={getSeverityVariant(item.severity)}>
                         {item.severity === 'out' ? 'Out of Stock' : 'Low Stock'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <Card
+            header={
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Inventory Pull Requests</h3>
+                  <p className="text-sm text-gray-500">Recent stock pull and order activity</p>
+                </div>
+                <Link to="/cp/inventory/pull-requests">
+                  <Button variant="outline">View requests</Button>
+                </Link>
+              </div>
+            }
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="p-4 rounded-lg bg-amber-50 border border-amber-100">
+                <p className="text-sm font-medium text-amber-700">Requested</p>
+                <p className="mt-2 text-3xl font-bold text-amber-800">
+                  {inventoryPullRequests.counts.pending || 0}
+                </p>
+                <p className="text-sm text-amber-600">Awaiting action</p>
+              </div>
+              <div className="p-4 rounded-lg bg-blue-50 border border-blue-100">
+                <p className="text-sm font-medium text-blue-700">Ordered</p>
+                <p className="mt-2 text-3xl font-bold text-blue-800">
+                  {inventoryPullRequests.counts.ordered || 0}
+                </p>
+                <p className="text-sm text-blue-600">On order or en route</p>
+              </div>
+              <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-100">
+                <p className="text-sm font-medium text-emerald-700">Received</p>
+                <p className="mt-2 text-3xl font-bold text-emerald-800">
+                  {inventoryPullRequests.counts.received || 0}
+                </p>
+                <p className="text-sm text-emerald-600">Fulfilled items</p>
+              </div>
+            </div>
+            <div className="mt-6">
+              {inventoryPullRequests.items.length === 0 ? (
+                <div className="text-sm text-gray-600">No recent pull or order activity.</div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {inventoryPullRequests.items.map((request) => (
+                    <div key={request.id} className="py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {request.inventory_item_name || request.description}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Qty {request.quantity_requested} • Workorder {request.workorder_number || request.workorder_id}
+                          {request.request_type ? ` • ${request.request_type === 'order' ? 'Order' : 'Pull'}` : ''}
+                        </p>
+                      </div>
+                      <Badge variant={getPullRequestStatusVariant(request.status)}>
+                        {formatPullRequestStatus(request.status)}
                       </Badge>
                     </div>
                   ))}
@@ -479,43 +613,6 @@ export default function AdminDashboard() {
               )}
             </Card>
           </div>
-
-          <Card title="Quick Actions">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Link to="/cp/invoices/create">
-                <Button variant="outline" className="justify-center w-full">
-                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                  </svg>
-                  New Invoice
-                </Button>
-              </Link>
-              <Link to="/cp/appointments/create">
-                <Button variant="outline" className="justify-center w-full">
-                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  New Appointment
-                </Button>
-              </Link>
-              <Link to="/cp/customers/create">
-                <Button variant="outline" className="justify-center w-full">
-                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                  </svg>
-                  New Customer
-                </Button>
-              </Link>
-              <Link to="/cp/vehicles/create">
-                <Button variant="outline" className="justify-center w-full">
-                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add Vehicle
-                </Button>
-              </Link>
-            </div>
-          </Card>
         </div>
       )}
     </div>
