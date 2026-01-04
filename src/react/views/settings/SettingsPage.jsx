@@ -4,7 +4,6 @@ import Alert from '../../components/ui/Alert'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
-import Textarea from '../../components/ui/Textarea'
 import { fetchSettings, saveSettings } from '../../../services/settings.service'
 
 const initialFormState = {
@@ -21,7 +20,6 @@ const initialFormState = {
       country: '',
     },
   },
-  terms: { estimates: '', invoices: '' },
   pricing: { taxRate: 0, laborRate: 0, callOutFee: 0, mileageRate: 0 },
   notifications: { fromName: '', fromAddress: '', smsNumber: '', twilioSid: '', twilioToken: '' },
   smtp: { host: '', port: 587, username: '', password: '', encryption: 'tls' },
@@ -84,10 +82,6 @@ export default function SettingsPage() {
               postal_code: addressSetting?.postal_code ?? '',
               country: addressSetting?.country ?? '',
             },
-          },
-          terms: {
-            estimates: getSetting(settings, 'documents.terms.estimates', ''),
-            invoices: getSetting(settings, 'documents.terms.invoices', ''),
           },
           pricing: {
             taxRate: Number(getSetting(settings, 'pricing.tax_rate', 0)),
@@ -181,8 +175,6 @@ export default function SettingsPage() {
       'shop.phone': form.profile.phone,
       'shop.logo_url': form.profile.logoUrl,
       'shop.address': { ...form.profile.address },
-      'documents.terms.estimates': form.terms.estimates,
-      'documents.terms.invoices': form.terms.invoices,
       'pricing.tax_rate': Number(form.pricing.taxRate) || 0,
       'pricing.labor_rate': Number(form.pricing.laborRate) || 0,
       'pricing.call_out_fee': Number(form.pricing.callOutFee) || 0,
@@ -355,28 +347,9 @@ export default function SettingsPage() {
 
             <Card>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Terms &amp; Documents</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Estimate Terms</label>
-                  <Textarea
-                    value={form.terms.estimates}
-                    rows={4}
-                    placeholder="Terms shown on estimates"
-                    className="mt-1"
-                    onChange={(event) => updateField(['terms', 'estimates'], event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Invoice Terms</label>
-                  <Textarea
-                    value={form.terms.invoices}
-                    rows={4}
-                    placeholder="Terms shown on invoices"
-                    className="mt-1"
-                    onChange={(event) => updateField(['terms', 'invoices'], event.target.value)}
-                  />
-                </div>
-              </div>
+              <p className="text-sm text-gray-500">
+                Terms and conditions are now managed in the Terms settings page.
+              </p>
             </Card>
           </div>
 

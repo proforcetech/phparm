@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Database\Connection;
 use App\Models\Setting;
+use App\Support\HtmlSanitizer;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -11,13 +12,20 @@ use PDO;
 
 class SettingsRepository
 {
+    private const HTML_SETTING_KEYS = [
+        'documents.terms.estimates',
+        'documents.terms.invoices',
+    ];
+
     private Connection $connection;
     private ?AuditLogger $audit;
+    private HtmlSanitizer $htmlSanitizer;
 
     public function __construct(Connection $connection, ?AuditLogger $audit = null)
     {
         $this->connection = $connection;
         $this->audit = $audit;
+        $this->htmlSanitizer = new HtmlSanitizer();
     }
 
     /**
@@ -31,6 +39,9 @@ class SettingsRepository
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $setting = new Setting($row);
             $setting->value = $this->decodeValue($setting->value, $setting->type);
+            if (in_array($setting->key, self::HTML_SETTING_KEYS, true)) {
+                $setting->value = $this->sanitizeHtmlSetting($setting->value);
+            }
             $settings[$setting->key] = $setting;
         }
 
@@ -50,7 +61,12 @@ class SettingsRepository
             return $default;
         }
 
-        return $this->decodeValue($row['value'], $row['type']);
+        $value = $this->decodeValue($row['value'], $row['type']);
+        if (in_array($key, self::HTML_SETTING_KEYS, true)) {
+            $value = $this->sanitizeHtmlSetting($value);
+        }
+
+        return $value;
     }
 
     public function exists(string $key): bool
@@ -66,6 +82,10 @@ class SettingsRepository
      */
     public function set(string $key, $value, ?string $type = null, string $group = 'general', ?string $description = null): void
     {
+        if (in_array($key, self::HTML_SETTING_KEYS, true)) {
+            $value = $this->sanitizeHtmlSetting($value);
+        }
+
         $existing = $this->find($key);
         $type ??= $existing?->type ?? $this->inferTypeFromValue($value);
         $group = $existing?->group ?? $group;
@@ -197,5 +217,14 @@ class SettingsRepository
         ];
 
         $this->audit->log(new AuditEntry($event, 'setting', $key, null, $context));
+    }
+
+    private function sanitizeHtmlSetting($value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        return $this->htmlSanitizer->sanitize((string) $value);
     }
 }
