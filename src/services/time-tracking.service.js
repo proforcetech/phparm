@@ -1,8 +1,8 @@
 import api from './api'
 
 export default {
-  async list(params = {}) {
-    const response = await api.get('/time-tracking', { params })
+  async list(params = {}, config = {}) {
+    const response = await api.get('/time-tracking', { params, ...config })
     return response.data
   },
 
