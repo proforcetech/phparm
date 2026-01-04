@@ -16,6 +16,7 @@ export default function Autocomplete({
   itemSubtext = null,
   minChars = 1,
   debounce = 300,
+  onSearchChange,
   onUpdateModelValue,
   onSelect,
   renderItem,
@@ -94,6 +95,7 @@ export default function Autocomplete({
     setSearchQuery(value)
     setSelectedItem(null)
     onUpdateModelValue?.(null)
+    onSearchChange?.(value)
     setShowDropdown(true)
 
     if (debounceTimer.current) {
@@ -135,6 +137,7 @@ export default function Autocomplete({
     setSelectedItem(null)
     setSearchQuery('')
     onUpdateModelValue?.(null)
+    onSearchChange?.('')
     setResults([])
     setShowDropdown(false)
     inputRef.current?.focus()
