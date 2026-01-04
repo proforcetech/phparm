@@ -13,17 +13,20 @@ class WorkorderController
 {
     private WorkorderRepository $repository;
     private WorkorderService $service;
+    private WorkorderJobEvidenceService $evidence;
     private AccessGate $gate;
     private ?MessagingNotificationService $messagingNotifications;
 
     public function __construct(
         WorkorderRepository $repository,
         WorkorderService $service,
+        WorkorderJobEvidenceService $evidence,
         AccessGate $gate,
         ?MessagingNotificationService $messagingNotifications = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
+        $this->evidence = $evidence;
         $this->gate = $gate;
         $this->messagingNotifications = $messagingNotifications;
     }
@@ -370,6 +373,104 @@ class WorkorderController
         ]);
 
         return $job->toArray();
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/checkpoints/{checkpointType}
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function uploadJobCheckpoint(User $user, int $id, int $jobId, string $checkpointType, array $file): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->storeCheckpointMedia($jobId, $checkpointType, $file, $user->id);
+    }
+
+    /**
+     * GET /api/workorders/{id}/jobs/{jobId}/checkpoints
+     * @return array<string, mixed>
+     */
+    public function checkpointStatus(User $user, int $id, int $jobId): array
+    {
+        $this->assertViewAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return [
+            'job_id' => $jobId,
+            'checkpoints' => $this->evidence->checkpointSummary($jobId),
+        ];
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/damage-reports
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function createDamageReport(User $user, int $id, int $jobId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        $points = $payload['diagram_points'] ?? null;
+        if (!is_array($points)) {
+            throw new InvalidArgumentException('diagram_points is required');
+        }
+
+        $report = $this->evidence->createDamageReport($jobId, $points, $payload['notes'] ?? null, $user->id);
+
+        return $report->toArray();
+    }
+
+    /**
+     * GET /api/workorders/{id}/jobs/{jobId}/damage-reports
+     * @return array<int, array<string, mixed>>
+     */
+    public function listDamageReports(User $user, int $id, int $jobId): array
+    {
+        $this->assertViewAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return array_map(
+            static fn($report) => $report->toArray(),
+            $this->evidence->listDamageReports($jobId)
+        );
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/signature
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function captureJobSignature(User $user, int $id, int $jobId, array $payload, string $ipAddress, ?string $userAgent): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        $signature = $this->evidence->captureSignature($jobId, $payload, $ipAddress, $userAgent);
+
+        return $signature->toArray();
     }
 
     /**

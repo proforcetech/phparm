@@ -2949,6 +2949,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+        $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
         $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
@@ -2970,6 +2971,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
+            $workorderEvidence,
             $gate,
             $workorderMessagingNotifications
         );
@@ -3135,6 +3137,55 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $jobId = (int) $request->getAttribute('jobId');
             $data = $workorderController->assignJobTechnician($user, $id, $jobId, $request->body());
             return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/checkpoints/{checkpointType}', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $checkpointType = (string) $request->getAttribute('checkpointType');
+            $file = $request->file('file');
+            $data = $workorderController->uploadJobCheckpoint($user, $id, $jobId, $checkpointType, is_array($file) ? $file : []);
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/checkpoints', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->checkpointStatus($user, $id, $jobId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/damage-reports', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->createDamageReport($user, $id, $jobId, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/damage-reports', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->listDamageReports($user, $id, $jobId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/signature', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->captureJobSignature(
+                $user,
+                $id,
+                $jobId,
+                $request->body(),
+                $request->getClientIp() ?? 'unknown',
+                $request->header('USER_AGENT')
+            );
+            return Response::created($data);
         });
     });
 

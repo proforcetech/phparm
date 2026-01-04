@@ -153,5 +153,63 @@ export default {
       technician_id: technicianId,
       ...(recommendedDriver ? { recommended_driver: recommendedDriver } : {}),
     })
+  },
+
+  /**
+   * Upload checkpoint photo for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {string} checkpointType
+   * @param {File} file
+   * @returns {Promise}
+   */
+  uploadJobCheckpoint(workorderId, jobId, checkpointType, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/checkpoints/${checkpointType}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  /**
+   * Get checkpoint summary for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @returns {Promise}
+   */
+  getJobCheckpointStatus(workorderId, jobId) {
+    return api.get(`/workorders/${workorderId}/jobs/${jobId}/checkpoints`)
+  },
+
+  /**
+   * Create a damage report for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  createDamageReport(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/damage-reports`, payload)
+  },
+
+  /**
+   * List damage reports for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @returns {Promise}
+   */
+  getDamageReports(workorderId, jobId) {
+    return api.get(`/workorders/${workorderId}/jobs/${jobId}/damage-reports`)
+  },
+
+  /**
+   * Capture a job signature
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  captureJobSignature(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/signature`, payload)
   }
 }

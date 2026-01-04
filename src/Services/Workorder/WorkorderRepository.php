@@ -337,6 +337,8 @@ class WorkorderRepository
             throw new InvalidArgumentException('Invalid status for workorder job.');
         }
 
+        $this->assertCheckpointEvidence($jobId, $status);
+
         $updateFields = ['status = :status', 'updated_at = NOW()'];
         $params = ['status' => $status, 'id' => $jobId];
 
