@@ -180,10 +180,17 @@ class InspectionController
      * @param array<string, mixed> $file
      * @return array<string, mixed>
      */
-    public function uploadMedia(User $user, int $reportId, array $file): array
+    public function uploadMedia(User $user, int $reportId, array $file, ?string $clientToken = null): array
     {
         if (!$this->gate->can($user, 'inspections.update')) {
             throw new UnauthorizedException('Cannot upload inspection media');
+        }
+
+        if ($clientToken !== null) {
+            $existing = $this->completion->findMediaByClientToken($reportId, $clientToken);
+            if ($existing !== null) {
+                return $existing->toArray();
+            }
         }
 
         if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
@@ -212,7 +219,7 @@ class InspectionController
         }
 
         $relativePath = '/uploads/inspections/' . $filename;
-        $media = $this->completion->attachMedia($reportId, $relativePath, $mimeType, $type, $user->id);
+        $media = $this->completion->attachMedia($reportId, $relativePath, $mimeType, $type, $user->id, $clientToken);
 
         return $media->toArray();
     }
