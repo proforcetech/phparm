@@ -168,7 +168,13 @@ class WorkorderRepository
         return (int) $stmt->fetchColumn();
     }
 
-    public function updateStatus(int $id, string $status, ?int $actorId = null, ?string $notes = null): ?Workorder
+    public function updateStatus(
+        int $id,
+        string $status,
+        ?int $actorId = null,
+        ?string $notes = null,
+        ?string $clientEventId = null
+    ): ?Workorder
     {
         $workorder = $this->find($id);
         if ($workorder === null) {
@@ -177,6 +183,10 @@ class WorkorderRepository
 
         if (!in_array($status, Workorder::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid status for workorder lifecycle.');
+        }
+
+        if ($clientEventId !== null && $this->statusEventExists($id, $clientEventId)) {
+            return $workorder;
         }
 
         if ($workorder->status === $status) {
@@ -205,7 +215,7 @@ class WorkorderRepository
         $stmt->execute($params);
 
         // Record status history
-        $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes);
+        $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes, $clientEventId);
 
         $workorder = $this->find($id);
         $this->log('workorder.status_changed', $id, $actorId, [
@@ -396,11 +406,34 @@ class WorkorderRepository
         );
     }
 
-    private function recordStatusHistory(int $workorderId, ?string $fromStatus, string $toStatus, ?int $changedBy, ?string $notes): void
+    private function recordStatusHistory(
+        int $workorderId,
+        ?string $fromStatus,
+        string $toStatus,
+        ?int $changedBy,
+        ?string $notes,
+        ?string $clientEventId = null
+    ): void
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO workorder_status_history (workorder_id, from_status, to_status, changed_by, notes, created_at)
-            VALUES (:workorder_id, :from_status, :to_status, :changed_by, :notes, NOW())
+            INSERT INTO workorder_status_history (
+                workorder_id,
+                from_status,
+                to_status,
+                changed_by,
+                notes,
+                client_event_id,
+                created_at
+            )
+            VALUES (
+                :workorder_id,
+                :from_status,
+                :to_status,
+                :changed_by,
+                :notes,
+                :client_event_id,
+                NOW()
+            )
         SQL);
 
         $stmt->execute([
@@ -409,7 +442,24 @@ class WorkorderRepository
             'to_status' => $toStatus,
             'changed_by' => $changedBy,
             'notes' => $notes,
+            'client_event_id' => $clientEventId,
         ]);
+    }
+
+    private function statusEventExists(int $workorderId, string $clientEventId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT 1
+            FROM workorder_status_history
+            WHERE workorder_id = :workorder_id AND client_event_id = :client_event_id
+            LIMIT 1
+        SQL);
+        $stmt->execute([
+            'workorder_id' => $workorderId,
+            'client_event_id' => $clientEventId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
     }
 
     private function mapWorkorder(array $row): Workorder

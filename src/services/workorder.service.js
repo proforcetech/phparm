@@ -1,4 +1,5 @@
 import api from './api'
+import { enqueueItem } from '../react/utils/offlineQueue'
 
 export default {
   /**
@@ -48,8 +49,23 @@ export default {
    * @param {string} notes - Optional notes
    * @returns {Promise}
    */
-  updateStatus(id, status, notes = null) {
-    return api.patch(`/workorders/${id}/status`, { status, notes })
+  updateStatus(id, status, notes = null, options = {}) {
+    const { allowQueue = true, clientEventId = null } = options
+    if (allowQueue && typeof navigator !== 'undefined' && !navigator.onLine) {
+      const eventId = clientEventId || crypto.randomUUID()
+      enqueueItem('workorder_status', {
+        id,
+        status,
+        notes,
+        clientEventId: eventId,
+      })
+      return Promise.resolve({ queued: true, client_event_id: eventId })
+    }
+    return api.patch(`/workorders/${id}/status`, {
+      status,
+      notes,
+      client_event_id: clientEventId,
+    })
   },
 
   /**

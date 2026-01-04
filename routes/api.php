@@ -3425,7 +3425,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $file = $request->file('media') ?? [];
-            $data = $inspectionController->uploadMedia($user, $id, $file);
+            $clientToken = $request->input('client_token') ?? $request->header('X-Idempotency-Key');
+            $data = $inspectionController->uploadMedia($user, $id, $file, $clientToken);
             return Response::json($data);
         });
 

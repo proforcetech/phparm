@@ -10,5 +10,6 @@ class WorkorderStatusHistory extends BaseModel
     public string $to_status;
     public ?int $changed_by = null;
     public ?string $notes = null;
+    public ?string $client_event_id = null;
     public ?string $created_at = null;
 }
