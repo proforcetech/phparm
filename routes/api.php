@@ -10,6 +10,7 @@ use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
+use App\Models\WorkorderJob;
 use App\Support\Security\RecaptchaVerifier;
 use App\Support\Security\LoginRateLimiter;
 use App\Support\Auth\TotpService;
@@ -2536,6 +2537,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
+    $router->get('/track/{token}', function (Request $request) use ($connection) {
+        $trackingService = new \App\Services\Tracking\TrackingService($connection);
+        $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
+        return Response::json($data);
+    });
+
     // Public estimate rejection reasons
     $router->get('/api/public/estimate/rejection-reasons', function () use ($connection) {
         $settingsRepo = new \App\Support\SettingsRepository($connection);
@@ -2936,12 +2943,60 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
         );
+        $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+        $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+        $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+            $trackingNotificationConfig,
+            $trackingTemplateEngine,
+            $trackingLogs,
+            $auditLogger
+        );
+        $trackingService = new \App\Services\Tracking\TrackingService(
+            $connection,
+            $trackingDispatcher,
+            $workorderMessagingNotifications
+        );
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
             $gate,
             $workorderMessagingNotifications
         );
+
+        $router->post('/api/tracking-links', function (Request $request) use ($trackingService) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $jobId = $body['job_id'] ?? null;
+            $expiresAt = $body['expires_at'] ?? null;
+
+            if (!$jobId) {
+                return Response::badRequest(['error' => 'job_id is required']);
+            }
+
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+            $data = $trackingService->issueLink((int) $jobId, $baseUrl, $expiresAt, $user?->id);
+            return Response::created($data);
+        });
+
+        $router->delete('/api/tracking-links/{token}', function (Request $request) use ($trackingService) {
+            $token = (string) $request->getAttribute('token');
+            $trackingService->revokeLink($token);
+            return Response::noContent();
+        });
+
+        $router->post('/api/tracking/jobs/{jobId}/location', function (Request $request) use ($trackingService) {
+            $jobId = (int) $request->getAttribute('jobId');
+            $body = $request->body();
+
+            if (!isset($body['location']) && !isset($body['lat']) && !isset($body['lng'])) {
+                return Response::badRequest(['error' => 'location is required']);
+            }
+
+            $location = is_array($body['location'] ?? null) ? $body['location'] : $body;
+            $data = $trackingService->recordLocation($jobId, $location);
+            return Response::json(['last_position' => $data]);
+        });
 
         $router->get('/api/workorders', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
@@ -3049,11 +3104,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController) {
+        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController, $trackingService) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $jobId = (int) $request->getAttribute('jobId');
             $data = $workorderController->updateJobStatus($user, $id, $jobId, $request->body());
+
+            $status = $request->body()['status'] ?? null;
+            if ($status === WorkorderJob::STATUS_IN_PROGRESS) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                $trackingService->sendTrackingLinkForJob($jobId, $baseUrl, $user?->id);
+            }
+
             return Response::json($data);
         });
 

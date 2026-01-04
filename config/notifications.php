@@ -182,6 +182,30 @@ Low Stock Alert
 Please review and reorder as needed.
 TEMPLATE,
 
+        // Tracking templates
+        'tracking.link_email' => <<<'TEMPLATE'
+Hello {{customer_name}},
+
+Your service is on the way for workorder {{workorder_number}}.
+
+Track the technician here: {{tracking_url}}
+
+{{#job_title}}
+Service: {{job_title}}
+{{/job_title}}
+
+{{#vehicle}}
+Vehicle: {{vehicle}}
+{{/vehicle}}
+
+{{#eta}}
+Estimated completion: {{eta}}
+{{/eta}}
+TEMPLATE,
+        'tracking.link_sms' => <<<'TEMPLATE'
+Hi {{customer_name}}, your service is on the way for workorder {{workorder_number}}. Track here: {{tracking_url}}
+TEMPLATE,
+
         // Warranty templates
         'warranty.claim_submitted' => <<<'TEMPLATE'
 Hello {{customer_name}},
