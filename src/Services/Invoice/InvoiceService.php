@@ -195,7 +195,7 @@ class InvoiceService
     {
         $clauses = [];
         $bindings = [];
-        $joins = '';
+        $joins = ['LEFT JOIN customers c ON c.id = invoices.customer_id'];
 
         if (!empty($filters['status']) && in_array($filters['status'], $this->allowedStatuses, true)) {
             $clauses[] = 'invoices.status = :status';
@@ -208,13 +208,16 @@ class InvoiceService
         }
 
         if (!empty($filters['technician_id'])) {
-            $joins = ' LEFT JOIN estimates e ON e.id = invoices.estimate_id';
+            $joins[] = 'LEFT JOIN estimates e ON e.id = invoices.estimate_id';
             $clauses[] = 'e.technician_id = :technician_id';
             $bindings['technician_id'] = (int) $filters['technician_id'];
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-        $sql = 'SELECT invoices.* FROM invoices' . $joins . ' ' . $where . ' ORDER BY invoices.issue_date DESC, invoices.id DESC LIMIT :limit OFFSET :offset';
+        $sql = 'SELECT invoices.*, CONCAT(c.first_name, " ", c.last_name) AS customer_name, '
+            . 'c.first_name AS customer_first_name, c.last_name AS customer_last_name '
+            . 'FROM invoices ' . implode(' ', $joins) . ' ' . $where
+            . ' ORDER BY invoices.issue_date DESC, invoices.id DESC LIMIT :limit OFFSET :offset';
         $stmt = $this->connection->pdo()->prepare($sql);
 
         foreach ($bindings as $key => $value) {

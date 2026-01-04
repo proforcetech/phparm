@@ -21,6 +21,9 @@ class Invoice extends BaseModel
     public float $balance_due = 0.0;
     public float $shop_fee = 0.0;
     public float $hazmat_disposal_fee = 0.0;
+    public ?string $customer_name = null;
+    public ?string $customer_first_name = null;
+    public ?string $customer_last_name = null;
     public ?string $public_token = null;
     public ?string $public_token_expires_at = null;
     public ?string $created_at = null;
