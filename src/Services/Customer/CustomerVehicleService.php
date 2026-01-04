@@ -98,6 +98,66 @@ class CustomerVehicleService
     }
 
     /**
+     * @param array<string, mixed> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    public function searchVehicles(array $filters = []): array
+    {
+        $clauses = ['cv.is_active = 1'];
+        $bindings = [];
+
+        if (!empty($filters['customer_id'])) {
+            $clauses[] = 'cv.customer_id = :customer_id';
+            $bindings['customer_id'] = (int) $filters['customer_id'];
+        }
+
+        if (!empty($filters['customer_query'])) {
+            $clauses[] = '('
+                . 'c.first_name LIKE :customer_query OR c.last_name LIKE :customer_query '
+                . 'OR CONCAT(c.first_name, " ", c.last_name) LIKE :customer_query '
+                . 'OR c.email LIKE :customer_query OR c.phone LIKE :customer_query '
+                . 'OR CAST(c.id AS CHAR) LIKE :customer_query'
+                . ')';
+            $bindings['customer_query'] = '%' . trim((string) $filters['customer_query']) . '%';
+        }
+
+        if (!empty($filters['year'])) {
+            $clauses[] = 'cv.year = :year';
+            $bindings['year'] = (int) $filters['year'];
+        }
+
+        foreach (['make', 'model'] as $field) {
+            if (!empty($filters[$field])) {
+                $clauses[] = "cv.$field LIKE :$field";
+                $bindings[$field] = trim((string) $filters[$field]) . '%';
+            }
+        }
+
+        if (!empty($filters['term'])) {
+            $clauses[] = '('
+                . 'cv.make LIKE :term OR cv.model LIKE :term OR cv.engine LIKE :term '
+                . 'OR cv.transmission LIKE :term OR cv.drive LIKE :term OR cv.trim LIKE :term '
+                . 'OR cv.vin LIKE :term OR cv.license_plate LIKE :term'
+                . ')';
+            $bindings['term'] = '%' . trim((string) $filters['term']) . '%';
+        }
+
+        $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
+
+        $sql = 'SELECT cv.* FROM customer_vehicles cv '
+            . 'LEFT JOIN customers c ON c.id = cv.customer_id '
+            . $where
+            . ' ORDER BY cv.created_at DESC, cv.id DESC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($bindings);
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_map(static fn ($row) => (new CustomerVehicle($row))->toArray(), $rows);
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @param array<string, mixed>|null $existing
      * @return array<string, mixed>

@@ -1631,6 +1631,7 @@ return Response::json([
             $vinDecoderService,
             $normalizationJob
         );
+        $customerVehicleService = new \App\Services\Customer\CustomerVehicleService($connection);
 
         $router->get('/api/vehicles/years', function (Request $request) use ($vehicleController) {
             $user = $request->getAttribute('user');
@@ -1694,15 +1695,24 @@ return Response::json([
             return Response::json($vehicleController->trims($user, $year, $make, $model, $engine, $transmission, $drive));
         });
 
-        $router->get('/api/vehicles', function (Request $request) use ($vehicleController) {
+        $router->get('/api/vehicles', function (Request $request) use ($customerVehicleService, $gate) {
             $user = $request->getAttribute('user');
             $filters = [
+                'customer_id' => $request->queryParam('customer_id'),
+                'customer_query' => $request->queryParam('customer_query'),
                 'year' => $request->queryParam('year'),
                 'make' => $request->queryParam('make'),
                 'model' => $request->queryParam('model'),
+                'term' => $request->queryParam('term'),
             ];
 
-            $data = $vehicleController->index($user, $filters);
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $filters['customer_id'] = $user->customer_id;
+                $filters['customer_query'] = null;
+            }
+
+            $gate->assert($user, 'vehicles.view');
+            $data = $customerVehicleService->searchVehicles($filters);
             return Response::json($data);
         });
 
