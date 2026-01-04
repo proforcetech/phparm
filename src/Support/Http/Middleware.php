@@ -199,8 +199,35 @@ class Middleware
      */
     public static function throttle(int $maxAttempts = 60, int $decaySeconds = 60): callable
     {
-        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds) {
-            $limiter = self::getRateLimiter()->withLimits($maxAttempts, $decaySeconds);
+        return self::throttleWithOverrides($maxAttempts, $decaySeconds);
+    }
+
+    /**
+     * Rate limiting with per-path overrides.
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 60)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     * @param array<string, array{max?: int, decay?: int}> $overrides
+     */
+    public static function throttleWithOverrides(
+        int $maxAttempts = 60,
+        int $decaySeconds = 60,
+        array $overrides = []
+    ): callable {
+        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds, $overrides) {
+            $path = $request->path();
+            $effectiveMax = $maxAttempts;
+            $effectiveDecay = $decaySeconds;
+
+            foreach ($overrides as $pattern => $override) {
+                if (self::matchesRateLimitPath($path, $pattern)) {
+                    $effectiveMax = $override['max'] ?? $effectiveMax;
+                    $effectiveDecay = $override['decay'] ?? $effectiveDecay;
+                    break;
+                }
+            }
+
+            $limiter = self::getRateLimiter()->withLimits($effectiveMax, $effectiveDecay);
             $key = self::resolveRateLimitKey($request);
 
             if ($limiter->tooManyAttempts($key)) {
@@ -211,20 +238,20 @@ class Middleware
                     'retry_after' => $retryAfter,
                 ], 429)
                     ->withHeader('Retry-After', (string) $retryAfter)
-                    ->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Limit', (string) $effectiveMax)
                     ->withHeader('X-RateLimit-Remaining', '0')
                     ->withHeader('X-RateLimit-Reset', (string) (time() + $retryAfter));
             }
 
             $hits = $limiter->hit($key);
-            $remaining = max(0, $maxAttempts - $hits);
+            $remaining = max(0, $effectiveMax - $hits);
 
             $response = $next($request);
 
             if ($response instanceof Response) {
-                $response->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                $response->withHeader('X-RateLimit-Limit', (string) $effectiveMax)
                     ->withHeader('X-RateLimit-Remaining', (string) $remaining)
-                    ->withHeader('X-RateLimit-Reset', (string) (time() + $decaySeconds));
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $effectiveDecay));
             }
 
             return $response;
@@ -292,6 +319,19 @@ class Middleware
     private static function resolveRateLimitKey(Request $request): string
     {
         return 'ip:' . self::getClientIp($request) . ':' . $request->path();
+    }
+
+    /**
+     * Determine if the rate limit override pattern matches the request path.
+     */
+    private static function matchesRateLimitPath(string $path, string $pattern): bool
+    {
+        if (str_ends_with($pattern, '*')) {
+            $prefix = rtrim($pattern, '*');
+            return str_starts_with($path, $prefix);
+        }
+
+        return $path === $pattern;
     }
 
     /**

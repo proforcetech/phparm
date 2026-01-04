@@ -36,6 +36,7 @@ export default function TimeLogs() {
   const [total, setTotal] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [listError, setListError] = useState('')
+  const [rateLimitNotice, setRateLimitNotice] = useState('')
   const [manualError, setManualError] = useState('')
   const [editError, setEditError] = useState('')
   const [savingManual, setSavingManual] = useState(false)
@@ -73,6 +74,8 @@ export default function TimeLogs() {
   })
 
   const debounceRef = useRef(null)
+  const inflightRequestRef = useRef(null)
+  const retryUntilRef = useRef(0)
 
   const columns = useMemo(() => ([
     { key: 'technician', label: 'Technician' },
@@ -85,15 +88,38 @@ export default function TimeLogs() {
     { key: 'adjustments', label: 'Adjustments' },
   ]), [])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options = {}) => {
+    const { force = false } = options ?? {}
+    const now = Date.now()
+    if (!force && retryUntilRef.current > now) {
+      const remainingSeconds = Math.max(1, Math.ceil((retryUntilRef.current - now) / 1000))
+      setRateLimitNotice(`Rate limit exceeded. Try again in ${remainingSeconds} seconds.`)
+      return
+    }
+
+    const query = {
+      ...filters,
+      page: currentPage,
+      per_page: perPage,
+    }
+    const queryKey = JSON.stringify(query)
+
+    if (!force && inflightRequestRef.current?.key === queryKey) {
+      return
+    }
+
+    if (inflightRequestRef.current?.controller) {
+      inflightRequestRef.current.controller.abort()
+    }
+
+    const controller = new AbortController()
+    inflightRequestRef.current = { controller, key: queryKey }
     setLoading(true)
     setListError('')
+    setRateLimitNotice('')
     try {
-      const response = await timeTrackingService.list({
-        ...filters,
-        page: currentPage,
-        per_page: perPage,
-      })
+      const response = await timeTrackingService.list(query, { signal: controller.signal })
+      retryUntilRef.current = 0
       setEntries(response.data)
       setTotal(response.pagination.total)
       setCurrentPage(Math.floor(response.pagination.offset / response.pagination.limit) + 1)
@@ -105,8 +131,30 @@ export default function TimeLogs() {
         }
       }
     } catch (error) {
+      if (error?.code === 'ERR_CANCELED') {
+        return
+      }
+
+      const status = error.response?.status
+      const retryAfterHeader = error.response?.headers?.['retry-after']
+      const retryAfterPayload = error.response?.data?.retry_after
+      const retryAfterSeconds = Number(retryAfterPayload ?? retryAfterHeader)
+
+      if (status === 429) {
+        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+          retryUntilRef.current = Date.now() + retryAfterSeconds * 1000
+          setRateLimitNotice(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`)
+        } else {
+          setRateLimitNotice('Rate limit exceeded. Please try again shortly.')
+        }
+        return
+      }
+
       setListError(error.response?.data?.message || 'Unable to load time entries. Check your filters and try again.')
     } finally {
+      if (inflightRequestRef.current?.key === queryKey) {
+        inflightRequestRef.current = null
+      }
       setLoading(false)
     }
   }, [filters, currentPage, selectedEntry])
@@ -114,6 +162,12 @@ export default function TimeLogs() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => () => {
+    if (inflightRequestRef.current?.controller) {
+      inflightRequestRef.current.controller.abort()
+    }
+  }, [])
 
   const handleSelectEntry = (row) => {
     setSelectedEntry(row)
@@ -229,6 +283,7 @@ export default function TimeLogs() {
       </div>
 
       {listError ? <p className="text-sm text-red-600">{listError}</p> : null}
+      {rateLimitNotice ? <p className="text-sm text-amber-600">{rateLimitNotice}</p> : null}
 
       <Card>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
