@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import ChatWidget from '../chat/ChatWidget'
@@ -9,6 +9,26 @@ import { CmsMenuProvider } from '../../stores/cmsMenus'
 
 export default function AdminLayout({ children }) {
   const sidebarRef = useRef(null)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const storedValue = window.localStorage.getItem('adminSidebarCollapsed')
+    if (storedValue === 'true') {
+      setIsSidebarCollapsed(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.setItem('adminSidebarCollapsed', String(isSidebarCollapsed))
+  }, [isSidebarCollapsed])
 
   const toggleSidebar = () => {
     sidebarRef.current?.toggleSidebar()
@@ -16,12 +36,16 @@ export default function AdminLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
+      <Navbar
+        showSidebarToggle
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebarCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
+      />
 
       <div className="flex">
-        <Sidebar ref={sidebarRef} type="admin" />
+        <Sidebar ref={sidebarRef} type="admin" isCollapsed={isSidebarCollapsed} />
 
-        <div className="flex-1 lg:ml-64">
+        <div className={`flex-1 ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
           <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-gray-200">
             <button
               type="button"
