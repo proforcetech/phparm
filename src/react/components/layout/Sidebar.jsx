@@ -44,8 +44,18 @@ const adminMenuItems = [
   { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
-  { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
-  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  {
+    path: '/cp/inspections/work',
+    label: 'Inspections',
+    icon: ClipboardDocumentListIcon,
+    children: [
+      {
+        path: '/cp/inspections/templates',
+        label: 'Inspection Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
   { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
   { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
   { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
@@ -134,6 +144,53 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
     [isOpen]
   )
 
+  const renderMenuItem = (item) => {
+    const Icon = item.icon
+    const isActive = isActiveRoute(pathname, item.path)
+    const isChildActive = item.children?.some((child) => isActiveRoute(pathname, child.path))
+    const isCurrentActive = isActive || isChildActive
+
+    return (
+      <div key={item.path} className="space-y-1">
+        <Link
+          to={item.path}
+          className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            isCurrentActive
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          }`}
+        >
+          {Icon ? <Icon className="h-5 w-5 mr-3" /> : null}
+          {item.label}
+        </Link>
+
+        {item.children?.length ? (
+          <div className="ml-6 space-y-1">
+            {item.children.map((child) => {
+              const ChildIcon = child.icon
+              const isChildItemActive = isActiveRoute(pathname, child.path)
+
+              return (
+                <Link
+                  key={child.path}
+                  to={child.path}
+                  className={`flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
+                    isChildItemActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
+                >
+                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-3" /> : null}
+                  {child.label}
+                </Link>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <>
       <aside
@@ -161,25 +218,7 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
           </div>
 
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-            {menuItems.map((item) => {
-              const Icon = item.icon
-              const isActive = isActiveRoute(pathname, item.path)
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  <Icon className="h-5 w-5 mr-3" />
-                  {item.label}
-                </Link>
-              )}
-            )}
+            {menuItems.map((item) => renderMenuItem(item))}
           </nav>
         </div>
       </aside>

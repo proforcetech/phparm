@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import inspectionService from '../../../services/inspection.service'
 
 export default function TechnicianInspections() {
+  const navigate = useNavigate()
   const [templates, setTemplates] = useState([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [customerId, setCustomerId] = useState('')
@@ -114,9 +116,14 @@ export default function TechnicianInspections() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Technician Inspections</h1>
-        <p className="text-sm text-gray-600">Complete inspections and upload supporting media.</p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Technician Inspections</h1>
+          <p className="text-sm text-gray-600">Complete inspections and upload supporting media.</p>
+        </div>
+        <Button variant="outline" onClick={() => navigate('/cp/inspections/templates')}>
+          View Inspection Templates
+        </Button>
       </div>
 
       <Card className="space-y-4">
