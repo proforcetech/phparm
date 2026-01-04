@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client'
 
+import '../assets/styles/main.css'
+
 import App from './App'
 import { AuthProvider } from './stores/auth.jsx'
 import { ToastProvider } from './stores/toast.jsx'
