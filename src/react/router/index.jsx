@@ -175,6 +175,7 @@ const protectedRoutes = [
   { path: '/cp/customers', name: 'CustomerList', auth: 'requiresAuth', element: <CustomerList /> },
   { path: '/cp/customers/create', name: 'CustomerCreate', auth: 'requiresAuth', element: <CustomerForm /> },
   { path: '/cp/customers/:id', name: 'CustomerDetail', auth: 'requiresAuth', element: <CustomerDetail /> },
+  { path: '/cp/customers/:id/edit', name: 'CustomerEdit', auth: 'requiresAuth', element: <CustomerForm /> },
   { path: '/cp/vehicle-master', name: 'VehicleMasterList', auth: 'requiresAuth', element: <VehicleMasterList /> },
   { path: '/cp/vehicle-master/create', name: 'VehicleMasterCreate', auth: 'requiresAuth', element: <VehicleMasterForm /> },
   { path: '/cp/vehicle-master/:id/edit', name: 'VehicleMasterEdit', auth: 'requiresAuth', element: <VehicleMasterForm /> },
