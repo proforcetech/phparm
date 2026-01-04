@@ -235,6 +235,7 @@ const protectedRoutes = [
 
 const settingsRoutes = [
   { path: '/cp/settings', name: 'Settings', element: <SettingsPage /> },
+  { path: '/cp/settings/profile', name: 'SettingsShopProfile', element: <SettingsShopProfile /> },
   { path: '/cp/settings/terms', name: 'SettingsTerms', element: <SettingsTerms /> },
   { path: '/cp/settings/templates', name: 'SettingsTemplates', element: <SettingsTemplates /> },
   { path: '/cp/settings/rejection-reasons', name: 'SettingsRejectionReasons', element: <SettingsRejectionReasons /> },
@@ -273,6 +274,7 @@ adminChildren.push({
   element: <SettingsLayout />,
   children: [
     { index: true, element: <SettingsPage /> },
+    { path: 'profile', element: <SettingsShopProfile /> },
     { path: 'terms', element: <SettingsTerms /> },
     { path: 'templates', element: <SettingsTemplates /> },
     { path: 'rejection-reasons', element: <SettingsRejectionReasons /> },
