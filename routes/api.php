@@ -10,6 +10,7 @@ use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
+use App\Models\WorkorderJob;
 use App\Support\Security\RecaptchaVerifier;
 use App\Support\Security\LoginRateLimiter;
 use App\Support\Auth\TotpService;
@@ -2536,6 +2537,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
+    $router->get('/track/{token}', function (Request $request) use ($connection) {
+        $trackingService = new \App\Services\Tracking\TrackingService($connection);
+        $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
+        return Response::json($data);
+    });
+
     // Public estimate rejection reasons
     $router->get('/api/public/estimate/rejection-reasons', function () use ($connection) {
         $settingsRepo = new \App\Support\SettingsRepository($connection);
@@ -2840,6 +2847,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Support\Pdf\InvoicePdfGenerator($connection),
             $invoiceMessagingNotifications
         );
+        $onsitePaymentController = new \App\Services\Payments\OnsitePaymentController(
+            new \App\Services\Payments\OnsitePaymentService($connection, $gatewayFactory),
+            $gate
+        );
 
         $router->get('/api/invoices', function (Request $request) use ($invoiceController) {
             $user = $request->getAttribute('user');
@@ -2905,6 +2916,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->post('/api/payments/onsite', function (Request $request) use ($onsitePaymentController) {
+            $user = $request->getAttribute('user');
+            $data = $onsitePaymentController->createCharge($user, $request->body());
+            return Response::created($data);
+        });
+
         $router->get('/api/invoices/{id}/pdf', function (Request $request) use ($invoiceController, $config) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -2937,6 +2954,20 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
         );
+        $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+        $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+        $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+            $trackingNotificationConfig,
+            $trackingTemplateEngine,
+            $trackingLogs,
+            $auditLogger
+        );
+        $trackingService = new \App\Services\Tracking\TrackingService(
+            $connection,
+            $trackingDispatcher,
+            $workorderMessagingNotifications
+        );
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
@@ -2944,6 +2975,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $gate,
             $workorderMessagingNotifications
         );
+
+        $router->post('/api/tracking-links', function (Request $request) use ($trackingService) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $jobId = $body['job_id'] ?? null;
+            $expiresAt = $body['expires_at'] ?? null;
+
+            if (!$jobId) {
+                return Response::badRequest(['error' => 'job_id is required']);
+            }
+
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+            $data = $trackingService->issueLink((int) $jobId, $baseUrl, $expiresAt, $user?->id);
+            return Response::created($data);
+        });
+
+        $router->delete('/api/tracking-links/{token}', function (Request $request) use ($trackingService) {
+            $token = (string) $request->getAttribute('token');
+            $trackingService->revokeLink($token);
+            return Response::noContent();
+        });
+
+        $router->post('/api/tracking/jobs/{jobId}/location', function (Request $request) use ($trackingService) {
+            $jobId = (int) $request->getAttribute('jobId');
+            $body = $request->body();
+
+            if (!isset($body['location']) && !isset($body['lat']) && !isset($body['lng'])) {
+                return Response::badRequest(['error' => 'location is required']);
+            }
+
+            $location = is_array($body['location'] ?? null) ? $body['location'] : $body;
+            $data = $trackingService->recordLocation($jobId, $location);
+            return Response::json(['last_position' => $data]);
+        });
 
         $router->get('/api/workorders', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
@@ -3051,11 +3116,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController) {
+        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController, $trackingService) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $jobId = (int) $request->getAttribute('jobId');
             $data = $workorderController->updateJobStatus($user, $id, $jobId, $request->body());
+
+            $status = $request->body()['status'] ?? null;
+            if ($status === WorkorderJob::STATUS_IN_PROGRESS) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                $trackingService->sendTrackingLinkForJob($jobId, $baseUrl, $user?->id);
+            }
+
             return Response::json($data);
         });
 
@@ -3178,6 +3250,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate
     );
 
+    $maskedSmsConfig = require __DIR__ . '/../config/notifications.php';
+    $maskedSmsGateway = new \App\Services\Messaging\MaskedSmsGateway($maskedSmsConfig);
+    $maskedSmsService = new \App\Services\Messaging\MaskedSmsService(
+        $connection,
+        $maskedSmsGateway,
+        $maskedSmsConfig['sms']['masked_number'] ?? null
+    );
+    $maskedSmsController = new \App\Services\Messaging\MaskedSmsController($maskedSmsService, $gate);
+
+    $driverDispatchController = new \App\Services\Dispatch\DriverDispatchController(
+        $connection,
+        new \App\Services\Dispatch\DriverPushTokenService($connection),
+        new \App\Services\Dispatch\DriverJobOfferService($connection),
+        $gate
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -3187,7 +3275,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController) {
+    $router->post('/api/public/messages/job-sms/receive', function (Request $request) use ($maskedSmsController) {
+        $data = $maskedSmsController->receive($request->body());
+        return Response::json($data);
+    });
+
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -3413,6 +3506,52 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $messagingController->unreadCounts($user);
             return Response::json($data);
         });
+
+        // Job-related masked SMS routes
+        $router->post('/api/jobs/{jobReference}/messages/sms', function (Request $request) use ($maskedSmsController) {
+            $user = $request->getAttribute('user');
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $data = $maskedSmsController->send($user, $jobReference, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver push tokens
+        $router->post('/api/driver/push-tokens', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $data = $driverDispatchController->registerPushToken($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver job offers
+        $router->get('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+            ];
+            $data = $driverDispatchController->listOffers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $data = $driverDispatchController->createOffer($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $offerId = (int) $request->getAttribute('id');
+            $data = $driverDispatchController->acceptOffer($user, $offerId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/job-offers/{id}/decline', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $offerId = (int) $request->getAttribute('id');
+            $data = $driverDispatchController->declineOffer($user, $offerId);
+            return Response::json($data);
+        });
     });
 
     // Inspection routes
@@ -3476,7 +3615,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $file = $request->file('media') ?? [];
-            $data = $inspectionController->uploadMedia($user, $id, $file);
+            $clientToken = $request->input('client_token') ?? $request->header('X-Idempotency-Key');
+            $data = $inspectionController->uploadMedia($user, $id, $file, $clientToken);
             return Response::json($data);
         });
 

@@ -168,7 +168,13 @@ class WorkorderRepository
         return (int) $stmt->fetchColumn();
     }
 
-    public function updateStatus(int $id, string $status, ?int $actorId = null, ?string $notes = null): ?Workorder
+    public function updateStatus(
+        int $id,
+        string $status,
+        ?int $actorId = null,
+        ?string $notes = null,
+        ?string $clientEventId = null
+    ): ?Workorder
     {
         $workorder = $this->find($id);
         if ($workorder === null) {
@@ -177,6 +183,10 @@ class WorkorderRepository
 
         if (!in_array($status, Workorder::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid status for workorder lifecycle.');
+        }
+
+        if ($clientEventId !== null && $this->statusEventExists($id, $clientEventId)) {
+            return $workorder;
         }
 
         if ($workorder->status === $status) {
@@ -205,7 +215,7 @@ class WorkorderRepository
         $stmt->execute($params);
 
         // Record status history
-        $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes);
+        $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes, $clientEventId);
 
         $workorder = $this->find($id);
         $this->log('workorder.status_changed', $id, $actorId, [
@@ -398,11 +408,34 @@ class WorkorderRepository
         );
     }
 
-    private function recordStatusHistory(int $workorderId, ?string $fromStatus, string $toStatus, ?int $changedBy, ?string $notes): void
+    private function recordStatusHistory(
+        int $workorderId,
+        ?string $fromStatus,
+        string $toStatus,
+        ?int $changedBy,
+        ?string $notes,
+        ?string $clientEventId = null
+    ): void
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO workorder_status_history (workorder_id, from_status, to_status, changed_by, notes, created_at)
-            VALUES (:workorder_id, :from_status, :to_status, :changed_by, :notes, NOW())
+            INSERT INTO workorder_status_history (
+                workorder_id,
+                from_status,
+                to_status,
+                changed_by,
+                notes,
+                client_event_id,
+                created_at
+            )
+            VALUES (
+                :workorder_id,
+                :from_status,
+                :to_status,
+                :changed_by,
+                :notes,
+                :client_event_id,
+                NOW()
+            )
         SQL);
 
         $stmt->execute([
@@ -411,59 +444,24 @@ class WorkorderRepository
             'to_status' => $toStatus,
             'changed_by' => $changedBy,
             'notes' => $notes,
+            'client_event_id' => $clientEventId,
         ]);
     }
 
-    /**
-     * @return array<string, int>
-     */
-    private function jobCheckpointSummary(int $jobId): array
+    private function statusEventExists(int $workorderId, string $clientEventId): bool
     {
-        $summary = [
-            WorkorderJobEvidenceService::CHECKPOINT_PRE_LOAD => 0,
-            WorkorderJobEvidenceService::CHECKPOINT_HOOKUP => 0,
-            WorkorderJobEvidenceService::CHECKPOINT_DROPOFF => 0,
-        ];
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT 1
+            FROM workorder_status_history
+            WHERE workorder_id = :workorder_id AND client_event_id = :client_event_id
+            LIMIT 1
+        SQL);
+        $stmt->execute([
+            'workorder_id' => $workorderId,
+            'client_event_id' => $clientEventId,
+        ]);
 
-        $stmt = $this->connection->pdo()->prepare(
-            'SELECT checkpoint_type, COUNT(*) as total FROM job_checkpoint_media WHERE workorder_job_id = :job_id GROUP BY checkpoint_type'
-        );
-        $stmt->execute(['job_id' => $jobId]);
-
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $type = (string) $row['checkpoint_type'];
-            if (array_key_exists($type, $summary)) {
-                $summary[$type] = (int) $row['total'];
-            }
-        }
-
-        return $summary;
-    }
-
-    private function assertCheckpointEvidence(int $jobId, string $status): void
-    {
-        $required = match ($status) {
-            WorkorderJob::STATUS_IN_PROGRESS => [WorkorderJobEvidenceService::CHECKPOINT_PRE_LOAD],
-            WorkorderJob::STATUS_COMPLETED => [
-                WorkorderJobEvidenceService::CHECKPOINT_PRE_LOAD,
-                WorkorderJobEvidenceService::CHECKPOINT_HOOKUP,
-                WorkorderJobEvidenceService::CHECKPOINT_DROPOFF,
-            ],
-            default => [],
-        };
-
-        if (empty($required)) {
-            return;
-        }
-
-        $summary = $this->jobCheckpointSummary($jobId);
-        $missing = array_filter($required, static fn($type) => empty($summary[$type]));
-
-        if (!empty($missing)) {
-            throw new InvalidArgumentException(
-                'Missing required checkpoint photos: ' . implode(', ', $missing)
-            );
-        }
+        return (bool) $stmt->fetchColumn();
     }
 
     private function mapWorkorder(array $row): Workorder

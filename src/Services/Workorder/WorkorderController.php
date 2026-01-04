@@ -132,6 +132,7 @@ class WorkorderController
 
         $status = $payload['status'] ?? null;
         $notes = $payload['notes'] ?? null;
+        $clientEventId = $payload['client_event_id'] ?? null;
 
         if (!$status) {
             throw new InvalidArgumentException('status is required');
@@ -144,7 +145,7 @@ class WorkorderController
         }
 
         $before = $this->repository->find($id);
-        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes);
+        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
@@ -584,9 +585,9 @@ class WorkorderController
 
         // Auto-transition workorder status based on job statuses
         if ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
-            $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed');
+            $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed', null);
         } elseif ($anyInProgress && $workorder->status === Workorder::STATUS_PENDING) {
-            $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started');
+            $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started', null);
         }
     }
 

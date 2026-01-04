@@ -42,6 +42,10 @@ import InventoryLookupManager from '../views/inventory/InventoryLookupManager'
 import InventoryForm from '../views/inventory/InventoryForm'
 import InventoryAlerts from '../views/inventory/InventoryAlerts'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
+import ImpoundIntake from '../views/storage/ImpoundIntake'
+import StorageFeeLedger from '../views/storage/StorageFeeLedger'
+import NoticeGeneration from '../views/storage/NoticeGeneration'
+import ReleaseChecklist from '../views/storage/ReleaseChecklist'
 import FinancialEntries from '../views/financial/FinancialEntries'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
@@ -85,6 +89,7 @@ import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
+import TrackingView from '../views/tracking/TrackingView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
@@ -136,6 +141,7 @@ const guestRoutes = [
 const publicRoutes = [
   { path: '/request-estimate', name: 'EstimateRequestForm', auth: 'public', element: <EstimateRequestPage /> },
   { path: '/estimate/view', name: 'PublicEstimateView', auth: 'public', element: <PublicEstimateView /> },
+  { path: '/track/:token', name: 'TrackingView', auth: 'public', element: <TrackingView /> },
   { path: '/customers/:id', name: 'CustomerPublicDetail', auth: 'public', element: <CustomerPublicDetail /> },
   { path: '/vehicles/:id', name: 'VehiclePublicDetail', auth: 'public', element: <VehiclePublicDetail /> },
   { path: '/vehicles/:id/edit', name: 'VehiclePublicEdit', auth: 'public', element: <VehiclePublicEdit /> },
@@ -184,6 +190,10 @@ const protectedRoutes = [
   { path: '/cp/inventory/:id/edit', name: 'InventoryEdit', auth: 'requiresAuth', element: <InventoryForm /> },
   { path: '/cp/inventory/alerts', name: 'InventoryAlerts', auth: 'requiresAuth', element: <InventoryAlerts /> },
   { path: '/cp/inventory/pull-requests', name: 'InventoryPullRequests', auth: 'requiresAuth', element: <InventoryPullRequests /> },
+  { path: '/cp/storage/impound-intake', name: 'ImpoundIntake', auth: 'requiresAuth', element: <ImpoundIntake /> },
+  { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
+  { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },
+  { path: '/cp/storage/release-checklist', name: 'StorageReleaseChecklist', auth: 'requiresAuth', element: <ReleaseChecklist /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
   { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ChevronDownIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
+import OfflineStatusBadge from '../OfflineStatusBadge'
 
 export default function Navbar() {
   const { user, isCustomer, isAdmin, logout } = useAuthStore()
@@ -40,7 +41,8 @@ export default function Navbar() {
             </div>
           </div>
 
-          <div className="flex items-center">
+          <div className="flex items-center space-x-4">
+            <OfflineStatusBadge />
             <div className="ml-3 relative">
               <div>
                 <button

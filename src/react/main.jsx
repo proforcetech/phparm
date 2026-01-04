@@ -5,6 +5,7 @@ import '../assets/styles/main.css'
 import App from './App'
 import { AuthProvider } from './stores/auth.jsx'
 import { ToastProvider } from './stores/toast.jsx'
+import offlineSync from './services/offlineSync'
 
 const container = document.getElementById('app')
 
@@ -19,3 +20,5 @@ createRoot(container).render(
     </ToastProvider>
   </AuthProvider>
 )
+
+offlineSync.start()

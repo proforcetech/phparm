@@ -1,0 +1,135 @@
+<?php
+
+namespace App\Services\Dispatch;
+
+use App\Database\Connection;
+use InvalidArgumentException;
+use PDO;
+
+class DriverJobOfferService
+{
+    private Connection $connection;
+
+    public function __construct(Connection $connection)
+    {
+        $this->connection = $connection;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function createOffer(array $payload, int $actorId): array
+    {
+        $driverProfileId = (int) ($payload['driver_profile_id'] ?? 0);
+        $jobReference = (string) ($payload['job_reference'] ?? '');
+
+        if ($driverProfileId <= 0 || $jobReference === '') {
+            throw new InvalidArgumentException('driver_profile_id and job_reference are required');
+        }
+
+        $jobType = (string) ($payload['job_type'] ?? 'workorder');
+        $expiresAt = $payload['expires_at'] ?? null;
+        $offerPayload = $payload['offer_payload'] ?? null;
+
+        $insert = $this->connection->pdo()->prepare(
+            'INSERT INTO driver_job_offers
+                (driver_profile_id, job_reference, job_type, status, offer_payload, created_by, expires_at, created_at)
+             VALUES
+                (:driver_profile_id, :job_reference, :job_type, :status, :offer_payload, :created_by, :expires_at, NOW())'
+        );
+
+        $insert->execute([
+            'driver_profile_id' => $driverProfileId,
+            'job_reference' => $jobReference,
+            'job_type' => $jobType,
+            'status' => 'pending',
+            'offer_payload' => $offerPayload !== null ? json_encode($offerPayload, JSON_THROW_ON_ERROR) : null,
+            'created_by' => $actorId,
+            'expires_at' => $expiresAt,
+        ]);
+
+        $id = (int) $this->connection->pdo()->lastInsertId();
+        return $this->getOffer($id);
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    public function listOffers(int $driverProfileId, array $filters = []): array
+    {
+        $status = $filters['status'] ?? null;
+        $params = ['driver_profile_id' => $driverProfileId];
+
+        $sql = 'SELECT * FROM driver_job_offers WHERE driver_profile_id = :driver_profile_id';
+        if ($status) {
+            $sql .= ' AND status = :status';
+            $params['status'] = $status;
+        }
+        $sql .= ' ORDER BY created_at DESC, id DESC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function acceptOffer(int $offerId, int $driverProfileId): array
+    {
+        $update = $this->connection->pdo()->prepare(
+            'UPDATE driver_job_offers
+             SET status = :status, accepted_at = NOW(), updated_at = NOW()
+             WHERE id = :id AND driver_profile_id = :driver_profile_id AND status = :current_status'
+        );
+        $update->execute([
+            'status' => 'accepted',
+            'id' => $offerId,
+            'driver_profile_id' => $driverProfileId,
+            'current_status' => 'pending',
+        ]);
+
+        if ($update->rowCount() === 0) {
+            throw new InvalidArgumentException('Job offer could not be accepted.');
+        }
+
+        return $this->getOffer($offerId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function declineOffer(int $offerId, int $driverProfileId): array
+    {
+        $update = $this->connection->pdo()->prepare(
+            'UPDATE driver_job_offers
+             SET status = :status, declined_at = NOW(), updated_at = NOW()
+             WHERE id = :id AND driver_profile_id = :driver_profile_id AND status = :current_status'
+        );
+        $update->execute([
+            'status' => 'declined',
+            'id' => $offerId,
+            'driver_profile_id' => $driverProfileId,
+            'current_status' => 'pending',
+        ]);
+
+        if ($update->rowCount() === 0) {
+            throw new InvalidArgumentException('Job offer could not be declined.');
+        }
+
+        return $this->getOffer($offerId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getOffer(int $offerId): array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM driver_job_offers WHERE id = :id');
+        $stmt->execute(['id' => $offerId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+}

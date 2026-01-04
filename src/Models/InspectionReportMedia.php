@@ -10,5 +10,6 @@ class InspectionReportMedia extends BaseModel
     public string $path;
     public string $mime_type;
     public ?int $uploaded_by = null;
+    public ?string $client_token = null;
     public ?string $created_at = null;
 }
