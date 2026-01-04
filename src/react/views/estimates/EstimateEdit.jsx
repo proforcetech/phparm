@@ -1,10 +1,5 @@
-import PlaceholderPage from '../PlaceholderPage'
+import EstimateForm from './EstimateForm'
 
 export default function EstimateEdit() {
-  return (
-    <PlaceholderPage
-      title="Edit estimate"
-      description="React mirror of Vue /cp/estimates/:id/edit."
-    />
-  )
+  return <EstimateForm />
 }
