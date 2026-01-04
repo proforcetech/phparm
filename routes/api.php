@@ -2847,6 +2847,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Support\Pdf\InvoicePdfGenerator($connection),
             $invoiceMessagingNotifications
         );
+        $onsitePaymentController = new \App\Services\Payments\OnsitePaymentController(
+            new \App\Services\Payments\OnsitePaymentService($connection, $gatewayFactory),
+            $gate
+        );
 
         $router->get('/api/invoices', function (Request $request) use ($invoiceController) {
             $user = $request->getAttribute('user');
@@ -2910,6 +2914,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $invoiceController->getAvailableGateways($user);
             return Response::json($data);
+        });
+
+        $router->post('/api/payments/onsite', function (Request $request) use ($onsitePaymentController) {
+            $user = $request->getAttribute('user');
+            $data = $onsitePaymentController->createCharge($user, $request->body());
+            return Response::created($data);
         });
 
         $router->get('/api/invoices/{id}/pdf', function (Request $request) use ($invoiceController, $config) {
@@ -3189,6 +3199,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate
     );
 
+    $maskedSmsConfig = require __DIR__ . '/../config/notifications.php';
+    $maskedSmsGateway = new \App\Services\Messaging\MaskedSmsGateway($maskedSmsConfig);
+    $maskedSmsService = new \App\Services\Messaging\MaskedSmsService(
+        $connection,
+        $maskedSmsGateway,
+        $maskedSmsConfig['sms']['masked_number'] ?? null
+    );
+    $maskedSmsController = new \App\Services\Messaging\MaskedSmsController($maskedSmsService, $gate);
+
+    $driverDispatchController = new \App\Services\Dispatch\DriverDispatchController(
+        $connection,
+        new \App\Services\Dispatch\DriverPushTokenService($connection),
+        new \App\Services\Dispatch\DriverJobOfferService($connection),
+        $gate
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -3198,7 +3224,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController) {
+    $router->post('/api/public/messages/job-sms/receive', function (Request $request) use ($maskedSmsController) {
+        $data = $maskedSmsController->receive($request->body());
+        return Response::json($data);
+    });
+
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -3422,6 +3453,52 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/messages/unread', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->unreadCounts($user);
+            return Response::json($data);
+        });
+
+        // Job-related masked SMS routes
+        $router->post('/api/jobs/{jobReference}/messages/sms', function (Request $request) use ($maskedSmsController) {
+            $user = $request->getAttribute('user');
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $data = $maskedSmsController->send($user, $jobReference, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver push tokens
+        $router->post('/api/driver/push-tokens', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $data = $driverDispatchController->registerPushToken($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver job offers
+        $router->get('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+            ];
+            $data = $driverDispatchController->listOffers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $data = $driverDispatchController->createOffer($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $offerId = (int) $request->getAttribute('id');
+            $data = $driverDispatchController->acceptOffer($user, $offerId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/job-offers/{id}/decline', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $offerId = (int) $request->getAttribute('id');
+            $data = $driverDispatchController->declineOffer($user, $offerId);
             return Response::json($data);
         });
     });

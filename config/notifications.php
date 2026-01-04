@@ -19,6 +19,7 @@ return [
     'sms' => [
         'default' => env('SMS_DRIVER', 'log'),
         'from_number' => env('SMS_FROM', null),
+        'masked_number' => env('SMS_MASKED_NUMBER', null),
         'drivers' => [
             'log' => [],
             'twilio' => [
