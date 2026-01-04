@@ -1,13 +1,33 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeftIcon } from '@heroicons/react/24/outline'
+import {
+  ArrowLeftIcon,
+  Bars3Icon,
+  PlusIcon,
+  TrashIcon,
+} from '@heroicons/react/24/outline'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 import Alert from '../../components/ui/Alert'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
-import Textarea from '../../components/ui/Textarea'
 import { useCmsMenuStore } from '../../stores/cmsMenus'
 import { useToast } from '../../stores/toast.jsx'
 
@@ -15,9 +35,233 @@ const createDefaultForm = () => ({
   name: '',
   location: '',
   description: '',
-  items: '[]',
+  items: [],
   is_published: false,
 })
+
+const createMenuItemKey = () => `menu-item-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`
+
+const normalizeMenuItems = (items = []) =>
+  items.map((item) => {
+    const children = Array.isArray(item.children) ? item.children : []
+    return {
+      ...item,
+      _key: item._key || createMenuItemKey(),
+      label: item.label ?? '',
+      url: item.url ?? '',
+      children: normalizeMenuItems(children),
+    }
+  })
+
+const parseMenuItems = (items) => {
+  if (Array.isArray(items)) {
+    return items
+  }
+
+  if (typeof items === 'string' && items.trim()) {
+    try {
+      return JSON.parse(items)
+    } catch (err) {
+      return []
+    }
+  }
+
+  return []
+}
+
+const serializeMenuItems = (items = []) =>
+  items.map((item) => {
+    const { _key, children, ...rest } = item
+    const next = { ...rest }
+    if (Array.isArray(children)) {
+      next.children = serializeMenuItems(children)
+    }
+    return next
+  })
+
+const updateMenuItem = (items, key, updater) =>
+  items.map((item) => {
+    if (item._key === key) {
+      return updater(item)
+    }
+
+    if (item.children?.length) {
+      return {
+        ...item,
+        children: updateMenuItem(item.children, key, updater),
+      }
+    }
+
+    return item
+  })
+
+const removeMenuItem = (items, key) =>
+  items.reduce((acc, item) => {
+    if (item._key === key) {
+      return acc
+    }
+
+    const next = item.children?.length
+      ? { ...item, children: removeMenuItem(item.children, key) }
+      : item
+
+    acc.push(next)
+    return acc
+  }, [])
+
+const replaceMenuChildren = (items, parentKey, nextChildren) =>
+  updateMenuItem(items, parentKey, (item) => ({
+    ...item,
+    children: nextChildren,
+  }))
+
+const hasIncompleteMenuItems = (items = []) =>
+  items.some(
+    (item) =>
+      !item.label?.trim()
+      || !item.url?.trim()
+      || (item.children?.length ? hasIncompleteMenuItems(item.children) : false)
+  )
+
+function SortableMenuItem({
+  item,
+  depth,
+  onUpdateItem,
+  onRemoveItem,
+  onAddChild,
+  onChildrenChange,
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item._key,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-lg border border-gray-200 bg-white p-4 shadow-sm ${
+        isDragging ? 'ring-2 ring-primary-300' : ''
+      }`}
+    >
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
+        <button
+          type="button"
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50"
+          aria-label="Drag to reorder"
+          {...attributes}
+          {...listeners}
+        >
+          <Bars3Icon className="h-5 w-5" />
+        </button>
+        <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2">
+          <Input
+            label={depth === 0 ? 'Label' : 'Child label'}
+            placeholder="Menu item label"
+            value={item.label}
+            onUpdateModelValue={(value) => onUpdateItem(item._key, { label: value })}
+          />
+          <Input
+            label={depth === 0 ? 'URL' : 'Child URL'}
+            placeholder="/path"
+            value={item.url}
+            onUpdateModelValue={(value) => onUpdateItem(item._key, { url: value })}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2 md:flex-col">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => onAddChild(item._key)}
+          >
+            <PlusIcon className="mr-1 h-4 w-4" />
+            Add Child
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-red-600 hover:text-red-700"
+            onClick={() => onRemoveItem(item._key)}
+          >
+            <TrashIcon className="mr-1 h-4 w-4" />
+            Remove
+          </Button>
+        </div>
+      </div>
+
+      {item.children?.length ? (
+        <div className="mt-4 border-l border-dashed border-gray-200 pl-4">
+          <MenuItemList
+            items={item.children}
+            depth={depth + 1}
+            onItemsChange={(nextChildren) => onChildrenChange(item._key, nextChildren)}
+            onUpdateItem={onUpdateItem}
+            onRemoveItem={onRemoveItem}
+            onAddChild={onAddChild}
+            onChildrenChange={onChildrenChange}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function MenuItemList({
+  items,
+  depth,
+  onItemsChange,
+  onUpdateItem,
+  onRemoveItem,
+  onAddChild,
+  onChildrenChange,
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) {
+      return
+    }
+
+    const oldIndex = items.findIndex((item) => item._key === active.id)
+    const newIndex = items.findIndex((item) => item._key === over.id)
+
+    if (oldIndex === -1 || newIndex === -1) {
+      return
+    }
+
+    onItemsChange(arrayMove(items, oldIndex, newIndex))
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={items.map((item) => item._key)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-4">
+          {items.map((item) => (
+            <SortableMenuItem
+              key={item._key}
+              item={item}
+              depth={depth}
+              onUpdateItem={onUpdateItem}
+              onRemoveItem={onRemoveItem}
+              onAddChild={onAddChild}
+              onChildrenChange={onChildrenChange}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  )
+}
 
 export default function CMSMenuForm() {
   const navigate = useNavigate()
@@ -36,10 +280,11 @@ export default function CMSMenuForm() {
     try {
       setError(null)
       const data = await menuStore.fetchMenu(id)
+      const parsedItems = parseMenuItems(data.items || [])
       setForm({
         ...createDefaultForm(),
         ...data,
-        items: typeof data.items === 'string' ? data.items : JSON.stringify(data.items || []),
+        items: normalizeMenuItems(parsedItems),
         is_published: !!data.is_published,
       })
     } catch (err) {
@@ -54,14 +299,71 @@ export default function CMSMenuForm() {
     }
   }, [isEditing, loadMenu])
 
+  const handleAddRootItem = () => {
+    setForm((prev) => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          _key: createMenuItemKey(),
+          label: '',
+          url: '',
+          children: [],
+        },
+      ],
+    }))
+  }
+
+  const handleUpdateItem = useCallback((key, updates) => {
+    setForm((prev) => ({
+      ...prev,
+      items: updateMenuItem(prev.items, key, (item) => ({
+        ...item,
+        ...updates,
+      })),
+    }))
+  }, [])
+
+  const handleRemoveItem = useCallback((key) => {
+    setForm((prev) => ({
+      ...prev,
+      items: removeMenuItem(prev.items, key),
+    }))
+  }, [])
+
+  const handleAddChild = useCallback((parentKey) => {
+    setForm((prev) => ({
+      ...prev,
+      items: updateMenuItem(prev.items, parentKey, (item) => ({
+        ...item,
+        children: [
+          ...(Array.isArray(item.children) ? item.children : []),
+          {
+            _key: createMenuItemKey(),
+            label: '',
+            url: '',
+            children: [],
+          },
+        ],
+      })),
+    }))
+  }, [])
+
+  const handleReplaceChildren = useCallback((parentKey, nextChildren) => {
+    setForm((prev) => ({
+      ...prev,
+      items: replaceMenuChildren(prev.items, parentKey, nextChildren),
+    }))
+  }, [])
+
   const validateForm = () => {
     const errors = []
     if (!form.name) errors.push('Name is required')
     if (!form.location) errors.push('Location is required')
-    try {
-      JSON.parse(form.items || '[]')
-    } catch (err) {
-      errors.push('Menu items must be valid JSON')
+    if (!Array.isArray(form.items)) {
+      errors.push('Menu items must be a list')
+    } else if (hasIncompleteMenuItems(form.items)) {
+      errors.push('Each menu item needs a label and URL')
     }
     return errors
   }
@@ -81,7 +383,7 @@ export default function CMSMenuForm() {
 
       const payload = {
         ...form,
-        items: JSON.parse(form.items || '[]'),
+        items: serializeMenuItems(form.items),
       }
 
       if (isEditing) {
@@ -119,7 +421,7 @@ export default function CMSMenuForm() {
       const payload = {
         ...form,
         is_published: true,
-        items: JSON.parse(form.items || '[]'),
+        items: serializeMenuItems(form.items),
       }
 
       if (isEditing) {
@@ -192,15 +494,33 @@ export default function CMSMenuForm() {
                   value={form.description}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, description: value }))}
                 />
+              </div>
+            </Card>
 
-                <Textarea
-                  label="Menu Items (JSON)"
-                  rows={8}
-                  placeholder='[{ "label": "Home", "url": "/" }]'
-                  value={form.items}
-                  onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, items: value }))}
-                  helperText="Provide an array of menu item objects with label and url."
-                />
+            <Card header={<h3 className="text-lg font-medium text-gray-900">Menu Items</h3>}>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-500">
+                  Drag and drop items to reorder. Add child links to create nested navigation.
+                </p>
+                {form.items.length ? (
+                  <MenuItemList
+                    items={form.items}
+                    depth={0}
+                    onItemsChange={(nextItems) => setForm((prev) => ({ ...prev, items: nextItems }))}
+                    onUpdateItem={handleUpdateItem}
+                    onRemoveItem={handleRemoveItem}
+                    onAddChild={handleAddChild}
+                    onChildrenChange={handleReplaceChildren}
+                  />
+                ) : (
+                  <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+                    No menu items yet. Add your first link below.
+                  </div>
+                )}
+                <Button type="button" variant="secondary" onClick={handleAddRootItem}>
+                  <PlusIcon className="mr-2 h-5 w-5" />
+                  Add Menu Item
+                </Button>
               </div>
             </Card>
           </div>
