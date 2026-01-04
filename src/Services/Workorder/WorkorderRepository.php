@@ -327,6 +327,8 @@ class WorkorderRepository
             throw new InvalidArgumentException('Invalid status for workorder job.');
         }
 
+        $this->assertCheckpointEvidence($jobId, $status);
+
         $updateFields = ['status = :status', 'updated_at = NOW()'];
         $params = ['status' => $status, 'id' => $jobId];
 
@@ -410,6 +412,58 @@ class WorkorderRepository
             'changed_by' => $changedBy,
             'notes' => $notes,
         ]);
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function jobCheckpointSummary(int $jobId): array
+    {
+        $summary = [
+            WorkorderJobEvidenceService::CHECKPOINT_PRE_LOAD => 0,
+            WorkorderJobEvidenceService::CHECKPOINT_HOOKUP => 0,
+            WorkorderJobEvidenceService::CHECKPOINT_DROPOFF => 0,
+        ];
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT checkpoint_type, COUNT(*) as total FROM job_checkpoint_media WHERE workorder_job_id = :job_id GROUP BY checkpoint_type'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $type = (string) $row['checkpoint_type'];
+            if (array_key_exists($type, $summary)) {
+                $summary[$type] = (int) $row['total'];
+            }
+        }
+
+        return $summary;
+    }
+
+    private function assertCheckpointEvidence(int $jobId, string $status): void
+    {
+        $required = match ($status) {
+            WorkorderJob::STATUS_IN_PROGRESS => [WorkorderJobEvidenceService::CHECKPOINT_PRE_LOAD],
+            WorkorderJob::STATUS_COMPLETED => [
+                WorkorderJobEvidenceService::CHECKPOINT_PRE_LOAD,
+                WorkorderJobEvidenceService::CHECKPOINT_HOOKUP,
+                WorkorderJobEvidenceService::CHECKPOINT_DROPOFF,
+            ],
+            default => [],
+        };
+
+        if (empty($required)) {
+            return;
+        }
+
+        $summary = $this->jobCheckpointSummary($jobId);
+        $missing = array_filter($required, static fn($type) => empty($summary[$type]));
+
+        if (!empty($missing)) {
+            throw new InvalidArgumentException(
+                'Missing required checkpoint photos: ' . implode(', ', $missing)
+            );
+        }
     }
 
     private function mapWorkorder(array $row): Workorder
