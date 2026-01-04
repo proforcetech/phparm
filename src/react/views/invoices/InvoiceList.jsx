@@ -51,6 +51,16 @@ const statusOptions = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
+const getInvoiceCustomerName = (invoice) => {
+  if (!invoice) return '—'
+  const customer = invoice.customer
+  const directName = customer?.name || invoice.customer_name
+  const firstName = customer?.first_name || invoice.customer_first_name || invoice.first_name
+  const lastName = customer?.last_name || invoice.customer_last_name || invoice.last_name
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+  return directName || fullName || '—'
+}
+
 export default function InvoiceList() {
   const navigate = useNavigate()
   const { error } = useToast()
@@ -166,7 +176,7 @@ export default function InvoiceList() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
-                        {invoice.customer?.name || '—'}
+                        {getInvoiceCustomerName(invoice)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {formatDate(invoice.issue_date || invoice.created_at)}
