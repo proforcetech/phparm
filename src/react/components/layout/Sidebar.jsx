@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
+  ArchiveBoxIcon,
   Bars3Icon,
   CalendarIcon,
   ChartBarIcon,
@@ -39,6 +40,7 @@ const adminMenuItems = [
   { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
   { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
   { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
+  { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
   { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
