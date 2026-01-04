@@ -30,7 +30,7 @@ class MessagingService
                     LEFT JOIN message_reads r ON r.thread_id = t.id AND r.participant_id = :participant_id
                     WHERE m.thread_id = t.id
                       AND m.sender_id != :participant_id
-                      AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
+                      AND (r.last_read_message_id IS NULL OR m.id > r.last_read_message_id)
                 ) AS unread_count
             FROM message_threads t
             JOIN message_participants p ON p.thread_id = t.id
@@ -216,8 +216,8 @@ class MessagingService
                 SUM(CASE
                     WHEN m.sender_id IS NULL THEN 0
                     WHEN m.sender_id = :participant_id THEN 0
-                    WHEN r.last_read_at IS NULL THEN 1
-                    WHEN m.created_at > r.last_read_at THEN 1
+                    WHEN r.last_read_message_id IS NULL THEN 1
+                    WHEN m.id > r.last_read_message_id THEN 1
                     ELSE 0
                 END) AS unread_count
              FROM message_threads t

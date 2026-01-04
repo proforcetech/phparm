@@ -5,6 +5,7 @@ import '../assets/styles/main.css'
 import App from './App'
 import { AuthProvider } from './stores/auth.jsx'
 import { ToastProvider } from './stores/toast.jsx'
+import { UIProvider } from './stores/ui.jsx'
 import offlineSync from './services/offlineSync'
 
 const container = document.getElementById('app')
@@ -15,9 +16,11 @@ if (!container) {
 
 createRoot(container).render(
   <AuthProvider>
-    <ToastProvider>
-      <App />
-    </ToastProvider>
+    <UIProvider>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </UIProvider>
   </AuthProvider>
 )
 

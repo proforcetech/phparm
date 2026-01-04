@@ -145,6 +145,16 @@ class MessagingNotificationService
                 'roles' => ['admin', 'manager'],
             ],
         ],
+        'tracking.link_sent' => [
+            'subject' => 'Tracking Link for Workorder #{workorder_number}',
+            'message' => '{actor} sent a tracking link for job #{job_id} ({job_title}) to {recipient} via {channel}.',
+            'scope_type' => 'workorder',
+            'scope_id' => 'workorder_id',
+            'participants' => [
+                'roles' => ['admin', 'manager'],
+                'include_ids' => ['assigned_technician_id'],
+            ],
+        ],
     ];
 
     public function __construct(Connection $connection, MessagingService $messaging)
@@ -322,6 +332,11 @@ class MessagingNotificationService
         if (str_starts_with($type, 'inventory.')) {
             $request = $this->fetchPullRequest((int) ($payload['pull_request_id'] ?? 0));
             $context = array_merge($context, $request);
+        }
+
+        if (str_starts_with($type, 'tracking.')) {
+            $tracking = $this->fetchTrackingJob((int) ($payload['job_id'] ?? 0));
+            $context = array_merge($context, $tracking);
         }
 
         if (array_key_exists('previous_technician_id', $context) && !isset($context['previous_technician'])) {
@@ -590,6 +605,57 @@ class MessagingNotificationService
             'total_fulfilled' => (int) ($row['quantity_fulfilled'] ?? 0),
             'request_type' => (string) ($row['request_type'] ?? ''),
             'workorder_number' => (string) ($row['workorder_number'] ?? 'N/A'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchTrackingJob(int $jobId): array
+    {
+        if ($jobId === 0) {
+            return [];
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT
+                workorder_jobs.id AS job_id,
+                workorder_jobs.title AS job_title,
+                workorders.id AS workorder_id,
+                workorders.number AS workorder_number,
+                workorders.assigned_technician_id AS assigned_technician_id,
+                customers.first_name AS customer_first_name,
+                customers.last_name AS customer_last_name,
+                customer_vehicles.year AS vehicle_year,
+                customer_vehicles.make AS vehicle_make,
+                customer_vehicles.model AS vehicle_model
+             FROM workorder_jobs
+             INNER JOIN workorders ON workorder_jobs.workorder_id = workorders.id
+             LEFT JOIN customers ON workorders.customer_id = customers.id
+             LEFT JOIN customer_vehicles ON workorders.vehicle_id = customer_vehicles.id
+             WHERE workorder_jobs.id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return [];
+        }
+
+        $vehicleParts = array_filter([
+            $row['vehicle_year'] ?? null,
+            $row['vehicle_make'] ?? null,
+            $row['vehicle_model'] ?? null,
+        ]);
+
+        return [
+            'job_id' => (int) $row['job_id'],
+            'job_title' => (string) ($row['job_title'] ?? ''),
+            'workorder_id' => (int) $row['workorder_id'],
+            'workorder_number' => (string) ($row['workorder_number'] ?? ''),
+            'assigned_technician_id' => $row['assigned_technician_id'] !== null ? (int) $row['assigned_technician_id'] : null,
+            'customer_name' => trim(($row['customer_first_name'] ?? '') . ' ' . ($row['customer_last_name'] ?? '')) ?: 'Customer',
+            'vehicle' => $vehicleParts ? implode(' ', $vehicleParts) : null,
         ];
     }
 }

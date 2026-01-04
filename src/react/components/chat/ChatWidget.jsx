@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { messagingService } from '../../../services/messages.service'
 import { useAuthStore } from '../../stores/auth.jsx'
+import { useUIStore } from '../../stores/ui.jsx'
 
 export default function ChatWidget() {
   const { isStaff, user } = useAuthStore()
+  const { addChatNotification, chatNotifications, markChatNotificationRead } = useUIStore()
   const [isOpen, setIsOpen] = useState(false)
   const [threads, setThreads] = useState([])
   const [selectedThreadId, setSelectedThreadId] = useState(null)
@@ -13,11 +15,17 @@ export default function ChatWidget() {
   const [unreadTotal, setUnreadTotal] = useState(0)
   const [sending, setSending] = useState(false)
   const pollingRef = useRef(null)
+  const unreadCountsRef = useRef(new Map())
 
   const currentUserId = user?.id
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
     [threads, selectedThreadId]
+  )
+
+  const unreadNotifications = useMemo(
+    () => chatNotifications.filter((notification) => !notification.read),
+    [chatNotifications]
   )
 
   const toggleOpen = () => {
@@ -28,22 +36,26 @@ export default function ChatWidget() {
     return `${message.first_name ?? ''} ${message.last_name ?? ''}`.trim() || 'Staff'
   }
 
-  const threadLabel = (thread) => {
-    if (thread.subject) {
-      return thread.subject
-    }
+  const threadLabel = useCallback(
+    (thread) => {
+      if (thread.subject) {
+        return thread.subject
+      }
 
-    const participants = thread.participants || []
-    const otherNames = participants
-      .filter((participant) => participant.id !== currentUserId)
-      .map(
-        (participant) =>
-          participant.name || `${participant.first_name ?? ''} ${participant.last_name ?? ''}`.trim()
-      )
-      .filter(Boolean)
+      const participants = thread.participants || []
+      const otherNames = participants
+        .filter((participant) => participant.id !== currentUserId)
+        .map(
+          (participant) =>
+            participant.name ||
+            `${participant.first_name ?? ''} ${participant.last_name ?? ''}`.trim()
+        )
+        .filter(Boolean)
 
-    return otherNames.join(', ') || `Thread #${thread.id}`
-  }
+      return otherNames.join(', ') || `Thread #${thread.id}`
+    },
+    [currentUserId]
+  )
 
   const formatTimestamp = (value) => {
     if (!value) return ''
@@ -65,10 +77,30 @@ export default function ChatWidget() {
 
   const refreshUnreadCounts = useCallback(async () => {
     const data = await messagingService.unreadCounts()
-    setUnreadTotal(data.total || 0)
+    const nextTotal = data.total || 0
+    setUnreadTotal(nextTotal)
 
     if (Array.isArray(data.threads)) {
       const lookup = new Map(data.threads.map((item) => [item.thread_id, item.unread_count]))
+      const previousLookup = unreadCountsRef.current
+
+      if (previousLookup.size > 0) {
+        lookup.forEach((count, threadId) => {
+          const previousCount = previousLookup.get(threadId) ?? 0
+          if (count > previousCount && (!isOpen || threadId !== selectedThreadId)) {
+            const thread = threads.find((item) => item.id === threadId)
+            const label = thread ? threadLabel(thread) : `Thread #${threadId}`
+            const delta = count - previousCount
+            addChatNotification({
+              title: 'New chat message',
+              body: `${label} has ${delta} new message${delta > 1 ? 's' : ''}.`,
+              threadId,
+            })
+          }
+        })
+      }
+
+      unreadCountsRef.current = lookup
       setThreads((prev) =>
         prev.map((thread) => ({
           ...thread,
@@ -76,7 +108,7 @@ export default function ChatWidget() {
         }))
       )
     }
-  }, [])
+  }, [addChatNotification, isOpen, selectedThreadId, threadLabel, threads])
 
   const loadMessages = useCallback(async (threadId) => {
     if (!threadId) {
@@ -147,6 +179,7 @@ export default function ChatWidget() {
         await refreshThreads()
         if (selectedThreadId) {
           await loadMessages(selectedThreadId)
+          await markRead(selectedThreadId)
         }
       }
     }, 15000)
@@ -164,6 +197,30 @@ export default function ChatWidget() {
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
+      {unreadNotifications.length ? (
+        <div className="mb-3 flex max-h-60 w-72 flex-col gap-2 overflow-y-auto">
+          {unreadNotifications.slice(0, 3).map((notification) => (
+            <button
+              key={notification.id}
+              type="button"
+              className="rounded-2xl border border-blue-100 bg-white px-3 py-2 text-left text-sm text-gray-700 shadow-lg transition hover:border-blue-200 hover:bg-blue-50"
+              onClick={async () => {
+                markChatNotificationRead(notification.id)
+                if (notification.threadId) {
+                  setIsOpen(true)
+                  setSelectedThreadId(notification.threadId)
+                  await loadMessages(notification.threadId)
+                  await markRead(notification.threadId)
+                  await refreshThreads()
+                }
+              }}
+            >
+              <p className="text-xs font-semibold text-blue-600">{notification.title}</p>
+              <p className="mt-1 text-xs text-gray-600">{notification.body}</p>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <button
         type="button"
         className="relative flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition hover:bg-blue-700"
@@ -180,6 +237,12 @@ export default function ChatWidget() {
         {unreadTotal > 0 ? (
           <span className="absolute -right-1 -top-1 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold">
             {unreadTotal}
+          </span>
+        ) : null}
+        {unreadNotifications.length ? (
+          <span className="absolute -left-1 -top-1 flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-blue-500" />
           </span>
         ) : null}
       </button>
