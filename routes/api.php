@@ -1784,9 +1784,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
-        $inventoryController = new \App\Services\Inventory\InventoryItemController($inventoryRepository, $gate);
+        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
+        $lowStockService = new \App\Services\Inventory\InventoryLowStockService($inventoryRepository, $stockOrderRepository);
+        $inventoryController = new \App\Services\Inventory\InventoryItemController($inventoryRepository, $gate, null, $lowStockService);
         $inventoryLookupService = new \App\Services\Inventory\InventoryLookupService($connection);
         $inventoryLookupController = new \App\Services\Inventory\InventoryLookupController($inventoryLookupService, $gate);
+        $stockOrderController = new \App\Services\Inventory\InventoryStockOrderController($stockOrderRepository, $gate);
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
@@ -1820,6 +1823,46 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ];
 
             $data = $inventoryController->lowStock($user, $params);
+
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/stock-orders', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'inventory_item_id' => $request->queryParam('inventory_item_id'),
+                'query' => $request->queryParam('query'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $stockOrderController->index($user, $params);
+
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/stock-orders/{id}', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $stockOrderController->show($user, $id);
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/stock-orders', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $data = $stockOrderController->store($user, $request->body());
+
+            return Response::created($data);
+        });
+
+        $router->put('/api/inventory/stock-orders/{id}', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $stockOrderController->update($user, $id, $request->body());
 
             return Response::json($data);
         });

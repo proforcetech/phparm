@@ -379,9 +379,14 @@ export default function AdminDashboard() {
                   <h3 className="text-lg font-medium text-gray-900">Inventory Alerts</h3>
                   <p className="text-sm text-gray-500">Low and out-of-stock items that need attention</p>
                 </div>
-                <Link to="/cp/inventory/alerts">
-                  <Button variant="outline">View alerts</Button>
-                </Link>
+                <div className="flex gap-2">
+                  <Link to="/cp/inventory/stock-orders">
+                    <Button variant="outline">Stock orders</Button>
+                  </Link>
+                  <Link to="/cp/inventory/alerts">
+                    <Button variant="outline">View alerts</Button>
+                  </Link>
+                </div>
               </div>
             }
           >
