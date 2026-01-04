@@ -284,6 +284,30 @@ return [
             'description' => 'SMS body template for estimate sharing.',
             'value' => 'Hi {customer}, your estimate #{estimate_number} for {total} is ready. View: {link} - {shop_name}',
         ],
+        'storage.notice.notice_of_claim' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for storage notice of claim PDFs.',
+            'value' => null,
+        ],
+        'storage.notice.lien_notice' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for storage lien notice PDFs.',
+            'value' => null,
+        ],
+        'storage.notice.tow_authorization' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for tow authorization forms.',
+            'value' => null,
+        ],
+        'storage.notice.lien_ack' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for lien acknowledgment forms.',
+            'value' => null,
+        ],
         'estimates.rejection_reasons' => [
             'group' => 'estimates',
             'type' => 'json',
