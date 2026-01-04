@@ -41,6 +41,10 @@ import InventoryLookupManager from '../views/inventory/InventoryLookupManager'
 import InventoryForm from '../views/inventory/InventoryForm'
 import InventoryAlerts from '../views/inventory/InventoryAlerts'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
+import ImpoundIntake from '../views/storage/ImpoundIntake'
+import StorageFeeLedger from '../views/storage/StorageFeeLedger'
+import NoticeGeneration from '../views/storage/NoticeGeneration'
+import ReleaseChecklist from '../views/storage/ReleaseChecklist'
 import FinancialEntries from '../views/financial/FinancialEntries'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
@@ -184,6 +188,10 @@ const protectedRoutes = [
   { path: '/cp/inventory/:id/edit', name: 'InventoryEdit', auth: 'requiresAuth', element: <InventoryForm /> },
   { path: '/cp/inventory/alerts', name: 'InventoryAlerts', auth: 'requiresAuth', element: <InventoryAlerts /> },
   { path: '/cp/inventory/pull-requests', name: 'InventoryPullRequests', auth: 'requiresAuth', element: <InventoryPullRequests /> },
+  { path: '/cp/storage/impound-intake', name: 'ImpoundIntake', auth: 'requiresAuth', element: <ImpoundIntake /> },
+  { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
+  { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },
+  { path: '/cp/storage/release-checklist', name: 'StorageReleaseChecklist', auth: 'requiresAuth', element: <ReleaseChecklist /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
   { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
