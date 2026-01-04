@@ -1175,6 +1175,29 @@ return Response::json([
         return Response::json($data);
     });
 
+    $partnerDispatchService = new \App\Services\Integrations\PartnerDispatchService(
+        $connection,
+        $auditLogger,
+        new \App\Services\Integrations\PartnerDispatchAdapterRegistry([
+            new \App\Services\Integrations\AaaPartnerDispatchAdapter(),
+            new \App\Services\Integrations\GeicoPartnerDispatchAdapter(),
+            new \App\Services\Integrations\AgeroPartnerDispatchAdapter(),
+        ]),
+        new \App\Services\Integrations\PartnerEmailParser()
+    );
+
+    $router->post('/api/integrations/partners/{partner}/dispatch', function (Request $request) use ($partnerDispatchService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $result = $partnerDispatchService->ingestApiDispatch($partner, $request->body());
+        $status = $result['status'] === 'failed' ? 422 : 201;
+
+        return Response::json($result, $status);
+    });
+
     // Initialize AccessGate for protected routes
     $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
 
