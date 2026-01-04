@@ -206,45 +206,54 @@ class PageController
     {
         $lookupSlug = $this->normalizedSlug($slug);
 
-        // Check if this is a nested URI (category/page)
-        $parts = explode('/', $lookupSlug);
+        try {
+            // Check if this is a nested URI (category/page)
+            $parts = explode('/', $lookupSlug);
 
-        if (count($parts) === 2) {
-            // Nested URI: /category-slug/page-slug
-            [$categorySlug, $pageSlug] = $parts;
+            if (count($parts) === 2) {
+                // Nested URI: /category-slug/page-slug
+                [$categorySlug, $pageSlug] = $parts;
 
-            $sql = 'SELECT p.* FROM cms_pages p '
-                . 'INNER JOIN cms_categories c ON p.category_id = c.id '
-                . 'WHERE p.slug = :page_slug AND c.slug = :category_slug '
-                . 'AND p.status = "published" AND c.status = "published" '
-                . 'AND (p.publish_start_at IS NULL OR p.publish_start_at <= NOW()) '
-                . 'AND (p.publish_end_at IS NULL OR p.publish_end_at >= NOW()) '
-                . 'ORDER BY p.published_at DESC LIMIT 1';
+                $sql = 'SELECT p.* FROM cms_pages p '
+                    . 'INNER JOIN cms_categories c ON p.category_id = c.id '
+                    . 'WHERE p.slug = :page_slug AND c.slug = :category_slug '
+                    . 'AND p.status = "published" AND c.status = "published" '
+                    . 'AND (p.publish_start_at IS NULL OR p.publish_start_at <= NOW()) '
+                    . 'AND (p.publish_end_at IS NULL OR p.publish_end_at >= NOW()) '
+                    . 'ORDER BY p.published_at DESC LIMIT 1';
 
-            $stmt = $this->connection->pdo()->prepare($sql);
-            $stmt->execute([
-                'page_slug' => $pageSlug,
-                'category_slug' => $categorySlug
-            ]);
-        } else {
-            // Base URI: /page-slug (pages without category or with category_id = NULL)
-            $sql = 'SELECT * FROM cms_pages WHERE slug = :slug AND status = "published" '
-                . 'AND category_id IS NULL '
-                . 'AND (publish_start_at IS NULL OR publish_start_at <= NOW()) '
-                . 'AND (publish_end_at IS NULL OR publish_end_at >= NOW()) '
-                . 'ORDER BY published_at DESC LIMIT 1';
+                $stmt = $this->connection->pdo()->prepare($sql);
+                $stmt->execute([
+                    'page_slug' => $pageSlug,
+                    'category_slug' => $categorySlug
+                ]);
+            } else {
+                // Base URI: /page-slug (pages without category or with category_id = NULL)
+                $sql = 'SELECT * FROM cms_pages WHERE slug = :slug AND status = "published" '
+                    . 'AND category_id IS NULL '
+                    . 'AND (publish_start_at IS NULL OR publish_start_at <= NOW()) '
+                    . 'AND (publish_end_at IS NULL OR publish_end_at >= NOW()) '
+                    . 'ORDER BY published_at DESC LIMIT 1';
 
-            $stmt = $this->connection->pdo()->prepare($sql);
-            $stmt->execute(['slug' => $lookupSlug]);
-        }
+                $stmt = $this->connection->pdo()->prepare($sql);
+                $stmt->execute(['slug' => $lookupSlug]);
+            }
 
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($row === false) {
+            if ($row === false) {
+                return null;
+            }
+
+            return $this->mapPage($row)->toArray();
+        } catch (\Throwable $exception) {
+            error_log(sprintf(
+                'CMS publishedPage lookup failed for slug "%s": %s',
+                $lookupSlug,
+                $exception->getMessage()
+            ));
             return null;
         }
-
-        return $this->mapPage($row)->toArray();
     }
 
     /**
