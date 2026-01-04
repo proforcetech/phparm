@@ -4005,6 +4005,15 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $gate
         );
         $notificationTests = new \App\Services\Settings\NotificationTestService($settingsRepository);
+        $notificationConfig = require __DIR__ . '/../config/notifications.php';
+        $templateEngine = new \App\Support\Notifications\TemplateEngine();
+        $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $notifications = new \App\Support\Notifications\NotificationDispatcher(
+            $notificationConfig,
+            $templateEngine,
+            $notificationLogs
+        );
+        $templateManager = new \App\Services\Notification\TemplateManager($connection, $notifications);
 
         $router->get('/api/settings', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
@@ -4092,6 +4101,45 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 error_log('Twilio test SMS failed: ' . $e->getMessage());
                 return Response::serverError('Failed to send test SMS.');
             }
+        });
+
+        $router->get('/api/notifications/templates', function () use ($templateManager) {
+            $templates = $templateManager->all();
+            return Response::json(['templates' => $templates]);
+        });
+
+        $router->put('/api/notifications/templates/{key}', function (Request $request) use ($templateManager) {
+            $key = (string) $request->getAttribute('key');
+            $payload = $request->body();
+            $subject = trim((string) ($payload['subject'] ?? ''));
+            $body = (string) ($payload['body'] ?? '');
+            $channel = (string) ($payload['channel'] ?? 'email');
+
+            if ($key === '' || $subject === '' || $body === '') {
+                return Response::badRequest('Template key, subject, and body are required.');
+            }
+
+            try {
+                $templateManager->save($key, [
+                    'subject' => $subject,
+                    'body' => $body,
+                    'channel' => $channel,
+                ]);
+            } catch (\InvalidArgumentException $e) {
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('Template update failed: ' . $e->getMessage());
+                return Response::serverError('Failed to update template.');
+            }
+
+            return Response::json([
+                'template' => [
+                    'template_key' => $key,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'channel' => $channel,
+                ],
+            ]);
         });
     });
 
