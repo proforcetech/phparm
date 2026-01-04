@@ -9,6 +9,7 @@ class Category extends BaseModel
     public int $id;
     public string $name;
     public string $slug;
+    public ?int $parent_id = null;
     public ?string $description = null;
     public string $status = 'published';
     public int $sort_order = 0;

@@ -89,8 +89,8 @@ class CategoryController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_categories (name, slug, description, status, sort_order, meta_title, meta_description, meta_keywords, created_at, updated_at) '
-            . 'VALUES (:name, :slug, :description, :status, :sort_order, :meta_title, :meta_description, :meta_keywords, NOW(), NOW())'
+            'INSERT INTO cms_categories (name, slug, parent_id, description, status, sort_order, meta_title, meta_description, meta_keywords, created_at, updated_at) '
+            . 'VALUES (:name, :slug, :parent_id, :description, :status, :sort_order, :meta_title, :meta_description, :meta_keywords, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -119,7 +119,7 @@ class CategoryController
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE cms_categories SET name = :name, slug = :slug, description = :description, status = :status, '
+            'UPDATE cms_categories SET name = :name, slug = :slug, parent_id = :parent_id, description = :description, status = :status, '
             . 'sort_order = :sort_order, meta_title = :meta_title, meta_description = :meta_description, '
             . 'meta_keywords = :meta_keywords, updated_at = NOW() '
             . 'WHERE id = :id'
@@ -198,6 +198,7 @@ class CategoryController
             'id' => (int) $row['id'],
             'name' => (string) $row['name'],
             'slug' => (string) $row['slug'],
+            'parent_id' => isset($row['parent_id']) ? (int) $row['parent_id'] : null,
             'description' => $row['description'] ?? null,
             'status' => (string) $row['status'],
             'sort_order' => (int) ($row['sort_order'] ?? 0),
@@ -222,6 +223,9 @@ class CategoryController
         return [
             'name' => (string) $name,
             'slug' => $this->slugify((string) $slugSource),
+            'parent_id' => array_key_exists('parent_id', $data)
+                ? ($data['parent_id'] !== null ? (int) $data['parent_id'] : null)
+                : $existing?->parent_id,
             'description' => $data['description'] ?? $existing?->description,
             'status' => (string) $status,
             'sort_order' => isset($data['sort_order']) ? (int) $data['sort_order'] : ($existing?->sort_order ?? 0),
