@@ -5212,4 +5212,159 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
             return Response::notFound('Redirect not found');
         });
     });
+
+    // Towing Pricing Matrix routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $towingPricingController = new \App\Services\Towing\TowingPricingController(
+            new \App\Services\Towing\TowingPricingService($connection),
+            $gate
+        );
+
+        // Service Classes
+        $router->get('/api/towing/service-classes', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $filters = ['active' => $request->queryParam('active')];
+            $data = $towingPricingController->listServiceClasses($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/towing/service-classes/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->showServiceClass($user, $id);
+            return $data ? Response::json($data) : Response::notFound('Service class not found');
+        });
+
+        $router->post('/api/towing/service-classes', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->storeServiceClass($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/towing/service-classes/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->updateServiceClass($user, $id, $request->body());
+            return $data ? Response::json($data) : Response::notFound('Service class not found');
+        });
+
+        $router->delete('/api/towing/service-classes/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $towingPricingController->destroyServiceClass($user, $id);
+            return Response::noContent();
+        });
+
+        // Service Types
+        $router->get('/api/towing/service-types', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $filters = ['active' => $request->queryParam('active')];
+            $data = $towingPricingController->listServiceTypes($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/towing/service-types/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->showServiceType($user, $id);
+            return $data ? Response::json($data) : Response::notFound('Service type not found');
+        });
+
+        $router->post('/api/towing/service-types', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->storeServiceType($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/towing/service-types/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->updateServiceType($user, $id, $request->body());
+            return $data ? Response::json($data) : Response::notFound('Service type not found');
+        });
+
+        $router->delete('/api/towing/service-types/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $towingPricingController->destroyServiceType($user, $id);
+            return Response::noContent();
+        });
+
+        // Price Matrix
+        $router->get('/api/towing/pricing-matrix', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'service_class_id' => $request->queryParam('service_class_id'),
+                'service_type_id' => $request->queryParam('service_type_id'),
+                'is_active' => $request->queryParam('is_active'),
+            ];
+            $data = $towingPricingController->listPriceMatrix($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/towing/pricing-matrix/full', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->getFullMatrix($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/towing/pricing-matrix/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->showPriceMatrix($user, $id);
+            return $data ? Response::json($data) : Response::notFound('Price matrix entry not found');
+        });
+
+        $router->post('/api/towing/pricing-matrix', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->storePriceMatrix($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/towing/pricing-matrix/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->updatePriceMatrix($user, $id, $request->body());
+            return $data ? Response::json($data) : Response::notFound('Price matrix entry not found');
+        });
+
+        $router->post('/api/towing/pricing-matrix/upsert', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->upsertPriceMatrix($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/towing/pricing-matrix/bulk', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $entries = $body['entries'] ?? [];
+            $data = $towingPricingController->bulkUpsertPriceMatrix($user, $entries);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->delete('/api/towing/pricing-matrix/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $towingPricingController->destroyPriceMatrix($user, $id);
+            return Response::noContent();
+        });
+
+        // Calculate price endpoint
+        $router->post('/api/towing/calculate-price', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $classId = (int) ($body['service_class_id'] ?? 0);
+            $typeId = (int) ($body['service_type_id'] ?? 0);
+            $params = [
+                'loaded_miles' => $body['loaded_miles'] ?? 0,
+                'deadhead_miles' => $body['deadhead_miles'] ?? 0,
+                'after_hours' => $body['after_hours'] ?? false,
+                'accident_cleanup' => $body['accident_cleanup'] ?? false,
+                'winch' => $body['winch'] ?? false,
+                'storage_days' => $body['storage_days'] ?? 0,
+            ];
+            $data = $towingPricingController->calculatePrice($user, $classId, $typeId, $params);
+            return Response::json($data);
+        });
+    });
 };
