@@ -4136,6 +4136,169 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/storage/fees', function (Request $request) use ($connection) {
+            $search = trim((string) $request->queryParam('search', ''));
+            $pdo = $connection->pdo();
+
+            $sql = <<<SQL
+                SELECT
+                    storage_fees.id,
+                    impound_cases.case_number,
+                    storage_fees.fee_date,
+                    storage_fees.fee_type,
+                    storage_fees.description,
+                    storage_fees.amount,
+                    storage_fees.status
+                FROM storage_fees
+                LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+            SQL;
+            $params = [];
+
+            if ($search !== '') {
+                $sql .= ' WHERE impound_cases.case_number LIKE :search';
+                $params['search'] = '%' . $search . '%';
+            }
+
+            $sql .= ' ORDER BY storage_fees.fee_date DESC, storage_fees.id DESC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $fees = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            return Response::json(['data' => $fees]);
+        });
+
+        $router->post('/api/storage/fees', function (Request $request) use ($connection) {
+            $payload = $request->body();
+            $caseNumber = trim((string) ($payload['case_number'] ?? ''));
+            $feeDate = trim((string) ($payload['fee_date'] ?? ''));
+            $feeType = trim((string) ($payload['fee_type'] ?? ''));
+            $amount = (float) ($payload['amount'] ?? 0);
+            $status = trim((string) ($payload['status'] ?? 'posted'));
+            $description = $payload['description'] ?? null;
+
+            if ($caseNumber === '' || $feeDate === '' || $feeType === '') {
+                return Response::badRequest('Case number, fee date, and fee type are required.');
+            }
+
+            $pdo = $connection->pdo();
+            $stmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+            $stmt->execute([$caseNumber]);
+            $caseId = $stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if (!$caseId) {
+                return Response::badRequest('Impound case not found.');
+            }
+
+            $insert = $pdo->prepare(
+                'INSERT INTO storage_fees (impound_case_id, fee_date, fee_type, description, amount, status)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $insert->execute([$caseId, $feeDate, $feeType, $description, $amount, $status]);
+            $insert->closeCursor();
+
+            $id = (int) $pdo->lastInsertId();
+            $row = $pdo->prepare(
+                'SELECT storage_fees.id, impound_cases.case_number, storage_fees.fee_date, storage_fees.fee_type,
+                        storage_fees.description, storage_fees.amount, storage_fees.status
+                 FROM storage_fees
+                 LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+                 WHERE storage_fees.id = ?'
+            );
+            $row->execute([$id]);
+            $fee = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            return Response::created($fee);
+        });
+
+        $router->put('/api/storage/fees/{id}', function (Request $request) use ($connection) {
+            $id = (int) $request->getAttribute('id');
+            $payload = $request->body();
+            $pdo = $connection->pdo();
+
+            $stmt = $pdo->prepare(
+                'SELECT storage_fees.id, storage_fees.impound_case_id, impound_cases.case_number,
+                        storage_fees.fee_date, storage_fees.fee_type, storage_fees.description,
+                        storage_fees.amount, storage_fees.status
+                 FROM storage_fees
+                 LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+                 WHERE storage_fees.id = ?'
+            );
+            $stmt->execute([$id]);
+            $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            if (!$existing) {
+                return Response::notFound('Storage fee not found.');
+            }
+
+            $caseNumber = trim((string) ($payload['case_number'] ?? $existing['case_number'] ?? ''));
+            if ($caseNumber === '') {
+                return Response::badRequest('Case number is required.');
+            }
+
+            $caseId = (int) $existing['impound_case_id'];
+            if ($caseNumber !== ($existing['case_number'] ?? '')) {
+                $caseStmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+                $caseStmt->execute([$caseNumber]);
+                $caseId = (int) $caseStmt->fetchColumn();
+                $caseStmt->closeCursor();
+
+                if (!$caseId) {
+                    return Response::badRequest('Impound case not found.');
+                }
+            }
+
+            $feeDate = trim((string) ($payload['fee_date'] ?? $existing['fee_date'] ?? ''));
+            $feeType = trim((string) ($payload['fee_type'] ?? $existing['fee_type'] ?? ''));
+            $description = $payload['description'] ?? $existing['description'];
+            $amount = array_key_exists('amount', $payload) ? (float) $payload['amount'] : (float) $existing['amount'];
+            $status = trim((string) ($payload['status'] ?? $existing['status'] ?? 'posted'));
+
+            if ($feeDate === '' || $feeType === '') {
+                return Response::badRequest('Fee date and fee type are required.');
+            }
+
+            $update = $pdo->prepare(
+                'UPDATE storage_fees
+                 SET impound_case_id = ?, fee_date = ?, fee_type = ?, description = ?, amount = ?, status = ?
+                 WHERE id = ?'
+            );
+            $update->execute([$caseId, $feeDate, $feeType, $description, $amount, $status, $id]);
+            $update->closeCursor();
+
+            $row = $pdo->prepare(
+                'SELECT storage_fees.id, impound_cases.case_number, storage_fees.fee_date, storage_fees.fee_type,
+                        storage_fees.description, storage_fees.amount, storage_fees.status
+                 FROM storage_fees
+                 LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+                 WHERE storage_fees.id = ?'
+            );
+            $row->execute([$id]);
+            $fee = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            return Response::json($fee);
+        });
+
+        $router->delete('/api/storage/fees/{id}', function (Request $request) use ($connection) {
+            $id = (int) $request->getAttribute('id');
+            $pdo = $connection->pdo();
+            $stmt = $pdo->prepare('DELETE FROM storage_fees WHERE id = ?');
+            $stmt->execute([$id]);
+            $deleted = $stmt->rowCount() > 0;
+            $stmt->closeCursor();
+
+            if (!$deleted) {
+                return Response::notFound('Storage fee not found.');
+            }
+
+            return Response::noContent();
+        });
+
         $router->post('/api/storage/templates/preview', function (Request $request) use ($settingsRepository) {
             $payload = $request->body();
             $templateKey = (string) ($payload['template_key'] ?? '');
