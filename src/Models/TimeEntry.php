@@ -14,6 +14,9 @@ class TimeEntry extends BaseModel
     public ?int $reviewed_by = null;
     public ?string $reviewed_at = null;
     public ?string $review_notes = null;
+    public ?string $en_route_at = null;
+    public ?string $on_site_at = null;
+    public ?string $wrap_up_at = null;
     public ?float $start_latitude = null;
     public ?float $start_longitude = null;
     public ?float $start_accuracy = null;
