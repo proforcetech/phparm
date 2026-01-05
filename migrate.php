@@ -89,9 +89,15 @@ try {
         
         try {
             $sql = file_get_contents($file);
+            if ($sql === false) {
+                throw new RuntimeException("Unable to read migration file: {$migrationName}");
+            }
             
             // Split by semicolons but not inside quotes
             $statements = preg_split('/;(?=(?:[^\'"]|[\'"][^\'"]*[\'"])*$)/', $sql, -1, PREG_SPLIT_NO_EMPTY);
+            if ($statements === false) {
+                throw new RuntimeException("Unable to parse migration file: {$migrationName}");
+            }
             
             foreach ($statements as $statement) {
                 $statement = trim($statement);

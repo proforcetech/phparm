@@ -167,6 +167,14 @@ export default function Login() {
           throw new Error('reCAPTCHA is not configured')
         }
 
+        if (recaptchaLoadError) {
+          throw new Error('Unable to load reCAPTCHA. Please refresh and try again.')
+        }
+
+        if (!recaptchaReady) {
+          throw new Error('reCAPTCHA is still loading. Please wait a moment and try again.')
+        }
+
         if (recaptchaReady) {
           const grecaptcha = await loadRecaptcha()
 
@@ -179,8 +187,6 @@ export default function Login() {
           if (!token) {
             throw new Error('Failed to verify reCAPTCHA. Please try again.')
           }
-        } else if (!recaptchaLoadError) {
-          throw new Error('reCAPTCHA is still loading. Please wait a moment and try again.')
         }
       }
 
