@@ -9,15 +9,27 @@ use PDO;
 
 class DispatchRecommendationService
 {
-    private const DISTANCE_WEIGHT = 0.45;
-    private const EQUIPMENT_WEIGHT = 0.35;
-    private const SHIFT_WEIGHT = 0.20;
+    private const DISTANCE_WEIGHT = 0.35;
+    private const EQUIPMENT_WEIGHT = 0.25;
+    private const SHIFT_WEIGHT = 0.15;
+    private const ETA_WEIGHT = 0.15;
+    private const PERFORMANCE_WEIGHT = 0.10;
 
     private Connection $connection;
+    private ?TrafficAwareEtaService $etaService;
+    private bool $useRealTimeEta;
+    private bool $enforceHardFilters;
 
-    public function __construct(Connection $connection)
-    {
+    public function __construct(
+        Connection $connection,
+        ?TrafficAwareEtaService $etaService = null,
+        bool $useRealTimeEta = true,
+        bool $enforceHardFilters = true
+    ) {
         $this->connection = $connection;
+        $this->etaService = $etaService;
+        $this->useRealTimeEta = $useRealTimeEta;
+        $this->enforceHardFilters = $enforceHardFilters;
     }
 
     /**
@@ -38,54 +50,150 @@ class DispatchRecommendationService
 
         $requirement = $requirement ?? $this->normalizeRequirement($criteria);
         $referenceTime = $this->resolveReferenceTime($requirement['scheduled_start'] ?? null);
+        $jobCategory = $requirement['job_category'] ?? null;
 
         $drivers = $this->fetchDrivers();
         $equipmentByDriver = $this->fetchEquipmentByDriver();
         $shiftsByDriver = $this->fetchShiftsByDriver($referenceTime);
+        $performanceByDriver = $this->fetchPerformanceMetrics();
+        $certificationsByDriver = $this->fetchVerifiedCertifications();
+        $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
 
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
+        $excludedDrivers = [];
 
         foreach ($drivers as $driver) {
-            $certifications = $driver['certifications'] ?? [];
-            $missingCertifications = array_values(array_diff($requiredCertifications, $certifications));
+            $driverId = $driver['id'];
+            $exclusionReasons = [];
+
+            // Check certifications (from both profile and certification table)
+            $profileCertifications = $driver['certifications'] ?? [];
+            $verifiedCertifications = $certificationsByDriver[$driverId] ?? [];
+            $allCertifications = array_unique(array_merge($profileCertifications, $verifiedCertifications));
+
+            $missingCertifications = array_values(array_diff($requiredCertifications, $allCertifications));
             if (!empty($requiredCertifications) && !empty($missingCertifications)) {
+                $exclusionReasons[] = 'missing_certifications';
+                if ($this->enforceHardFilters) {
+                    $excludedDrivers[] = [
+                        'driver_profile_id' => $driverId,
+                        'reason' => 'missing_certifications',
+                        'details' => $missingCertifications,
+                    ];
+                    continue;
+                }
+            }
+
+            // Check equipment compatibility (hard filter)
+            $equipmentOptions = $equipmentByDriver[$driverId] ?? [];
+            $equipmentResult = $this->scoreEquipment($equipmentOptions, $requirement, $equipmentCompatibility);
+
+            if ($this->enforceHardFilters && !empty($equipmentCompatibility) && $equipmentResult['is_compatible'] === false) {
+                $excludedDrivers[] = [
+                    'driver_profile_id' => $driverId,
+                    'reason' => 'equipment_incompatible',
+                    'details' => ['required' => $requirement['required_equipment_class'], 'available' => $equipmentResult['equipment']],
+                ];
                 continue;
             }
 
-            $equipmentOptions = $equipmentByDriver[$driver['id']] ?? [];
-            $equipmentResult = $this->scoreEquipment($equipmentOptions, $requirement);
+            // Get driver's current location (real-time or base)
+            $driverLocation = $this->getDriverLocation($driver);
+
+            // Calculate distance
             $distanceKm = $this->calculateDistanceKm(
-                $driver['base_latitude'],
-                $driver['base_longitude'],
+                $driverLocation['latitude'],
+                $driverLocation['longitude'],
                 $requirement['pickup_latitude'] ?? null,
                 $requirement['pickup_longitude'] ?? null
             );
             $distanceScore = $this->scoreDistance($distanceKm);
 
-            $shift = $shiftsByDriver[$driver['id']] ?? null;
+            // Calculate ETA with traffic
+            $etaData = $this->calculateEtaWithTraffic(
+                $driverLocation,
+                $requirement['pickup_latitude'] ?? null,
+                $requirement['pickup_longitude'] ?? null,
+                $driverId
+            );
+            $etaScore = $this->scoreEta($etaData['eta_minutes']);
+
+            // Calculate shift hours remaining
+            $shift = $shiftsByDriver[$driverId] ?? null;
             $remainingHours = $this->calculateRemainingShiftHours($shift, $referenceTime);
             $shiftScore = $this->scoreShiftHours($remainingHours, $requirement['estimated_duration_hours'] ?? null);
 
-            $overall = $this->weightedScore($distanceScore, $equipmentResult['score'], $shiftScore);
+            // Get performance metrics
+            $performance = $performanceByDriver[$driverId] ?? null;
+            $performanceScore = $this->scorePerformance($performance);
+
+            // Calculate heading score if available
+            $headingScore = null;
+            if ($this->etaService !== null && $driverLocation['heading'] !== null) {
+                $headingScore = $this->etaService->calculateHeadingScore(
+                    $driverLocation['latitude'],
+                    $driverLocation['longitude'],
+                    $driverLocation['heading'],
+                    $requirement['pickup_latitude'] ?? 0,
+                    $requirement['pickup_longitude'] ?? 0
+                );
+            }
+
+            // Calculate overall weighted score
+            $overall = $this->weightedScore(
+                $distanceScore,
+                $equipmentResult['score'],
+                $shiftScore,
+                $etaScore,
+                $performanceScore
+            );
+
+            // Build recommendation justification
+            $justification = $this->buildJustification(
+                $distanceKm,
+                $etaData,
+                $equipmentResult,
+                $remainingHours,
+                $performance,
+                $headingScore
+            );
 
             $suggestions[] = [
-                'driver_profile_id' => $driver['id'],
+                'driver_profile_id' => $driverId,
                 'driver_user_id' => $driver['user_id'],
                 'driver_name' => $driver['name'],
                 'driver_email' => $driver['email'],
                 'availability_status' => $driver['availability_status'],
                 'distance_km' => $distanceKm,
+                'eta_minutes' => $etaData['eta_minutes'],
+                'traffic_factor' => $etaData['traffic_factor'],
                 'equipment' => $equipmentResult['equipment'],
+                'equipment_compatible' => $equipmentResult['is_compatible'],
                 'remaining_shift_hours' => $remainingHours,
+                'current_location' => $driverLocation['is_realtime'] ? [
+                    'latitude' => $driverLocation['latitude'],
+                    'longitude' => $driverLocation['longitude'],
+                    'heading' => $driverLocation['heading'],
+                ] : null,
+                'performance' => $performance !== null ? [
+                    'jobs_completed_today' => $performance['jobs_completed'],
+                    'avg_rating' => $performance['avg_customer_rating'],
+                    'on_time_rate' => $performance['on_time_rate'],
+                ] : null,
                 'scores' => [
                     'distance' => $distanceScore,
                     'equipment' => $equipmentResult['score'],
                     'shift' => $shiftScore,
+                    'eta' => $etaScore,
+                    'performance' => $performanceScore,
+                    'heading' => $headingScore,
                     'overall' => $overall,
                 ],
+                'justification' => $justification,
                 'certification_match' => empty($missingCertifications),
                 'missing_certifications' => $missingCertifications,
+                'certifications' => $allCertifications,
             ];
         }
 
@@ -97,7 +205,287 @@ class DispatchRecommendationService
         return [
             'requirement' => $requirement,
             'data' => array_slice($suggestions, 0, max(1, $limit)),
+            'excluded_drivers' => $excludedDrivers,
+            'total_available' => count($suggestions),
+            'scoring_weights' => [
+                'distance' => self::DISTANCE_WEIGHT,
+                'equipment' => self::EQUIPMENT_WEIGHT,
+                'shift' => self::SHIFT_WEIGHT,
+                'eta' => self::ETA_WEIGHT,
+                'performance' => self::PERFORMANCE_WEIGHT,
+            ],
         ];
+    }
+
+    /**
+     * Build human-readable justification for recommendation.
+     */
+    private function buildJustification(
+        ?float $distanceKm,
+        array $etaData,
+        array $equipmentResult,
+        float $remainingHours,
+        ?array $performance,
+        ?float $headingScore
+    ): array {
+        $reasons = [];
+
+        // Distance/ETA justification
+        if ($etaData['eta_minutes'] !== null && $etaData['eta_minutes'] <= 15) {
+            $reasons[] = [
+                'type' => 'eta',
+                'priority' => 'high',
+                'text' => sprintf('Estimated arrival in %d minutes', $etaData['eta_minutes']),
+            ];
+        } elseif ($distanceKm !== null && $distanceKm <= 5) {
+            $reasons[] = [
+                'type' => 'distance',
+                'priority' => 'high',
+                'text' => sprintf('Only %.1f km away', $distanceKm),
+            ];
+        }
+
+        // Traffic consideration
+        if ($etaData['traffic_factor'] > 1.3) {
+            $reasons[] = [
+                'type' => 'traffic',
+                'priority' => 'info',
+                'text' => 'Heavy traffic on route (factored into ETA)',
+            ];
+        } elseif ($etaData['traffic_factor'] < 1.1 && $etaData['source'] !== 'estimated') {
+            $reasons[] = [
+                'type' => 'traffic',
+                'priority' => 'positive',
+                'text' => 'Light traffic conditions',
+            ];
+        }
+
+        // Heading alignment
+        if ($headingScore !== null && $headingScore > 0.8) {
+            $reasons[] = [
+                'type' => 'heading',
+                'priority' => 'positive',
+                'text' => 'Already heading toward job site',
+            ];
+        }
+
+        // Equipment match
+        if ($equipmentResult['score'] >= 1.0) {
+            $reasons[] = [
+                'type' => 'equipment',
+                'priority' => 'positive',
+                'text' => 'Perfect equipment match',
+            ];
+        }
+
+        // Performance metrics
+        if ($performance !== null) {
+            if ($performance['avg_customer_rating'] !== null && $performance['avg_customer_rating'] >= 4.5) {
+                $reasons[] = [
+                    'type' => 'rating',
+                    'priority' => 'positive',
+                    'text' => sprintf('%.1f star customer rating', $performance['avg_customer_rating']),
+                ];
+            }
+            if ($performance['on_time_rate'] !== null && $performance['on_time_rate'] >= 0.95) {
+                $reasons[] = [
+                    'type' => 'reliability',
+                    'priority' => 'positive',
+                    'text' => sprintf('%d%% on-time arrival rate', (int)($performance['on_time_rate'] * 100)),
+                ];
+            }
+            if ($performance['jobs_completed'] >= 3) {
+                $reasons[] = [
+                    'type' => 'experience',
+                    'priority' => 'info',
+                    'text' => sprintf('Completed %d jobs today', $performance['jobs_completed']),
+                ];
+            }
+        }
+
+        // Shift hours
+        if ($remainingHours >= 4) {
+            $reasons[] = [
+                'type' => 'availability',
+                'priority' => 'positive',
+                'text' => sprintf('%.1f hours remaining in shift', $remainingHours),
+            ];
+        } elseif ($remainingHours < 2 && $remainingHours > 0) {
+            $reasons[] = [
+                'type' => 'availability',
+                'priority' => 'warning',
+                'text' => sprintf('Only %.1f hours left in shift', $remainingHours),
+            ];
+        }
+
+        return $reasons;
+    }
+
+    /**
+     * Get driver's best available location (real-time or base).
+     */
+    private function getDriverLocation(array $driver): array
+    {
+        if ($this->etaService !== null && $this->useRealTimeEta) {
+            $realtime = $this->etaService->getDriverCurrentLocation((int)$driver['id']);
+            if ($realtime !== null) {
+                return [
+                    'latitude' => $realtime['latitude'],
+                    'longitude' => $realtime['longitude'],
+                    'heading' => $realtime['heading'],
+                    'speed' => $realtime['speed'],
+                    'is_realtime' => true,
+                ];
+            }
+        }
+
+        return [
+            'latitude' => $driver['base_latitude'],
+            'longitude' => $driver['base_longitude'],
+            'heading' => null,
+            'speed' => null,
+            'is_realtime' => false,
+        ];
+    }
+
+    /**
+     * Calculate ETA with traffic awareness.
+     */
+    private function calculateEtaWithTraffic(array $location, ?float $destLat, ?float $destLng, int $driverId): array
+    {
+        if ($destLat === null || $destLng === null || $location['latitude'] === null) {
+            return ['eta_minutes' => null, 'traffic_factor' => 1.0, 'source' => 'unavailable'];
+        }
+
+        if ($this->etaService !== null && $this->useRealTimeEta) {
+            return $this->etaService->calculateEta(
+                $location['latitude'],
+                $location['longitude'],
+                $destLat,
+                $destLng,
+                $driverId
+            );
+        }
+
+        // Fallback estimation
+        $distance = $this->calculateDistanceKm($location['latitude'], $location['longitude'], $destLat, $destLng);
+        $etaMinutes = $distance !== null ? (int)ceil(($distance / 40) * 60) : null;
+
+        return [
+            'eta_minutes' => $etaMinutes,
+            'distance_km' => $distance,
+            'traffic_factor' => 1.0,
+            'source' => 'estimated',
+        ];
+    }
+
+    /**
+     * Score ETA (lower is better).
+     */
+    private function scoreEta(?int $etaMinutes): float
+    {
+        if ($etaMinutes === null) {
+            return 0.5;
+        }
+
+        // Under 10 min = excellent, 30 min = acceptable, over 60 min = poor
+        return round(max(0, 1 - ($etaMinutes / 60)), 4);
+    }
+
+    /**
+     * Score driver performance metrics.
+     */
+    private function scorePerformance(?array $performance): float
+    {
+        if ($performance === null) {
+            return 0.5;
+        }
+
+        $ratingScore = $performance['avg_customer_rating'] !== null
+            ? min(1.0, $performance['avg_customer_rating'] / 5.0)
+            : 0.5;
+
+        $onTimeScore = $performance['on_time_rate'] ?? 0.5;
+        $acceptanceScore = $performance['acceptance_rate'] ?? 0.5;
+
+        return round(($ratingScore * 0.5) + ($onTimeScore * 0.3) + ($acceptanceScore * 0.2), 4);
+    }
+
+    /**
+     * Fetch verified certifications from driver_certifications table.
+     */
+    private function fetchVerifiedCertifications(): array
+    {
+        $stmt = $this->connection->pdo()->query(
+            'SELECT driver_profile_id, certification_code
+             FROM driver_certifications
+             WHERE status = \'active\'
+             AND (expiry_date IS NULL OR expiry_date > CURDATE())'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byDriver = [];
+        foreach ($rows as $row) {
+            $driverId = (int)$row['driver_profile_id'];
+            $byDriver[$driverId][] = $row['certification_code'];
+        }
+
+        return $byDriver;
+    }
+
+    /**
+     * Fetch driver performance metrics.
+     */
+    private function fetchPerformanceMetrics(): array
+    {
+        $stmt = $this->connection->pdo()->query(
+            'SELECT driver_profile_id, jobs_completed, jobs_accepted, jobs_declined,
+                    avg_customer_rating, on_time_arrivals, late_arrivals
+             FROM driver_performance_metrics
+             WHERE metric_date = CURDATE()'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byDriver = [];
+        foreach ($rows as $row) {
+            $driverId = (int)$row['driver_profile_id'];
+            $totalArrivals = ((int)$row['on_time_arrivals'] + (int)$row['late_arrivals']);
+            $totalOffers = ((int)$row['jobs_accepted'] + (int)$row['jobs_declined']);
+
+            $byDriver[$driverId] = [
+                'jobs_completed' => (int)$row['jobs_completed'],
+                'avg_customer_rating' => $row['avg_customer_rating'] !== null ? (float)$row['avg_customer_rating'] : null,
+                'on_time_rate' => $totalArrivals > 0 ? (int)$row['on_time_arrivals'] / $totalArrivals : null,
+                'acceptance_rate' => $totalOffers > 0 ? (int)$row['jobs_accepted'] / $totalOffers : null,
+            ];
+        }
+
+        return $byDriver;
+    }
+
+    /**
+     * Fetch equipment compatibility rules for a job category.
+     */
+    private function fetchEquipmentCompatibility(string $jobCategory): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT equipment_class, is_compatible, min_capacity, required_certifications
+             FROM equipment_job_requirements
+             WHERE job_category = :category'
+        );
+        $stmt->execute(['category' => $jobCategory]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $compatibility = [];
+        foreach ($rows as $row) {
+            $compatibility[$row['equipment_class']] = [
+                'is_compatible' => (bool)$row['is_compatible'],
+                'min_capacity' => $row['min_capacity'] !== null ? (float)$row['min_capacity'] : null,
+                'required_certifications' => $this->decodeJsonArray($row['required_certifications']),
+            ];
+        }
+
+        return $compatibility;
     }
 
     private function fetchDrivers(): array
@@ -228,7 +616,7 @@ class DispatchRecommendationService
         return [$value];
     }
 
-    private function scoreEquipment(array $equipmentOptions, array $requirement): array
+    private function scoreEquipment(array $equipmentOptions, array $requirement, array $compatibilityRules = []): array
     {
         $requiredClass = $requirement['required_equipment_class'] ?? null;
         $requiredCapacity = $requirement['required_capacity'] ?? null;
@@ -238,10 +626,27 @@ class DispatchRecommendationService
             'equipment_class' => null,
             'capacity' => null,
         ];
+        $isCompatible = true;
 
         foreach ($equipmentOptions as $equipment) {
-            $classMatch = $requiredClass ? ($equipment['equipment_class'] === $requiredClass ? 1.0 : 0.0) : 1.0;
+            $classMatch = 1.0;
             $capacityScore = 1.0;
+            $equipmentIsCompatible = true;
+
+            // Check against compatibility rules if available
+            if (!empty($compatibilityRules) && isset($compatibilityRules[$equipment['equipment_class']])) {
+                $rule = $compatibilityRules[$equipment['equipment_class']];
+                if (!$rule['is_compatible']) {
+                    $equipmentIsCompatible = false;
+                    $classMatch = 0.0;
+                }
+                if ($rule['min_capacity'] !== null && ($equipment['capacity'] ?? 0) < $rule['min_capacity']) {
+                    $equipmentIsCompatible = false;
+                    $capacityScore = 0.0;
+                }
+            } elseif ($requiredClass !== null) {
+                $classMatch = $equipment['equipment_class'] === $requiredClass ? 1.0 : 0.0;
+            }
 
             if ($requiredCapacity !== null) {
                 if ($equipment['capacity'] === null || $equipment['capacity'] <= 0) {
@@ -255,11 +660,13 @@ class DispatchRecommendationService
             if ($score > $bestScore) {
                 $bestScore = $score;
                 $bestEquipment = $equipment;
+                $isCompatible = $equipmentIsCompatible;
             }
         }
 
         if (empty($equipmentOptions) && ($requiredClass !== null || $requiredCapacity !== null)) {
             $bestScore = 0.0;
+            $isCompatible = false;
         } elseif (empty($equipmentOptions)) {
             $bestScore = 0.5;
         }
@@ -267,6 +674,7 @@ class DispatchRecommendationService
         return [
             'score' => $bestScore,
             'equipment' => $bestEquipment,
+            'is_compatible' => $isCompatible,
         ];
     }
 
@@ -329,12 +737,19 @@ class DispatchRecommendationService
         return round(min(1.0, $remainingHours / $targetHours), 4);
     }
 
-    private function weightedScore(float $distanceScore, float $equipmentScore, float $shiftScore): float
-    {
+    private function weightedScore(
+        float $distanceScore,
+        float $equipmentScore,
+        float $shiftScore,
+        float $etaScore = 0.5,
+        float $performanceScore = 0.5
+    ): float {
         return round(
             ($distanceScore * self::DISTANCE_WEIGHT)
             + ($equipmentScore * self::EQUIPMENT_WEIGHT)
-            + ($shiftScore * self::SHIFT_WEIGHT),
+            + ($shiftScore * self::SHIFT_WEIGHT)
+            + ($etaScore * self::ETA_WEIGHT)
+            + ($performanceScore * self::PERFORMANCE_WEIGHT),
             4
         );
     }
