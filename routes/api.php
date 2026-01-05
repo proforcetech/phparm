@@ -3624,8 +3624,339 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->post('/api/dispatch/job-offers/{id}/decline', function (Request $request) use ($driverDispatchController) {
             $user = $request->getAttribute('user');
             $offerId = (int) $request->getAttribute('id');
-            $data = $driverDispatchController->declineOffer($user, $offerId);
+            $body = $request->body();
+            $data = $driverDispatchController->declineOffer(
+                $user,
+                $offerId,
+                $body['rejection_reason'] ?? null,
+                $body['rejection_notes'] ?? null
+            );
             return Response::json($data);
+        });
+    });
+
+    // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $etaConfig = require __DIR__ . '/../config/dispatch.php';
+        $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
+        $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
+        $offerService = new \App\Services\Dispatch\DriverJobOfferService($connection);
+        $waterfallService = new \App\Services\Dispatch\WaterfallDispatchService($connection, $recommendationService, $offerService);
+        $geofencingService = new \App\Services\Dispatch\GeofencingService($connection);
+        $auditService = new \App\Services\Dispatch\DispatchAuditService($connection);
+
+        // Waterfall Dispatch Routes
+        $router->post('/api/dispatch/waterfall', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.initiate')) {
+                return Response::forbidden('Permission denied');
+            }
+            $data = $waterfallService->initiateWaterfall($request->body(), $user->id);
+            return Response::created($data);
+        });
+
+        $router->get('/api/dispatch/waterfall', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $data = $waterfallService->listActiveSequences();
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/dispatch/waterfall/{reference}', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $reference = (string) $request->getAttribute('reference');
+            $data = $waterfallService->getSequenceStatus($reference);
+            if ($data === null) {
+                return Response::notFound('Waterfall sequence not found');
+            }
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/waterfall/{id}/cancel', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.cancel')) {
+                return Response::forbidden('Permission denied');
+            }
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $data = $waterfallService->cancelSequence($id, $user->id, $body['reason'] ?? null);
+            return Response::json($data);
+        });
+
+        // Driver Location Routes
+        $router->post('/api/driver/location', function (Request $request) use ($etaService, $connection) {
+            $user = $request->getAttribute('user');
+            $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                ->resolveDriverProfile($user);
+            if ($driverProfile === null) {
+                return Response::forbidden('Driver profile not found');
+            }
+            $body = $request->body();
+            $id = $etaService->recordDriverLocation($driverProfile['id'], [
+                'latitude' => $body['latitude'],
+                'longitude' => $body['longitude'],
+                'accuracy' => $body['accuracy'] ?? null,
+                'altitude' => $body['altitude'] ?? null,
+                'speed' => $body['speed'] ?? null,
+                'heading' => $body['heading'] ?? null,
+                'source' => $body['source'] ?? 'gps',
+            ]);
+            return Response::created(['id' => $id]);
+        });
+
+        $router->get('/api/driver/location/current', function (Request $request) use ($etaService, $connection) {
+            $user = $request->getAttribute('user');
+            $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                ->resolveDriverProfile($user);
+            if ($driverProfile === null) {
+                return Response::forbidden('Driver profile not found');
+            }
+            $location = $etaService->getDriverCurrentLocation($driverProfile['id']);
+            return Response::json(['data' => $location]);
+        });
+
+        // Geofencing Routes
+        $router->post('/api/dispatch/geofences', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.geofences.create')) {
+                return Response::forbidden('Permission denied');
+            }
+            $body = $request->body();
+            $data = $geofencingService->createJobGeofence(
+                $body['job_reference'],
+                $body['job_type'] ?? 'workorder',
+                (float) $body['latitude'],
+                (float) $body['longitude'],
+                (int) ($body['radius_meters'] ?? 200),
+                $body['enter_action'] ?? 'mark_arrived',
+                $body['exit_action'] ?? null
+            );
+            return Response::created($data);
+        });
+
+        $router->get('/api/dispatch/geofences/{id}/check', function (Request $request) use ($geofencingService, $connection) {
+            $user = $request->getAttribute('user');
+            $geofenceId = (int) $request->getAttribute('id');
+            $driverProfileId = $request->queryParam('driver_profile_id');
+
+            if ($driverProfileId === null) {
+                $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                    ->resolveDriverProfile($user);
+                $driverProfileId = $driverProfile ? $driverProfile['id'] : null;
+            }
+
+            if ($driverProfileId === null) {
+                return Response::badRequest('Driver profile ID required');
+            }
+
+            $data = $geofencingService->isDriverInGeofence((int) $driverProfileId, $geofenceId);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->delete('/api/dispatch/geofences/{id}', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.geofences.delete')) {
+                return Response::forbidden('Permission denied');
+            }
+            $id = (int) $request->getAttribute('id');
+            $geofencingService->deactivateGeofence($id);
+            return Response::noContent();
+        });
+
+        // Idle Alerts Routes
+        $router->get('/api/dispatch/idle-alerts', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.alerts.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $data = $geofencingService->getActiveIdleAlerts();
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/dispatch/idle-alerts/{id}/acknowledge', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.alerts.acknowledge')) {
+                return Response::forbidden('Permission denied');
+            }
+            $alertId = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $data = $geofencingService->acknowledgeIdleAlert($alertId, $user->id, $body['notes'] ?? null);
+            return Response::json($data);
+        });
+
+        // Rejection Reasons Routes
+        $router->get('/api/dispatch/rejection-reasons', function (Request $request) use ($auditService) {
+            $data = $auditService->getRejectionReasons();
+            return Response::json(['data' => $data]);
+        });
+
+        // Audit/Analytics Routes
+        $router->get('/api/dispatch/analytics/rejections', function (Request $request) use ($auditService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.analytics.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $daysBack = (int) ($request->queryParam('days') ?? 30);
+            $data = $auditService->analyzeRejectionPatterns($daysBack);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/dispatch/audit/{jobReference}', function (Request $request) use ($auditService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.audit.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $eventType = $request->queryParam('event_type');
+            $data = $auditService->getEventsForJob($jobReference, $eventType);
+            return Response::json(['data' => $data]);
+        });
+
+        // Job Density Heatmap Data
+        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.heatmap.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $date = $request->queryParam('date') ?? date('Y-m-d');
+            $hour = $request->queryParam('hour');
+
+            $sql = 'SELECT grid_lat, grid_lng, job_count, snapshot_hour
+                    FROM job_density_snapshots
+                    WHERE snapshot_date = :date';
+            $params = ['date' => $date];
+
+            if ($hour !== null) {
+                $sql .= ' AND snapshot_hour = :hour';
+                $params['hour'] = (int) $hour;
+            }
+
+            $stmt = $connection->pdo()->prepare($sql);
+            $stmt->execute($params);
+            $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json(['data' => $data, 'date' => $date]);
+        });
+
+        // Driver Certifications Routes
+        $router->get('/api/driver/certifications', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                ->resolveDriverProfile($user);
+            if ($driverProfile === null) {
+                return Response::forbidden('Driver profile not found');
+            }
+
+            $stmt = $connection->pdo()->prepare(
+                'SELECT * FROM driver_certifications WHERE driver_profile_id = :id ORDER BY certification_name'
+            );
+            $stmt->execute(['id' => $driverProfile['id']]);
+            $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $driverProfileId = $body['driver_profile_id'] ?? null;
+
+            // Allow self-submission or admin submission
+            if ($driverProfileId === null) {
+                $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                    ->resolveDriverProfile($user);
+                $driverProfileId = $driverProfile ? $driverProfile['id'] : null;
+            } elseif (!$gate->can($user, 'dispatch.certifications.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            if ($driverProfileId === null) {
+                return Response::badRequest('Driver profile ID required');
+            }
+
+            $stmt = $connection->pdo()->prepare(
+                'INSERT INTO driver_certifications
+                    (driver_profile_id, certification_code, certification_name, issuing_authority,
+                     certificate_number, issued_date, expiry_date, status, verification_status, created_at)
+                 VALUES
+                    (:driver_id, :code, :name, :authority, :cert_num, :issued, :expiry, :status, :verification, NOW())
+                 ON DUPLICATE KEY UPDATE
+                    certification_name = VALUES(certification_name),
+                    issuing_authority = VALUES(issuing_authority),
+                    certificate_number = VALUES(certificate_number),
+                    issued_date = VALUES(issued_date),
+                    expiry_date = VALUES(expiry_date),
+                    updated_at = NOW()'
+            );
+
+            $stmt->execute([
+                'driver_id' => $driverProfileId,
+                'code' => strtoupper($body['certification_code']),
+                'name' => $body['certification_name'],
+                'authority' => $body['issuing_authority'] ?? null,
+                'cert_num' => $body['certificate_number'] ?? null,
+                'issued' => $body['issued_date'] ?? null,
+                'expiry' => $body['expiry_date'] ?? null,
+                'status' => 'active',
+                'verification' => 'pending',
+            ]);
+
+            return Response::created(['success' => true]);
+        });
+
+        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.certifications.verify')) {
+                return Response::forbidden('Permission denied');
+            }
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+
+            $stmt = $connection->pdo()->prepare(
+                'UPDATE driver_certifications
+                 SET verification_status = :status, verified_by = :user_id, verified_at = NOW(), updated_at = NOW()
+                 WHERE id = :id'
+            );
+            $stmt->execute([
+                'status' => $body['verified'] ? 'verified' : 'rejected',
+                'user_id' => $user->id,
+                'id' => $id,
+            ]);
+
+            return Response::json(['success' => true]);
+        });
+
+        // ETA Calculation Endpoint
+        $router->post('/api/dispatch/calculate-eta', function (Request $request) use ($etaService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.suggestions.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $body = $request->body();
+            $data = $etaService->calculateEta(
+                (float) $body['from_latitude'],
+                (float) $body['from_longitude'],
+                (float) $body['to_latitude'],
+                (float) $body['to_longitude'],
+                $body['driver_profile_id'] ?? null
+            );
+            return Response::json($data);
+        });
+
+        // Job Offer History for a Job
+        $router->get('/api/dispatch/jobs/{jobReference}/offers', function (Request $request) use ($offerService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.offers.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $data = $offerService->getOffersForJob($jobReference);
+            return Response::json(['data' => $data]);
         });
     });
 

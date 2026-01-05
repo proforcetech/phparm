@@ -111,8 +111,12 @@ class DriverDispatchController
     /**
      * @return array<string, mixed>
      */
-    public function declineOffer(User $user, int $offerId): array
-    {
+    public function declineOffer(
+        User $user,
+        int $offerId,
+        ?string $rejectionReason = null,
+        ?string $rejectionNotes = null
+    ): array {
         if (!$this->gate->can($user, 'dispatch.offers.accept')) {
             throw new UnauthorizedException('Cannot decline job offers');
         }
@@ -122,7 +126,25 @@ class DriverDispatchController
             throw new InvalidArgumentException('Driver profile not found');
         }
 
-        return $this->offers->declineOffer($offerId, $driverProfileId);
+        return $this->offers->declineOffer($offerId, $driverProfileId, $rejectionReason, $rejectionNotes);
+    }
+
+    /**
+     * Resolve the driver profile for a user (public for use in routes).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function resolveDriverProfile(User $user): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT dp.*, u.name, u.email
+             FROM driver_profiles dp
+             INNER JOIN users u ON u.id = dp.user_id
+             WHERE dp.user_id = :user_id'
+        );
+        $stmt->execute(['user_id' => $user->id]);
+        $profile = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $profile !== false ? $profile : null;
     }
 
     private function resolveDriverProfileId(int $userId): ?int

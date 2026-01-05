@@ -102,11 +102,16 @@ class DriverJobOfferService
     /**
      * @return array<string, mixed>
      */
-    public function declineOffer(int $offerId, int $driverProfileId): array
-    {
+    public function declineOffer(
+        int $offerId,
+        int $driverProfileId,
+        ?string $rejectionReason = null,
+        ?string $rejectionNotes = null
+    ): array {
         $update = $this->connection->pdo()->prepare(
             'UPDATE driver_job_offers
-             SET status = :status, declined_at = NOW(), updated_at = NOW()
+             SET status = :status, declined_at = NOW(), rejection_reason = :reason,
+                 rejection_notes = :notes, updated_at = NOW()
              WHERE id = :id AND driver_profile_id = :driver_profile_id AND status = :current_status'
         );
         $update->execute([
@@ -114,6 +119,8 @@ class DriverJobOfferService
             'id' => $offerId,
             'driver_profile_id' => $driverProfileId,
             'current_status' => 'pending',
+            'reason' => $rejectionReason,
+            'notes' => $rejectionNotes,
         ]);
 
         if ($update->rowCount() === 0) {
@@ -121,6 +128,43 @@ class DriverJobOfferService
         }
 
         return $this->getOffer($offerId);
+    }
+
+    /**
+     * Get offer details with rejection reason info.
+     */
+    public function getOfferWithDetails(int $offerId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT djo.*, orr.display_name as rejection_reason_display, orr.category as rejection_category,
+                    dp.user_id as driver_user_id, u.name as driver_name
+             FROM driver_job_offers djo
+             LEFT JOIN offer_rejection_reasons orr ON orr.code = djo.rejection_reason
+             LEFT JOIN driver_profiles dp ON dp.id = djo.driver_profile_id
+             LEFT JOIN users u ON u.id = dp.user_id
+             WHERE djo.id = :id'
+        );
+        $stmt->execute(['id' => $offerId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * Get offers for a job with full details.
+     */
+    public function getOffersForJob(string $jobReference): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT djo.*, orr.display_name as rejection_reason_display,
+                    dp.user_id as driver_user_id, u.name as driver_name
+             FROM driver_job_offers djo
+             LEFT JOIN offer_rejection_reasons orr ON orr.code = djo.rejection_reason
+             LEFT JOIN driver_profiles dp ON dp.id = djo.driver_profile_id
+             LEFT JOIN users u ON u.id = dp.user_id
+             WHERE djo.job_reference = :job_ref
+             ORDER BY djo.created_at DESC'
+        );
+        $stmt->execute(['job_ref' => $jobReference]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
