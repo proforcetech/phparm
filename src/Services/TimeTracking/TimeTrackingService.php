@@ -187,6 +187,9 @@ class TimeTrackingService
             'Mobile Repair',
             'Start Location',
             'End Location',
+            'En Route At',
+            'On Site At',
+            'Wrap Up At',
             'Started At',
             'Ended At',
             'Duration (minutes)',
@@ -224,6 +227,9 @@ class TimeTrackingService
                 ($row['end_latitude'] ?? null) && ($row['end_longitude'] ?? null)
                     ? ($row['end_latitude'] . ', ' . $row['end_longitude'])
                     : null,
+                $row['en_route_at'] ?? null,
+                $row['on_site_at'] ?? null,
+                $row['wrap_up_at'] ?? null,
                 $row['started_at'] ?? null,
                 $row['ended_at'] ?? null,
                 $row['duration_minutes'] ?? null,
@@ -298,6 +304,9 @@ class TimeTrackingService
         string $startedAt,
         string $endedAt,
         ?int $estimateJobId = null,
+        ?string $enRouteAt = null,
+        ?string $onSiteAt = null,
+        ?string $wrapUpAt = null,
         ?string $notes = null,
         ?string $reason = null,
         bool $override = true,
@@ -306,20 +315,26 @@ class TimeTrackingService
         $start = new DateTimeImmutable($startedAt);
         $end = new DateTimeImmutable($endedAt);
         $minutes = max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60);
+        $normalizedEnRoute = $this->normalizeTimestamp($enRouteAt);
+        $normalizedOnSite = $this->normalizeTimestamp($onSiteAt);
+        $normalizedWrapUp = $this->normalizeTimestamp($wrapUpAt);
 
         if ($reason === null || trim($reason) === '') {
             throw new InvalidArgumentException('Adjustment reason is required for manual entry');
         }
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, ended_at, duration_minutes, status, reviewed_by, reviewed_at, review_notes, manual_override, notes, created_at, updated_at) VALUES '
-            . '(:technician_id, :estimate_job_id, :started_at, :ended_at, :minutes, :status, :reviewed_by, :reviewed_at, :review_notes, :override, :notes, NOW(), NOW())'
+            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, ended_at, en_route_at, on_site_at, wrap_up_at, duration_minutes, status, reviewed_by, reviewed_at, review_notes, manual_override, notes, created_at, updated_at) VALUES '
+            . '(:technician_id, :estimate_job_id, :started_at, :ended_at, :en_route_at, :on_site_at, :wrap_up_at, :minutes, :status, :reviewed_by, :reviewed_at, :review_notes, :override, :notes, NOW(), NOW())'
         );
         $stmt->execute([
             'technician_id' => $technicianId,
             'estimate_job_id' => $estimateJobId,
             'started_at' => $start->format('Y-m-d H:i:s'),
             'ended_at' => $end->format('Y-m-d H:i:s'),
+            'en_route_at' => $normalizedEnRoute,
+            'on_site_at' => $normalizedOnSite,
+            'wrap_up_at' => $normalizedWrapUp,
             'minutes' => $minutes,
             'status' => 'pending',
             'reviewed_by' => null,
@@ -339,6 +354,9 @@ class TimeTrackingService
                 'status' => null,
                 'started_at' => null,
                 'ended_at' => null,
+                'en_route_at' => null,
+                'on_site_at' => null,
+                'wrap_up_at' => null,
                 'duration_minutes' => null,
                 'estimate_job_id' => null,
                 'notes' => null,
@@ -348,6 +366,9 @@ class TimeTrackingService
                 'status' => 'pending',
                 'started_at' => $start->format('Y-m-d H:i:s'),
                 'ended_at' => $end->format('Y-m-d H:i:s'),
+                'en_route_at' => $normalizedEnRoute,
+                'on_site_at' => $normalizedOnSite,
+                'wrap_up_at' => $normalizedWrapUp,
                 'duration_minutes' => $minutes,
                 'estimate_job_id' => $estimateJobId,
                 'notes' => $notes,
@@ -372,6 +393,9 @@ class TimeTrackingService
             (string) $data['started_at'],
             (string) $data['ended_at'],
             isset($data['estimate_job_id']) ? (int) $data['estimate_job_id'] : null,
+            $data['en_route_at'] ?? null,
+            $data['on_site_at'] ?? null,
+            $data['wrap_up_at'] ?? null,
             $data['notes'] ?? null,
             (string) $data['reason'],
             $data['manual_override'] ?? true,
@@ -395,6 +419,9 @@ class TimeTrackingService
 
         $startedAt = $data['started_at'] ?? $entry->started_at;
         $endedAt = $data['ended_at'] ?? $entry->ended_at;
+        $enRouteAt = $data['en_route_at'] ?? $entry->en_route_at;
+        $onSiteAt = $data['on_site_at'] ?? $entry->on_site_at;
+        $wrapUpAt = $data['wrap_up_at'] ?? $entry->wrap_up_at;
         $estimateJobId = $data['estimate_job_id'] ?? $entry->estimate_job_id;
         $notes = $data['notes'] ?? $entry->notes;
         $override = $data['manual_override'] ?? $entry->manual_override;
@@ -413,16 +440,22 @@ class TimeTrackingService
 
         $start = new DateTimeImmutable($startedAt);
         $end = $endedAt !== null ? new DateTimeImmutable($endedAt) : null;
+        $normalizedEnRoute = $this->normalizeTimestamp($enRouteAt);
+        $normalizedOnSite = $this->normalizeTimestamp($onSiteAt);
+        $normalizedWrapUp = $this->normalizeTimestamp($wrapUpAt);
         $minutes = $end !== null ? max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60) : null;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
+            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, en_route_at = :en_route_at, on_site_at = :on_site_at, wrap_up_at = :wrap_up_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
         );
 
         $stmt->execute([
             'id' => $entryId,
             'started_at' => $start->format('Y-m-d H:i:s'),
             'ended_at' => $end?->format('Y-m-d H:i:s'),
+            'en_route_at' => $normalizedEnRoute,
+            'on_site_at' => $normalizedOnSite,
+            'wrap_up_at' => $normalizedWrapUp,
             'minutes' => $minutes,
             'estimate_job_id' => $estimateJobId,
             'notes' => $notes,
@@ -442,6 +475,9 @@ class TimeTrackingService
             [
                 'started_at' => $entry->started_at,
                 'ended_at' => $entry->ended_at,
+                'en_route_at' => $entry->en_route_at,
+                'on_site_at' => $entry->on_site_at,
+                'wrap_up_at' => $entry->wrap_up_at,
                 'duration_minutes' => $entry->duration_minutes,
                 'estimate_job_id' => $entry->estimate_job_id,
                 'notes' => $entry->notes,
@@ -451,6 +487,9 @@ class TimeTrackingService
             [
                 'started_at' => $start->format('Y-m-d H:i:s'),
                 'ended_at' => $end?->format('Y-m-d H:i:s'),
+                'en_route_at' => $normalizedEnRoute,
+                'on_site_at' => $normalizedOnSite,
+                'wrap_up_at' => $normalizedWrapUp,
                 'duration_minutes' => $minutes,
                 'estimate_job_id' => $estimateJobId,
                 'notes' => $notes,
@@ -491,6 +530,9 @@ class TimeTrackingService
             [
                 'started_at' => $entry->started_at,
                 'ended_at' => $entry->ended_at,
+                'en_route_at' => $entry->en_route_at,
+                'on_site_at' => $entry->on_site_at,
+                'wrap_up_at' => $entry->wrap_up_at,
                 'duration_minutes' => $entry->duration_minutes,
                 'estimate_job_id' => $entry->estimate_job_id,
                 'notes' => $entry->notes,
@@ -500,6 +542,9 @@ class TimeTrackingService
             [
                 'started_at' => $entry->started_at,
                 'ended_at' => $entry->ended_at,
+                'en_route_at' => $entry->en_route_at,
+                'on_site_at' => $entry->on_site_at,
+                'wrap_up_at' => $entry->wrap_up_at,
                 'duration_minutes' => $entry->duration_minutes,
                 'estimate_job_id' => $entry->estimate_job_id,
                 'notes' => $entry->notes,
@@ -612,8 +657,8 @@ class TimeTrackingService
     private function recordAdjustment(int $entryId, int $actorId, string $reason, array $before, array $after): void
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_status, previous_started_at, previous_ended_at, previous_duration_minutes, previous_estimate_job_id, previous_notes, previous_manual_override, new_status, new_started_at, new_ended_at, new_duration_minutes, new_estimate_job_id, new_notes, new_manual_override) '
-            . 'VALUES (:entry_id, :actor_id, :reason, :prev_status, :prev_start, :prev_end, :prev_minutes, :prev_job, :prev_notes, :prev_override, :new_status, :new_start, :new_end, :new_minutes, :new_job, :new_notes, :new_override)'
+            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_status, previous_started_at, previous_ended_at, previous_en_route_at, previous_on_site_at, previous_wrap_up_at, previous_duration_minutes, previous_estimate_job_id, previous_notes, previous_manual_override, new_status, new_started_at, new_ended_at, new_en_route_at, new_on_site_at, new_wrap_up_at, new_duration_minutes, new_estimate_job_id, new_notes, new_manual_override) '
+            . 'VALUES (:entry_id, :actor_id, :reason, :prev_status, :prev_start, :prev_end, :prev_en_route, :prev_on_site, :prev_wrap_up, :prev_minutes, :prev_job, :prev_notes, :prev_override, :new_status, :new_start, :new_end, :new_en_route, :new_on_site, :new_wrap_up, :new_minutes, :new_job, :new_notes, :new_override)'
         );
 
         $stmt->execute([
@@ -623,6 +668,9 @@ class TimeTrackingService
             'prev_status' => $before['status'] ?? null,
             'prev_start' => $before['started_at'],
             'prev_end' => $before['ended_at'],
+            'prev_en_route' => $before['en_route_at'] ?? null,
+            'prev_on_site' => $before['on_site_at'] ?? null,
+            'prev_wrap_up' => $before['wrap_up_at'] ?? null,
             'prev_minutes' => $before['duration_minutes'],
             'prev_job' => $before['estimate_job_id'],
             'prev_notes' => $before['notes'],
@@ -630,11 +678,24 @@ class TimeTrackingService
             'new_status' => $after['status'] ?? null,
             'new_start' => $after['started_at'],
             'new_end' => $after['ended_at'],
+            'new_en_route' => $after['en_route_at'] ?? null,
+            'new_on_site' => $after['on_site_at'] ?? null,
+            'new_wrap_up' => $after['wrap_up_at'] ?? null,
             'new_minutes' => $after['duration_minutes'],
             'new_job' => $after['estimate_job_id'],
             'new_notes' => $after['notes'],
             'new_override' => $after['manual_override'],
         ]);
+    }
+
+    private function normalizeTimestamp(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        $date = new DateTimeImmutable($value);
+        return $date->format('Y-m-d H:i:s');
     }
 
     private function isMobileJob(?int $estimateJobId): bool

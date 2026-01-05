@@ -58,6 +58,9 @@ export default function TimeLogs() {
     estimate_job_id: '',
     started_at: '',
     ended_at: '',
+    en_route_at: '',
+    on_site_at: '',
+    wrap_up_at: '',
     notes: '',
     manual_override: true,
     reason: '',
@@ -67,6 +70,9 @@ export default function TimeLogs() {
     id: null,
     started_at: '',
     ended_at: '',
+    en_route_at: '',
+    on_site_at: '',
+    wrap_up_at: '',
     estimate_job_id: '',
     notes: '',
     manual_override: true,
@@ -80,6 +86,7 @@ export default function TimeLogs() {
   const columns = useMemo(() => ([
     { key: 'technician', label: 'Technician' },
     { key: 'window', label: 'Window' },
+    { key: 'stages', label: 'Stages' },
     { key: 'duration_minutes', label: 'Duration' },
     { key: 'location', label: 'Location' },
     { key: 'status', label: 'Status' },
@@ -171,13 +178,16 @@ export default function TimeLogs() {
 
   const handleSelectEntry = (row) => {
     setSelectedEntry(row)
-    setEditForm({
-      id: row.id,
-      started_at: row.started_at?.slice(0, 16) || '',
-      ended_at: row.ended_at?.slice(0, 16) || '',
-      estimate_job_id: row.estimate_job_id || '',
-      notes: row.notes || '',
-      manual_override: row.manual_override,
+      setEditForm({
+        id: row.id,
+        started_at: row.started_at?.slice(0, 16) || '',
+        ended_at: row.ended_at?.slice(0, 16) || '',
+        en_route_at: row.en_route_at?.slice(0, 16) || '',
+        on_site_at: row.on_site_at?.slice(0, 16) || '',
+        wrap_up_at: row.wrap_up_at?.slice(0, 16) || '',
+        estimate_job_id: row.estimate_job_id || '',
+        notes: row.notes || '',
+        manual_override: row.manual_override,
       reason: '',
     })
     setReviewNotes('')
@@ -206,6 +216,9 @@ export default function TimeLogs() {
         estimate_job_id: manualForm.estimate_job_id || null,
         started_at: manualForm.started_at,
         ended_at: manualForm.ended_at,
+        en_route_at: manualForm.en_route_at || null,
+        on_site_at: manualForm.on_site_at || null,
+        wrap_up_at: manualForm.wrap_up_at || null,
         notes: manualForm.notes,
         manual_override: manualForm.manual_override,
         reason: manualForm.reason,
@@ -216,6 +229,9 @@ export default function TimeLogs() {
         estimate_job_id: '',
         started_at: '',
         ended_at: '',
+        en_route_at: '',
+        on_site_at: '',
+        wrap_up_at: '',
         notes: '',
         manual_override: true,
         reason: '',
@@ -236,6 +252,9 @@ export default function TimeLogs() {
       await timeTrackingService.update(editForm.id, {
         started_at: editForm.started_at,
         ended_at: editForm.ended_at || null,
+        en_route_at: editForm.en_route_at || null,
+        on_site_at: editForm.on_site_at || null,
+        wrap_up_at: editForm.wrap_up_at || null,
         estimate_job_id: editForm.estimate_job_id || null,
         notes: editForm.notes,
         manual_override: editForm.manual_override,
@@ -362,6 +381,13 @@ export default function TimeLogs() {
                   {row.ended_at ? <div>End: {formatDate(row.ended_at)}</div> : <div className="text-amber-700">Active</div>}
                 </div>
               ),
+              stages: ({ row }) => (
+                <div className="text-xs text-gray-700">
+                  <div>En route: {formatDate(row.en_route_at)}</div>
+                  <div>On site: {formatDate(row.on_site_at)}</div>
+                  <div>Wrap up: {formatDate(row.wrap_up_at)}</div>
+                </div>
+              ),
               duration_minutes: ({ value }) => (
                 <span className="font-semibold text-gray-900">{Number(value ?? 0).toFixed(2)} mins</span>
               ),
@@ -448,6 +474,9 @@ export default function TimeLogs() {
                     ? `${formatLocation(row.start_latitude, row.start_longitude)} → ${row.ended_at ? formatLocation(row.end_latitude, row.end_longitude) : '—'}`
                     : 'In-shop'}
                 </div>
+                <div className="text-xs text-gray-600">En route: {formatDate(row.en_route_at)}</div>
+                <div className="text-xs text-gray-600">On site: {formatDate(row.on_site_at)}</div>
+                <div className="text-xs text-gray-600">Wrap up: {formatDate(row.wrap_up_at)}</div>
               </div>
               <div className="mt-2 space-y-1 text-xs text-gray-600">
                 <div>Estimate: {row.estimate_number || '—'}</div>
@@ -508,6 +537,26 @@ export default function TimeLogs() {
                 label="Ended"
                 required
                 onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, ended_at: value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Input
+                modelValue={manualForm.en_route_at}
+                type="datetime-local"
+                label="En Route"
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, en_route_at: value }))}
+              />
+              <Input
+                modelValue={manualForm.on_site_at}
+                type="datetime-local"
+                label="On Site"
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, on_site_at: value }))}
+              />
+              <Input
+                modelValue={manualForm.wrap_up_at}
+                type="datetime-local"
+                label="Wrap Up"
+                onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, wrap_up_at: value }))}
               />
             </div>
             <Input
@@ -604,6 +653,29 @@ export default function TimeLogs() {
                 label="Ended"
                 disabled={!selectedEntry}
                 onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, ended_at: value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Input
+                modelValue={editForm.en_route_at}
+                type="datetime-local"
+                label="En Route"
+                disabled={!selectedEntry}
+                onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, en_route_at: value }))}
+              />
+              <Input
+                modelValue={editForm.on_site_at}
+                type="datetime-local"
+                label="On Site"
+                disabled={!selectedEntry}
+                onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, on_site_at: value }))}
+              />
+              <Input
+                modelValue={editForm.wrap_up_at}
+                type="datetime-local"
+                label="Wrap Up"
+                disabled={!selectedEntry}
+                onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, wrap_up_at: value }))}
               />
             </div>
             <Input
