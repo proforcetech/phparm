@@ -2,17 +2,18 @@
 
 -- Add waterfall dispatching columns to driver_job_offers
 ALTER TABLE driver_job_offers
-    ADD COLUMN waterfall_sequence_id VARCHAR(120) NULL AFTER job_type,
-    ADD COLUMN waterfall_position INT UNSIGNED NULL AFTER waterfall_sequence_id,
-    ADD COLUMN rejection_reason VARCHAR(100) NULL AFTER declined_at,
-    ADD COLUMN rejection_notes TEXT NULL AFTER rejection_reason,
-    ADD COLUMN estimated_eta_minutes INT UNSIGNED NULL AFTER rejection_notes,
-    ADD COLUMN estimated_distance_km DECIMAL(10,2) NULL AFTER estimated_eta_minutes,
-    ADD COLUMN traffic_factor DECIMAL(4,2) NULL AFTER estimated_distance_km,
-    ADD COLUMN idempotency_key VARCHAR(120) NULL AFTER traffic_factor,
-    ADD INDEX idx_driver_job_offers_waterfall (waterfall_sequence_id, waterfall_position),
-    ADD INDEX idx_driver_job_offers_expires (expires_at, status),
-    ADD UNIQUE INDEX uniq_driver_job_offers_idempotency (idempotency_key);
+    ADD COLUMN IF NOT EXISTS waterfall_sequence_id VARCHAR(120) NULL,
+    ADD COLUMN IF NOT EXISTS waterfall_position INT UNSIGNED NULL,
+    ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR(100) NULL,
+    ADD COLUMN IF NOT EXISTS rejection_notes TEXT NULL,
+    ADD COLUMN IF NOT EXISTS estimated_eta_minutes INT UNSIGNED NULL,
+    ADD COLUMN IF NOT EXISTS estimated_distance_km DECIMAL(10,2) NULL,
+    ADD COLUMN IF NOT EXISTS traffic_factor DECIMAL(4,2) NULL,
+    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(120) NULL;
+
+CREATE INDEX IF NOT EXISTS idx_driver_job_offers_waterfall ON driver_job_offers (waterfall_sequence_id, waterfall_position);
+CREATE INDEX IF NOT EXISTS idx_driver_job_offers_expires ON driver_job_offers (expires_at, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_driver_job_offers_idempotency ON driver_job_offers (idempotency_key);
 
 -- Waterfall dispatch sequences table for tracking job offer cascades
 CREATE TABLE IF NOT EXISTS waterfall_dispatch_sequences (
@@ -229,7 +230,7 @@ CREATE TABLE IF NOT EXISTS offer_rejection_reasons (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert default rejection reasons
-INSERT INTO offer_rejection_reasons (code, display_name, category, display_order) VALUES
+INSERT IGNORE INTO offer_rejection_reasons (code, display_name, category, display_order) VALUES
     ('too_far', 'Too far away', 'distance', 1),
     ('heavy_traffic', 'Heavy traffic on route', 'distance', 2),
     ('equipment_issue', 'Equipment issue or unavailable', 'equipment', 3),
@@ -241,11 +242,10 @@ INSERT INTO offer_rejection_reasons (code, display_name, category, display_order
     ('certification_expired', 'Required certification expired', 'qualification', 9),
     ('unfamiliar_area', 'Unfamiliar with area', 'distance', 10),
     ('weather_conditions', 'Unsafe weather conditions', 'safety', 11),
-    ('other', 'Other reason', 'other', 99)
-ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
+    ('other', 'Other reason', 'other', 99);
 
 -- Insert default equipment job requirements
-INSERT INTO equipment_job_requirements (job_category, equipment_class, is_compatible, min_capacity, required_certifications) VALUES
+INSERT IGNORE INTO equipment_job_requirements (job_category, equipment_class, is_compatible, min_capacity, required_certifications) VALUES
     ('flatbed_tow', 'flatbed', 1, NULL, NULL),
     ('flatbed_tow', 'light_tow', 0, NULL, NULL),
     ('flatbed_tow', 'heavy_duty', 1, NULL, NULL),
@@ -269,83 +269,4 @@ INSERT INTO equipment_job_requirements (job_category, equipment_class, is_compat
     ('lockout', 'service_vehicle', 1, NULL, '["LOCKSMITH"]'),
     ('winch_out', 'light_tow', 1, NULL, NULL),
     ('winch_out', 'heavy_duty', 1, NULL, NULL),
-    ('hazmat_recovery', 'heavy_duty', 1, NULL, '["HAZMAT"]')
-ON DUPLICATE KEY UPDATE is_compatible = VALUES(is_compatible);
-
--- Add FK constraints with safe checks
-SET @has_fk_waterfall_sequences_initiator := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'waterfall_dispatch_sequences' AND constraint_name = 'fk_waterfall_sequences_initiator'
-);
-SET @fk_waterfall_sequences_initiator_sql := IF(@has_fk_waterfall_sequences_initiator = 0,
-    'ALTER TABLE waterfall_dispatch_sequences ADD CONSTRAINT fk_waterfall_sequences_initiator FOREIGN KEY (initiated_by) REFERENCES users (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_waterfall_sequences_initiator_stmt FROM @fk_waterfall_sequences_initiator_sql;
-EXECUTE fk_waterfall_sequences_initiator_stmt;
-DEALLOCATE PREPARE fk_waterfall_sequences_initiator_stmt;
-
-SET @has_fk_driver_locations_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_locations' AND constraint_name = 'fk_driver_locations_driver'
-);
-SET @fk_driver_locations_driver_sql := IF(@has_fk_driver_locations_driver = 0,
-    'ALTER TABLE driver_locations ADD CONSTRAINT fk_driver_locations_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_locations_driver_stmt FROM @fk_driver_locations_driver_sql;
-EXECUTE fk_driver_locations_driver_stmt;
-DEALLOCATE PREPARE fk_driver_locations_driver_stmt;
-
-SET @has_fk_geofence_events_geofence := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'geofence_events' AND constraint_name = 'fk_geofence_events_geofence'
-);
-SET @fk_geofence_events_geofence_sql := IF(@has_fk_geofence_events_geofence = 0,
-    'ALTER TABLE geofence_events ADD CONSTRAINT fk_geofence_events_geofence FOREIGN KEY (geofence_id) REFERENCES geofences (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_geofence_events_geofence_stmt FROM @fk_geofence_events_geofence_sql;
-EXECUTE fk_geofence_events_geofence_stmt;
-DEALLOCATE PREPARE fk_geofence_events_geofence_stmt;
-
-SET @has_fk_geofence_events_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'geofence_events' AND constraint_name = 'fk_geofence_events_driver'
-);
-SET @fk_geofence_events_driver_sql := IF(@has_fk_geofence_events_driver = 0,
-    'ALTER TABLE geofence_events ADD CONSTRAINT fk_geofence_events_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_geofence_events_driver_stmt FROM @fk_geofence_events_driver_sql;
-EXECUTE fk_geofence_events_driver_stmt;
-DEALLOCATE PREPARE fk_geofence_events_driver_stmt;
-
-SET @has_fk_driver_certifications_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_certifications' AND constraint_name = 'fk_driver_certifications_driver'
-);
-SET @fk_driver_certifications_driver_sql := IF(@has_fk_driver_certifications_driver = 0,
-    'ALTER TABLE driver_certifications ADD CONSTRAINT fk_driver_certifications_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_certifications_driver_stmt FROM @fk_driver_certifications_driver_sql;
-EXECUTE fk_driver_certifications_driver_stmt;
-DEALLOCATE PREPARE fk_driver_certifications_driver_stmt;
-
-SET @has_fk_driver_idle_alerts_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_idle_alerts' AND constraint_name = 'fk_driver_idle_alerts_driver'
-);
-SET @fk_driver_idle_alerts_driver_sql := IF(@has_fk_driver_idle_alerts_driver = 0,
-    'ALTER TABLE driver_idle_alerts ADD CONSTRAINT fk_driver_idle_alerts_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_idle_alerts_driver_stmt FROM @fk_driver_idle_alerts_driver_sql;
-EXECUTE fk_driver_idle_alerts_driver_stmt;
-DEALLOCATE PREPARE fk_driver_idle_alerts_driver_stmt;
-
-SET @has_fk_driver_metrics_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_performance_metrics' AND constraint_name = 'fk_driver_metrics_driver'
-);
-SET @fk_driver_metrics_driver_sql := IF(@has_fk_driver_metrics_driver = 0,
-    'ALTER TABLE driver_performance_metrics ADD CONSTRAINT fk_driver_metrics_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_metrics_driver_stmt FROM @fk_driver_metrics_driver_sql;
-EXECUTE fk_driver_metrics_driver_stmt;
-DEALLOCATE PREPARE fk_driver_metrics_driver_stmt;
+    ('hazmat_recovery', 'heavy_duty', 1, NULL, '["HAZMAT"]');
