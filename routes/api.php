@@ -5703,7 +5703,6 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     // Module Settings & User Groups Routes (Admin only)
     // =========================================================================
     $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
-        $rolePermissions = new RolePermissions(require __DIR__ . '/../config/auth.php')['roles'] ?? [];
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
         $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);
