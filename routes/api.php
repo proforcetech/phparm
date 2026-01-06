@@ -5700,8 +5700,20 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // =========================================================================
-    // Module Settings & User Groups Routes (Admin only)
+    // Module Settings & User Groups Routes
     // =========================================================================
+
+    // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
+            $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
+            return Response::json($moduleController->accessible($user));
+        });
+    });
+
+    // Admin-only module management routes
     $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
@@ -5815,16 +5827,6 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
             $groupIds = $body['group_ids'] ?? [];
             $userGroupController->setUserGroups($user, $id, $groupIds);
             return Response::json(['success' => true]);
-        });
-    });
-
-    // Accessible modules endpoint (for any authenticated user)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
-            $user = $request->getAttribute('user');
-            $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
-            $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
-            return Response::json($moduleController->accessible($user));
         });
     });
 };
