@@ -55,6 +55,24 @@ $jobs = [
         'schedule' => '0 2 * * *', // Daily at 2 AM
         'description' => 'Cleans up expired and temporary data',
     ],
+    'waterfall-dispatch' => [
+        'name' => 'Waterfall Dispatch Processor',
+        'script' => __DIR__ . '/waterfall-dispatch.php',
+        'schedule' => '* * * * *', // Every minute
+        'description' => 'Processes expired job offers and advances waterfall sequences',
+    ],
+    'geofence-processor' => [
+        'name' => 'Geofence Processor',
+        'script' => __DIR__ . '/geofence-processor.php',
+        'schedule' => '* * * * *', // Every minute
+        'description' => 'Monitors driver locations for geofence events and idle detection',
+    ],
+    'job-density' => [
+        'name' => 'Job Density Snapshot',
+        'script' => __DIR__ . '/job-density-snapshot.php',
+        'schedule' => '0 * * * *', // Every hour
+        'description' => 'Generates job density data for dispatcher heatmaps',
+    ],
 ];
 
 if (isset($options['list'])) {
