@@ -15,6 +15,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [pendingChallenge, setPendingChallenge] = useState(null)
+  // Module access state
+  const [enabledModules, setEnabledModules] = useState([])
+  const [sidebarKeys, setSidebarKeys] = useState([])
+  const [accessibleRoutes, setAccessibleRoutes] = useState([])
 
   const isAuthenticated = useMemo(() => !!token, [token])
   const isCustomer = useMemo(() => user?.role === 'customer', [user])
@@ -26,6 +30,8 @@ export function AuthProvider({ children }) {
     const storedToken = localStorage.getItem('auth_token')
     const storedUser = localStorage.getItem('user')
     const storedNonce = localStorage.getItem('portal_nonce')
+    const storedModules = localStorage.getItem('enabled_modules')
+    const storedSidebarKeys = localStorage.getItem('sidebar_keys')
 
     if (storedToken && storedUser) {
       setToken(storedToken)
@@ -34,6 +40,14 @@ export function AuthProvider({ children }) {
 
     if (storedNonce) {
       setPortalConfig((prev) => ({ ...prev, nonce: storedNonce }))
+    }
+
+    if (storedModules) {
+      setEnabledModules(JSON.parse(storedModules))
+    }
+
+    if (storedSidebarKeys) {
+      setSidebarKeys(JSON.parse(storedSidebarKeys))
     }
   }, [])
 
@@ -51,33 +65,92 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const handleLoginSuccess = useCallback((data) => {
-    if (data.token && data.user) {
-      setToken(data.token)
-      setUser(data.user)
-
-      localStorage.setItem('auth_token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
-
-      if (data.api_base) {
-        setPortalConfig((prev) => ({ ...prev, apiBase: data.api_base }))
+  const fetchAccessibleModules = useCallback(async () => {
+    try {
+      const data = await authService.getAccessibleModules()
+      if (data.modules) {
+        setEnabledModules(data.modules)
+        localStorage.setItem('enabled_modules', JSON.stringify(data.modules))
       }
-
-      if (data.user.role === 'customer' && data.nonce) {
-        setPortalConfig((prev) => ({ ...prev, nonce: data.nonce }))
-        localStorage.setItem('portal_nonce', data.nonce)
-      } else {
-        setPortalConfig((prev) => ({ ...prev, nonce: null }))
-        localStorage.removeItem('portal_nonce')
+      if (data.sidebar_keys) {
+        setSidebarKeys(data.sidebar_keys)
+        localStorage.setItem('sidebar_keys', JSON.stringify(data.sidebar_keys))
       }
-
-      if (data.user.role === 'customer') {
-        window.location.assign('/portal')
-      } else {
-        window.location.assign('/cp/dashboard')
+      if (data.routes) {
+        setAccessibleRoutes(data.routes)
       }
+      return data
+    } catch (err) {
+      console.error('Failed to fetch accessible modules:', err)
+      return null
     }
   }, [])
+
+  const hasModuleAccess = useCallback(
+    (moduleKey) => {
+      // Admin has access to all enabled modules
+      if (user?.role === 'admin') {
+        return true
+      }
+      return enabledModules.includes(moduleKey)
+    },
+    [enabledModules, user]
+  )
+
+  const hasSidebarKey = useCallback(
+    (key) => {
+      // Admin sees all sidebar items
+      if (user?.role === 'admin') {
+        return true
+      }
+      // If no sidebar keys loaded yet, show all (loading state)
+      if (sidebarKeys.length === 0) {
+        return true
+      }
+      return sidebarKeys.includes(key)
+    },
+    [sidebarKeys, user]
+  )
+
+  const handleLoginSuccess = useCallback(
+    async (data) => {
+      if (data.token && data.user) {
+        setToken(data.token)
+        setUser(data.user)
+
+        localStorage.setItem('auth_token', data.token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+
+        if (data.api_base) {
+          setPortalConfig((prev) => ({ ...prev, apiBase: data.api_base }))
+        }
+
+        if (data.user.role === 'customer' && data.nonce) {
+          setPortalConfig((prev) => ({ ...prev, nonce: data.nonce }))
+          localStorage.setItem('portal_nonce', data.nonce)
+        } else {
+          setPortalConfig((prev) => ({ ...prev, nonce: null }))
+          localStorage.removeItem('portal_nonce')
+        }
+
+        // Fetch accessible modules for staff users
+        if (data.user.role !== 'customer') {
+          try {
+            await fetchAccessibleModules()
+          } catch (err) {
+            console.error('Failed to fetch modules on login:', err)
+          }
+        }
+
+        if (data.user.role === 'customer') {
+          window.location.assign('/portal')
+        } else {
+          window.location.assign('/cp/dashboard')
+        }
+      }
+    },
+    [fetchAccessibleModules]
+  )
 
   const login = useCallback(
     async (email, password, isCustomerLogin = false, recaptchaToken = null) => {
@@ -148,9 +221,14 @@ export function AuthProvider({ children }) {
       setUser(null)
       setToken(null)
       setPortalConfig((prev) => ({ ...prev, nonce: null }))
+      setEnabledModules([])
+      setSidebarKeys([])
+      setAccessibleRoutes([])
       localStorage.removeItem('auth_token')
       localStorage.removeItem('user')
       localStorage.removeItem('portal_nonce')
+      localStorage.removeItem('enabled_modules')
+      localStorage.removeItem('sidebar_keys')
       window.location.assign('/login')
     }
   }, [])
@@ -261,6 +339,14 @@ export function AuthProvider({ children }) {
       isStaff,
       isAdmin,
       portalReady,
+      // Module access
+      enabledModules,
+      sidebarKeys,
+      accessibleRoutes,
+      hasModuleAccess,
+      hasSidebarKey,
+      fetchAccessibleModules,
+      // Actions
       checkAuth,
       fetchCurrentUser,
       login,
@@ -273,14 +359,20 @@ export function AuthProvider({ children }) {
       verifyTwoFactor,
     }),
     [
+      accessibleRoutes,
       bootstrapPortal,
       checkAuth,
+      enabledModules,
       error,
+      fetchAccessibleModules,
       fetchCurrentUser,
+      hasModuleAccess,
+      hasSidebarKey,
       isAdmin,
       isAuthenticated,
       isCustomer,
       isStaff,
+      loading,
       login,
       logout,
       pendingChallenge,
@@ -289,6 +381,7 @@ export function AuthProvider({ children }) {
       register,
       requestPasswordReset,
       resetPassword,
+      sidebarKeys,
       token,
       updateProfile,
       user,

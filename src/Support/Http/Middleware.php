@@ -6,12 +6,15 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\JwtService;
+use App\Support\Auth\ModuleAccessService;
+use App\Support\Auth\RolePermissions;
 use App\Support\Auth\UnauthorizedException;
 
 class Middleware
 {
     private static ?RateLimiter $rateLimiter = null;
     private static ?JwtService $jwtService = null;
+    private static ?ModuleAccessService $moduleService = null;
 
     /**
      * Get or create the default rate limiter instance.
@@ -63,6 +66,84 @@ class Middleware
     public static function setJwtService(JwtService $service): void
     {
         self::$jwtService = $service;
+    }
+
+    /**
+     * Get or create the module access service instance.
+     */
+    private static function getModuleService(): ModuleAccessService
+    {
+        if (self::$moduleService === null) {
+            $configPath = dirname(__DIR__, 3) . '/config/auth.php';
+            $config = file_exists($configPath) ? require $configPath : [];
+
+            // Create database connection
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            // Create role permissions and access gate
+            $rolePermissions = new RolePermissions($config['roles'] ?? []);
+            $gate = new AccessGate($rolePermissions);
+
+            self::$moduleService = new ModuleAccessService($connection, $gate);
+        }
+        return self::$moduleService;
+    }
+
+    /**
+     * Set a custom module access service instance (for testing or custom configuration).
+     */
+    public static function setModuleService(ModuleAccessService $service): void
+    {
+        self::$moduleService = $service;
+    }
+
+    /**
+     * Require access to a specific module.
+     *
+     * This middleware checks:
+     * 1. Module is enabled at the shop level
+     * 2. User's groups don't have this module disabled
+     * 3. User has at least one permission in the module's permission prefix
+     *
+     * @param string $moduleKey The module key (e.g., 'towing', 'cms', 'inventory')
+     */
+    public static function module(string $moduleKey): callable
+    {
+        return function (Request $request, callable $next) use ($moduleKey) {
+            $user = $request->getAttribute('user');
+
+            if ($user === null) {
+                throw new UnauthorizedException('Authentication required');
+            }
+
+            if (!($user instanceof User)) {
+                throw new UnauthorizedException('Invalid user');
+            }
+
+            $moduleService = self::getModuleService();
+
+            // Check if module is enabled globally
+            if (!$moduleService->isModuleEnabled($moduleKey)) {
+                return Response::json([
+                    'error' => 'Module not available',
+                    'message' => "The '{$moduleKey}' module is not enabled.",
+                    'module' => $moduleKey,
+                ], 403);
+            }
+
+            // Check if user can access the module
+            if (!$moduleService->canUserAccessModule($user, $moduleKey)) {
+                return Response::json([
+                    'error' => 'Module access denied',
+                    'message' => "You do not have access to the '{$moduleKey}' module.",
+                    'module' => $moduleKey,
+                ], 403);
+            }
+
+            return $next($request);
+        };
     }
 
     /**

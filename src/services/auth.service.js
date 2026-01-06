@@ -86,4 +86,12 @@ export const authService = {
     const response = await api.post('/auth/2fa/setup/complete', { code })
     return response.data
   },
+
+  /**
+   * Get accessible modules for current user
+   */
+  async getAccessibleModules() {
+    const response = await api.get('/modules/accessible')
+    return response.data
+  },
 }

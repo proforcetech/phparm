@@ -5698,4 +5698,134 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
             return Response::json($data);
         });
     });
+
+    // =========================================================================
+    // Module Settings & User Groups Routes (Admin only)
+    // =========================================================================
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+        $rolePermissions = new RolePermissions(require __DIR__ . '/../config/auth.php')['roles'] ?? [];
+        $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
+        $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
+        $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);
+        $userGroupController = new \App\Services\UserGroup\UserGroupController($userGroupService, $gate);
+
+        // Module Settings
+        $router->get('/api/modules', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            return Response::json($moduleController->index($user));
+        });
+
+        $router->get('/api/modules/{key}', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            $key = $request->getAttribute('key');
+            return Response::json($moduleController->show($user, (string) $key));
+        });
+
+        $router->put('/api/modules/{key}', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            $key = $request->getAttribute('key');
+            return Response::json($moduleController->update($user, (string) $key, $request->body()));
+        });
+
+        $router->put('/api/modules', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            return Response::json($moduleController->bulkUpdate($user, $request->body()));
+        });
+
+        // User Groups
+        $router->get('/api/user-groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            return Response::json(['data' => $userGroupController->index($user)]);
+        });
+
+        $router->post('/api/user-groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            return Response::created($userGroupController->store($user, $request->body()));
+        });
+
+        $router->get('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($userGroupController->show($user, $id));
+        });
+
+        $router->put('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($userGroupController->update($user, $id, $request->body()));
+        });
+
+        $router->delete('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $userGroupController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // User Group Members
+        $router->get('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json(['data' => $userGroupController->members($user, $id)]);
+        });
+
+        $router->post('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $userId = (int) ($body['user_id'] ?? 0);
+            $userGroupController->addMember($user, $id, $userId);
+            return Response::json(['success' => true]);
+        });
+
+        $router->delete('/api/user-groups/{groupId}/members/{userId}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $groupId = (int) $request->getAttribute('groupId');
+            $userId = (int) $request->getAttribute('userId');
+            $userGroupController->removeMember($user, $groupId, $userId);
+            return Response::noContent();
+        });
+
+        $router->put('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $userIds = $body['user_ids'] ?? [];
+            $userGroupController->setMembers($user, $id, $userIds);
+            return Response::json(['success' => true]);
+        });
+
+        $router->get('/api/user-groups/{id}/non-members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $search = $request->queryParam('search');
+            return Response::json(['data' => $userGroupController->nonMembers($user, $id, $search)]);
+        });
+
+        // User's groups
+        $router->get('/api/users/{id}/groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json(['data' => $userGroupController->userGroups($user, $id)]);
+        });
+
+        $router->put('/api/users/{id}/groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $groupIds = $body['group_ids'] ?? [];
+            $userGroupController->setUserGroups($user, $id, $groupIds);
+            return Response::json(['success' => true]);
+        });
+    });
+
+    // Accessible modules endpoint (for any authenticated user)
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
+            $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
+            return Response::json($moduleController->accessible($user));
+        });
+    });
 };
