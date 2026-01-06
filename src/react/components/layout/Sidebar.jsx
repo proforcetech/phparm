@@ -129,7 +129,12 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       return technicianMenuItems
     }
 
-    // Filter admin menu items based on module access
+    // Admin users see all menu items - no filtering needed
+    if (user?.role === 'admin') {
+      return adminMenuItems
+    }
+
+    // For other staff roles, filter based on module access
     return adminMenuItems.filter((item) => {
       // Items without moduleKey are always shown (settings, users)
       if (!item.moduleKey) {
