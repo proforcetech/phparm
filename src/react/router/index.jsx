@@ -65,6 +65,8 @@ import SettingsIntegrations from '../views/settings/SettingsIntegrations'
 import ServiceTypes from '../views/settings/ServiceTypes'
 import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
+import UserGroups from '../views/users/UserGroups'
+import ModuleSettings from '../views/settings/ModuleSettings'
 import InspectionTemplates from '../views/inspections/TemplateManager'
 import TechnicianInspections from '../views/inspections/TechnicianInspections'
 import CMSDashboard from '../views/cms/CMSDashboard'
@@ -206,6 +208,7 @@ const protectedRoutes = [
   { path: '/cp/reports', name: 'FinancialReports', auth: 'requiresAuth', element: <FinancialReports /> },
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
+  { path: '/cp/users/groups', name: 'UserGroups', auth: 'requiresAuth', element: <UserGroups /> },
   { path: '/cp/users/:id', name: 'UserEdit', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/inspections/templates', name: 'InspectionTemplates', auth: 'requiresAuth', element: <InspectionTemplates /> },
   { path: '/cp/inspections/work', name: 'TechnicianInspections', auth: 'requiresAuth', element: <TechnicianInspections /> },
@@ -249,6 +252,7 @@ const settingsRoutes = [
   { path: '/cp/settings/payments', name: 'SettingsPayments', element: <SettingsPayments /> },
   { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: <SettingsIntegrations /> },
   { path: '/cp/settings/services', name: 'ServiceTypes', element: <ServiceTypes /> },
+  { path: '/cp/settings/modules', name: 'ModuleSettings', element: <ModuleSettings /> },
 ]
 
 const withAuthLoader = (route) => ({
