@@ -29,25 +29,26 @@ import {
 import { useAuthStore } from '../../stores/auth'
 
 const adminMenuItems = [
-  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
-  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
-  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
-  { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon },
-  { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon },
-  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
-  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
-  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
-  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
-  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
-  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
-  { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon },
-  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
-  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon, moduleKey: 'core' },
+  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
+  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon, moduleKey: 'appointments' },
+  { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon, moduleKey: 'towing' },
+  { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
+  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
+  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
+  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon, moduleKey: 'inventory' },
+  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon, moduleKey: 'inventory' },
+  { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon, moduleKey: 'impound' },
+  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
+  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
   {
     path: '/cp/inspections/work',
     label: 'Inspections',
     icon: ClipboardDocumentListIcon,
+    moduleKey: 'inspections',
     children: [
       {
         path: '/cp/inspections/templates',
@@ -56,13 +57,13 @@ const adminMenuItems = [
       },
     ],
   },
-  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
-  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
-  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
-  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms' },
-  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
-  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
-  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms' },
+  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms', moduleKey: 'cms' },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
   { path: '/cp/users', label: 'Users', icon: UsersIcon },
 ]
@@ -100,7 +101,7 @@ const isActiveRoute = (currentPath, targetPath) => {
 }
 
 const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
-  const { user } = useAuthStore()
+  const { user, hasModuleAccess } = useAuthStore()
   const { pathname } = useLocation()
   const [isOpen, setIsOpen] = useState(true)
 
@@ -128,8 +129,16 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       return technicianMenuItems
     }
 
-    return adminMenuItems
-  }, [type, user?.role])
+    // Filter admin menu items based on module access
+    return adminMenuItems.filter((item) => {
+      // Items without moduleKey are always shown (settings, users)
+      if (!item.moduleKey) {
+        return true
+      }
+      // Check if user has access to this module
+      return hasModuleAccess(item.moduleKey)
+    })
+  }, [type, user?.role, hasModuleAccess])
 
   const toggleSidebar = () => {
     setIsOpen((prev) => !prev)
