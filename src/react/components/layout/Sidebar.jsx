@@ -66,6 +66,7 @@ const adminMenuItems = [
   { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms', moduleKey: 'cms' },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
   { path: '/cp/users', label: 'Users', icon: UsersIcon },
+  { path: '/cp/users/groups', label: 'User Groups', icon: UserGroupIcon },
 ]
 
 const technicianMenuItems = [

@@ -21,6 +21,7 @@ export default function SettingsLayout() {
           { label: 'Payments', to: '/cp/settings/payments' },
           { label: 'Integrations', to: '/cp/settings/integrations' },
           { label: 'Services', to: '/cp/settings/services' },
+          { label: 'Modules', to: '/cp/settings/modules' },
         ].map((link) => (
           <NavLink
             key={link.to}
