@@ -15,9 +15,13 @@ export const AuthProvider = ({ children }) => {
     try {
       const userData = await authService.getCurrentUser()
       setUser(userData)
+      // Store user data in localStorage for router guards
+      localStorage.setItem('user', JSON.stringify(userData))
       return userData
     } catch (err) {
       setUser(null)
+      // Clear user data from localStorage on auth failure
+      localStorage.removeItem('user')
       throw err
     } finally {
       setLoading(false)
@@ -76,6 +80,9 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(async () => {
     await authService.logout()
     setUser(null)
+    // Clear user data from localStorage
+    localStorage.removeItem('user')
+    localStorage.removeItem('auth_token')
   }, [])
 
   const hasPermission = useCallback((permission) => {

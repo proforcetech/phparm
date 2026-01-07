@@ -6,19 +6,23 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Enable sending cookies for session-based auth
 })
 
 // Track if we're already handling session expiration to prevent multiple redirects
 let isHandlingSessionExpiration = false
 
-// Request interceptor - add auth token
+// Request interceptor - add auth token (optional, for future JWT support)
+// Currently using session-based auth via cookies (withCredentials: true)
 api.interceptors.request.use(
   (config) => {
+    // Optional: Add JWT token if available (for future token-based auth)
     const token = localStorage.getItem('auth_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
 
+    // Optional: Add portal nonce header
     const portalNonce = localStorage.getItem('portal_nonce')
     if (portalNonce) {
       config.headers['X-Portal-Nonce'] = portalNonce
