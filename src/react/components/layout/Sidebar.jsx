@@ -1,113 +1,277 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { 
-  HomeIcon, 
-  UsersIcon, 
-  WrenchScrewdriverIcon, 
-  ClipboardDocumentListIcon,
-  CurrencyDollarIcon,
+import {
   ArchiveBoxIcon,
-  Cog6ToothIcon,
-  TruckIcon,
-  DocumentTextIcon,
-  MapIcon,
-  ShieldCheckIcon,
+  Bars3Icon,
+  CalendarIcon,
   ChartBarIcon,
+  ClipboardDocumentCheckIcon,
+  ClipboardDocumentListIcon,
+  ClockIcon,
+  Cog6ToothIcon,
+  CreditCardIcon,
+  CubeIcon,
+  DocumentDuplicateIcon,
+  DocumentTextIcon,
+  ExclamationTriangleIcon,
+  FolderIcon,
   GlobeAltIcon,
-  ClockIcon
+  HomeIcon,
+  RectangleGroupIcon,
+  RectangleStackIcon,
+  ShieldCheckIcon,
+  Squares2X2Icon,
+  TruckIcon,
+  UserGroupIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline'
-import { useAuth } from '../../stores/auth'
 
-const Sidebar = forwardRef(({ onClose }, ref) => {
-  const location = useLocation()
-  const { hasModule } = useAuth()
-  
-  // Expose close method to parent
-  useImperativeHandle(ref, () => ({
-    close: () => {
-      // No-op for desktop sidebar, handled by mobile parent
+import { useAuthStore } from '../../stores/auth'
+
+const adminMenuItems = [
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon, moduleKey: 'core' },
+  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
+  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon, moduleKey: 'appointments' },
+  { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon, moduleKey: 'towing' },
+  { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
+  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
+  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
+  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon, moduleKey: 'inventory' },
+  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon, moduleKey: 'inventory' },
+  { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon, moduleKey: 'impound' },
+  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
+  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
+  {
+    path: '/cp/inspections/work',
+    label: 'Inspections',
+    icon: ClipboardDocumentListIcon,
+    moduleKey: 'inspections',
+    children: [
+      {
+        path: '/cp/inspections/templates',
+        label: 'Inspection Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
+  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms', moduleKey: 'cms' },
+  { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/users', label: 'Users', icon: UsersIcon },
+  { path: '/cp/users/groups', label: 'User Groups', icon: UserGroupIcon },
+]
+
+const technicianMenuItems = [
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
+  { path: '/cp/my-time', label: 'My Time', icon: ClockIcon },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
+  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+]
+
+const customerMenuItems = [
+  { path: '/portal', label: 'Dashboard', icon: HomeIcon },
+  { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
+  { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
+  { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
+  { path: '/portal/inspections', label: 'My Inspections', icon: ClipboardDocumentCheckIcon },
+  { path: '/portal/credit', label: 'Credit Account', icon: CreditCardIcon },
+  { path: '/portal/warranty-claims', label: 'Warranty Claims', icon: ShieldCheckIcon },
+  { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
+]
+
+const isActiveRoute = (currentPath, targetPath) => {
+  if (targetPath === '/cp/dashboard' || targetPath === '/portal') {
+    return currentPath === targetPath
+  }
+  if (targetPath === '/cp/inventory') {
+    return currentPath === '/cp/inventory'
+  }
+  if (targetPath === '/cp/cms') {
+    return currentPath === '/cp/cms'
+  }
+  return currentPath.startsWith(targetPath)
+}
+
+const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
+  const { user, hasModuleAccess } = useAuthStore()
+  const { pathname } = useLocation()
+  const [isOpen, setIsOpen] = useState(true)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsOpen(false)
     }
-  }))
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, current: false, module: 'dashboard' },
-    { name: 'Dispatch', href: '/dispatch', icon: MapIcon, current: false, module: 'dispatch' },
-    { name: 'Tracking', href: '/tracking', icon: GlobeAltIcon, current: false, module: 'tracking' },
-    { name: 'Work Orders', href: '/workorders', icon: WrenchScrewdriverIcon, current: false, module: 'workorders' },
-    { name: 'Estimates', href: '/estimates', icon: DocumentTextIcon, current: false, module: 'estimates' },
-    { name: 'Inspections', href: '/inspections', icon: ClipboardDocumentListIcon, current: false, module: 'inspections' },
-    { name: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon, current: false, module: 'inventory' },
-    { name: 'Financial', href: '/financial', icon: CurrencyDollarIcon, current: false, module: 'financial' },
-    { name: 'Invoices', href: '/invoices', icon: DocumentTextIcon, current: false, module: 'financial' }, // Shared module permission
-    { name: 'Customers', href: '/customers', icon: UsersIcon, current: false, module: 'customers' },
-    { name: 'Vehicles', href: '/vehicles', icon: TruckIcon, current: false, module: 'vehicles' },
-    { name: 'Warranty', href: '/warranty', icon: ShieldCheckIcon, current: false, module: 'warranty' },
-    { name: 'Time Logs', href: '/time-logs', icon: ClockIcon, current: false, module: 'time_tracking' },
-    { name: 'Impound', href: '/impound', icon: ArchiveBoxIcon, current: false, module: 'storage' },
-    { name: 'CMS', href: '/cms', icon: GlobeAltIcon, current: false, module: 'cms' },
-    { name: 'Users', href: '/users', icon: UsersIcon, current: false, module: 'users' },
-    { name: 'User Groups', href: '/user-groups', icon: UsersIcon, current: false, module: 'users' },
-    { name: 'Settings', href: '/settings', icon: Cog6ToothIcon, current: false, module: 'settings' },
-  ]
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsOpen(true)
+      }
+    }
 
-  const visibleNavigation = useMemo(() => {
-    return navigation.filter(item => {
-      // If no module specified, always show (e.g. Dashboard)
-      if (!item.module) return true
-      return hasModule(item.module)
-    }).map(item => ({
-      ...item,
-      current: location.pathname.startsWith(item.href)
-    }))
-  }, [location.pathname, hasModule])
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const menuItems = useMemo(() => {
+    if (type === 'customer') {
+      return customerMenuItems
+    }
+
+    if (user?.role === 'technician') {
+      return technicianMenuItems
+    }
+
+    // Admin users see all menu items - no filtering needed
+    if (user?.role === 'admin') {
+      return adminMenuItems
+    }
+
+    // For other staff roles, filter based on module access
+    return adminMenuItems.filter((item) => {
+      // Items without moduleKey are always shown (settings, users)
+      if (!item.moduleKey) {
+        return true
+      }
+      // Check if user has access to this module
+      return hasModuleAccess(item.moduleKey)
+    })
+  }, [type, user?.role, hasModuleAccess])
+
+  const toggleSidebar = () => {
+    setIsOpen((prev) => !prev)
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleSidebar,
+      isOpen,
+    }),
+    [isOpen]
+  )
+
+  const renderMenuItem = (item) => {
+    const Icon = item.icon
+    const isActive = isActiveRoute(pathname, item.path)
+    const isChildActive = item.children?.some((child) => isActiveRoute(pathname, child.path))
+    const isCurrentActive = isActive || isChildActive
+
+    return (
+      <div key={item.path} className="space-y-1">
+        <Link
+          to={item.path}
+          className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            isCurrentActive
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          }`}
+        >
+          {Icon ? <Icon className="h-5 w-5 mr-3" /> : null}
+          {item.label}
+        </Link>
+
+        {item.children?.length ? (
+          <div className="ml-6 space-y-1">
+            {item.children.map((child) => {
+              const ChildIcon = child.icon
+              const isChildItemActive = isActiveRoute(pathname, child.path)
+
+              return (
+                <Link
+                  key={child.path}
+                  to={child.path}
+                  className={`flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
+                    isChildItemActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
+                >
+                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-3" /> : null}
+                  {child.label}
+                </Link>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
-    <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-white px-6 pb-4 border-r border-gray-200">
-      <div className="flex h-16 shrink-0 items-center">
-        <img
-          className="h-8 w-auto"
-          src="/logo.svg"
-          alt="Company Logo"
-        />
-      </div>
-      <nav className="flex flex-1 flex-col">
-        <ul role="list" className="flex flex-1 flex-col gap-y-7">
-          <li>
-            <ul role="list" className="-mx-2 space-y-1">
-              {visibleNavigation.map((item) => (
-                <li key={item.name}>
-                  <Link
-                    to={item.href}
-                    onClick={onClose}
-                    className={`
-                      group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6
-                      ${item.current
-                        ? 'bg-gray-50 text-blue-600'
-                        : 'text-gray-700 hover:bg-gray-50 hover:text-blue-600'
-                      }
-                    `}
-                  >
-                    <item.icon
-                      className={`h-6 w-6 shrink-0 ${
-                        item.current ? 'text-blue-600' : 'text-gray-400 group-hover:text-blue-600'
-                      }`}
-                      aria-hidden="true"
-                    />
-                    {item.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </li>
-          
-          {/* FIX: Removed duplicate hardcoded Settings link block here */}
-          
-        </ul>
-      </nav>
-    </div>
+    <>
+      <aside
+        className={`fixed inset-y-0 left-0 bg-gray-900 w-64 ${
+          isCollapsed ? 'lg:w-20' : 'lg:w-64'
+        } transform transition-transform duration-300 ease-in-out z-30 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex flex-col h-full">
+          <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
+            <span
+              className={`text-lg font-semibold text-white ${isCollapsed ? 'lg:hidden' : ''}`}
+            >
+              Menu
+            </span>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="lg:hidden text-gray-400 hover:text-white focus:outline-none"
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+            {menuItems.map((item) => renderMenuItem(item))}
+            {menuItems.map((item) => {
+              const Icon = item.icon
+              const isActive = isActiveRoute(pathname, item.path)
+
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  title={isCollapsed ? item.label : undefined}
+                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  } ${isCollapsed ? 'lg:justify-center' : ''}`}
+                >
+                  <Icon className={`h-5 w-5 ${isCollapsed ? 'lg:mr-0' : 'mr-3'}`} />
+                  <span className={isCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
+                </Link>
+              )}
+            )}
+          </nav>
+        </div>
+      </aside>
+
+      {isOpen ? (
+        <div
+          onClick={toggleSidebar}
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-20"
+        ></div>
+      ) : null}
+    </>
   )
 })
-
-Sidebar.displayName = 'Sidebar'
 
 export default Sidebar
