@@ -109,9 +109,15 @@ const routePaths = {
 const authTokenKey = 'auth_token'
 
 const requireAuth = () => {
+  // Note: Using session-based authentication via cookies
+  // The actual auth check happens on the server side
+  // This is just a basic client-side check
   const token = localStorage.getItem(authTokenKey)
+  const user = localStorage.getItem('user')
 
-  if (!token) {
+  // Allow access if we have either a token or user data
+  // Server will validate the actual session
+  if (!token && !user) {
     return redirect(routePaths.login)
   }
 
@@ -120,8 +126,9 @@ const requireAuth = () => {
 
 const requireGuest = () => {
   const token = localStorage.getItem(authTokenKey)
+  const user = localStorage.getItem('user')
 
-  if (token) {
+  if (token || user) {
     return redirect(routePaths.dashboard)
   }
 
