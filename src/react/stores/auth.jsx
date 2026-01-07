@@ -248,6 +248,29 @@ export function AuthProvider({ children }) {
     return data
   }, [isCustomer])
 
+  const hasPermission = useCallback((permission) => {
+    if (!user) return false
+    if (user.role?.toLowerCase() === 'admin') return true
+    return user.permissions?.includes(permission)
+  }, [user])
+
+  const hasModule = useCallback((moduleName) => {
+    if (!user || !user.modules) return false
+    if (user.role?.toLowerCase() === 'admin') return true
+    return user.modules.includes(moduleName)
+  }, [user])
+
+  const hasModuleAccess = useCallback((moduleKey) => {
+    // Admins always have access
+    if (user?.role?.toLowerCase() === 'admin') return true
+    // Check if module is in user's accessible modules
+    if (user?.accessible_modules) {
+      return user.accessible_modules.includes(moduleKey)
+    }
+    // Fallback to hasModule for backwards compatibility
+    return hasModule(moduleKey)
+  }, [user, hasModule])
+
   const value = useMemo(
     () => ({
       user,
@@ -271,6 +294,9 @@ export function AuthProvider({ children }) {
       resetPassword,
       updateProfile,
       verifyTwoFactor,
+      hasPermission,
+      hasModule,
+      hasModuleAccess,
     }),
     [
       bootstrapPortal,
@@ -293,6 +319,9 @@ export function AuthProvider({ children }) {
       updateProfile,
       user,
       verifyTwoFactor,
+      hasPermission,
+      hasModule,
+      hasModuleAccess,
     ]
   )
 
