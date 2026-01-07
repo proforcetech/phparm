@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { securityService } from '../../../services/security.service'
 import { useAuthStore } from '../../stores/auth.jsx'
@@ -11,6 +11,7 @@ const RECAPTCHA_TIMEOUT_MS = 10000
 export default function Login() {
   const { login, verifyTwoFactor, loading, error, pendingChallenge } = useAuthStore()
   const location = useLocation()
+  const navigate = useNavigate()
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -229,6 +230,8 @@ export default function Login() {
         }
 
         await verifyTwoFactor(code.trim())
+        // 2FA successful, navigate to dashboard
+        navigate('/cp/dashboard')
         return
       }
 
@@ -237,11 +240,16 @@ export default function Login() {
       // Get reCAPTCHA token (waits if still loading)
       const token = await getRecaptchaToken()
 
-      const result = await login(form.email, form.password, false, token)
+      const result = await login(form.email, form.password, form.remember, token)
 
-      if (result?.status === '2fa_required') {
+      // Check if 2FA is required
+      if (result?.requires_2fa) {
+        // Stay on page, form will switch to 2FA input
         return
       }
+
+      // Login successful, navigate to dashboard
+      navigate('/cp/dashboard')
     } catch (err) {
       setErrorMessage(err.response?.data?.message || err.message || 'Invalid credentials')
     } finally {
