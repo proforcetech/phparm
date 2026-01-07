@@ -4,9 +4,8 @@ export const authService = {
   /**
    * Staff login
    */
-  async login(credentials) {
-    const { email, password, remember, recaptcha_token } = credentials
-    const response = await api.post('/auth/login', { email, password, remember, recaptcha_token })
+  async login(email, password, recaptchaToken = null) {
+    const response = await api.post('/auth/login', { email, password, recaptcha_token: recaptchaToken })
     return response.data
   },
 
