@@ -3051,6 +3051,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $workorderMessagingNotifications
         );
 
+        // Status-driven notification service
+        $notificationEventService = new \App\Services\Notification\NotificationEventService(
+            $connection,
+            $trackingDispatcher
+        );
+        $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(
+            $connection,
+            $notificationEventService,
+            $auditLogger
+        );
+
         $router->post('/api/tracking-links', function (Request $request) use ($trackingService) {
             $user = $request->getAttribute('user');
             $body = $request->body();
@@ -3142,10 +3153,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
-        $router->patch('/api/workorders/{id}/status', function (Request $request) use ($workorderController) {
+        $router->patch('/api/workorders/{id}/status', function (Request $request) use ($workorderController, $workorderRepository, $workorderStatusNotifications) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
+
+            // Get current status before update
+            $before = $workorderRepository->find($id);
+            $previousStatus = $before?->status ?? '';
+
+            // Update status
             $data = $workorderController->updateStatus($user, $id, $request->body());
+
+            // Trigger status-driven notifications
+            $newStatus = $data['status'] ?? '';
+            if ($previousStatus !== $newStatus && $newStatus !== '') {
+                $workorderStatusNotifications->onStatusChange($id, $previousStatus, $newStatus, $user?->id);
+            }
+
             return Response::json($data);
         });
 
@@ -4064,6 +4088,120 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             header('Content-Length: ' . strlen($pdfContent));
             echo $pdfContent;
             exit;
+        });
+
+        // Inspection-to-Estimate Bridge routes
+        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection);
+        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate);
+
+        $router->get('/api/inspections/{id}/failed-items', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->failedItems($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->get('/api/inspections/{id}/recommendations', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->recommendations($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/add-to-estimate', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->addToEstimate($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/create-estimate', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->createEstimate($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/add-to-workorder', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->addToWorkorder($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/recommendations/{itemId}/decline', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            $itemId = (int) $request->getAttribute('itemId');
+            return $bridgeController->declineRecommendation($request, Response::create(), ['id' => $id, 'itemId' => $itemId]);
+        });
+
+        $router->post('/api/inspections/{id}/recommendations/{itemId}/defer', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            $itemId = (int) $request->getAttribute('itemId');
+            return $bridgeController->deferRecommendation($request, Response::create(), ['id' => $id, 'itemId' => $itemId]);
+        });
+    });
+
+    // Quality Control (QC) Checklist routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+
+        $qcService = new \App\Services\QualityControl\QCChecklistService($connection, $auditLogger);
+        $qcController = new \App\Services\QualityControl\QCChecklistController($qcService, $gate);
+
+        // Template endpoints
+        $router->get('/api/qc/templates', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $includeInactive = $request->queryParam('include_inactive') === 'true';
+            $data = $qcController->listTemplates($user, $includeInactive);
+            return Response::json($data);
+        });
+
+        $router->get('/api/qc/templates/{id}', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->showTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/qc/templates', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $data = $qcController->createTemplate($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Workorder QC endpoints
+        $router->get('/api/workorders/{id}/qc-check', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->getWorkorderCheck($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/workorders/{id}/qc-status', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->getQCStatus($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/qc-check/initialize', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->initializeCheck($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // QC check item endpoints
+        $router->patch('/api/qc/checks/{id}/items', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->updateCheckItems($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/qc/checks/{checkId}/items/{itemId}', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $checkId = (int) $request->getAttribute('checkId');
+            $itemId = (int) $request->getAttribute('itemId');
+            $data = $qcController->updateCheckItem($user, $checkId, $itemId, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/qc/checks/{id}/complete', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->completeCheck($user, $id, $request->body());
+            return Response::json($data);
         });
     });
 

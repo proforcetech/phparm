@@ -49,12 +49,36 @@ class NotificationEventService
     private function resolveTemplate(string $event): ?string
     {
         $map = [
+            // Estimate events
             'estimate.sent' => 'estimate_sent',
+
+            // Invoice events
             'invoice.created' => 'invoice_created',
             'invoice.paid' => 'invoice_paid',
+
+            // Appointment events
             'appointment.confirmed' => 'appointment_confirmed',
+
+            // Warranty events
             'warranty.updated' => 'warranty_update',
+
+            // Payment events
             'payment.reminder' => 'payment_reminder',
+
+            // Workorder status events
+            'workorder.workorder_parts_pending' => 'workorder_parts_pending',
+            'workorder.workorder_parts_pending_manager' => 'workorder_parts_pending_manager',
+            'workorder.workorder_in_progress' => 'workorder_in_progress',
+            'workorder.workorder_on_hold' => 'workorder_on_hold',
+            'workorder.workorder_on_hold_tech' => 'workorder_on_hold_tech',
+            'workorder.workorder_completed' => 'workorder_completed',
+            'workorder.workorder_completed_manager' => 'workorder_completed_manager',
+            'workorder.workorder_ready_pickup' => 'workorder_ready_pickup',
+            'workorder.workorder_ready_pickup_sms' => 'workorder_ready_pickup_sms',
+            'workorder.workorder_awaiting_auth' => 'workorder_awaiting_auth',
+            'workorder.workorder_awaiting_auth_sms' => 'workorder_awaiting_auth_sms',
+            'workorder.workorder_cancelled' => 'workorder_cancelled',
+            'workorder.workorder_cancelled_tech' => 'workorder_cancelled_tech',
         ];
 
         return $map[$event] ?? null;
