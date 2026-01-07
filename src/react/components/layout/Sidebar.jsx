@@ -23,7 +23,7 @@ import {
   Squares2X2Icon,
   TruckIcon,
   UserGroupIcon,
-  UsersIcon,
+  UsersIcon
 } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
