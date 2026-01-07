@@ -59,4 +59,27 @@ export default {
   customerShow(id) {
     return api.get(`/inspections/customer/${id}`).then((r) => r.data)
   },
+
+  // Inspection-to-Estimate Bridge methods
+  getFailedItems(reportId) {
+    return api.get(`/inspections/${reportId}/failed-items`).then((r) => r.data)
+  },
+  getRecommendations(reportId) {
+    return api.get(`/inspections/${reportId}/recommendations`).then((r) => r.data)
+  },
+  addToEstimate(reportId, payload) {
+    return api.post(`/inspections/${reportId}/add-to-estimate`, payload).then((r) => r.data)
+  },
+  createEstimateFromInspection(reportId, payload) {
+    return api.post(`/inspections/${reportId}/create-estimate`, payload).then((r) => r.data)
+  },
+  addToWorkorder(reportId, payload) {
+    return api.post(`/inspections/${reportId}/add-to-workorder`, payload).then((r) => r.data)
+  },
+  declineRecommendation(reportId, itemId) {
+    return api.post(`/inspections/${reportId}/recommendations/${itemId}/decline`).then((r) => r.data)
+  },
+  deferRecommendation(reportId, itemId) {
+    return api.post(`/inspections/${reportId}/recommendations/${itemId}/defer`).then((r) => r.data)
+  },
 }

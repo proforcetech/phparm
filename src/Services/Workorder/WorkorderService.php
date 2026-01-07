@@ -210,9 +210,14 @@ class WorkorderService
             throw new InvalidArgumentException('Workorder not found.');
         }
 
-        if ($workorder->status !== Workorder::STATUS_COMPLETED) {
-            throw new InvalidArgumentException('Only completed workorders can be converted to invoices.');
+        // Allow completed or ready_for_pickup statuses
+        $validStatuses = [Workorder::STATUS_COMPLETED, Workorder::STATUS_READY_FOR_PICKUP];
+        if (!in_array($workorder->status, $validStatuses, true)) {
+            throw new InvalidArgumentException('Only completed or ready-for-pickup workorders can be converted to invoices.');
         }
+
+        // Validate QC if enabled
+        $this->validateQCForInvoicing($workorderId);
 
         // Check if invoice already exists
         $existingInvoice = $this->findInvoiceByWorkorderId($workorderId);
@@ -850,6 +855,50 @@ class WorkorderService
         $stmt->execute(['number' => $number]);
 
         return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Validate QC requirements before allowing invoice conversion.
+     * Checks if QC is enabled and if required, whether QC has passed.
+     */
+    private function validateQCForInvoicing(int $workorderId): void
+    {
+        $pdo = $this->connection->pdo();
+
+        // Check if QC is enabled
+        $stmt = $pdo->prepare("SELECT `value` FROM settings WHERE `key` = 'qc_enabled'");
+        $stmt->execute();
+        $qcEnabled = $stmt->fetchColumn();
+
+        if ($qcEnabled !== 'true' && $qcEnabled !== '1') {
+            return; // QC not enabled, skip validation
+        }
+
+        // Check if QC is required for invoicing
+        $stmt = $pdo->prepare("SELECT `value` FROM settings WHERE `key` = 'qc_required_for_invoice'");
+        $stmt->execute();
+        $qcRequired = $stmt->fetchColumn();
+
+        if ($qcRequired !== 'true' && $qcRequired !== '1') {
+            return; // QC not required for invoicing
+        }
+
+        // Check if QC has passed
+        $stmt = $pdo->prepare(<<<SQL
+            SELECT status FROM qc_checks
+            WHERE workorder_id = :workorder_id
+            ORDER BY id DESC LIMIT 1
+        SQL);
+        $stmt->execute(['workorder_id' => $workorderId]);
+        $qcStatus = $stmt->fetchColumn();
+
+        $passedStatuses = ['passed', 'passed_with_notes'];
+        if (!in_array($qcStatus, $passedStatuses, true)) {
+            throw new InvalidArgumentException(
+                'QC check must be passed before converting workorder to invoice. ' .
+                'Current QC status: ' . ($qcStatus ?: 'not initialized')
+            );
+        }
     }
 
     private function log(string $event, int $workorderId, ?int $actorId, array $context = []): void

@@ -1,8 +1,8 @@
-## 1. Workflow & Process Automation
+## 1. Workflow & Process Automation (COMPLETED)
 The current system successfully bridges the gap between Estimates and Invoices through the WorkorderService. To improve efficiency:
-[ ] Inspection-to-Estimate Bridge: Implement a feature that automatically identifies "failed" items from the TechnicianInspections and offers to add them as line items to a draft estimate or the active workorder.
-[ ] Status-Driven Notifications: Link WorkorderStatusHistory to the NotificationEventService. For example, when a Workorder transitions to "Parts Pending," automatically notify the Parts Manager; when "Ready for Pickup," notify the customer via SMS.
-[ ] Automatic Quality Control (QC) Checklist: Require a QC checklist to be completed by a second user (Manager/Shop Lead) before a Workorder can be transitioned from "Repair Complete" to "Invoicing."
+[x] Inspection-to-Estimate Bridge: Implement a feature that automatically identifies "failed" items from the TechnicianInspections and offers to add them as line items to a draft estimate or the active workorder.
+[x] Status-Driven Notifications: Link WorkorderStatusHistory to the NotificationEventService. For example, when a Workorder transitions to "Parts Pending," automatically notify the Parts Manager; when "Ready for Pickup," notify the customer via SMS.
+[x] Automatic Quality Control (QC) Checklist: Require a QC checklist to be completed by a second user (Manager/Shop Lead) before a Workorder can be transitioned from "Repair Complete" to "Invoicing."
 
 ## 2. Parts & Inventory Management
 

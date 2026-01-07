@@ -4,11 +4,18 @@ namespace App\Models;
 
 class Workorder extends BaseModel
 {
+    // Core statuses
     public const STATUS_PENDING = 'pending';
     public const STATUS_IN_PROGRESS = 'in_progress';
     public const STATUS_ON_HOLD = 'on_hold';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELLED = 'cancelled';
+
+    // Extended statuses for workflow automation
+    public const STATUS_PARTS_PENDING = 'parts_pending';
+    public const STATUS_AWAITING_AUTHORIZATION = 'awaiting_authorization';
+    public const STATUS_READY_FOR_PICKUP = 'ready_for_pickup';
+    public const STATUS_QC_REQUIRED = 'qc_required';
 
     public const PRIORITY_LOW = 'low';
     public const PRIORITY_NORMAL = 'normal';
@@ -19,7 +26,11 @@ class Workorder extends BaseModel
         self::STATUS_PENDING,
         self::STATUS_IN_PROGRESS,
         self::STATUS_ON_HOLD,
+        self::STATUS_PARTS_PENDING,
+        self::STATUS_AWAITING_AUTHORIZATION,
+        self::STATUS_QC_REQUIRED,
         self::STATUS_COMPLETED,
+        self::STATUS_READY_FOR_PICKUP,
         self::STATUS_CANCELLED,
     ];
 
@@ -56,17 +67,66 @@ class Workorder extends BaseModel
 
     public function isEditable(): bool
     {
-        return in_array($this->status, [self::STATUS_PENDING, self::STATUS_IN_PROGRESS, self::STATUS_ON_HOLD], true);
+        $editableStatuses = [
+            self::STATUS_PENDING,
+            self::STATUS_IN_PROGRESS,
+            self::STATUS_ON_HOLD,
+            self::STATUS_PARTS_PENDING,
+            self::STATUS_AWAITING_AUTHORIZATION,
+            self::STATUS_QC_REQUIRED,
+        ];
+
+        return in_array($this->status, $editableStatuses, true);
     }
 
     public function canTransitionTo(string $newStatus): bool
     {
         $transitions = [
-            self::STATUS_PENDING => [self::STATUS_IN_PROGRESS, self::STATUS_CANCELLED],
-            self::STATUS_IN_PROGRESS => [self::STATUS_ON_HOLD, self::STATUS_COMPLETED, self::STATUS_CANCELLED],
-            self::STATUS_ON_HOLD => [self::STATUS_IN_PROGRESS, self::STATUS_CANCELLED],
-            self::STATUS_COMPLETED => [], // Terminal state for workorder (leads to invoice)
-            self::STATUS_CANCELLED => [], // Terminal state
+            // From pending: can start work or cancel
+            self::STATUS_PENDING => [
+                self::STATUS_IN_PROGRESS,
+                self::STATUS_CANCELLED,
+            ],
+            // From in_progress: can pause, need parts, need authorization, require QC, complete, or cancel
+            self::STATUS_IN_PROGRESS => [
+                self::STATUS_ON_HOLD,
+                self::STATUS_PARTS_PENDING,
+                self::STATUS_AWAITING_AUTHORIZATION,
+                self::STATUS_QC_REQUIRED,
+                self::STATUS_COMPLETED,
+                self::STATUS_CANCELLED,
+            ],
+            // From on_hold: can resume or cancel
+            self::STATUS_ON_HOLD => [
+                self::STATUS_IN_PROGRESS,
+                self::STATUS_CANCELLED,
+            ],
+            // From parts_pending: can resume when parts arrive or cancel
+            self::STATUS_PARTS_PENDING => [
+                self::STATUS_IN_PROGRESS,
+                self::STATUS_ON_HOLD,
+                self::STATUS_CANCELLED,
+            ],
+            // From awaiting_authorization: can resume when authorized, hold, or cancel
+            self::STATUS_AWAITING_AUTHORIZATION => [
+                self::STATUS_IN_PROGRESS,
+                self::STATUS_ON_HOLD,
+                self::STATUS_CANCELLED,
+            ],
+            // From qc_required: can pass QC to complete, fail back to in_progress, or cancel
+            self::STATUS_QC_REQUIRED => [
+                self::STATUS_COMPLETED,
+                self::STATUS_IN_PROGRESS, // QC failed, needs rework
+                self::STATUS_CANCELLED,
+            ],
+            // From completed: can mark ready for pickup
+            self::STATUS_COMPLETED => [
+                self::STATUS_READY_FOR_PICKUP,
+            ],
+            // From ready_for_pickup: terminal state (vehicle picked up)
+            self::STATUS_READY_FOR_PICKUP => [],
+            // Cancelled is terminal
+            self::STATUS_CANCELLED => [],
         ];
 
         return in_array($newStatus, $transitions[$this->status] ?? [], true);

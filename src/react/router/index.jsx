@@ -16,6 +16,7 @@ import EstimateDetail from '../views/estimates/EstimateDetail'
 import EstimateEdit from '../views/estimates/EstimateEdit'
 import WorkorderList from '../views/workorders/WorkorderList'
 import WorkorderDetail from '../views/workorders/WorkorderDetail'
+import QCChecklist from '../views/workorders/QCChecklist'
 import DispatchView from '../views/dispatch/DispatchView'
 import DriverJobIntake from '../views/driver/DriverJobIntake'
 import BundleList from '../views/bundles/BundleList'
@@ -69,6 +70,7 @@ import UserGroups from '../views/users/UserGroups'
 import ModuleSettings from '../views/settings/ModuleSettings'
 import InspectionTemplates from '../views/inspections/TemplateManager'
 import TechnicianInspections from '../views/inspections/TechnicianInspections'
+import InspectionRecommendations from '../views/inspections/InspectionRecommendations'
 import CMSDashboard from '../views/cms/CMSDashboard'
 import CMSPageList from '../views/cms/CMSPageList'
 import CMSPageForm from '../views/cms/CMSPageForm'
@@ -172,6 +174,7 @@ const protectedRoutes = [
   { path: '/cp/estimates/:id/edit', name: 'EstimateEdit', auth: 'requiresAuth', element: <EstimateEdit /> },
   { path: '/cp/workorders', name: 'WorkorderList', auth: 'requiresAuth', element: <WorkorderList /> },
   { path: '/cp/workorders/:id', name: 'WorkorderDetail', auth: 'requiresAuth', element: <WorkorderDetail /> },
+  { path: '/cp/workorders/:id/qc-check', name: 'QCChecklist', auth: 'requiresAuth', element: <QCChecklist /> },
   { path: '/cp/dispatch', name: 'Dispatch', auth: 'requiresAuth', element: <DispatchView /> },
   { path: '/cp/driver/job-intake', name: 'DriverJobIntake', auth: 'requiresAuth', element: <DriverJobIntake /> },
   { path: '/cp/bundles', name: 'BundleList', auth: 'requiresAuth', element: <BundleList /> },
@@ -219,6 +222,7 @@ const protectedRoutes = [
   { path: '/cp/users/:id', name: 'UserEdit', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/inspections/templates', name: 'InspectionTemplates', auth: 'requiresAuth', element: <InspectionTemplates /> },
   { path: '/cp/inspections/work', name: 'TechnicianInspections', auth: 'requiresAuth', element: <TechnicianInspections /> },
+  { path: '/cp/inspections/:id/recommendations', name: 'InspectionRecommendations', auth: 'requiresAuth', element: <InspectionRecommendations /> },
   { path: '/cp/cms', name: 'CMSDashboard', auth: 'requiresAuth', element: <CMSDashboard /> },
   { path: '/cp/cms/pages', name: 'CMSPageList', auth: 'requiresAuth', element: <CMSPageList /> },
   { path: '/cp/cms/pages/create', name: 'CMSPageCreate', auth: 'requiresAuth', element: <CMSPageForm /> },
