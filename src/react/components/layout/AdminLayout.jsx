@@ -6,10 +6,29 @@ import Navbar from './Navbar'
 import Sidebar from './Sidebar'
 import { CmsPageProvider } from '../../stores/cmsPages'
 import { CmsMenuProvider } from '../../stores/cmsMenus'
+import { useAuthStore } from '../../stores/auth'
 
 export default function AdminLayout({ children }) {
   const sidebarRef = useRef(null)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const { user, checkAuth } = useAuthStore()
+
+  // Check authentication on mount to load user data
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        await checkAuth()
+      } catch (error) {
+        // If auth check fails, router guards will handle redirect
+        console.error('Auth check failed:', error)
+      }
+    }
+
+    // Only check auth if we don't have user data yet
+    if (!user) {
+      loadUser()
+    }
+  }, [checkAuth, user])
 
   useEffect(() => {
     if (typeof window === 'undefined') {

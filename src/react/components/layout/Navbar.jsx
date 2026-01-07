@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Bars3Icon, ChevronDownIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
@@ -11,6 +11,7 @@ export default function Navbar({
   onToggleSidebarCollapsed = () => {},
 }) {
   const { user, isCustomer, isAdmin, logout } = useAuthStore()
+  const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const buttonRef = useRef(null)
 
@@ -117,9 +118,11 @@ export default function Navbar({
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setMenuOpen(false)
-                      logout()
+                      await logout()
+                      // Navigate to login page after logout
+                      navigate('/login')
                     }}
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     role="menuitem"

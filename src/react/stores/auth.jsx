@@ -113,6 +113,14 @@ export const AuthProvider = ({ children }) => {
     return user?.role === 'technician'
   }, [user])
 
+  const isAdmin = useCallback(() => {
+    return user?.role?.toLowerCase() === 'admin'
+  }, [user])
+
+  const isCustomer = useCallback(() => {
+    return user?.role === 'customer'
+  }, [user])
+
   const checkPortalAuth = useCallback(async () => {
     try {
       const userData = await portalService.getCurrentUser()
@@ -139,8 +147,10 @@ export const AuthProvider = ({ children }) => {
     hasModule,
     hasModuleAccess,
     isTechnician,
+    isAdmin,
+    isCustomer,
     checkPortalAuth
-  }), [user, loading, error, pendingChallenge, login, logout, verifyTwoFactor, checkAuth, hasPermission, hasModule, hasModuleAccess, isTechnician, checkPortalAuth])
+  }), [user, loading, error, pendingChallenge, login, logout, verifyTwoFactor, checkAuth, hasPermission, hasModule, hasModuleAccess, isTechnician, isAdmin, isCustomer, checkPortalAuth])
 
   return (
     <AuthContext.Provider value={value}>
