@@ -14,19 +14,19 @@ const adminMenuItems = [
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
   { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
   { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
-  { 
-    path: '/cp/inventory', 
-    label: 'Inventory', 
-    icon: CubeIcon, 
-    moduleKey: 'inventory' 
+  {
+    path: '/cp/inventory',
+    label: 'Inventory',
+    icon: CubeIcon,
+    moduleKey: 'inventory',
     children: [
       {
-        path: '/cp/inventory/alters',
+        path: '/cp/inventory/alerts',
         label: 'Inventory Alerts',
         icon: CubeIcon,
       },
     ],
-},
+  },
   { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon, moduleKey: 'towing' },
   { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon, moduleKey: 'impound' },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
@@ -56,22 +56,27 @@ const adminMenuItems = [
         label: 'CMS Pages',
         icon: DocumentDuplicateIcon,
       },
+      {
         path: '/cp/cms/categories',
         label: 'CMS Categories',
         icon: FolderIcon,
       },
+      {
         path: '/cp/cms/menus',
         label: 'CMS Menus',
         icon: Bars3Icon,
       },
+      {
         path: '/cp/cms/components',
         label: 'CMS Components',
         icon: Squares2X2Icon,
       },
+      {
         path: '/cp/cms/templates',
         label: 'CMS Templates',
         icon: RectangleGroupIcon,
       },
+      {
         path: '/cp/cms/404-manager',
         label: '404 Manager',
         icon: ExclamationTriangleIcon,
@@ -79,10 +84,10 @@ const adminMenuItems = [
     ],
   },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
-  { 
+  {
     path: '/cp/users',
-    label: 'Users', 
-    icon: UsersIcon 
+    label: 'Users',
+    icon: UsersIcon,
     children: [
       {
         path: '/cp/users/groups',
@@ -90,7 +95,7 @@ const adminMenuItems = [
         icon: UserGroupIcon,
       },
     ],
-},
+  },
 ]
 
 const technicianMenuItems = [
@@ -264,26 +269,6 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
 
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
             {menuItems.map((item) => renderMenuItem(item))}
-            {menuItems.map((item) => {
-              const Icon = item.icon
-              const isActive = isActiveRoute(pathname, item.path)
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  title={isCollapsed ? item.label : undefined}
-                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  } ${isCollapsed ? 'lg:justify-center' : ''}`}
-                >
-                  <Icon className={`h-5 w-5 ${isCollapsed ? 'lg:mr-0' : 'mr-3'}`} />
-                  <span className={isCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
-                </Link>
-              )}
-            )}
           </nav>
         </div>
       </aside>
