@@ -4,8 +4,9 @@ export const authService = {
   /**
    * Staff login
    */
-  async login(email, password, recaptchaToken = null) {
-    const response = await api.post('/auth/login', { email, password, recaptcha_token: recaptchaToken })
+  async login(credentials) {
+    const { email, password, remember, recaptcha_token } = credentials
+    const response = await api.post('/auth/login', { email, password, remember, recaptcha_token })
     return response.data
   },
 
@@ -17,9 +18,13 @@ export const authService = {
     return response.data
   },
 
-  async verifyTwoFactor(challengeToken, code, isCustomer = false) {
+  /**
+   * Verify two-factor authentication code
+   */
+  async verifyTwoFactor(data) {
+    const { email, password, two_factor_code, remember, recaptcha_token, isCustomer = false } = data
     const endpoint = isCustomer ? '/auth/customer-verify-2fa' : '/auth/verify-2fa'
-    const response = await api.post(endpoint, { challenge_token: challengeToken, code })
+    const response = await api.post(endpoint, { email, password, two_factor_code, remember, recaptcha_token })
     return response.data
   },
 
@@ -61,6 +66,13 @@ export const authService = {
   async me() {
     const response = await api.get('/auth/me')
     return response.data
+  },
+
+  /**
+   * Get current user (alias for me)
+   */
+  async getCurrentUser() {
+    return this.me()
   },
 
   /**
