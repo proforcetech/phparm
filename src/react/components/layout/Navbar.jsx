@@ -6,8 +6,8 @@ import { useAuthStore } from '../../stores/auth'
 import OfflineStatusBadge from '../OfflineStatusBadge'
 
 export default function Navbar({
-  showSidebarToggle = false,
-  isSidebarCollapsed = false,
+  showSidebarToggle = true,
+  isSidebarCollapsed = true,
   onToggleSidebarCollapsed = () => {},
 }) {
   const { user, isCustomer, isAdmin, logout } = useAuthStore()
