@@ -219,8 +219,13 @@ export default function Login() {
   }
 
   const handleLogin = async (event) => {
-    event.preventDefault()
+    // Prevent default form submission first
+    if (event && event.preventDefault) {
+      event.preventDefault()
+    }
+
     setErrorMessage(null)
+    setSubmitting(true)
 
     try {
       if (isVerifying) {
@@ -235,8 +240,6 @@ export default function Login() {
         return
       }
 
-      setSubmitting(true)
-
       // Get reCAPTCHA token (waits if still loading)
       const token = await getRecaptchaToken()
 
@@ -245,6 +248,7 @@ export default function Login() {
       // Check if 2FA is required
       if (result?.requires_2fa) {
         // Stay on page, form will switch to 2FA input
+        setSubmitting(false)
         return
       }
 
