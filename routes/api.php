@@ -3547,40 +3547,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $messagingController->threads($user);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->post('/api/messages/threads', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->createThread($user, $request->body());
             return Response::created($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->get('/api/messages/threads/{id}/messages', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->messages($user, $threadId);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->post('/api/messages/threads/{id}/messages', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->postMessage($user, $threadId, $request->body());
             return Response::created($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->post('/api/messages/threads/{id}/read', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->markRead($user, $threadId);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->get('/api/messages/unread', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->unreadCounts($user);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
 
         // Job-related masked SMS routes
         $router->post('/api/jobs/{jobReference}/messages/sms', function (Request $request) use ($maskedSmsController) {
