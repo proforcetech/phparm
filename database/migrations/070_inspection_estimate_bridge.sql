@@ -3,10 +3,10 @@
 
 -- Add failure configuration to inspection items
 ALTER TABLE inspection_items
-    ADD COLUMN fail_threshold VARCHAR(100) NULL COMMENT 'Threshold that indicates failure: "no" for boolean, numeric value for scales',
-    ADD COLUMN recommended_service_type_id INT UNSIGNED NULL COMMENT 'Default service type to suggest when item fails',
-    ADD COLUMN estimated_labor_hours DECIMAL(5,2) NULL COMMENT 'Default labor hours for failed item repair',
-    ADD COLUMN estimated_parts_cost DECIMAL(10,2) NULL COMMENT 'Estimated parts cost for failed item repair';
+    ADD COLUMN IF NOT EXISTS fail_threshold VARCHAR(100) NULL COMMENT 'Threshold that indicates failure: "no" for boolean, numeric value for scales',
+    ADD COLUMN IF NOT EXISTS recommended_service_type_id INT UNSIGNED NULL COMMENT 'Default service type to suggest when item fails',
+    ADD COLUMN IF NOT EXISTS estimated_labor_hours DECIMAL(5,2) NULL COMMENT 'Default labor hours for failed item repair',
+    ADD COLUMN IF NOT EXISTS estimated_parts_cost DECIMAL(10,2) NULL COMMENT 'Estimated parts cost for failed item repair';
 
 -- Track which inspection items have been converted to estimates
 CREATE TABLE IF NOT EXISTS inspection_estimate_conversions (
