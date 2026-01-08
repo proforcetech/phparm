@@ -3,9 +3,13 @@
 
 -- Add core tracking fields to inventory_items
 ALTER TABLE inventory_items
-ADD COLUMN core_cost DECIMAL(10, 2) NULL AFTER cost COMMENT 'Cost the shop pays as core deposit to vendor',
-ADD COLUMN core_price DECIMAL(10, 2) NULL AFTER core_cost COMMENT 'Price charged to customer as core deposit',
-ADD COLUMN is_core_eligible BOOLEAN DEFAULT FALSE AFTER core_price COMMENT 'Whether this part has a core';
+ADD COLUMN IF NOT EXISTS core_cost DECIMAL(10, 2) NULL AFTER cost;
+
+ALTER TABLE inventory_items
+ADD COLUMN IF NOT EXISTS core_price DECIMAL(10, 2) NULL AFTER core_cost;
+
+ALTER TABLE inventory_items
+ADD COLUMN IF NOT EXISTS is_core_eligible BOOLEAN DEFAULT FALSE AFTER core_price;
 
 -- Create core_returns table to track individual core transactions
 CREATE TABLE IF NOT EXISTS core_returns (
@@ -23,24 +27,24 @@ CREATE TABLE IF NOT EXISTS core_returns (
     sku VARCHAR(120) NULL,
 
     -- Core amounts
-    core_cost DECIMAL(10, 2) NOT NULL DEFAULT 0 COMMENT 'What shop paid to vendor',
-    core_price DECIMAL(10, 2) NOT NULL DEFAULT 0 COMMENT 'What customer paid to shop',
+    core_cost DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    core_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
 
     -- Status tracking
     status ENUM('pending_from_customer', 'received_from_customer', 'pending_to_vendor', 'returned_to_vendor', 'credit_received', 'expired', 'waived') NOT NULL DEFAULT 'pending_from_customer',
 
     -- Customer tracking
     customer_id INT UNSIGNED NULL,
-    customer_core_due_date DATE NULL COMMENT 'Date by which customer should return core',
+    customer_core_due_date DATE NULL,
     customer_core_received_at TIMESTAMP NULL,
-    customer_credited_at TIMESTAMP NULL COMMENT 'When customer was refunded core charge',
+    customer_credited_at TIMESTAMP NULL,
 
     -- Vendor tracking
     vendor VARCHAR(255) NULL,
-    vendor_core_due_date DATE NULL COMMENT 'Date by which shop should return to vendor',
+    vendor_core_due_date DATE NULL,
     vendor_return_sent_at TIMESTAMP NULL,
     vendor_credit_received_at TIMESTAMP NULL,
-    vendor_credit_amount DECIMAL(10, 2) NULL COMMENT 'Actual credit received from vendor',
+    vendor_credit_amount DECIMAL(10, 2) NULL,
 
     -- Tracking info
     notes TEXT NULL,
@@ -55,20 +59,27 @@ CREATE TABLE IF NOT EXISTS core_returns (
     INDEX idx_core_customer (customer_id),
     INDEX idx_core_status (status),
     INDEX idx_core_customer_due (customer_core_due_date),
-    INDEX idx_core_vendor_due (vendor_core_due_date),
-    CONSTRAINT fk_core_workorder FOREIGN KEY (workorder_id)
-        REFERENCES workorders (id) ON DELETE SET NULL,
-    CONSTRAINT fk_core_invoice FOREIGN KEY (invoice_id)
-        REFERENCES invoices (id) ON DELETE SET NULL,
-    CONSTRAINT fk_core_inventory FOREIGN KEY (inventory_item_id)
-        REFERENCES inventory_items (id) ON DELETE SET NULL,
-    CONSTRAINT fk_core_customer FOREIGN KEY (customer_id)
-        REFERENCES customers (id) ON DELETE SET NULL,
-    CONSTRAINT fk_core_created_by FOREIGN KEY (created_by)
-        REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT fk_core_updated_by FOREIGN KEY (updated_by)
-        REFERENCES users (id) ON DELETE SET NULL
+    INDEX idx_core_vendor_due (vendor_core_due_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Add foreign keys separately to avoid errors if tables don't exist
+ALTER TABLE core_returns
+ADD CONSTRAINT fk_core_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE SET NULL;
+
+ALTER TABLE core_returns
+ADD CONSTRAINT fk_core_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL;
+
+ALTER TABLE core_returns
+ADD CONSTRAINT fk_core_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items (id) ON DELETE SET NULL;
+
+ALTER TABLE core_returns
+ADD CONSTRAINT fk_core_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL;
+
+ALTER TABLE core_returns
+ADD CONSTRAINT fk_core_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE core_returns
+ADD CONSTRAINT fk_core_updated_by FOREIGN KEY (updated_by) REFERENCES users (id) ON DELETE SET NULL;
 
 -- Create core_return_history table for audit trail
 CREATE TABLE IF NOT EXISTS core_return_history (
@@ -89,14 +100,22 @@ CREATE TABLE IF NOT EXISTS core_return_history (
 
 -- Add core_return_id to invoice_items and workorder_items for linking
 ALTER TABLE invoice_items
-ADD COLUMN core_return_id INT UNSIGNED NULL,
-ADD COLUMN core_price DECIMAL(10, 2) NULL COMMENT 'Core charge added to line item',
-ADD INDEX idx_invoice_item_core (core_return_id);
+ADD COLUMN IF NOT EXISTS core_return_id INT UNSIGNED NULL;
+
+ALTER TABLE invoice_items
+ADD COLUMN IF NOT EXISTS core_price DECIMAL(10, 2) NULL;
+
+ALTER TABLE invoice_items
+ADD INDEX IF NOT EXISTS idx_invoice_item_core (core_return_id);
 
 ALTER TABLE workorder_items
-ADD COLUMN core_return_id INT UNSIGNED NULL,
-ADD COLUMN core_price DECIMAL(10, 2) NULL COMMENT 'Core charge for this item',
-ADD INDEX idx_workorder_item_core (core_return_id);
+ADD COLUMN IF NOT EXISTS core_return_id INT UNSIGNED NULL;
+
+ALTER TABLE workorder_items
+ADD COLUMN IF NOT EXISTS core_price DECIMAL(10, 2) NULL;
+
+ALTER TABLE workorder_items
+ADD INDEX IF NOT EXISTS idx_workorder_item_core (core_return_id);
 
 -- Insert default settings for core tracking
 INSERT IGNORE INTO settings (key_name, value, category, type, description) VALUES
