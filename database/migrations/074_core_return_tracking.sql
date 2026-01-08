@@ -106,8 +106,8 @@ ALTER TABLE workorder_items
 ADD INDEX IF NOT EXISTS idx_workorder_item_core (core_return_id);
 
 -- Insert default settings for core tracking
-INSERT IGNORE INTO settings (key_name, value, category, type, description) VALUES
-('inventory.core_tracking.enabled', 'true', 'inventory', 'boolean', 'Enable core return tracking'),
-('inventory.core_tracking.customer_return_days', '30', 'inventory', 'integer', 'Days allowed for customer to return core'),
-('inventory.core_tracking.vendor_return_days', '45', 'inventory', 'integer', 'Days allowed to return core to vendor'),
-('inventory.core_tracking.alert_days_before_due', '7', 'inventory', 'integer', 'Days before due date to show alert');
+INSERT IGNORE INTO settings (`key`, `group`, type, value, description) VALUES
+('inventory.core_tracking.enabled', 'inventory', 'boolean', 'true', 'Enable core return tracking'),
+('inventory.core_tracking.customer_return_days', 'inventory', 'integer', '30', 'Days allowed for customer to return core'),
+('inventory.core_tracking.vendor_return_days', 'inventory', 'integer', '45', 'Days allowed to return core to vendor'),
+('inventory.core_tracking.alert_days_before_due', 'inventory', 'integer', '7', 'Days before due date to show alert');
