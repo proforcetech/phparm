@@ -15,6 +15,7 @@ import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
 import inventoryService from '../../../services/inventory.service'
+import PartsCart from '../inventory/PartsCart'
 import { useToast } from '../../stores/toast'
 
 const createSubEstimateItem = () => ({
@@ -468,6 +469,13 @@ export default function WorkorderDetail() {
   const searchSubEstimateParts = async (query) => {
     if (!query || query.length < 2) return []
     try {
+      const vehicleMasterId = workorder?.vehicle?.vehicle_master_id || null
+      // Use searchWithCompatibility to highlight compatible parts
+      if (vehicleMasterId) {
+        const results = await inventoryService.searchWithCompatibility(query, vehicleMasterId)
+        if (!results) return []
+        return Array.isArray(results) ? results : (results.data || [])
+      }
       const results = await inventoryService.searchParts(query, null)
       if (!results) return []
       return Array.isArray(results) ? results : (results.data || [])
@@ -950,6 +958,13 @@ export default function WorkorderDetail() {
               </div>
             )}
           </Card>
+
+          <PartsCart
+            workorderId={workorder.id}
+            vehicle={workorder.vehicle}
+            jobs={jobs}
+            onUpdate={loadWorkorder}
+          />
 
           <Card>
             <div className="flex items-center justify-between mb-4">
