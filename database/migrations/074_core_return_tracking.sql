@@ -59,27 +59,17 @@ CREATE TABLE IF NOT EXISTS core_returns (
     INDEX idx_core_customer (customer_id),
     INDEX idx_core_status (status),
     INDEX idx_core_customer_due (customer_core_due_date),
-    INDEX idx_core_vendor_due (vendor_core_due_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    INDEX idx_core_vendor_due (vendor_core_due_date),
 
--- Add foreign keys separately to avoid errors if tables don't exist
-ALTER TABLE core_returns
-CONSTRAINT fk_core_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE SET NULL;
+    CONSTRAINT fk_core_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE SET NULL,
+    CONSTRAINT fk_core_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL,
+    CONSTRAINT fk_core_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items (id) ON DELETE SET NULL,
+    CONSTRAINT fk_core_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL,
+    CONSTRAINT fk_core_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_core_updated_by FOREIGN KEY (updated_by) REFERENCES users (id) ON DELETE SET NULL,
 
-ALTER TABLE core_returns
-CONSTRAINT fk_core_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL;
-
-ALTER TABLE core_returns
-CONSTRAINT fk_core_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items (id) ON DELETE SET NULL;
-
-ALTER TABLE core_returns
-CONSTRAINT fk_core_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL;
-
-ALTER TABLE core_returns
-CONSTRAINT fk_core_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL;
-
-ALTER TABLE core_returns
-CONSTRAINT fk_core_updated_by FOREIGN KEY (updated_by) REFERENCES users (id) ON DELETE SET NULL;
+    
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create core_return_history table for audit trail
 CREATE TABLE IF NOT EXISTS core_return_history (
