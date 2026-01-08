@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
+import CameraCapture from '../../components/CameraCapture'
 import inspectionService from '../../../services/inspection.service'
 
 export default function TechnicianInspections() {
@@ -74,9 +75,9 @@ export default function TechnicianInspections() {
     setResponses(nextResponses)
   }
 
-  const onFiles = (event) => {
-    setMediaFiles(Array.from(event.target.files || []))
-  }
+  const handleMediaCapture = useCallback((files) => {
+    setMediaFiles(files)
+  }, [])
 
   const uploadMedia = async (reportId) => {
     for (const file of mediaFiles) {
@@ -295,9 +296,13 @@ export default function TechnicianInspections() {
           </div>
         ) : null}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Attach photos/videos</label>
-          <input type="file" multiple accept="image/*,video/*" onChange={onFiles} />
+        <div className="border-t pt-4">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Visual Evidence</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Capture photos or videos of mechanical failures to increase estimate approval rates.
+            High-resolution visual proof significantly helps customers understand repair needs.
+          </p>
+          <CameraCapture onCapture={handleMediaCapture} maxVideoDuration={120} />
         </div>
 
         <div className="flex space-x-2">
