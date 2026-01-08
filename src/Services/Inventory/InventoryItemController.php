@@ -162,12 +162,68 @@ class InventoryItemController
         $query = $params['query'] ?? '';
         $vehicleMasterId = isset($params['vehicle_master_id']) ? (int) $params['vehicle_master_id'] : null;
         $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 20;
+        $highlightCompatibility = !empty($params['highlight_compatibility']);
 
         if (empty($query)) {
             return [];
         }
 
+        // Use searchWithCompatibility when we want compatibility highlighting
+        if ($highlightCompatibility && $vehicleMasterId) {
+            return $this->repository->searchWithCompatibility($query, $vehicleMasterId, $limit);
+        }
+
         $items = $this->repository->searchForParts($query, $vehicleMasterId, $limit);
+
+        return array_map(static fn ($item) => $item->toArray(), $items);
+    }
+
+    /**
+     * Search inventory parts with compatibility highlighting
+     * Returns all matching items with is_compatible flag for the specified vehicle
+     *
+     * @param User $user
+     * @param array<string, mixed> $params
+     * @return array<int, array<string, mixed>>
+     */
+    public function searchWithCompatibility(User $user, array $params = []): array
+    {
+        $this->assertViewAccess($user);
+
+        $query = $params['query'] ?? '';
+        $vehicleMasterId = isset($params['vehicle_master_id']) ? (int) $params['vehicle_master_id'] : null;
+        $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 20;
+
+        if (empty($query)) {
+            return [];
+        }
+
+        if (!$vehicleMasterId) {
+            // Without vehicle ID, return all matching items with is_compatible = false
+            $items = $this->repository->searchForParts($query, null, $limit);
+            return array_map(static function ($item) {
+                $arr = $item->toArray();
+                $arr['is_compatible'] = false;
+                return $arr;
+            }, $items);
+        }
+
+        return $this->repository->searchWithCompatibility($query, $vehicleMasterId, $limit);
+    }
+
+    /**
+     * Get all inventory items compatible with a specific vehicle
+     *
+     * @param User $user
+     * @param int $vehicleMasterId
+     * @param int $limit
+     * @return array<int, array<string, mixed>>
+     */
+    public function getCompatibleParts(User $user, int $vehicleMasterId, int $limit = 100): array
+    {
+        $this->assertViewAccess($user);
+
+        $items = $this->repository->getCompatibleParts($vehicleMasterId, $limit);
 
         return array_map(static fn ($item) => $item->toArray(), $items);
     }
@@ -186,6 +242,65 @@ class InventoryItemController
         $item = $this->repository->findBySku($sku);
 
         return $item?->toArray();
+    }
+
+    /**
+     * Find item by barcode or UPC
+     *
+     * @param User $user
+     * @param string $code Barcode or UPC value
+     * @param string $scanType Type of scan for logging
+     * @param int|null $workorderId Related workorder ID
+     * @param int|null $invoiceId Related invoice ID
+     * @return array<string, mixed>
+     */
+    public function findByBarcode(
+        User $user,
+        string $code,
+        string $scanType = 'inventory_lookup',
+        ?int $workorderId = null,
+        ?int $invoiceId = null
+    ): array {
+        $this->assertViewAccess($user);
+
+        $item = $this->repository->findByBarcode($code);
+
+        if ($item !== null) {
+            // Log successful scan
+            $this->repository->logBarcodeScan(
+                $code,
+                $scanType,
+                $item->id,
+                $user->id,
+                true,
+                null,
+                $workorderId,
+                $invoiceId
+            );
+
+            return [
+                'found' => true,
+                'item' => $item->toArray(),
+            ];
+        }
+
+        // Log failed scan
+        $this->repository->logBarcodeScan(
+            $code,
+            $scanType,
+            null,
+            $user->id,
+            false,
+            'Item not found',
+            $workorderId,
+            $invoiceId
+        );
+
+        return [
+            'found' => false,
+            'item' => null,
+            'message' => 'No item found with this barcode or UPC',
+        ];
     }
 
     /**

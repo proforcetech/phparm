@@ -2024,6 +2024,39 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        // Find inventory by barcode or UPC
+        $router->get('/api/inventory/by-barcode', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $code = (string) $request->queryParam('code');
+            $scanType = (string) ($request->queryParam('scan_type') ?? 'inventory_lookup');
+            $workorderId = $request->queryParam('workorder_id') ? (int) $request->queryParam('workorder_id') : null;
+            $invoiceId = $request->queryParam('invoice_id') ? (int) $request->queryParam('invoice_id') : null;
+
+            if ($code === '') {
+                return Response::json(['error' => 'Barcode is required'], 422);
+            }
+
+            $data = $inventoryController->findByBarcode($user, $code, $scanType, $workorderId, $invoiceId);
+            return Response::json($data);
+        });
+
+        // Post version for barcode lookup (for scanner input)
+        $router->post('/api/inventory/scan-barcode', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $code = (string) ($body['code'] ?? '');
+            $scanType = (string) ($body['scan_type'] ?? 'inventory_lookup');
+            $workorderId = isset($body['workorder_id']) ? (int) $body['workorder_id'] : null;
+            $invoiceId = isset($body['invoice_id']) ? (int) $body['invoice_id'] : null;
+
+            if ($code === '') {
+                return Response::json(['error' => 'Barcode is required'], 422);
+            }
+
+            $data = $inventoryController->findByBarcode($user, $code, $scanType, $workorderId, $invoiceId);
+            return Response::json($data);
+        });
+
         // Vehicle compatibility routes
         $router->get('/api/inventory/{id}/vehicle-compatibility', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
@@ -2056,6 +2089,120 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $inventoryController->removeVehicleCompatibility($user, $id, $vehicleMasterId);
             return Response::noContent();
+        });
+
+        // Search parts with compatibility highlighting
+        $router->get('/api/inventory/search-with-compatibility', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'query' => $request->queryParam('query'),
+                'vehicle_master_id' => $request->queryParam('vehicle_master_id'),
+                'limit' => $request->queryParam('limit'),
+            ];
+
+            $data = $inventoryController->searchWithCompatibility($user, $params);
+            return Response::json(['data' => $data]);
+        });
+
+        // Get compatible parts for a vehicle
+        $router->get('/api/inventory/compatible-parts/{vehicleMasterId}', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $vehicleMasterId = (int) $request->getAttribute('vehicleMasterId');
+            $limit = (int) ($request->queryParam('limit') ?? 100);
+
+            $data = $inventoryController->getCompatibleParts($user, $vehicleMasterId, $limit);
+            return Response::json(['data' => $data]);
+        });
+    });
+
+    // Core Return Tracking routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $coreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+        $coreReturnController = new \App\Services\Inventory\CoreReturnController($coreReturnService, $gate);
+
+        // List core returns with filters
+        $router->get('/api/core-returns', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $params = $request->queryParams();
+            $data = $coreReturnController->index($user, $params);
+            return Response::json($data);
+        });
+
+        // Get core returns summary (for dashboard)
+        $router->get('/api/core-returns/summary', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $data = $coreReturnController->summary($user);
+            return Response::json($data);
+        });
+
+        // Get core tracking status
+        $router->get('/api/core-returns/status', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $data = $coreReturnController->status($user);
+            return Response::json($data);
+        });
+
+        // Get single core return
+        $router->get('/api/core-returns/{id}', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->show($user, $id);
+            return Response::json($data);
+        });
+
+        // Create core return
+        $router->post('/api/core-returns', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $data = $coreReturnController->store($user, $request->body());
+            return Response::json($data, 201);
+        });
+
+        // Receive core from customer
+        $router->post('/api/core-returns/{id}/receive-from-customer', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->receiveFromCustomer($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Credit customer for core
+        $router->post('/api/core-returns/{id}/credit-customer', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->creditCustomer($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Return core to vendor
+        $router->post('/api/core-returns/{id}/return-to-vendor', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->returnToVendor($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Record vendor credit
+        $router->post('/api/core-returns/{id}/vendor-credit', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->vendorCredit($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Waive core
+        $router->post('/api/core-returns/{id}/waive', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->waive($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Expire core
+        $router->post('/api/core-returns/{id}/expire', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->expire($user, $id, $request->body());
+            return Response::json($data);
         });
     });
 
@@ -2162,6 +2309,138 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $workorderId = (int) $request->getAttribute('id');
             $data = $pullRequestController->getByWorkorder($user, $workorderId);
+            return Response::json($data);
+        });
+
+        // Parts Cart routes (PartsTech integration)
+        $partsTechAdapter = new \App\Services\Integrations\PartsTechAdapter($connection);
+        $partsCartService = new \App\Services\Inventory\PartsCartService($connection, $partsTechAdapter, $auditLogger);
+        $partsCartController = new \App\Services\Inventory\PartsCartController($partsCartService, $gate);
+
+        // Get or create parts cart for workorder
+        $router->get('/api/workorders/{id}/parts-cart', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $workorderId = (int) $request->getAttribute('id');
+            $data = $partsCartController->getOrCreate($user, $workorderId);
+            return Response::json($data);
+        });
+
+        // Get parts cart by ID
+        $router->get('/api/parts-carts/{id}', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->show($user, $id);
+            return Response::json($data);
+        });
+
+        // Add item to cart
+        $router->post('/api/parts-carts/{id}/items', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->addItem($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // Add item from inventory
+        $router->post('/api/parts-carts/{id}/items/from-inventory', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->addFromInventory($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // Add item from PartsTech
+        $router->post('/api/parts-carts/{id}/items/from-partstech', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->addFromPartsTech($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // Update cart item
+        $router->patch('/api/parts-carts/{cartId}/items/{itemId}', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $cartId = (int) $request->getAttribute('cartId');
+            $itemId = (int) $request->getAttribute('itemId');
+            $data = $partsCartController->updateItem($user, $cartId, $itemId, $request->body());
+            return Response::json($data);
+        });
+
+        // Remove cart item
+        $router->delete('/api/parts-carts/{cartId}/items/{itemId}', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $cartId = (int) $request->getAttribute('cartId');
+            $itemId = (int) $request->getAttribute('itemId');
+            $partsCartController->removeItem($user, $cartId, $itemId);
+            return Response::noContent();
+        });
+
+        // Submit cart for approval
+        $router->post('/api/parts-carts/{id}/submit', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->submit($user, $id);
+            return Response::json($data);
+        });
+
+        // Approve cart
+        $router->post('/api/parts-carts/{id}/approve', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->approve($user, $id);
+            return Response::json($data);
+        });
+
+        // Reject cart
+        $router->post('/api/parts-carts/{id}/reject', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->reject($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Place order
+        $router->post('/api/parts-carts/{id}/order', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->order($user, $id);
+            return Response::json($data);
+        });
+
+        // Mark as received
+        $router->post('/api/parts-carts/{id}/receive', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->receive($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Cancel cart
+        $router->post('/api/parts-carts/{id}/cancel', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->cancel($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // PartsTech search
+        $router->get('/api/parts-carts/partstech/search', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'q' => $request->queryParam('q'),
+                'year' => $request->queryParam('year'),
+                'make' => $request->queryParam('make'),
+                'model' => $request->queryParam('model'),
+                'limit' => $request->queryParam('limit'),
+            ];
+            $data = $partsCartController->searchPartsTech($user, $params);
+            return Response::json($data);
+        });
+
+        // PartsTech status
+        $router->get('/api/parts-carts/partstech/status', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $data = $partsCartController->partsTechStatus($user);
             return Response::json($data);
         });
     });

@@ -4,12 +4,12 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [x] Status-Driven Notifications: Link WorkorderStatusHistory to the NotificationEventService. For example, when a Workorder transitions to "Parts Pending," automatically notify the Parts Manager; when "Ready for Pickup," notify the customer via SMS.
 [x] Automatic Quality Control (QC) Checklist: Require a QC checklist to be completed by a second user (Manager/Shop Lead) before a Workorder can be transitioned from "Repair Complete" to "Invoicing."
 
-## 2. Parts & Inventory Management
+## 2. Parts & Inventory Management (COMPLETED)
 
-[ ] Integrated PartsTech Procurement: Enable technicians to initiate a "Parts Cart" directly from the WorkorderDetail view. This cart should sync with PartsTech, allowing the manager to approve and order without re-keying data.
-[ ] SKU Vehicle Compatibility: Leverage the InventoryVehicleCompatibility model to highlight parts in the inventory list that match the vehicle currently on the workorder, reducing "wrong part" errors.
-[ ] Core Return Tracking: Add a dedicated status/ledger for "Cores." Shop management often loses revenue by failing to track and return parts (like alternators or batteries) for core credits.
-[ ] Create a methodology to the scanning of bacodes; expand the current SKU/Part Number storage by adding UPC/Barcode support
+[x] Integrated PartsTech Procurement: Enable technicians to initiate a "Parts Cart" directly from the WorkorderDetail view. This cart should sync with PartsTech, allowing the manager to approve and order without re-keying data.
+[x] SKU Vehicle Compatibility: Leverage the InventoryVehicleCompatibility model to highlight parts in the inventory list that match the vehicle currently on the workorder, reducing "wrong part" errors.
+[x] Core Return Tracking: Add a dedicated status/ledger for "Cores." Shop management often loses revenue by failing to track and return parts (like alternators or batteries) for core credits.
+[x] Create a methodology to the scanning of bacodes; expand the current SKU/Part Number storage by adding UPC/Barcode support
 
 ## 3. Technician Productivity Tools
 

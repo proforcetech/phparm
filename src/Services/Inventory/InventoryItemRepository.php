@@ -129,6 +129,82 @@ class InventoryItemRepository
     }
 
     /**
+     * Find inventory item by barcode or UPC
+     *
+     * @param string $code Barcode or UPC value
+     * @return InventoryItem|null
+     */
+    public function findByBarcode(string $code): ?InventoryItem
+    {
+        // Check cache first
+        foreach ($this->cache as $item) {
+            if (isset($item->barcode) && $item->barcode === $code) {
+                return $item;
+            }
+            if (isset($item->upc) && $item->upc === $code) {
+                return $item;
+            }
+        }
+
+        // Search by barcode, UPC, or SKU (fallback)
+        $sql = 'SELECT * FROM inventory_items
+                WHERE barcode = :code OR upc = :code2 OR sku = :code3
+                LIMIT 1';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute(['code' => $code, 'code2' => $code, 'code3' => $code]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $item = $this->mapRow($row);
+        $this->cache[$item->id] = $item;
+
+        return $item;
+    }
+
+    /**
+     * Log a barcode scan event
+     *
+     * @param string $barcodeValue The scanned barcode
+     * @param string $scanType Type of scan action
+     * @param int|null $inventoryItemId Found item ID (if any)
+     * @param int|null $userId User who scanned
+     * @param bool $success Whether the scan was successful
+     * @param string|null $errorMessage Error message if failed
+     * @param int|null $workorderId Related workorder ID
+     * @param int|null $invoiceId Related invoice ID
+     */
+    public function logBarcodeScan(
+        string $barcodeValue,
+        string $scanType,
+        ?int $inventoryItemId,
+        ?int $userId,
+        bool $success = true,
+        ?string $errorMessage = null,
+        ?int $workorderId = null,
+        ?int $invoiceId = null
+    ): void {
+        $sql = 'INSERT INTO barcode_scan_log
+                (barcode_value, scan_type, inventory_item_id, workorder_id, invoice_id, user_id, success, error_message)
+                VALUES
+                (:barcode_value, :scan_type, :inventory_item_id, :workorder_id, :invoice_id, :user_id, :success, :error_message)';
+
+        $this->connection->pdo()->prepare($sql)->execute([
+            'barcode_value' => $barcodeValue,
+            'scan_type' => $scanType,
+            'inventory_item_id' => $inventoryItemId,
+            'workorder_id' => $workorderId,
+            'invoice_id' => $invoiceId,
+            'user_id' => $userId,
+            'success' => $success ? 1 : 0,
+            'error_message' => $errorMessage,
+        ]);
+    }
+
+    /**
      * @param array<string, mixed> $payload
      */
     public function findDuplicate(array $payload): ?InventoryItem
@@ -538,6 +614,92 @@ class InventoryItemRepository
         $stmt->execute(['inventory_item_id' => $inventoryItemId, 'vehicle_master_id' => $vehicleMasterId]);
 
         return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Search inventory items with compatibility highlighting for a specific vehicle
+     * Returns all matching items with is_compatible flag indicating vehicle match
+     *
+     * @param string $query Search query
+     * @param int $vehicleMasterId Vehicle master ID to check compatibility against
+     * @param int $limit Maximum results
+     * @return array<int, array<string, mixed>>
+     */
+    public function searchWithCompatibility(string $query, int $vehicleMasterId, int $limit = 20): array
+    {
+        $bindings = ['query' => '%' . $query . '%', 'vehicle_master_id' => $vehicleMasterId];
+
+        // Build search conditions
+        $searchConditions = '(i.name LIKE :query OR i.sku LIKE :query OR i.description LIKE :query';
+        if ($this->columnExists('manufacturer_part_number')) {
+            $searchConditions .= ' OR i.manufacturer_part_number LIKE :query';
+        }
+        $searchConditions .= ')';
+
+        // Use LEFT JOIN to get all matching parts with compatibility flag
+        $sql = 'SELECT i.*,
+                    CASE WHEN ivc.id IS NOT NULL THEN 1 ELSE 0 END as is_compatible
+                FROM inventory_items i
+                LEFT JOIN inventory_vehicle_compatibility ivc
+                    ON i.id = ivc.inventory_item_id AND ivc.vehicle_master_id = :vehicle_master_id
+                WHERE ' . $searchConditions . '
+                ORDER BY is_compatible DESC, i.name ASC
+                LIMIT :limit';
+
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare($sql);
+
+        foreach ($bindings as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $results = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $isCompatible = (bool) $row['is_compatible'];
+            unset($row['is_compatible']);
+
+            $item = $this->mapRow($row);
+            $this->cache[$item->id] = $item;
+
+            $itemArray = $item->toArray();
+            $itemArray['is_compatible'] = $isCompatible;
+            $results[] = $itemArray;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Get all inventory items compatible with a specific vehicle
+     *
+     * @param int $vehicleMasterId Vehicle master ID
+     * @param int $limit Maximum results
+     * @return array<int, InventoryItem>
+     */
+    public function getCompatibleParts(int $vehicleMasterId, int $limit = 100): array
+    {
+        $sql = 'SELECT i.* FROM inventory_items i
+                INNER JOIN inventory_vehicle_compatibility ivc ON i.id = ivc.inventory_item_id
+                WHERE ivc.vehicle_master_id = :vehicle_master_id
+                ORDER BY i.category, i.name ASC
+                LIMIT :limit';
+
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':vehicle_master_id', $vehicleMasterId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $results = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $item = $this->mapRow($row);
+            $results[] = $item;
+            $this->cache[$item->id] = $item;
+        }
+
+        return $results;
     }
 
     /**
