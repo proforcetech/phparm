@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS barcode_scan_log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert settings for barcode scanning
-INSERT IGNORE INTO settings (key, value, category, type, description) VALUES
+INSERT IGNORE INTO settings (key_name, value, category, type, description) VALUES
 ('inventory.barcode.enabled', 'true', 'inventory', 'boolean', 'Enable barcode scanning'),
 ('inventory.barcode.auto_add_to_cart', 'true', 'inventory', 'boolean', 'Automatically add scanned item to cart/workorder'),
 ('inventory.barcode.beep_on_success', 'true', 'inventory', 'boolean', 'Play sound on successful scan'),
