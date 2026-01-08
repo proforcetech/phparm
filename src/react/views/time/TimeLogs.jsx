@@ -6,6 +6,7 @@ import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Table from '../../components/ui/Table'
 import timeTrackingService from '../../../services/time-tracking.service'
+import laborTasksService from '../../../services/labor-tasks.service'
 
 const perPage = 25
 
@@ -30,6 +31,13 @@ const formatLocation = (lat, lng) => {
   return `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
 }
 
+const efficiencyVariant = (percentage) => {
+  if (percentage == null) return 'secondary'
+  if (percentage >= 100) return 'success'
+  if (percentage >= 80) return 'warning'
+  return 'danger'
+}
+
 export default function TimeLogs() {
   const [loading, setLoading] = useState(false)
   const [entries, setEntries] = useState([])
@@ -45,6 +53,7 @@ export default function TimeLogs() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [reviewError, setReviewError] = useState('')
   const [reviewing, setReviewing] = useState(false)
+  const [laborTasks, setLaborTasks] = useState([])
 
   const [filters, setFilters] = useState({
     search: '',
@@ -56,6 +65,7 @@ export default function TimeLogs() {
   const [manualForm, setManualForm] = useState({
     technician_id: '',
     estimate_job_id: '',
+    task_id: '',
     started_at: '',
     ended_at: '',
     en_route_at: '',
@@ -74,6 +84,7 @@ export default function TimeLogs() {
     on_site_at: '',
     wrap_up_at: '',
     estimate_job_id: '',
+    task_id: '',
     notes: '',
     manual_override: true,
     reason: '',
@@ -85,9 +96,10 @@ export default function TimeLogs() {
 
   const columns = useMemo(() => ([
     { key: 'technician', label: 'Technician' },
+    { key: 'task', label: 'Task' },
     { key: 'window', label: 'Window' },
     { key: 'stages', label: 'Stages' },
-    { key: 'duration_minutes', label: 'Duration' },
+    { key: 'efficiency', label: 'Time / Efficiency' },
     { key: 'location', label: 'Location' },
     { key: 'status', label: 'Status' },
     { key: 'context', label: 'Context' },
@@ -170,6 +182,10 @@ export default function TimeLogs() {
     refresh()
   }, [refresh])
 
+  useEffect(() => {
+    laborTasksService.getActiveTasks().then(setLaborTasks).catch(() => {})
+  }, [])
+
   useEffect(() => () => {
     if (inflightRequestRef.current?.controller) {
       inflightRequestRef.current.controller.abort()
@@ -178,16 +194,17 @@ export default function TimeLogs() {
 
   const handleSelectEntry = (row) => {
     setSelectedEntry(row)
-      setEditForm({
-        id: row.id,
-        started_at: row.started_at?.slice(0, 16) || '',
-        ended_at: row.ended_at?.slice(0, 16) || '',
-        en_route_at: row.en_route_at?.slice(0, 16) || '',
-        on_site_at: row.on_site_at?.slice(0, 16) || '',
-        wrap_up_at: row.wrap_up_at?.slice(0, 16) || '',
-        estimate_job_id: row.estimate_job_id || '',
-        notes: row.notes || '',
-        manual_override: row.manual_override,
+    setEditForm({
+      id: row.id,
+      started_at: row.started_at?.slice(0, 16) || '',
+      ended_at: row.ended_at?.slice(0, 16) || '',
+      en_route_at: row.en_route_at?.slice(0, 16) || '',
+      on_site_at: row.on_site_at?.slice(0, 16) || '',
+      wrap_up_at: row.wrap_up_at?.slice(0, 16) || '',
+      estimate_job_id: row.estimate_job_id || '',
+      task_id: row.task_id || '',
+      notes: row.notes || '',
+      manual_override: row.manual_override,
       reason: '',
     })
     setReviewNotes('')
@@ -214,6 +231,7 @@ export default function TimeLogs() {
       await timeTrackingService.create({
         technician_id: manualForm.technician_id,
         estimate_job_id: manualForm.estimate_job_id || null,
+        task_id: manualForm.task_id || null,
         started_at: manualForm.started_at,
         ended_at: manualForm.ended_at,
         en_route_at: manualForm.en_route_at || null,
@@ -227,6 +245,7 @@ export default function TimeLogs() {
       setManualForm({
         technician_id: '',
         estimate_job_id: '',
+        task_id: '',
         started_at: '',
         ended_at: '',
         en_route_at: '',
@@ -256,6 +275,7 @@ export default function TimeLogs() {
         on_site_at: editForm.on_site_at || null,
         wrap_up_at: editForm.wrap_up_at || null,
         estimate_job_id: editForm.estimate_job_id || null,
+        task_id: editForm.task_id || null,
         notes: editForm.notes,
         manual_override: editForm.manual_override,
         reason: editForm.reason,
@@ -375,6 +395,18 @@ export default function TimeLogs() {
                   <p className="text-xs text-gray-500">Job: {row.job_title || 'Unassigned'}</p>
                 </div>
               ),
+              task: ({ row }) => (
+                <div>
+                  {row.task_name ? (
+                    <>
+                      <p className="font-medium text-gray-900">{row.task_name}</p>
+                      <p className="text-xs text-gray-500">Flat rate: {row.flat_rate_minutes} mins</p>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400">No task</span>
+                  )}
+                </div>
+              ),
               window: ({ row }) => (
                 <div className="text-sm text-gray-900">
                   <div>Start: {formatDate(row.started_at)}</div>
@@ -388,8 +420,18 @@ export default function TimeLogs() {
                   <div>Wrap up: {formatDate(row.wrap_up_at)}</div>
                 </div>
               ),
-              duration_minutes: ({ value }) => (
-                <span className="font-semibold text-gray-900">{Number(value ?? 0).toFixed(2)} mins</span>
+              efficiency: ({ row }) => (
+                <div className="text-sm">
+                  <p className="font-semibold text-gray-900">{Number(row.duration_minutes ?? 0).toFixed(2)} mins</p>
+                  {row.flat_rate_minutes && row.flat_rate_minutes > 0 ? (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Badge variant={efficiencyVariant(row.efficiency_percentage)} size="sm">
+                        {row.efficiency_percentage != null ? `${row.efficiency_percentage}%` : 'N/A'}
+                      </Badge>
+                      <span className="text-xs text-gray-500">vs {row.flat_rate_minutes} mins</span>
+                    </div>
+                  ) : null}
+                </div>
               ),
               location: ({ row }) => (
                 <div className="text-xs text-gray-700">
@@ -459,8 +501,21 @@ export default function TimeLogs() {
                   <Badge variant={statusVariant(row.status)} size="sm">{statusLabel(row.status)}</Badge>
                 </div>
               </div>
+              {row.task_name ? (
+                <div className="mt-2 text-sm text-gray-800">
+                  <span className="font-medium">{row.task_name}</span>
+                  <span className="text-xs text-gray-500 ml-2">({row.flat_rate_minutes} mins flat rate)</span>
+                </div>
+              ) : null}
               <div className="mt-2 text-sm text-gray-800">
-                <div className="font-semibold">{Number(row.duration_minutes ?? 0).toFixed(2)} mins</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{Number(row.duration_minutes ?? 0).toFixed(2)} mins</span>
+                  {row.efficiency_percentage != null ? (
+                    <Badge variant={efficiencyVariant(row.efficiency_percentage)} size="sm">
+                      {row.efficiency_percentage}% efficiency
+                    </Badge>
+                  ) : null}
+                </div>
                 <div className="text-xs text-gray-600">Start: {formatDate(row.started_at)}</div>
                 <div className="text-xs text-gray-600">
                   End:{' '}
@@ -510,7 +565,7 @@ export default function TimeLogs() {
           <h3 className="text-lg font-semibold text-gray-900">Add manual entry</h3>
           <p className="mt-1 text-sm text-gray-600">Manual submissions default to pending until reviewed.</p>
           <form className="mt-4 space-y-3" onSubmit={submitManual}>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <Input
                 modelValue={manualForm.technician_id}
                 label="Technician ID"
@@ -522,6 +577,21 @@ export default function TimeLogs() {
                 label="Estimate Job ID"
                 onUpdateModelValue={(value) => setManualForm((prev) => ({ ...prev, estimate_job_id: value }))}
               />
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Task (for efficiency tracking)</label>
+                <select
+                  value={manualForm.task_id}
+                  onChange={(e) => setManualForm((prev) => ({ ...prev, task_id: e.target.value }))}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">No task selected</option>
+                  {laborTasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.name} ({task.flat_rate_minutes} mins)
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Input
@@ -678,12 +748,30 @@ export default function TimeLogs() {
                 onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, wrap_up_at: value }))}
               />
             </div>
-            <Input
-              modelValue={editForm.estimate_job_id}
-              label="Estimate Job ID"
-              disabled={!selectedEntry}
-              onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, estimate_job_id: value }))}
-            />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                modelValue={editForm.estimate_job_id}
+                label="Estimate Job ID"
+                disabled={!selectedEntry}
+                onUpdateModelValue={(value) => setEditForm((prev) => ({ ...prev, estimate_job_id: value }))}
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Task (for efficiency tracking)</label>
+                <select
+                  value={editForm.task_id}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, task_id: e.target.value }))}
+                  disabled={!selectedEntry}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:bg-gray-100"
+                >
+                  <option value="">No task selected</option>
+                  {laborTasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.name} ({task.flat_rate_minutes} mins)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <Input
               modelValue={editForm.reason}
               label="Adjustment Reason"
