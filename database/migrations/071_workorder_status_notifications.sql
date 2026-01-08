@@ -1,12 +1,26 @@
 -- Migration: Workorder Status-Driven Notifications
 -- Allows configurable notification rules when workorder status changes
 
+-- Create notification_templates table if it doesn't exist
+CREATE TABLE IF NOT EXISTS notification_templates (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    template_key VARCHAR(100) NOT NULL UNIQUE,
+    name VARCHAR(255) NULL,
+    channel VARCHAR(50) NOT NULL DEFAULT 'email',
+    subject VARCHAR(255) NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_nt_key (template_key),
+    INDEX idx_nt_channel (channel)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS workorder_notification_rules (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    to_status VARCHAR(50) NOT NULL COMMENT 'Target status that triggers notification',
-    from_status VARCHAR(50) NULL COMMENT 'Optional: only trigger if coming from this status',
-    recipient_type VARCHAR(50) NOT NULL COMMENT 'customer, customer_sms, assigned_technician, role:manager, etc.',
-    template_key VARCHAR(100) NOT NULL COMMENT 'Notification template key',
+    to_status VARCHAR(50) NOT NULL,
+    from_status VARCHAR(50) NULL,
+    recipient_type VARCHAR(50) NOT NULL,
+    template_key VARCHAR(100) NOT NULL,
     active TINYINT(1) DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -14,10 +28,6 @@ CREATE TABLE IF NOT EXISTS workorder_notification_rules (
     INDEX idx_wnr_active (active),
     UNIQUE KEY uk_status_recipient (to_status, from_status, recipient_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Add additional workorder statuses to support more granular workflow
--- Note: These are additive - they extend the existing status options
--- The Workorder model's ALLOWED_STATUSES constant should be updated to include these
 
 -- Insert default notification templates for workorder status changes
 INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at) VALUES
@@ -95,6 +105,14 @@ INSERT INTO notification_templates (template_key, name, channel, subject, body, 
 
 ON DUPLICATE KEY UPDATE updated_at = NOW();
 
--- Add extended status options to support more granular workflows
--- These would be added to Workorder::ALLOWED_STATUSES in the model
--- 'parts_pending', 'ready_for_pickup', 'awaiting_authorization', 'qc_required'
+-- Insert default notification rules
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES
+('parts_pending', NULL, 'role:manager', 'workorder_parts_pending_manager', 1),
+('in_progress', NULL, 'customer', 'workorder_in_progress', 1),
+('on_hold', NULL, 'role:manager', 'workorder_on_hold', 1),
+('completed', NULL, 'customer', 'workorder_completed', 1),
+('ready_for_pickup', NULL, 'customer', 'workorder_ready_pickup', 1),
+('ready_for_pickup', NULL, 'customer_sms', 'workorder_ready_pickup_sms', 1),
+('awaiting_authorization', NULL, 'customer', 'workorder_awaiting_auth', 1),
+('awaiting_authorization', NULL, 'customer_sms', 'workorder_awaiting_auth_sms', 1),
+('cancelled', NULL, 'customer', 'workorder_cancelled', 1);
