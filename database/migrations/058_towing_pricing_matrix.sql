@@ -77,6 +77,6 @@ INSERT INTO towing_service_types (name, code, description, sort_order) VALUES
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 -- Create indexes for performance
-CREATE INDEX idx_towing_price_matrix_class ON towing_price_matrix (service_class_id);
-CREATE INDEX idx_towing_price_matrix_type ON towing_price_matrix (service_type_id);
-CREATE INDEX idx_towing_price_matrix_active ON towing_price_matrix (is_active);
+CREATE INDEX IF NOT EXISTS idx_towing_price_matrix_class ON towing_price_matrix (service_class_id);
+CREATE INDEX IF NOT EXISTS idx_towing_price_matrix_type ON towing_price_matrix (service_type_id);
+CREATE INDEX IF NOT EXISTS idx_towing_price_matrix_active ON towing_price_matrix (is_active);
