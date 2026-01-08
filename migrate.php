@@ -87,27 +87,34 @@ try {
         
         echo "→ Running: {$migrationName}...";
         
-        try {
+try {
             $sql = file_get_contents($file);
             if ($sql === false) {
                 throw new RuntimeException("Unable to read migration file: {$migrationName}");
             }
             
-            // Split by semicolons but not inside quotes
-            $statements = preg_split('/;(?=(?:[^\'"]|[\'"][^\'"]*[\'"])*$)/', $sql, -1, PREG_SPLIT_NO_EMPTY);
-            if ($statements === false) {
-                throw new RuntimeException("Unable to parse migration file: {$migrationName}");
+            // FIX 1: Use preg_match_all instead of preg_split.
+            // This regex matches "anything that isn't a semicolon" OR "quoted strings" linearly.
+            // It avoids the catastrophic backtracking of the previous lookahead regex.
+            $pcreResult = preg_match_all('/((?:[^;\'"]+|(?:\'(?:\\\\.|[^\'])*\')|(?:"(?:\\\\.|[^"])*"))+)/', $sql, $matches);
+            
+            if ($pcreResult === false) {
+                throw new RuntimeException("Unable to parse migration file (Regex Error): {$migrationName}");
             }
             
+            $statements = $matches[0];
+            
             foreach ($statements as $statement) {
+                // FIX 2: Strip comments before checking for empty statements.
+                // The previous logic skipped valid queries if they were preceded by a comment.
+                $statement = preg_replace('/^--.*$/m', '', $statement);
                 $statement = trim($statement);
-                if (empty($statement) || strpos($statement, '--') === 0) {
+                
+                if (empty($statement)) {
                     continue;
                 }
                 
-                // <--- FIX 2: Use prepare/execute/closeCursor instead of exec
-                // This ensures that if a migration contains a SELECT or output,
-                // the connection is freed immediately.
+                // Prepare and execute
                 $stmt = $pdo->prepare($statement);
                 $stmt->execute();
                 $stmt->closeCursor(); 
@@ -116,7 +123,7 @@ try {
             // Record migration
             $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?)");
             $stmt->execute([$migrationName]);
-            $stmt->closeCursor(); // Good practice to close here too
+            $stmt->closeCursor();
             
             echo " ✓\n";
             $runCount++;
@@ -124,7 +131,6 @@ try {
         } catch (PDOException $e) {
             echo " ✗\n";
             echo "  Error: " . $e->getMessage() . "\n\n";
-            
             // Continue with next migration instead of stopping
             continue;
         }
