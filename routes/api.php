@@ -18,6 +18,174 @@ use App\CMS\Controllers\CategoryController;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
 use App\CMS\Controllers\PageController;
+
+/**
+ * @param array<string, mixed> $notice
+ * @return array<string, mixed>
+ */
+function formatStorageNotice(array $notice): array
+{
+    $ownerName = trim((string) ($notice['business_name'] ?? ''));
+    if ($ownerName === '') {
+        $ownerName = trim(sprintf(
+            '%s %s',
+            (string) ($notice['first_name'] ?? ''),
+            (string) ($notice['last_name'] ?? '')
+        ));
+    }
+
+    $notice['owner_name'] = $ownerName;
+    $notice['owner_address'] = (string) ($notice['street'] ?? '');
+    $notice['owner_city'] = (string) ($notice['city'] ?? '');
+    $notice['owner_state'] = (string) ($notice['owner_state'] ?? '');
+    $notice['owner_zip'] = (string) ($notice['postal_code'] ?? '');
+    $notice['owner_phone'] = (string) ($notice['phone'] ?? '');
+
+    return $notice;
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function fetchStorageNotice(\PDO $pdo, int $id): ?array
+{
+    $sql = <<<SQL
+        SELECT
+            lien_notices.id,
+            lien_notices.notice_type,
+            lien_notices.notice_date,
+            lien_notices.due_date,
+            lien_notices.sent_date,
+            lien_notices.status,
+            impound_cases.case_number,
+            impound_cases.state_code,
+            impound_cases.impound_date,
+            impound_cases.intake_location,
+            impound_cases.status AS case_status,
+            customers.first_name,
+            customers.last_name,
+            customers.business_name,
+            customers.phone,
+            customers.street,
+            customers.city,
+            customers.state AS owner_state,
+            customers.postal_code,
+            customer_vehicles.year AS vehicle_year,
+            customer_vehicles.make AS vehicle_make,
+            customer_vehicles.model AS vehicle_model,
+            customer_vehicles.vin AS vehicle_vin,
+            customer_vehicles.license_plate AS vehicle_license_plate,
+            DATEDIFF(CURDATE(), DATE(impound_cases.impound_date)) AS days_held,
+            COALESCE(storage_rates.lien_notice_days, 0) AS lien_notice_days
+        FROM lien_notices
+        JOIN impound_cases ON impound_cases.id = lien_notices.impound_case_id
+        LEFT JOIN customers ON customers.id = impound_cases.customer_id
+        LEFT JOIN customer_vehicles ON customer_vehicles.id = impound_cases.customer_vehicle_id
+        LEFT JOIN (
+            SELECT rates.*
+            FROM storage_rates rates
+            INNER JOIN (
+                SELECT state_code, MAX(effective_date) AS effective_date
+                FROM storage_rates
+                WHERE status = 'active'
+                GROUP BY state_code
+            ) latest
+                ON latest.state_code = rates.state_code
+                AND latest.effective_date = rates.effective_date
+            WHERE rates.status = 'active'
+        ) storage_rates ON storage_rates.state_code = impound_cases.state_code
+        WHERE lien_notices.id = ?
+        LIMIT 1
+    SQL;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$id]);
+    $notice = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+
+    if (!$notice) {
+        return null;
+    }
+
+    return formatStorageNotice($notice);
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function fetchStorageNoticeDetails(\PDO $pdo, int $id): ?array
+{
+    $sql = <<<SQL
+        SELECT
+            lien_notices.id,
+            lien_notices.notice_type,
+            lien_notices.notice_date,
+            lien_notices.due_date,
+            lien_notices.sent_date,
+            lien_notices.status AS notice_status,
+            impound_cases.id AS impound_case_id,
+            impound_cases.case_number,
+            impound_cases.state_code,
+            impound_cases.impound_date,
+            impound_cases.intake_location,
+            impound_cases.status AS case_status,
+            impound_cases.gate_fee AS case_gate_fee,
+            impound_cases.daily_rate AS case_daily_rate,
+            impound_cases.after_hours_gate,
+            impound_cases.released_at,
+            customers.first_name,
+            customers.last_name,
+            customers.business_name,
+            customers.phone,
+            customers.street,
+            customers.city,
+            customers.state AS owner_state,
+            customers.postal_code,
+            customer_vehicles.year AS vehicle_year,
+            customer_vehicles.make AS vehicle_make,
+            customer_vehicles.model AS vehicle_model,
+            customer_vehicles.vin AS vehicle_vin,
+            customer_vehicles.license_plate AS vehicle_license_plate,
+            storage_rates.daily_rate AS rate_daily_rate,
+            storage_rates.gate_fee AS rate_gate_fee
+        FROM lien_notices
+        JOIN impound_cases ON impound_cases.id = lien_notices.impound_case_id
+        LEFT JOIN customers ON customers.id = impound_cases.customer_id
+        LEFT JOIN customer_vehicles ON customer_vehicles.id = impound_cases.customer_vehicle_id
+        LEFT JOIN (
+            SELECT rates.*
+            FROM storage_rates rates
+            INNER JOIN (
+                SELECT state_code, MAX(effective_date) AS effective_date
+                FROM storage_rates
+                WHERE status = 'active'
+                GROUP BY state_code
+            ) latest
+                ON latest.state_code = rates.state_code
+                AND latest.effective_date = rates.effective_date
+            WHERE rates.status = 'active'
+        ) storage_rates ON storage_rates.state_code = impound_cases.state_code
+        WHERE lien_notices.id = ?
+        LIMIT 1
+    SQL;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$id]);
+    $notice = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+
+    if (!$notice) {
+        return null;
+    }
+
+    $notice = formatStorageNotice($notice);
+    $notice['owner_address'] = $notice['owner_address'] ?? (string) ($notice['street'] ?? '');
+    $notice['owner_city'] = $notice['owner_city'] ?? (string) ($notice['city'] ?? '');
+    $notice['owner_zip'] = $notice['owner_zip'] ?? (string) ($notice['postal_code'] ?? '');
+    $notice['owner_phone'] = $notice['owner_phone'] ?? (string) ($notice['phone'] ?? '');
+
+    return $notice;
+}
 use App\Services\CMS\CMSCacheService;
 
 /**
@@ -5527,6 +5695,242 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
 
             return Response::noContent();
+        });
+
+        $router->get('/api/storage/notices', function (Request $request) use ($connection) {
+            $status = $request->queryParam('status');
+            $pdo = $connection->pdo();
+
+            $sql = <<<SQL
+                SELECT
+                    lien_notices.id,
+                    lien_notices.notice_type,
+                    lien_notices.notice_date,
+                    lien_notices.due_date,
+                    lien_notices.sent_date,
+                    lien_notices.status,
+                    impound_cases.case_number,
+                    impound_cases.state_code,
+                    impound_cases.impound_date,
+                    impound_cases.intake_location,
+                    impound_cases.status AS case_status,
+                    customers.first_name,
+                    customers.last_name,
+                    customers.business_name,
+                    customers.phone,
+                    customers.street,
+                    customers.city,
+                    customers.state AS owner_state,
+                    customers.postal_code,
+                    customer_vehicles.year AS vehicle_year,
+                    customer_vehicles.make AS vehicle_make,
+                    customer_vehicles.model AS vehicle_model,
+                    customer_vehicles.vin AS vehicle_vin,
+                    customer_vehicles.license_plate AS vehicle_license_plate,
+                    DATEDIFF(CURDATE(), DATE(impound_cases.impound_date)) AS days_held,
+                    COALESCE(storage_rates.lien_notice_days, 0) AS lien_notice_days
+                FROM lien_notices
+                JOIN impound_cases ON impound_cases.id = lien_notices.impound_case_id
+                LEFT JOIN customers ON customers.id = impound_cases.customer_id
+                LEFT JOIN customer_vehicles ON customer_vehicles.id = impound_cases.customer_vehicle_id
+                LEFT JOIN (
+                    SELECT rates.*
+                    FROM storage_rates rates
+                    INNER JOIN (
+                        SELECT state_code, MAX(effective_date) AS effective_date
+                        FROM storage_rates
+                        WHERE status = 'active'
+                        GROUP BY state_code
+                    ) latest
+                        ON latest.state_code = rates.state_code
+                        AND latest.effective_date = rates.effective_date
+                    WHERE rates.status = 'active'
+                ) storage_rates ON storage_rates.state_code = impound_cases.state_code
+            SQL;
+
+            $params = [];
+            if ($status) {
+                $sql .= ' WHERE lien_notices.status = :status';
+                $params['status'] = $status;
+            }
+
+            $sql .= ' ORDER BY lien_notices.notice_date DESC, lien_notices.id DESC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $notices = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            foreach ($notices as &$notice) {
+                $notice = formatStorageNotice($notice);
+            }
+            unset($notice);
+
+            return Response::json(['data' => $notices]);
+        });
+
+        $router->post('/api/storage/notices', function (Request $request) use ($connection) {
+            $payload = $request->body();
+            $caseNumber = trim((string) ($payload['case_number'] ?? ''));
+            $noticeType = trim((string) ($payload['notice_type'] ?? ''));
+            $noticeDate = trim((string) ($payload['notice_date'] ?? ''));
+            $dueDate = trim((string) ($payload['due_date'] ?? ''));
+
+            if ($caseNumber === '' || $noticeType === '') {
+                return Response::badRequest('Case number and notice type are required.');
+            }
+
+            $pdo = $connection->pdo();
+            $stmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+            $stmt->execute([$caseNumber]);
+            $caseId = $stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if (!$caseId) {
+                return Response::badRequest('Impound case not found.');
+            }
+
+            $existingStmt = $pdo->prepare(
+                'SELECT id FROM lien_notices WHERE impound_case_id = ? AND notice_type = ? LIMIT 1'
+            );
+            $existingStmt->execute([(int) $caseId, $noticeType]);
+            $existingNotice = $existingStmt->fetchColumn();
+            $existingStmt->closeCursor();
+
+            if ($existingNotice) {
+                return Response::badRequest('A notice of this type already exists for the case.');
+            }
+
+            $noticeDate = $noticeDate !== '' ? $noticeDate : date('Y-m-d');
+            $dueDate = $dueDate !== '' ? $dueDate : date('Y-m-d', strtotime('+10 days'));
+
+            $insert = $pdo->prepare(
+                'INSERT INTO lien_notices (impound_case_id, notice_type, notice_date, due_date, status)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            $insert->execute([(int) $caseId, $noticeType, $noticeDate, $dueDate, 'draft']);
+            $insert->closeCursor();
+
+            $noticeId = (int) $pdo->lastInsertId();
+            $notice = fetchStorageNotice($pdo, $noticeId);
+
+            return Response::created(['notice' => $notice]);
+        });
+
+        $router->post('/api/storage/notices/{id}/send', function (Request $request) use ($connection) {
+            $id = (int) $request->getAttribute('id');
+            $pdo = $connection->pdo();
+
+            $stmt = $pdo->prepare('SELECT id FROM lien_notices WHERE id = ?');
+            $stmt->execute([$id]);
+            $exists = $stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if (!$exists) {
+                return Response::notFound('Lien notice not found.');
+            }
+
+            $update = $pdo->prepare(
+                'UPDATE lien_notices
+                 SET status = ?, sent_date = ?, status_updated_at = NOW()
+                 WHERE id = ?'
+            );
+            $update->execute(['sent', date('Y-m-d'), $id]);
+            $update->closeCursor();
+
+            $notice = fetchStorageNotice($pdo, $id);
+
+            return Response::json(['notice' => $notice]);
+        });
+
+        $router->get('/api/storage/notices/{id}/pdf', function (Request $request) use ($connection, $settingsRepository) {
+            $id = (int) $request->getAttribute('id');
+            $pdo = $connection->pdo();
+            $detail = fetchStorageNoticeDetails($pdo, $id);
+
+            if (!$detail) {
+                return Response::notFound('Lien notice not found.');
+            }
+
+            $address = $settingsRepository->get('shop.address', []);
+            $shopAddress = '';
+            if (is_array($address)) {
+                $lines = array_filter([
+                    trim((string) ($address['street'] ?? '')),
+                    trim(sprintf(
+                        '%s%s%s',
+                        (string) ($address['city'] ?? ''),
+                        !empty($address['state']) ? ', ' . $address['state'] : '',
+                        !empty($address['postal_code']) ? ' ' . $address['postal_code'] : ''
+                    )),
+                    trim((string) ($address['country'] ?? '')),
+                ]);
+                $shopAddress = implode('<br>', $lines);
+            } elseif (is_string($address)) {
+                $shopAddress = $address;
+            }
+
+            $settings = [
+                'shop_name' => $settingsRepository->get('shop.name', 'Storage Facility'),
+                'shop_address' => $shopAddress,
+                'shop_phone' => $settingsRepository->get('shop.phone', ''),
+                'storage.notice.notice_of_claim' => $settingsRepository->get('storage.notice.notice_of_claim'),
+                'storage.notice.lien_notice' => $settingsRepository->get('storage.notice.lien_notice'),
+            ];
+
+            $case = [
+                'case_number' => $detail['case_number'],
+                'notice_date' => $detail['notice_date'],
+                'status' => $detail['case_status'],
+                'intake_location' => $detail['intake_location'],
+                'impound_date' => $detail['impound_date'],
+                'released_at' => $detail['released_at'],
+                'state_code' => $detail['state_code'],
+                'daily_rate' => $detail['case_daily_rate'],
+                'gate_fee' => $detail['case_gate_fee'],
+                'after_hours_gate' => (int) ($detail['after_hours_gate'] ?? 0) === 1,
+            ];
+
+            $owner = [
+                'name' => $detail['owner_name'],
+                'address' => $detail['owner_address'],
+                'city' => $detail['owner_city'],
+                'state' => $detail['owner_state'],
+                'zip' => $detail['owner_zip'],
+                'phone' => $detail['owner_phone'],
+            ];
+
+            $vehicle = [
+                'year' => $detail['vehicle_year'],
+                'make' => $detail['vehicle_make'],
+                'model' => $detail['vehicle_model'],
+                'vin' => $detail['vehicle_vin'],
+                'license_plate' => $detail['vehicle_license_plate'],
+            ];
+
+            $rate = [
+                'daily_rate' => $detail['rate_daily_rate'],
+                'gate_fee' => $detail['rate_gate_fee'],
+            ];
+
+            $notice = [
+                'notice_date' => $detail['notice_date'],
+                'due_date' => $detail['due_date'],
+                'notice_type' => $detail['notice_type'],
+            ];
+
+            $storageService = new \App\Services\Storage\StorageService();
+            $asOf = $detail['notice_date'] ? new \DateTimeImmutable($detail['notice_date']) : null;
+            $fees = $storageService->calculateAccruedFees($case, $rate, $asOf);
+
+            $generator = new \App\Support\Pdf\LienNoticePdfGenerator();
+            if ($detail['notice_type'] === 'Notice of Claim') {
+                $pdf = $generator->generateNoticeOfClaim($case, $owner, $vehicle, $fees, $settings);
+            } else {
+                $pdf = $generator->generateLienNotice($notice, $case, $owner, $vehicle, $fees, $settings);
+            }
+
+            return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
         });
 
         $router->post('/api/storage/templates/preview', function (Request $request) use ($settingsRepository) {

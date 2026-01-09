@@ -9,29 +9,15 @@ import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Table from '../../components/ui/Table'
 import Textarea from '../../components/ui/Textarea'
+import storageService from '../../../services/storage.service'
 import { useToast } from '../../stores/toast.jsx'
-
-const noticeRows = [
-  {
-    id: 1,
-    case_number: 'IMP-2024-017',
-    notice_type: 'Notice of Claim',
-    notice_date: '2024-03-16',
-    status: 'draft',
-  },
-  {
-    id: 2,
-    case_number: 'IMP-2024-017',
-    notice_type: 'Lien Notice',
-    notice_date: '2024-03-26',
-    status: 'scheduled',
-  },
-]
 
 const statusVariant = {
   draft: 'secondary',
+  ready: 'warning',
   scheduled: 'warning',
   sent: 'success',
+  void: 'secondary',
 }
 
 const templateOptions = [
@@ -74,6 +60,13 @@ export default function NoticeGeneration() {
     notice_type: 'Notice of Claim',
     due_date: '',
   })
+  const [creating, setCreating] = useState(false)
+  const [notices, setNotices] = useState([])
+  const [noticesState, setNoticesState] = useState({
+    loading: true,
+    error: '',
+  })
+  const [sendingNoticeId, setSendingNoticeId] = useState(null)
   const [templates, setTemplates] = useState(() => (
     templateOptions.reduce((acc, option) => ({ ...acc, [option.value]: '' }), {})
   ))
@@ -88,14 +81,57 @@ export default function NoticeGeneration() {
 
   const columns = useMemo(() => ([
     { key: 'case_number', label: 'Case #' },
+    { key: 'owner_name', label: 'Owner' },
+    { key: 'vehicle_summary', label: 'Vehicle' },
+    { key: 'days_held', label: 'Days Held' },
     { key: 'notice_type', label: 'Notice Type' },
     { key: 'notice_date', label: 'Notice Date' },
+    { key: 'due_date', label: 'Due Date' },
     { key: 'status', label: 'Status' },
   ]), [])
 
-  const generateNotice = (event) => {
+  const generateNotice = async (event) => {
     event.preventDefault()
-    success(`Generated ${form.notice_type} for ${form.case_number || 'case'}`)
+    if (!form.case_number) {
+      error('Case number is required.')
+      return
+    }
+
+    setCreating(true)
+    try {
+      const payload = {
+        case_number: form.case_number,
+        notice_type: form.notice_type,
+        due_date: form.due_date || null,
+      }
+      const response = await storageService.createNotice(payload)
+      success(`Generated ${form.notice_type} for ${form.case_number}`)
+      setForm((prev) => ({ ...prev, case_number: '', due_date: '' }))
+      await loadNotices()
+
+      if (response?.notice?.id) {
+        await previewNotice(response.notice.id)
+      }
+    } catch (err) {
+      console.error(err)
+      error(err?.response?.data?.error || 'Unable to generate notice.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const loadNotices = async () => {
+    setNoticesState((prev) => ({ ...prev, loading: true, error: '' }))
+    try {
+      const response = await storageService.listNotices()
+      setNotices(response?.data ?? [])
+    } catch (err) {
+      console.error(err)
+      setNoticesState((prev) => ({ ...prev, error: 'Unable to load lien notices.' }))
+      error('Unable to load lien notices.')
+    } finally {
+      setNoticesState((prev) => ({ ...prev, loading: false }))
+    }
   }
 
   const loadTemplates = async () => {
@@ -135,6 +171,7 @@ export default function NoticeGeneration() {
 
   useEffect(() => {
     loadTemplates()
+    loadNotices()
   }, [])
 
   useEffect(() => () => {
@@ -220,6 +257,48 @@ export default function NoticeGeneration() {
     previewTemplate(templateKey)
   }
 
+  const previewNotice = async (noticeId) => {
+    try {
+      const blob = await storageService.previewNotice(noticeId)
+      const url = URL.createObjectURL(blob)
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl)
+      }
+      setPreviewUrl(url)
+      setPreviewOpen(true)
+    } catch (err) {
+      console.error(err)
+      error('Unable to preview notice PDF.')
+    }
+  }
+
+  const markNoticeSent = async (noticeId) => {
+    setSendingNoticeId(noticeId)
+    try {
+      await storageService.sendNotice(noticeId)
+      success('Notice marked as sent.')
+      await loadNotices()
+    } catch (err) {
+      console.error(err)
+      error('Unable to mark notice as sent.')
+    } finally {
+      setSendingNoticeId(null)
+    }
+  }
+
+  const formattedNotices = useMemo(() => notices.map((notice) => {
+    const vehicleSummary = [notice.vehicle_year, notice.vehicle_make, notice.vehicle_model]
+      .filter(Boolean)
+      .join(' ')
+    return {
+      ...notice,
+      owner_name: notice.owner_name || '—',
+      vehicle_summary: vehicleSummary || '—',
+      days_held: notice.days_held ?? '—',
+      due_date: notice.due_date || '—',
+    }
+  }), [notices])
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -266,7 +345,7 @@ export default function NoticeGeneration() {
           />
           <div className="md:col-span-3 flex justify-end gap-2">
             <Button variant="outline" type="button" onClick={handleFormPreview}>Preview PDF</Button>
-            <Button type="submit">Generate PDF</Button>
+            <Button type="submit" loading={creating} disabled={creating}>Generate PDF</Button>
           </div>
         </form>
       </Card>
@@ -328,17 +407,46 @@ export default function NoticeGeneration() {
           <h2 className="text-lg font-semibold text-gray-900">Recent Notices</h2>
           <p className="text-sm text-gray-500">Track delivery status for outgoing lien notices.</p>
         </div>
+        {noticesState.error ? (
+          <p className="mb-3 text-sm text-red-600">{noticesState.error}</p>
+        ) : null}
         <Table
           columns={columns}
-          data={noticeRows.map((row) => ({
-            ...row,
-            status: (
+          data={formattedNotices}
+          loading={noticesState.loading}
+          hoverable={false}
+          renderEmpty={<p className="text-sm text-gray-500">No notices flagged for lien review yet.</p>}
+          cellRenderers={{
+            status: ({ row }) => (
               <Badge variant={statusVariant[row.status] || 'default'}>
                 {row.status}
               </Badge>
             ),
-          }))}
-          hoverable={false}
+          }}
+          renderActions={(row) => (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="xs"
+                type="button"
+                onClick={() => previewNotice(row.id)}
+              >
+                Preview
+              </Button>
+              {row.status !== 'sent' ? (
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  type="button"
+                  loading={sendingNoticeId === row.id}
+                  disabled={sendingNoticeId === row.id}
+                  onClick={() => markNoticeSent(row.id)}
+                >
+                  Mark Sent
+                </Button>
+              ) : null}
+            </div>
+          )}
         />
       </Card>
 
