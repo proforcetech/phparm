@@ -4002,10 +4002,30 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         })->middleware(Middleware::auth());
 
+        $router->post('/api/messages/threads/{id}/attachments', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $files = $request->file('files') ?? $request->file('file');
+            $data = $messagingController->postMessageWithAttachments(
+                $user,
+                $threadId,
+                $request->body(),
+                is_array($files) ? $files : []
+            );
+            return Response::created($data);
+        })->middleware(Middleware::auth());
+
         $router->post('/api/messages/threads/{id}/read', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->markRead($user, $threadId);
+            return Response::json($data);
+        })->middleware(Middleware::auth());
+
+        $router->get('/api/messages/threads/{id}/state', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $data = $messagingController->threadState($user, $threadId);
             return Response::json($data);
         })->middleware(Middleware::auth());
 

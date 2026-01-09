@@ -87,6 +87,8 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 6. Additional features for Towing/Roadside
 
+[x] In-App Chat with Dispatch: Move away from phone calls. The ChatWidget.jsx should be integrated directly into the job view so dispatchers can send gate codes or updated drop-off instructions silently.
+[ ] Turn-by-Turn Deep Linking: A "Navigate" button that passes coordinates directly to Waze, Google Maps, or Apple Maps.
 [ ] In-App Chat with Dispatch: Move away from phone calls. The ChatWidget.jsx should be integrated directly into the job view so dispatchers can send gate codes or updated drop-off instructions silently.
 [x] Turn-by-Turn Deep Linking: A "Navigate" button that passes coordinates directly to Waze, Google Maps, or Apple Maps.
 

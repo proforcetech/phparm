@@ -17,8 +17,27 @@ export const messagingService = {
     const response = await api.post(`/messages/threads/${threadId}/messages`, payload)
     return response.data
   },
+  async postMessageWithAttachments(threadId, payload = {}) {
+    const formData = new FormData()
+    if (payload.body) {
+      formData.append('body', payload.body)
+    }
+    if (Array.isArray(payload.files)) {
+      payload.files.forEach((file) => {
+        formData.append('files[]', file)
+      })
+    }
+    const response = await api.post(`/messages/threads/${threadId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data
+  },
   async markRead(threadId) {
     const response = await api.post(`/messages/threads/${threadId}/read`)
+    return response.data
+  },
+  async threadState(threadId) {
+    const response = await api.get(`/messages/threads/${threadId}/state`)
     return response.data
   },
   async unreadCounts() {
