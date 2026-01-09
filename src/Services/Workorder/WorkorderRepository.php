@@ -58,6 +58,9 @@ class WorkorderRepository
     {
         $clauses = [];
         $bindings = [];
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((SELECT MAX(created_at) FROM workorder_status_history wsh '
+            . 'WHERE wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status), '
+            . 'workorders.updated_at, workorders.created_at), NOW())';
 
         if (!empty($filters['status'])) {
             if (is_array($filters['status'])) {
@@ -109,6 +112,16 @@ class WorkorderRepository
             $bindings['created_to'] = $filters['created_to'];
         }
 
+        if (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '') {
+            $clauses[] = $ageExpression . ' >= :status_age_min_days';
+            $bindings['status_age_min_days'] = (int) $filters['status_age_min_days'];
+        }
+
+        if (array_key_exists('status_age_max_days', $filters) && $filters['status_age_max_days'] !== null && $filters['status_age_max_days'] !== '') {
+            $clauses[] = $ageExpression . ' <= :status_age_max_days';
+            $bindings['status_age_max_days'] = (int) $filters['status_age_max_days'];
+        }
+
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
         $sql = 'SELECT * FROM workorders ' . $where . ' ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset';
         $pdo = $this->connection->pdo();
@@ -134,6 +147,9 @@ class WorkorderRepository
     {
         $clauses = [];
         $bindings = [];
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((SELECT MAX(created_at) FROM workorder_status_history wsh '
+            . 'WHERE wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status), '
+            . 'workorders.updated_at, workorders.created_at), NOW())';
 
         if (!empty($filters['status'])) {
             if (is_array($filters['status'])) {
@@ -153,6 +169,16 @@ class WorkorderRepository
         if (!empty($filters['technician_id'])) {
             $clauses[] = 'assigned_technician_id = :technician_id';
             $bindings['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        if (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '') {
+            $clauses[] = $ageExpression . ' >= :status_age_min_days';
+            $bindings['status_age_min_days'] = (int) $filters['status_age_min_days'];
+        }
+
+        if (array_key_exists('status_age_max_days', $filters) && $filters['status_age_max_days'] !== null && $filters['status_age_max_days'] !== '') {
+            $clauses[] = $ageExpression . ' <= :status_age_max_days';
+            $bindings['status_age_max_days'] = (int) $filters['status_age_max_days'];
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';

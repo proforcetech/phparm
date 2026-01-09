@@ -1423,6 +1423,28 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->get('/api/dashboard/workorders/wip-aging', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
+            $params = [
+                'role' => $user?->role,
+            ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
+
+            $data = $dashboardController->handleWipAging($params);
+            return Response::json($data);
+        });
+
         $router->get('/api/dashboard/inventory/pull-requests', function (Request $request) use ($inventoryPullRequestRepository) {
             $statusesParam = $request->queryParam('statuses');
             $statuses = $statusesParam
