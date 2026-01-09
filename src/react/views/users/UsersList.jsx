@@ -63,6 +63,7 @@ export default function UsersList() {
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [resetting2FA, setResetting2FA] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReset2FAModal, setShowReset2FAModal] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
@@ -85,6 +86,31 @@ export default function UsersList() {
   useEffect(() => {
     loadUsers()
   }, [])
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const response = await userService.exportUsers(filters)
+      const blob = new Blob([response.data], { type: 'text/csv' })
+      if (blob.size === 0) {
+        toast.error('No users found to export')
+        return
+      }
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `users_export_${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to export users:', error)
+      toast.error('Failed to export users')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const confirmDelete = (user) => {
     setUserToDelete(user)
@@ -140,12 +166,20 @@ export default function UsersList() {
             <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
             <p className="mt-1 text-sm text-gray-500">Manage system users, roles, and permissions</p>
           </div>
-          <Button onClick={() => navigate('/cp/users/create')}>
-            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Create User
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleExport} loading={exporting}>
+              <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
+              </svg>
+              Export CSV
+            </Button>
+            <Button onClick={() => navigate('/cp/users/create')}>
+              <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Create User
+            </Button>
+          </div>
         </div>
       </div>
 
