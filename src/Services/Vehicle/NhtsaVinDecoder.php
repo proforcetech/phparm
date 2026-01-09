@@ -131,6 +131,7 @@ class NhtsaVinDecoder implements VinDecoderInterface
             'transmission' => $this->extractTransmission($apiData),
             'drive' => $this->extractDrive($apiData),
             'trim' => $this->extractTrim($apiData),
+            'weight_class' => $this->extractWeightClass($apiData),
             'body_style' => $apiData['BodyClass'] ?? null,
             'fuel_type' => $apiData['FuelTypePrimary'] ?? null,
             'manufacturer' => $apiData['Manufacturer'] ?? null,
@@ -239,6 +240,16 @@ class NhtsaVinDecoder implements VinDecoderInterface
     private function extractTrim(array $data): ?string
     {
         return $this->cleanString($data['Trim'] ?? $data['Series'] ?? null);
+    }
+
+    /**
+     * Extract and normalize weight class
+     */
+    private function extractWeightClass(array $data): ?string
+    {
+        return $this->cleanString(
+            $data['GVWR'] ?? $data['WeightClass'] ?? $data['GrossVehicleWeightRating'] ?? null
+        );
     }
 
     /**
