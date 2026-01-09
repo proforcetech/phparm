@@ -4621,6 +4621,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $gate
         );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
+        $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
+            new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -4736,6 +4740,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'search' => $request->queryParam('search'),
             ];
             $data = $financialController->exportEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'branch_id' => $request->queryParam('branch_id'),
+            ];
+            $data = $technicianMarginController->report($user, $params);
             return Response::json($data);
         });
     });
