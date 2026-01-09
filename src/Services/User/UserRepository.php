@@ -23,7 +23,7 @@ class UserRepository
     public function listByRole(string $role): array
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, created_at, updated_at
+            'SELECT id, name, email, role, active, created_at, updated_at, last_activity_at
              FROM users
              WHERE role = :role AND active = 1
              ORDER BY name ASC'
@@ -46,7 +46,7 @@ class UserRepository
     public function searchByRole(string $role, string $query, int $limit = 10): array
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, created_at, updated_at
+            'SELECT id, name, email, role, active, created_at, updated_at, last_activity_at
              FROM users
              WHERE role = :role
              AND active = 1
@@ -77,7 +77,7 @@ class UserRepository
      */
     public function list(array $filters = []): array
     {
-        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE active = 1';
+        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at FROM users WHERE active = 1';
         $bindings = [];
 
         if (!empty($filters['role'])) {
@@ -110,7 +110,7 @@ class UserRepository
     public function find(int $id): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at
+            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
              FROM users
              WHERE id = :id AND active = 1'
         );
@@ -130,7 +130,7 @@ class UserRepository
     public function findByEmail(string $email): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at
+            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
              FROM users
              WHERE email = :email AND active = 1'
         );

@@ -240,6 +240,12 @@ class AuthService
         return $this->findUserById($user->id);
     }
 
+    public function recordLastActivity(int $userId): void
+    {
+        $stmt = $this->connection->pdo()->prepare('UPDATE users SET last_activity_at = NOW() WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
+    }
+
     private function assertPasswordStrength(string $password): void
     {
         $minLength = (int) ($this->config['passwords']['min_length'] ?? 12);

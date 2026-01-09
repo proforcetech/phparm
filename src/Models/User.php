@@ -23,4 +23,5 @@ class User extends BaseModel
     public bool $two_factor_setup_pending = false;
     public ?string $created_at = null;
     public ?string $updated_at = null;
+    public ?string $last_activity_at = null;
 }
