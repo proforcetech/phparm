@@ -38,6 +38,11 @@ const formatTime = (value) => {
   }).format(new Date(value))
 }
 
+const formatAgeDays = (days) => {
+  if (days === null || days === undefined) return '—'
+  return `${days} day${days === 1 ? '' : 's'}`
+}
+
 const getInvoiceStatusVariant = (status) => {
   const variants = {
     paid: 'success',
@@ -141,6 +146,11 @@ export default function AdminDashboard() {
     counts: { pending: 0, ordered: 0, received: 0 },
     items: [],
   })
+  const [wipAging, setWipAging] = useState({
+    total: 0,
+    oldest_days: null,
+    buckets: [],
+  })
   const [revenueChartData, setRevenueChartData] = useState({ labels: [], datasets: [] })
   const [serviceTypeChartData, setServiceTypeChartData] = useState({ labels: [], datasets: [] })
   const [loading, setLoading] = useState(true)
@@ -168,6 +178,7 @@ export default function AdminDashboard() {
         appointmentsRes,
         lowStockRes,
         pullRequestRes,
+        wipAgingRes,
         trendsRes,
         servicesRes,
       ] = await Promise.all([
@@ -178,6 +189,7 @@ export default function AdminDashboard() {
         dashboardService.getRecentAppointments(5, technicianParams).catch(() => []),
         dashboardService.getInventoryLowStockTile(5).catch(() => null),
         dashboardService.getInventoryPullRequests(5).catch(() => null),
+        dashboardService.getWipAging(technicianParams).catch(() => null),
         dashboardService
           .getMonthlyTrendsChart({ start: chartRange.start, end: chartRange.end, ...technicianParams })
           .catch(() => []),
@@ -206,6 +218,11 @@ export default function AdminDashboard() {
       setInventoryPullRequests({
         counts: pullRequestRes?.counts || { pending: 0, ordered: 0, received: 0 },
         items: pullRequestRes?.items || [],
+      })
+      setWipAging({
+        total: wipAgingRes?.total || 0,
+        oldest_days: wipAgingRes?.oldest_days ?? null,
+        buckets: wipAgingRes?.buckets || [],
       })
 
       const trendSeries = Array.isArray(trendsRes)
@@ -271,6 +288,18 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadDashboard()
   }, [loadDashboard])
+
+  const wipStatusParam = 'parts_pending,awaiting_authorization'
+  const buildWipLink = useCallback((bucket) => {
+    const params = new URLSearchParams({
+      status: wipStatusParam,
+      status_age_min_days: String(bucket.min_days ?? 0),
+    })
+    if (bucket.max_days !== null && bucket.max_days !== undefined) {
+      params.set('status_age_max_days', String(bucket.max_days))
+    }
+    return `/cp/workorders?${params.toString()}`
+  }, [wipStatusParam])
 
   return (
     <div>
@@ -369,6 +398,45 @@ export default function AdminDashboard() {
                 </Button>
               </Link>
             </div>
+          </Card>
+
+          <Card
+            header={
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Work-in-Progress Aging</h3>
+                  <p className="text-sm text-gray-500">
+                    Parts pending or authorized workorders awaiting progress
+                  </p>
+                </div>
+                <div className="text-sm text-gray-500">
+                  Oldest: <span className="font-medium text-gray-900">{formatAgeDays(wipAging.oldest_days)}</span>
+                </div>
+              </div>
+            }
+          >
+            {wipAging.buckets.length === 0 ? (
+              <div className="text-sm text-gray-600">No workorders currently in parts pending or authorized.</div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {wipAging.buckets.map((bucket) => (
+                  <Link
+                    key={bucket.label}
+                    to={buildWipLink(bucket)}
+                    className="flex items-center justify-between py-3 px-4 -mx-4 hover:bg-gray-50"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{bucket.label}</p>
+                      <p className="text-xs text-gray-500">Oldest {formatAgeDays(bucket.oldest_days)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-gray-900">{bucket.count || 0}</p>
+                      <p className="text-xs text-gray-500">workorders</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card

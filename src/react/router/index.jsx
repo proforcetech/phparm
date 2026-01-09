@@ -54,6 +54,7 @@ import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
 import CustomerRetentionReport from '../views/reports/CustomerRetentionReport'
+import Reports from '../views/Reports'
 import SettingsLayout from '../views/settings/SettingsLayout'
 import SettingsPage from '../views/settings/SettingsPage'
 import SettingsShopProfile from '../views/settings/SettingsShopProfile'
@@ -218,6 +219,7 @@ const protectedRoutes = [
   { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/reports', name: 'FinancialReports', auth: 'requiresAuth', element: <FinancialReports /> },
   { path: '/cp/reports/customer-retention', name: 'CustomerRetentionReport', auth: 'requiresAuth', element: <CustomerRetentionReport /> },
+  { path: '/cp/reports', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/users/groups', name: 'UserGroups', auth: 'requiresAuth', element: <UserGroups /> },

@@ -1423,6 +1423,28 @@ return Response::json([
             return Response::json($data);
         });
 
+        $router->get('/api/dashboard/workorders/wip-aging', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
+            $params = [
+                'role' => $user?->role,
+            ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
+
+            $data = $dashboardController->handleWipAging($params);
+            return Response::json($data);
+        });
+
         $router->get('/api/dashboard/inventory/pull-requests', function (Request $request) use ($inventoryPullRequestRepository) {
             $statusesParam = $request->queryParam('statuses');
             $statuses = $statusesParam
@@ -4621,6 +4643,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $gate
         );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
+        $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
+            new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -4736,6 +4762,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'search' => $request->queryParam('search'),
             ];
             $data = $financialController->exportEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'branch_id' => $request->queryParam('branch_id'),
+            ];
+            $data = $technicianMarginController->report($user, $params);
             return Response::json($data);
         });
     });

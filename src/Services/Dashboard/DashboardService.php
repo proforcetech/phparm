@@ -5,6 +5,7 @@ namespace App\Services\Dashboard;
 use App\DTO\Dashboard\ChartSeries;
 use App\DTO\Dashboard\KpiResponse;
 use App\Database\Connection;
+use App\Models\Workorder;
 use App\Support\SettingsRepository;
 use DateInterval;
 use DatePeriod;
@@ -230,6 +231,103 @@ class DashboardService
                 new ChartSeries('Estimates', $estimates, $categories),
             ];
         });
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function wipAging(array $options = []): array
+    {
+        $role = $this->normalizeRole($options['role'] ?? 'admin');
+        $this->enforceRoleScope($role, $options);
+
+        $pdo = $this->connection->pdo();
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((
+            SELECT MAX(created_at)
+            FROM workorder_status_history wsh
+            WHERE wsh.workorder_id = w.id AND wsh.to_status = w.status
+        ), w.updated_at, w.created_at), NOW())';
+
+        $technicianFilter = '';
+        $customerFilter = '';
+        $bindings = [
+            'status_parts_pending' => Workorder::STATUS_PARTS_PENDING,
+            'status_authorized' => Workorder::STATUS_AWAITING_AUTHORIZATION,
+        ];
+
+        if (isset($options['customer_id'])) {
+            $customerFilter = ' AND w.customer_id = :customer_id';
+            $bindings['customer_id'] = (int) $options['customer_id'];
+        }
+
+        if (isset($options['technician_id'])) {
+            $technicianFilter = ' AND w.assigned_technician_id = :technician_id';
+            $bindings['technician_id'] = (int) $options['technician_id'];
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT bucket, COUNT(*) AS total, MAX(age_days) AS oldest_days FROM ('
+            . 'SELECT CASE '
+            . 'WHEN ' . $ageExpression . ' BETWEEN 0 AND 2 THEN "0-2" '
+            . 'WHEN ' . $ageExpression . ' BETWEEN 3 AND 7 THEN "3-7" '
+            . 'WHEN ' . $ageExpression . ' BETWEEN 8 AND 14 THEN "8-14" '
+            . 'ELSE "15+" '
+            . 'END AS bucket, '
+            . $ageExpression . ' AS age_days '
+            . 'FROM workorders w '
+            . 'WHERE w.status IN (:status_parts_pending, :status_authorized)' . $technicianFilter . $customerFilter
+            . ') AS bucketed '
+            . 'GROUP BY bucket'
+        );
+
+        $stmt->execute($bindings);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $bucketDefinitions = [
+            ['key' => '0-2', 'label' => '0-2 days', 'min' => 0, 'max' => 2],
+            ['key' => '3-7', 'label' => '3-7 days', 'min' => 3, 'max' => 7],
+            ['key' => '8-14', 'label' => '8-14 days', 'min' => 8, 'max' => 14],
+            ['key' => '15+', 'label' => '15+ days', 'min' => 15, 'max' => null],
+        ];
+
+        $bucketIndex = [];
+        foreach ($bucketDefinitions as $definition) {
+            $bucketIndex[$definition['key']] = [
+                'label' => $definition['label'],
+                'min_days' => $definition['min'],
+                'max_days' => $definition['max'],
+                'count' => 0,
+                'oldest_days' => null,
+            ];
+        }
+
+        $total = 0;
+        $oldest = null;
+        foreach ($rows as $row) {
+            $bucketKey = $row['bucket'] ?? '';
+            if (!isset($bucketIndex[$bucketKey])) {
+                continue;
+            }
+            $count = (int) ($row['total'] ?? 0);
+            $oldestDays = $row['oldest_days'] !== null ? (int) $row['oldest_days'] : null;
+            $bucketIndex[$bucketKey]['count'] = $count;
+            $bucketIndex[$bucketKey]['oldest_days'] = $oldestDays;
+            $total += $count;
+            if ($oldestDays !== null && ($oldest === null || $oldestDays > $oldest)) {
+                $oldest = $oldestDays;
+            }
+        }
+
+        return [
+            'total' => $total,
+            'oldest_days' => $oldest,
+            'buckets' => array_values($bucketIndex),
+            'statuses' => [
+                Workorder::STATUS_PARTS_PENDING,
+                Workorder::STATUS_AWAITING_AUTHORIZATION,
+            ],
+        ];
     }
 
     /**
