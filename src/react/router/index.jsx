@@ -4,6 +4,7 @@ import Login from '../views/auth/Login'
 import CustomerLogin from '../views/auth/CustomerLogin'
 import ForgotPassword from '../views/auth/ForgotPassword'
 import ResetPassword from '../views/auth/ResetPassword'
+import AcceptInvite from '../views/auth/AcceptInvite'
 import Register from '../views/auth/Register'
 import AdminDashboard from '../views/dashboard/AdminDashboard'
 import StaffProfile from '../views/users/Profile'
@@ -53,6 +54,8 @@ import FinancialEntries from '../views/financial/FinancialEntries'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
+import CustomerRetentionReport from '../views/reports/CustomerRetentionReport'
+import Reports from '../views/Reports'
 import SettingsLayout from '../views/settings/SettingsLayout'
 import SettingsPage from '../views/settings/SettingsPage'
 import SettingsShopProfile from '../views/settings/SettingsShopProfile'
@@ -149,6 +152,7 @@ const guestRoutes = [
   { path: '/customer-login', name: 'CustomerLogin', auth: 'guest', element: <CustomerLogin /> },
   { path: '/forgot-password', name: 'ForgotPassword', auth: 'guest', element: <ForgotPassword /> },
   { path: '/reset-password/:token', name: 'ResetPassword', auth: 'guest', element: <ResetPassword /> },
+  { path: '/accept-invite/:token', name: 'AcceptInvite', auth: 'guest', element: <AcceptInvite /> },
   { path: '/cp/register', name: 'Register', auth: 'guest', element: <Register /> },
 ]
 
@@ -217,6 +221,8 @@ const protectedRoutes = [
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/reports', name: 'FinancialReports', auth: 'requiresAuth', element: <FinancialReports /> },
+  { path: '/cp/reports/customer-retention', name: 'CustomerRetentionReport', auth: 'requiresAuth', element: <CustomerRetentionReport /> },
+  { path: '/cp/reports', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/users/groups', name: 'UserGroups', auth: 'requiresAuth', element: <UserGroups /> },

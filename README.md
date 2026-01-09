@@ -260,6 +260,22 @@ The default docker-compose setup exposes:
 - MySQL: `localhost:33060`
 - Mailhog: `http://localhost:8025`
 
+### Cron Jobs
+
+PHPArm includes a unified cron runner at `bin/cron/run.php`. Configure your system cron to run it every minute:
+
+```bash
+* * * * * php /path/to/phparm/bin/cron/run.php >> /var/log/phparm-cron.log 2>&1
+```
+
+Key scheduled jobs include:
+
+- Low stock summaries: `0 8 * * *` (daily at 8 AM)
+- Appointment reminders: `0 * * * *` (hourly)
+- Reminder campaigns: `*/15 * * * *` (every 15 minutes)
+
+Low stock alert recipients can be configured via the `notifications.inventory.recipient` setting (comma-separated) and will otherwise target manager-role users. Set `NOTIFICATIONS_FROM_EMAIL` as a final fallback recipient. Customize the subject via `INVENTORY_LOW_STOCK_SUBJECT`. Ensure mail settings such as `MAIL_DRIVER`, `MAIL_FROM_NAME`, and `MAIL_FROM_ADDRESS` are set for delivery.
+
 ---
 
 ## Contributing

@@ -20,18 +20,22 @@ The current system successfully bridges the gap between Estimates and Invoices t
 ## 4. Inventory Enhancements
 
 [x] Stock Order Lifecycle: The InventoryStockOrderRepository should be linked to the financial ledger. When a stock order is marked as "Received," it should automatically update the InventoryItem quantities and create a FinancialEntry for the accounts payable.
-[ ] Automated Low-Stock Alerts: Utilize the inventory-low-stock.php cron job to send daily summaries to the manager, rather than just waiting for a manual check.
+[x] Automated Low-Stock Alerts: Utilize the inventory-low-stock.php cron job to send daily summaries to the manager, rather than just waiting for a manual check.
 
 ## 5. Advanced Reporting & KPIs
 
 [ ] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
+[x] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
+[x] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
 [ ] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
-[ ] Customer Retention Tracking: Link the CustomerRepository to Workorder history to identify "Lost" customers (e.g., those who haven't had a workorder in 6+ months) for automated re-marketing campaigns.
+[x] Customer Retention Tracking: Link the CustomerRepository to Workorder history to identify "Lost" customers (e.g., those who haven't had a workorder in 6+ months) for automated re-marketing campaigns.
 
 ## 2. Security and User Managment Improvements
 
 [ ] Secure Invitation Flow: Currently, user creation likely involves an administrator setting a temporary password. It is safer to implement an **email-based invitation system** using `EmailVerificationToken` logic. This ensures users set their own secure passwords and validates their email access immediately.
 [x] Mandatory 2FA for High-Privilege Roles: While a `TwoFactorSetupWizard` exists, user management should allow administrators to enforce **Two-Factor Authentication (2FA)** for specific roles, such as Admins and Dispatchers, to protect sensitive customer data.
+[x] Secure Invitation Flow: Currently, user creation likely involves an administrator setting a temporary password. It is safer to implement an **email-based invitation system** using `EmailVerificationToken` logic. This ensures users set their own secure passwords and validates their email access immediately.
+[ ] Mandatory 2FA for High-Privilege Roles: While a `TwoFactorSetupWizard` exists, user management should allow administrators to enforce **Two-Factor Authentication (2FA)** for specific roles, such as Admins and Dispatchers, to protect sensitive customer data.
 [ ] Account Deactivation Logic: Ensure that the `UserRepository` supports a "Soft Delete" or "Active" flag. Users involved in roadside assistance (Technicians/Dispatchers) should be **deactivated rather than deleted** to maintain the integrity of historical audit logs and financial entries associated with their ID.
 [ ] Password Complexity & History: Implement strict validation in `UserForm.jsx` and the backend to ensure password strength and prevent the reuse of recently used passwords.
 [ ] Enhanced User List Filtering: The `UsersList.jsx` should include advanced filters for **Role**, **Status (Active/Inactive)**, and **2FA Status**. This allows administrators to quickly identify users who haven't completed security setups.

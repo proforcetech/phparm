@@ -1058,6 +1058,39 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Email verified successfully']);
     });
 
+    // Accept invitation and set password
+    $router->post('/api/auth/accept-invite', function (Request $request) use ($authService, $loginLimiter) {
+        $token = $request->input('token');
+        $password = $request->input('password');
+        $identifier = 'invite-token:' . (string) ($token ?? 'none');
+        $ip = LoginRateLimiter::clientIp($request);
+
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many invitation attempts. Please wait before retrying.';
+
+            return Response::json($preCheck->toPayload($message), 429);
+        }
+
+        if (!$token || !$password) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Token and password are required', 'validation_error'), 400);
+        }
+
+        $user = $authService->acceptInvitation((string) $token, (string) $password);
+
+        if ($user === null) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Invalid or expired invitation token', 'invalid_token'), 400);
+        }
+
+        $loginLimiter->recordSuccess($identifier, $ip);
+
+        return Response::json(['message' => 'Invitation accepted successfully']);
+    });
+
     // Resend verification email
     $router->post('/api/auth/resend-verification', function (Request $request) use ($authService, $connection, $authConfig) {
         $user = $request->getAttribute('user');
@@ -1454,6 +1487,28 @@ return Response::json([
             }
 
             $data = $dashboardController->handleServiceTypeBreakdown($params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/dashboard/workorders/wip-aging', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
+            $params = [
+                'role' => $user?->role,
+            ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
+
+            $data = $dashboardController->handleWipAging($params);
             return Response::json($data);
         });
 
@@ -3806,6 +3861,43 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
+        $router->post('/api/users/invite', function (Request $request) use ($userController, $authService, $connection, $authConfig) {
+            $user = $request->getAttribute('user');
+            $data = $userController->inviteUser($user, $request->body());
+            $token = $authService->issueVerificationToken($data['id']);
+
+            $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+            $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+                $notificationsConfig,
+                new \App\Support\Notifications\TemplateEngine(),
+                new \App\Support\Notifications\NotificationLogRepository($connection)
+            );
+
+            $appUrl = env('APP_URL', 'http://localhost:8080');
+            $inviteUrl = $appUrl . '/accept-invite/' . urlencode($token->token);
+            $expiryHours = $authConfig['verification']['token_ttl_hours'] ?? 48;
+
+            try {
+                $dispatcher->sendMail(
+                    'auth.invitation',
+                    $data['email'],
+                    [
+                        'name' => $data['name'],
+                        'invite_url' => $inviteUrl,
+                        'expiry_hours' => $expiryHours,
+                    ],
+                    'You are invited to Auto Repair Shop Management'
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to send invitation email: ' . $e->getMessage());
+            }
+
+            return Response::created([
+                'user' => $data,
+                'message' => 'Invitation email has been sent',
+            ]);
+        });
+
         $router->put('/api/users/{id}', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -4655,6 +4747,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $gate
         );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
+        $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
+            new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -4770,6 +4866,65 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'search' => $request->queryParam('search'),
             ];
             $data = $financialController->exportEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'branch_id' => $request->queryParam('branch_id'),
+            ];
+            $data = $technicianMarginController->report($user, $params);
+            return Response::json($data);
+        });
+    });
+
+    // Customer retention report routes
+    $customerRetentionWebhookConfig = $config['customer_retention']['webhooks'] ?? [];
+    $customerRetentionWebhooks = new WebhookDispatcher(
+        !empty($customerRetentionWebhookConfig['enabled']) ? ($customerRetentionWebhookConfig['endpoints'] ?? []) : [],
+        (string) ($customerRetentionWebhookConfig['secret'] ?? ''),
+        (int) ($customerRetentionWebhookConfig['timeout'] ?? 5),
+        $auditLogger
+    );
+
+    $customerRetentionController = new \App\Services\Customer\CustomerRetentionReportController(
+        new \App\Services\Customer\CustomerRetentionReportService(
+            new \App\Services\Customer\CustomerRepository($connection),
+            $customerRetentionWebhooks
+        ),
+        $gate
+    );
+
+    $router->group([Middleware::auth()], function (Router $router) use ($customerRetentionController) {
+        $router->get('/api/reports/customer-retention', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'months' => $request->queryParam('months', 6),
+                'limit' => $request->queryParam('limit', 50),
+                'offset' => $request->queryParam('offset', 0),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $customerRetentionController->index($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/customer-retention/export', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'months' => $request->queryParam('months', 6),
+                'format' => $request->queryParam('format', 'csv'),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $customerRetentionController->export($user, $params);
+            return Response::json($data);
+        });
+
+        $router->post('/api/reports/customer-retention/hooks', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $data = $customerRetentionController->dispatchCampaign($user, $request->body());
             return Response::json($data);
         });
     });

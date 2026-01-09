@@ -226,4 +226,85 @@ class CustomerRepository
 
         return $results;
     }
+
+    /**
+     * @return array{data: array<int, array<string, mixed>>, total: int}
+     */
+    public function findInactiveCustomers(int $months, ?string $query = null, ?int $limit = 50, int $offset = 0): array
+    {
+        $cutoff = (new DateTimeImmutable())->modify('-' . max(1, $months) . ' months')->format('Y-m-d H:i:s');
+        [$where, $bindings] = $this->buildRetentionFilters($query);
+
+        $baseFrom = 'FROM customers c
+            LEFT JOIN workorders w ON w.customer_id = c.id
+            LEFT JOIN reminder_preferences rp ON rp.customer_id = c.id';
+
+        $select = 'SELECT c.*,
+            MAX(COALESCE(w.completed_at, w.created_at)) AS last_workorder_at,
+            MAX(rp.preferred_channel) AS preferred_channel,
+            MAX(rp.is_active) AS reminder_active,
+            MAX(rp.email) AS reminder_email,
+            MAX(rp.phone) AS reminder_phone
+            ' . $baseFrom . ' ' . $where . '
+            GROUP BY c.id
+            HAVING last_workorder_at IS NULL OR last_workorder_at < :cutoff
+            ORDER BY last_workorder_at IS NULL DESC, last_workorder_at ASC, c.last_name ASC, c.first_name ASC';
+
+        $bindings['cutoff'] = $cutoff;
+
+        $sql = $select;
+        if ($limit !== null) {
+            $sql .= ' LIMIT :limit OFFSET :offset';
+        }
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($bindings as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $countSql = 'SELECT COUNT(*) AS total FROM (
+            SELECT c.id,
+                MAX(COALESCE(w.completed_at, w.created_at)) AS last_workorder_at
+                ' . $baseFrom . ' ' . $where . '
+                GROUP BY c.id
+                HAVING last_workorder_at IS NULL OR last_workorder_at < :cutoff
+            ) AS retention_results';
+
+        $countStmt = $this->connection->pdo()->prepare($countSql);
+        foreach ($bindings as $key => $value) {
+            $countStmt->bindValue(':' . $key, $value);
+        }
+        $countStmt->execute();
+        $total = (int) ($countStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        return [
+            'data' => $rows,
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function buildRetentionFilters(?string $query = null): array
+    {
+        $clauses = [];
+        $bindings = [];
+
+        if ($query !== null && trim($query) !== '') {
+            $clauses[] = '(c.id = :exact_id OR c.first_name LIKE :query OR c.last_name LIKE :query OR c.business_name LIKE :query OR c.email LIKE :query OR c.phone LIKE :query)';
+            $bindings['exact_id'] = is_numeric($query) ? (int) $query : 0;
+            $bindings['query'] = '%' . trim($query) . '%';
+        }
+
+        $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
+
+        return [$where, $bindings];
+    }
 }

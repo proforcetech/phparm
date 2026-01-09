@@ -91,8 +91,14 @@ class InventoryLowStockService
         }
 
         $alerts = $this->repository->lowStockAlerts($limit, 0);
+        $counts = $this->countAlerts($alerts);
+        $itemsList = $this->formatItemsList($alerts);
         $payload = [
             'total' => count($alerts),
+            'out_of_stock' => $counts['out_of_stock'],
+            'low_stock' => $counts['low_stock'],
+            'items_shown' => count($alerts),
+            'items_list' => $itemsList,
             'items' => $alerts,
         ];
 
@@ -104,5 +110,58 @@ class InventoryLowStockService
         );
 
         return $payload;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $alerts
+     * @return array{out_of_stock: int, low_stock: int}
+     */
+    private function countAlerts(array $alerts): array
+    {
+        $out = 0;
+        $low = 0;
+
+        foreach ($alerts as $alert) {
+            if (($alert['severity'] ?? null) === 'out') {
+                $out++;
+            } else {
+                $low++;
+            }
+        }
+
+        return [
+            'out_of_stock' => $out,
+            'low_stock' => $low,
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $alerts
+     */
+    private function formatItemsList(array $alerts): string
+    {
+        if ($alerts === []) {
+            return 'No low-stock items were found.';
+        }
+
+        $lines = [];
+        foreach ($alerts as $alert) {
+            $name = (string) ($alert['name'] ?? 'Item');
+            $stock = (int) ($alert['stock_quantity'] ?? 0);
+            $threshold = (int) ($alert['low_stock_threshold'] ?? 0);
+            $reorder = (int) ($alert['recommended_reorder'] ?? 0);
+            $status = ($alert['severity'] ?? 'low') === 'out' ? 'OUT' : 'LOW';
+
+            $lines[] = sprintf(
+                '- %s [%s] (Qty %d, Threshold %d, Reorder %d)',
+                $name,
+                $status,
+                $stock,
+                $threshold,
+                $reorder
+            );
+        }
+
+        return implode("\n", $lines);
     }
 }

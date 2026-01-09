@@ -46,6 +46,7 @@ class Workorder extends BaseModel
     public int $estimate_id;
     public int $customer_id;
     public int $vehicle_id;
+    public ?int $branch_id = null;
     public string $status = self::STATUS_PENDING;
     public string $priority = self::PRIORITY_NORMAL;
     public ?int $assigned_technician_id = null;

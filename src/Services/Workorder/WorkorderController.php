@@ -508,8 +508,16 @@ class WorkorderController
      */
     private function extractFilters(array $params, User $user): array
     {
+        $status = $params['status'] ?? null;
+        if (is_string($status) && str_contains($status, ',')) {
+            $status = array_values(array_filter(array_map('trim', explode(',', $status))));
+            if (count($status) === 1) {
+                $status = $status[0];
+            }
+        }
+
         $filters = array_filter([
-            'status' => $params['status'] ?? null,
+            'status' => $status,
             'customer_id' => $params['customer_id'] ?? null,
             'vehicle_id' => $params['vehicle_id'] ?? null,
             'technician_id' => $params['technician_id'] ?? null,
@@ -517,6 +525,8 @@ class WorkorderController
             'term' => $params['term'] ?? null,
             'created_from' => $params['created_from'] ?? null,
             'created_to' => $params['created_to'] ?? null,
+            'status_age_min_days' => $params['status_age_min_days'] ?? null,
+            'status_age_max_days' => $params['status_age_max_days'] ?? null,
         ], fn($v) => $v !== null && $v !== '');
 
         // Customers can only see their own workorders

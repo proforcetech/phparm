@@ -124,11 +124,6 @@ export default function UserForm() {
       isValid = false
     }
 
-    if (!isEditMode && !form.password) {
-      setErrors((prev) => ({ ...prev, password: 'Password is required' }))
-      isValid = false
-    }
-
     if (form.password && form.password.length < 12) {
       setErrors((prev) => ({ ...prev, password: 'Password must be at least 12 characters' }))
       isValid = false
@@ -167,8 +162,8 @@ export default function UserForm() {
         await userService.updateUser(id, payload)
         toast.success('User updated successfully')
       } else {
-        await userService.createUser(payload)
-        toast.success('User created successfully')
+        await userService.inviteUser(payload)
+        toast.success('Invitation sent successfully')
       }
 
       navigate('/cp/users')
@@ -225,8 +220,12 @@ export default function UserForm() {
               </svg>
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{isEditMode ? 'Edit User' : 'Create User'}</h1>
-              <p className="mt-1 text-sm text-gray-500">{isEditMode ? 'Update user information and permissions' : 'Add a new user to the system'}</p>
+              <h1 className="text-2xl font-bold text-gray-900">{isEditMode ? 'Edit User' : 'Invite User'}</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                {isEditMode
+                  ? 'Update user information and permissions'
+                  : 'Send a secure invitation link to a new user'}
+              </p>
             </div>
           </div>
         </div>
@@ -262,43 +261,69 @@ export default function UserForm() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password {isEditMode ? '' : '*'}</label>
-                  <Input
-                    modelValue={form.password}
-                    type="password"
-                    placeholder={isEditMode ? 'Leave blank to keep current password' : 'Enter password'}
-                    required={!isEditMode}
-                    error={errors.password}
-                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, password: value }))}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Minimum 12 characters</p>
+              {isEditMode ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <Input
+                      modelValue={form.password}
+                      type="password"
+                      placeholder="Leave blank to keep current password"
+                      error={errors.password}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, password: value }))}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Minimum 12 characters</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                    <Select
+                      modelValue={form.role}
+                      options={roleOptions}
+                      required
+                      error={errors.role}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, role: value }))}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-                  <Select
-                    modelValue={form.role}
-                    options={roleOptions}
-                    required
-                    error={errors.role}
-                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, role: value }))}
-                  />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-md bg-blue-50 border border-blue-200 p-4">
+                    <p className="text-sm text-blue-800">
+                      A secure invitation link will be emailed to this user so they can set their
+                      own password.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                    <Select
+                      modelValue={form.role}
+                      options={roleOptions}
+                      required
+                      error={errors.role}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, role: value }))}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="border-t border-gray-200 pt-6">
                 <h4 className="text-sm font-medium text-gray-900 mb-4">Account Status</h4>
                 <div className="space-y-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      checked={form.email_verified}
-                      onChange={(event) => setForm((prev) => ({ ...prev, email_verified: event.target.checked }))}
-                      type="checkbox"
-                      className="h-4 w-4 text-indigo-600 rounded"
-                    />
-                    <span className="text-sm text-gray-700">Email Verified</span>
-                  </label>
+                  {isEditMode ? (
+                    <label className="flex items-center gap-2">
+                      <input
+                        checked={form.email_verified}
+                        onChange={(event) => setForm((prev) => ({ ...prev, email_verified: event.target.checked }))}
+                        type="checkbox"
+                        className="h-4 w-4 text-indigo-600 rounded"
+                      />
+                      <span className="text-sm text-gray-700">Email Verified</span>
+                    </label>
+                  ) : (
+                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600">
+                      Email verification will be completed when the invitation is accepted.
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Two-Factor Authentication</label>
@@ -338,7 +363,7 @@ export default function UserForm() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate('/cp/users')}>Cancel</Button>
             <Button onClick={handleSubmit} loading={saving}>
-              {isEditMode ? 'Update User' : 'Create User'}
+              {isEditMode ? 'Update User' : 'Send Invite'}
             </Button>
           </div>
         </div>

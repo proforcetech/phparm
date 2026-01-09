@@ -164,6 +164,64 @@ class UserController
     }
 
     /**
+     * Invite a new user
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function inviteUser(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'users.invite')) {
+            throw new UnauthorizedException('Cannot invite users');
+        }
+
+        if (empty($data['name'])) {
+            throw new InvalidArgumentException('Name is required');
+        }
+
+        if (empty($data['email'])) {
+            throw new InvalidArgumentException('Email is required');
+        }
+
+        if (empty($data['role'])) {
+            throw new InvalidArgumentException('Role is required');
+        }
+
+        $validRoles = ['admin', 'manager', 'technician', 'customer'];
+        if (!in_array($data['role'], $validRoles, true)) {
+            throw new InvalidArgumentException('Invalid role');
+        }
+
+        if ($this->repository->findByEmail($data['email'])) {
+            throw new InvalidArgumentException('Email already exists');
+        }
+
+        $temporaryPassword = bin2hex(random_bytes(24));
+
+        $newUser = $this->repository->create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'role' => $data['role'],
+            'password' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
+            'email_verified' => false,
+            'two_factor_enabled' => false,
+            'two_factor_type' => 'none',
+        ]);
+
+        return [
+            'id' => $newUser->id,
+            'name' => $newUser->name,
+            'email' => $newUser->email,
+            'role' => $newUser->role,
+            'email_verified' => $newUser->email_verified,
+            'two_factor_enabled' => $newUser->two_factor_enabled,
+            'two_factor_type' => $newUser->two_factor_type ?? 'none',
+            'created_at' => $newUser->created_at,
+            'updated_at' => $newUser->updated_at,
+        ];
+    }
+
+    /**
      * Update a user
      *
      * @param array<string, mixed> $data
