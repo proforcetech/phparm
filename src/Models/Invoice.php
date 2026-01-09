@@ -14,6 +14,7 @@ class Invoice extends BaseModel
     public string $status;
     public string $issue_date;
     public ?string $due_date = null;
+    public bool $split_billing = false;
     public float $subtotal = 0.0;
     public float $tax = 0.0;
     public float $total = 0.0;

@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     status VARCHAR(40) NOT NULL,
     issue_date DATE NOT NULL,
     due_date DATE NULL,
+    split_billing TINYINT(1) NOT NULL DEFAULT 0,
     subtotal DECIMAL(12,2) DEFAULT 0,
     tax DECIMAL(12,2) DEFAULT 0,
     total DECIMAL(12,2) DEFAULT 0,
@@ -219,6 +220,19 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at TIMESTAMP NULL,
     INDEX idx_payment_invoice (invoice_id),
     CONSTRAINT fk_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invoice_payer_allocations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
+    payer_role ENUM('primary', 'secondary') NOT NULL,
+    payer_name VARCHAR(160) NULL,
+    allocated_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    INDEX idx_invoice_payer_allocations_invoice (invoice_id),
+    INDEX idx_invoice_payer_allocations_role (payer_role),
+    CONSTRAINT fk_invoice_payer_allocations_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS appointments (
