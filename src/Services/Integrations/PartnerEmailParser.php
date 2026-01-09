@@ -4,6 +4,16 @@ namespace App\Services\Integrations;
 
 class PartnerEmailParser
 {
+    private const CANCELLATION_KEYWORDS = [
+        'cancel',
+        'cancelled',
+        'canceled',
+        'cancellation',
+        'void',
+        'voided',
+        'abort',
+    ];
+
     /**
      * @return array{payload: array<string, mixed>, metadata: array<string, mixed>}
      */
@@ -25,6 +35,12 @@ class PartnerEmailParser
             'from' => $headers['from'] ?? null,
             'to' => $headers['to'] ?? null,
         ], static fn ($value) => $value !== null && $value !== '');
+
+        $cancellation = $this->detectCancellationSignals($headers, $body, $payload);
+        if ($cancellation['detected']) {
+            $metadata['cancellation_detected'] = true;
+            $metadata['cancellation_signals'] = $cancellation['signals'];
+        }
 
         return [
             'payload' => $payload,
@@ -99,5 +115,50 @@ class PartnerEmailParser
         }
 
         return $payload;
+    }
+
+    /**
+     * @param array<string, string> $headers
+     * @param array<string, mixed> $payload
+     * @return array{detected: bool, signals: array<int, string>}
+     */
+    private function detectCancellationSignals(array $headers, string $body, array $payload): array
+    {
+        $signals = [];
+        $subject = strtolower($headers['subject'] ?? '');
+        $bodyLower = strtolower($body);
+
+        foreach (self::CANCELLATION_KEYWORDS as $keyword) {
+            if ($subject !== '' && str_contains($subject, $keyword)) {
+                $signals[] = sprintf('subject:%s', $keyword);
+            }
+            if ($bodyLower !== '' && str_contains($bodyLower, $keyword)) {
+                $signals[] = sprintf('body:%s', $keyword);
+            }
+        }
+
+        foreach ($payload as $key => $value) {
+            $keyName = strtolower((string) $key);
+            if (str_contains($keyName, 'cancel')) {
+                $signals[] = sprintf('payload_key:%s', $key);
+                continue;
+            }
+            if (!is_string($value)) {
+                continue;
+            }
+            $valueLower = strtolower($value);
+            foreach (self::CANCELLATION_KEYWORDS as $keyword) {
+                if (str_contains($valueLower, $keyword)) {
+                    $signals[] = sprintf('payload_value:%s:%s', $key, $keyword);
+                }
+            }
+        }
+
+        $signals = array_values(array_unique($signals));
+
+        return [
+            'detected' => !empty($signals),
+            'signals' => $signals,
+        ];
     }
 }
