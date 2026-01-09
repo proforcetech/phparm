@@ -3789,12 +3789,6 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $trackingLogs,
             $auditLogger
         );
-        $trackingService = new \App\Services\Tracking\TrackingService(
-            $connection,
-            $trackingDispatcher,
-            $workorderMessagingNotifications,
-            new \App\Services\Dispatch\DispatchAuditService($connection)
-        );
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
@@ -3807,6 +3801,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $notificationEventService = new \App\Services\Notification\NotificationEventService(
             $connection,
             $trackingDispatcher
+        );
+        $trackingService = new \App\Services\Tracking\TrackingService(
+            $connection,
+            $trackingDispatcher,
+            $workorderMessagingNotifications,
+            new \App\Services\Dispatch\DispatchAuditService($connection),
+            $notificationEventService
         );
         $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(
             $connection,

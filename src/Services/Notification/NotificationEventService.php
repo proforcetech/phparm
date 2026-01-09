@@ -65,6 +65,9 @@ class NotificationEventService
             // Payment events
             'payment.reminder' => 'payment_reminder',
 
+            // Tracking events
+            'job_tracking_link' => 'job_tracking_link',
+
             // Workorder status events
             'workorder.workorder_parts_pending' => 'workorder_parts_pending',
             'workorder.workorder_parts_pending_manager' => 'workorder_parts_pending_manager',
