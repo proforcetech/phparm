@@ -14,6 +14,11 @@ class DispatchRecommendationService
     private const SHIFT_WEIGHT = 0.15;
     private const ETA_WEIGHT = 0.15;
     private const PERFORMANCE_WEIGHT = 0.10;
+    private const EQUIPMENT_REQUIREMENT_CLASS_MAP = [
+        'awd' => ['flatbed', 'low-profile'],
+        'all_wheel_drive' => ['flatbed', 'low-profile'],
+        'low_clearance' => ['flatbed', 'low-profile'],
+    ];
 
     private Connection $connection;
     private ?TrafficAwareEtaService $etaService;
@@ -58,6 +63,7 @@ class DispatchRecommendationService
         $performanceByDriver = $this->fetchPerformanceMetrics();
         $certificationsByDriver = $this->fetchVerifiedCertifications();
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
+        $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
 
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
@@ -78,6 +84,7 @@ class DispatchRecommendationService
                 if ($this->enforceHardFilters) {
                     $excludedDrivers[] = [
                         'driver_profile_id' => $driverId,
+                        'driver_name' => $driver['name'],
                         'reason' => 'missing_certifications',
                         'details' => $missingCertifications,
                     ];
@@ -87,13 +94,24 @@ class DispatchRecommendationService
 
             // Check equipment compatibility (hard filter)
             $equipmentOptions = $equipmentByDriver[$driverId] ?? [];
-            $equipmentResult = $this->scoreEquipment($equipmentOptions, $requirement, $equipmentCompatibility);
+            $equipmentResult = $this->scoreEquipment(
+                $equipmentOptions,
+                $requirement,
+                $equipmentCompatibility,
+                $requiredEquipmentClasses
+            );
 
-            if ($this->enforceHardFilters && !empty($equipmentCompatibility) && $equipmentResult['is_compatible'] === false) {
+            if ($this->enforceHardFilters && $equipmentResult['is_compatible'] === false) {
                 $excludedDrivers[] = [
                     'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
                     'reason' => 'equipment_incompatible',
-                    'details' => ['required' => $requirement['required_equipment_class'], 'available' => $equipmentResult['equipment']],
+                    'details' => [
+                        'required_equipment_class' => $requirement['required_equipment_class'],
+                        'required_equipment_requirements' => $requirement['equipment_requirements'] ?? [],
+                        'allowed_equipment_classes' => $requiredEquipmentClasses,
+                        'available_equipment_classes' => $this->listEquipmentClasses($equipmentOptions),
+                    ],
                 ];
                 continue;
             }
@@ -574,12 +592,14 @@ class DispatchRecommendationService
         return [
             'id' => $id ?? ($payload['id'] ?? null),
             'dispatch_reference' => $payload['dispatch_reference'] ?? null,
+            'job_category' => $payload['job_category'] ?? null,
             'scheduled_start' => $payload['scheduled_start'] ?? null,
             'estimated_duration_hours' => $payload['estimated_duration_hours'] !== null
                 ? (float) $payload['estimated_duration_hours']
                 : null,
             'required_capacity' => $payload['required_capacity'] !== null ? (float) $payload['required_capacity'] : null,
             'required_equipment_class' => $payload['required_equipment_class'] ?? null,
+            'equipment_requirements' => $this->decodeJsonArray($payload['equipment_requirements'] ?? null),
             'required_certifications' => $this->decodeJsonArray($payload['required_certifications'] ?? null),
             'pickup_latitude' => $payload['pickup_latitude'] !== null ? (float) $payload['pickup_latitude'] : null,
             'pickup_longitude' => $payload['pickup_longitude'] !== null ? (float) $payload['pickup_longitude'] : null,
@@ -616,7 +636,12 @@ class DispatchRecommendationService
         return [$value];
     }
 
-    private function scoreEquipment(array $equipmentOptions, array $requirement, array $compatibilityRules = []): array
+    private function scoreEquipment(
+        array $equipmentOptions,
+        array $requirement,
+        array $compatibilityRules = [],
+        array $requiredEquipmentClasses = []
+    ): array
     {
         $requiredClass = $requirement['required_equipment_class'] ?? null;
         $requiredCapacity = $requirement['required_capacity'] ?? null;
@@ -632,10 +657,16 @@ class DispatchRecommendationService
             $classMatch = 1.0;
             $capacityScore = 1.0;
             $equipmentIsCompatible = true;
+            $equipmentClass = $equipment['equipment_class'] ?? null;
+
+            if (!empty($requiredEquipmentClasses) && !in_array($equipmentClass, $requiredEquipmentClasses, true)) {
+                $equipmentIsCompatible = false;
+                $classMatch = 0.0;
+            }
 
             // Check against compatibility rules if available
-            if (!empty($compatibilityRules) && isset($compatibilityRules[$equipment['equipment_class']])) {
-                $rule = $compatibilityRules[$equipment['equipment_class']];
+            if (!empty($compatibilityRules) && isset($compatibilityRules[$equipmentClass])) {
+                $rule = $compatibilityRules[$equipmentClass];
                 if (!$rule['is_compatible']) {
                     $equipmentIsCompatible = false;
                     $classMatch = 0.0;
@@ -645,7 +676,10 @@ class DispatchRecommendationService
                     $capacityScore = 0.0;
                 }
             } elseif ($requiredClass !== null) {
-                $classMatch = $equipment['equipment_class'] === $requiredClass ? 1.0 : 0.0;
+                $classMatch = $equipmentClass === $requiredClass ? 1.0 : 0.0;
+                if ($classMatch === 0.0) {
+                    $equipmentIsCompatible = false;
+                }
             }
 
             if ($requiredCapacity !== null) {
@@ -664,7 +698,7 @@ class DispatchRecommendationService
             }
         }
 
-        if (empty($equipmentOptions) && ($requiredClass !== null || $requiredCapacity !== null)) {
+        if (empty($equipmentOptions) && ($requiredClass !== null || $requiredCapacity !== null || !empty($requiredEquipmentClasses))) {
             $bestScore = 0.0;
             $isCompatible = false;
         } elseif (empty($equipmentOptions)) {
@@ -676,6 +710,51 @@ class DispatchRecommendationService
             'equipment' => $bestEquipment,
             'is_compatible' => $isCompatible,
         ];
+    }
+
+    private function resolveRequiredEquipmentClasses(array $requirement): array
+    {
+        $requirements = $requirement['equipment_requirements'] ?? [];
+        if (empty($requirements)) {
+            return [];
+        }
+
+        $classes = [];
+        foreach ($requirements as $requirementTag) {
+            $normalized = $this->normalizeEquipmentRequirementTag($requirementTag);
+            if ($normalized === null) {
+                continue;
+            }
+            $mapped = self::EQUIPMENT_REQUIREMENT_CLASS_MAP[$normalized] ?? null;
+            if ($mapped) {
+                $classes = array_merge($classes, $mapped);
+            }
+        }
+
+        return array_values(array_unique($classes));
+    }
+
+    private function normalizeEquipmentRequirementTag(?string $tag): ?string
+    {
+        if ($tag === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim($tag));
+        $normalized = str_replace([' ', '-'], '_', $normalized);
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function listEquipmentClasses(array $equipmentOptions): array
+    {
+        $classes = [];
+        foreach ($equipmentOptions as $equipment) {
+            if (!empty($equipment['equipment_class'])) {
+                $classes[] = $equipment['equipment_class'];
+            }
+        }
+
+        return array_values(array_unique($classes));
     }
 
     private function calculateDistanceKm(?float $fromLat, ?float $fromLon, ?float $toLat, ?float $toLon): ?float

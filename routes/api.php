@@ -3664,10 +3664,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/dispatch/suggestions', function (Request $request) use ($dispatchRecommendationService) {
             $params = [
                 'dispatch_requirement_id' => $request->queryParam('dispatch_requirement_id'),
+                'job_category' => $request->queryParam('job_category'),
                 'scheduled_start' => $request->queryParam('scheduled_start'),
                 'estimated_duration_hours' => $request->queryParam('estimated_duration_hours'),
                 'required_capacity' => $request->queryParam('required_capacity'),
                 'required_equipment_class' => $request->queryParam('required_equipment_class'),
+                'equipment_requirements' => $request->queryParam('equipment_requirements'),
                 'required_certifications' => $request->queryParam('required_certifications'),
                 'pickup_latitude' => $request->queryParam('pickup_latitude'),
                 'pickup_longitude' => $request->queryParam('pickup_longitude'),
