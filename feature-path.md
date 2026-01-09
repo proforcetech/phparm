@@ -11,11 +11,11 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [x] Core Return Tracking: Add a dedicated status/ledger for "Cores." Shop management often loses revenue by failing to track and return parts (like alternators or batteries) for core credits.
 [x] Create a methodology to the scanning of bacodes; expand the current SKU/Part Number storage by adding UPC/Barcode support
 
-## 3. Technician Productivity Tools
+## 3. Technician Productivity Tools (COMPLETED)
 
-[ ] Granular Labor Clocking: Instead of clocking into a Workorder generally, allow technicians to clock into specific tasks (e.g., "Brake Job" vs "Oil Change"). This enables "Efficiency Reporting" (Actual Time vs. Flat-rate Time).
-[ ] Mobile Evidence Capture: Enhance TechnicianInspections.jsx to support direct camera access for uploading high-resolution video evidence of mechanical failures. This "Visual Proof" significantly increases estimate approval rates.
-[ ] Offline Technician Sync: Ensure offlineSync.js is fully utilized for inspections. Technicians often work in "dead zones" (deep inside a shop or under a car) and need their progress saved locally until a connection is restored.
+[x] Granular Labor Clocking: Instead of clocking into a Workorder generally, allow technicians to clock into specific tasks (e.g., "Brake Job" vs "Oil Change"). This enables "Efficiency Reporting" (Actual Time vs. Flat-rate Time).
+[x] Mobile Evidence Capture: Enhance TechnicianInspections.jsx to support direct camera access for uploading high-resolution video evidence of mechanical failures. This "Visual Proof" significantly increases estimate approval rates.
+[x] Offline Technician Sync: Ensure offlineSync.js is fully utilized for inspections. Technicians often work in "dead zones" (deep inside a shop or under a car) and need their progress saved locally until a connection is restored.
 
 ## 4. Inventory Enhancements
 

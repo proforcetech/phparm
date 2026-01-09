@@ -24,7 +24,7 @@ class TimeTrackingService
     /**
      * @param array<string, mixed>|null $location
      */
-    public function start(int $technicianId, ?int $estimateJobId = null, ?array $location = null): TimeEntry
+    public function start(int $technicianId, ?int $estimateJobId = null, ?array $location = null, ?int $taskId = null): TimeEntry
     {
         $open = $this->fetchOpenEntry($technicianId);
         if ($open !== null) {
@@ -35,13 +35,27 @@ class TimeTrackingService
         $normalizedLocation = $this->normalizeLocation($location);
         $this->assertLocationIfMobile($isMobile, $normalizedLocation, 'start');
 
+        // Fetch task details if task_id is provided (snapshot for efficiency tracking)
+        $taskName = null;
+        $flatRateMinutes = null;
+        if ($taskId !== null) {
+            $taskData = $this->fetchTaskDetails($taskId);
+            if ($taskData !== null) {
+                $taskName = $taskData['name'];
+                $flatRateMinutes = $taskData['flat_rate_minutes'];
+            }
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, start_latitude, start_longitude, start_accuracy, start_altitude, start_speed, start_heading, start_recorded_at, start_source, start_error, manual_override, created_at, updated_at) '
-            . 'VALUES (:technician_id, :estimate_job_id, NOW(), :lat, :lng, :accuracy, :altitude, :speed, :heading, :recorded_at, :source, :error, 0, NOW(), NOW())'
+            'INSERT INTO time_entries (technician_id, estimate_job_id, task_id, task_name, flat_rate_minutes, started_at, start_latitude, start_longitude, start_accuracy, start_altitude, start_speed, start_heading, start_recorded_at, start_source, start_error, manual_override, created_at, updated_at) '
+            . 'VALUES (:technician_id, :estimate_job_id, :task_id, :task_name, :flat_rate_minutes, NOW(), :lat, :lng, :accuracy, :altitude, :speed, :heading, :recorded_at, :source, :error, 0, NOW(), NOW())'
         );
         $stmt->execute([
             'technician_id' => $technicianId,
             'estimate_job_id' => $estimateJobId,
+            'task_id' => $taskId,
+            'task_name' => $taskName,
+            'flat_rate_minutes' => $flatRateMinutes,
             'lat' => $normalizedLocation['lat'],
             'lng' => $normalizedLocation['lng'],
             'accuracy' => $normalizedLocation['accuracy'],
@@ -61,6 +75,26 @@ class TimeTrackingService
         $this->log($technicianId, 'time.start', $entryId, $entry?->toArray() ?? []);
 
         return $entry ?? new TimeEntry(['id' => $entryId]);
+    }
+
+    /**
+     * Fetch labor task details for snapshotting.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function fetchTaskDetails(?int $taskId): ?array
+    {
+        if ($taskId === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, name, flat_rate_minutes FROM labor_tasks WHERE id = :id AND is_active = 1'
+        );
+        $stmt->execute(['id' => $taskId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row !== false ? $row : null;
     }
 
     /**
@@ -112,7 +146,8 @@ class TimeTrackingService
         $total = (int) $countStmt->fetchColumn();
 
         $sql = 'SELECT te.*, e.is_mobile, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
-            . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin, ru.name AS reviewer_name ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
+            . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin, ru.name AS reviewer_name, '
+            . 'CASE WHEN te.duration_minutes > 0 AND te.flat_rate_minutes > 0 THEN ROUND((te.flat_rate_minutes / te.duration_minutes) * 100, 2) ELSE NULL END AS efficiency_percentage ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($params as $key => $value) {
@@ -147,6 +182,7 @@ class TimeTrackingService
             $row['customer_name'] = $meta['customer_name'] ?? null;
             $row['vehicle_vin'] = $meta['vehicle_vin'] ?? null;
             $row['reviewer_name'] = $meta['reviewer_name'] ?? null;
+            $row['efficiency_percentage'] = $meta['efficiency_percentage'] ?? null;
             $row['adjustments'] = $adjustments[$entry->id] ?? [];
             $data[] = $row;
         }
@@ -180,6 +216,7 @@ class TimeTrackingService
         fputcsv($buffer, [
             'ID',
             'Technician',
+            'Task',
             'Job Title',
             'Estimate #',
             'Customer',
@@ -192,7 +229,9 @@ class TimeTrackingService
             'Wrap Up At',
             'Started At',
             'Ended At',
-            'Duration (minutes)',
+            'Actual (minutes)',
+            'Flat Rate (minutes)',
+            'Efficiency %',
             'Status',
             'Reviewed By',
             'Reviewed At',
@@ -216,6 +255,7 @@ class TimeTrackingService
             fputcsv($buffer, [
                 $row['id'] ?? null,
                 $row['technician_name'] ?? ('Tech #' . ($row['technician_id'] ?? '')),
+                $row['task_name'] ?? null,
                 $row['job_title'] ?? null,
                 $row['estimate_number'] ?? null,
                 $row['customer_name'] ?? null,
@@ -233,6 +273,8 @@ class TimeTrackingService
                 $row['started_at'] ?? null,
                 $row['ended_at'] ?? null,
                 $row['duration_minutes'] ?? null,
+                $row['flat_rate_minutes'] ?? null,
+                $row['efficiency_percentage'] ?? null,
                 $row['status'] ?? null,
                 $row['reviewer_name'] ?? null,
                 $row['reviewed_at'] ?? null,
@@ -310,7 +352,8 @@ class TimeTrackingService
         ?string $notes = null,
         ?string $reason = null,
         bool $override = true,
-        ?int $actorId = null
+        ?int $actorId = null,
+        ?int $taskId = null
     ): TimeEntry {
         $start = new DateTimeImmutable($startedAt);
         $end = new DateTimeImmutable($endedAt);
@@ -323,13 +366,27 @@ class TimeTrackingService
             throw new InvalidArgumentException('Adjustment reason is required for manual entry');
         }
 
+        // Fetch task details if task_id is provided
+        $taskName = null;
+        $flatRateMinutes = null;
+        if ($taskId !== null) {
+            $taskData = $this->fetchTaskDetails($taskId);
+            if ($taskData !== null) {
+                $taskName = $taskData['name'];
+                $flatRateMinutes = $taskData['flat_rate_minutes'];
+            }
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_entries (technician_id, estimate_job_id, started_at, ended_at, en_route_at, on_site_at, wrap_up_at, duration_minutes, status, reviewed_by, reviewed_at, review_notes, manual_override, notes, created_at, updated_at) VALUES '
-            . '(:technician_id, :estimate_job_id, :started_at, :ended_at, :en_route_at, :on_site_at, :wrap_up_at, :minutes, :status, :reviewed_by, :reviewed_at, :review_notes, :override, :notes, NOW(), NOW())'
+            'INSERT INTO time_entries (technician_id, estimate_job_id, task_id, task_name, flat_rate_minutes, started_at, ended_at, en_route_at, on_site_at, wrap_up_at, duration_minutes, status, reviewed_by, reviewed_at, review_notes, manual_override, notes, created_at, updated_at) VALUES '
+            . '(:technician_id, :estimate_job_id, :task_id, :task_name, :flat_rate_minutes, :started_at, :ended_at, :en_route_at, :on_site_at, :wrap_up_at, :minutes, :status, :reviewed_by, :reviewed_at, :review_notes, :override, :notes, NOW(), NOW())'
         );
         $stmt->execute([
             'technician_id' => $technicianId,
             'estimate_job_id' => $estimateJobId,
+            'task_id' => $taskId,
+            'task_name' => $taskName,
+            'flat_rate_minutes' => $flatRateMinutes,
             'started_at' => $start->format('Y-m-d H:i:s'),
             'ended_at' => $end->format('Y-m-d H:i:s'),
             'en_route_at' => $normalizedEnRoute,
@@ -359,6 +416,9 @@ class TimeTrackingService
                 'wrap_up_at' => null,
                 'duration_minutes' => null,
                 'estimate_job_id' => null,
+                'task_id' => null,
+                'task_name' => null,
+                'flat_rate_minutes' => null,
                 'notes' => null,
                 'manual_override' => null,
             ],
@@ -371,6 +431,9 @@ class TimeTrackingService
                 'wrap_up_at' => $normalizedWrapUp,
                 'duration_minutes' => $minutes,
                 'estimate_job_id' => $estimateJobId,
+                'task_id' => $taskId,
+                'task_name' => $taskName,
+                'flat_rate_minutes' => $flatRateMinutes,
                 'notes' => $notes,
                 'manual_override' => $override,
             ]
@@ -399,7 +462,8 @@ class TimeTrackingService
             $data['notes'] ?? null,
             (string) $data['reason'],
             $data['manual_override'] ?? true,
-            $actorId
+            $actorId,
+            isset($data['task_id']) ? (int) $data['task_id'] : null
         );
     }
 
@@ -426,6 +490,23 @@ class TimeTrackingService
         $notes = $data['notes'] ?? $entry->notes;
         $override = $data['manual_override'] ?? $entry->manual_override;
 
+        // Handle task changes
+        $taskId = array_key_exists('task_id', $data) ? $data['task_id'] : $entry->task_id;
+        $taskName = $entry->task_name;
+        $flatRateMinutes = $entry->flat_rate_minutes;
+        if (array_key_exists('task_id', $data) && $data['task_id'] !== $entry->task_id) {
+            if ($taskId !== null) {
+                $taskData = $this->fetchTaskDetails((int) $taskId);
+                if ($taskData !== null) {
+                    $taskName = $taskData['name'];
+                    $flatRateMinutes = $taskData['flat_rate_minutes'];
+                }
+            } else {
+                $taskName = null;
+                $flatRateMinutes = null;
+            }
+        }
+
         $status = $entry->status ?? 'approved';
         $reviewedBy = $entry->reviewed_by;
         $reviewedAt = $entry->reviewed_at;
@@ -446,7 +527,7 @@ class TimeTrackingService
         $minutes = $end !== null ? max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60) : null;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, en_route_at = :en_route_at, on_site_at = :on_site_at, wrap_up_at = :wrap_up_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
+            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, en_route_at = :en_route_at, on_site_at = :on_site_at, wrap_up_at = :wrap_up_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, task_id = :task_id, task_name = :task_name, flat_rate_minutes = :flat_rate_minutes, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
         );
 
         $stmt->execute([
@@ -458,6 +539,9 @@ class TimeTrackingService
             'wrap_up_at' => $normalizedWrapUp,
             'minutes' => $minutes,
             'estimate_job_id' => $estimateJobId,
+            'task_id' => $taskId,
+            'task_name' => $taskName,
+            'flat_rate_minutes' => $flatRateMinutes,
             'notes' => $notes,
             'override' => $override ? 1 : 0,
             'status' => $status,
@@ -480,6 +564,9 @@ class TimeTrackingService
                 'wrap_up_at' => $entry->wrap_up_at,
                 'duration_minutes' => $entry->duration_minutes,
                 'estimate_job_id' => $entry->estimate_job_id,
+                'task_id' => $entry->task_id,
+                'task_name' => $entry->task_name,
+                'flat_rate_minutes' => $entry->flat_rate_minutes,
                 'notes' => $entry->notes,
                 'manual_override' => $entry->manual_override,
                 'status' => $entry->status,
@@ -492,6 +579,9 @@ class TimeTrackingService
                 'wrap_up_at' => $normalizedWrapUp,
                 'duration_minutes' => $minutes,
                 'estimate_job_id' => $estimateJobId,
+                'task_id' => $taskId,
+                'task_name' => $taskName,
+                'flat_rate_minutes' => $flatRateMinutes,
                 'notes' => $notes,
                 'manual_override' => (bool) $override,
                 'status' => $status,
@@ -535,6 +625,9 @@ class TimeTrackingService
                 'wrap_up_at' => $entry->wrap_up_at,
                 'duration_minutes' => $entry->duration_minutes,
                 'estimate_job_id' => $entry->estimate_job_id,
+                'task_id' => $entry->task_id,
+                'task_name' => $entry->task_name,
+                'flat_rate_minutes' => $entry->flat_rate_minutes,
                 'notes' => $entry->notes,
                 'manual_override' => $entry->manual_override,
                 'status' => $entry->status,
@@ -547,6 +640,9 @@ class TimeTrackingService
                 'wrap_up_at' => $entry->wrap_up_at,
                 'duration_minutes' => $entry->duration_minutes,
                 'estimate_job_id' => $entry->estimate_job_id,
+                'task_id' => $entry->task_id,
+                'task_name' => $entry->task_name,
+                'flat_rate_minutes' => $entry->flat_rate_minutes,
                 'notes' => $entry->notes,
                 'manual_override' => $entry->manual_override,
                 'status' => $decision,
@@ -657,8 +753,8 @@ class TimeTrackingService
     private function recordAdjustment(int $entryId, int $actorId, string $reason, array $before, array $after): void
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_status, previous_started_at, previous_ended_at, previous_en_route_at, previous_on_site_at, previous_wrap_up_at, previous_duration_minutes, previous_estimate_job_id, previous_notes, previous_manual_override, new_status, new_started_at, new_ended_at, new_en_route_at, new_on_site_at, new_wrap_up_at, new_duration_minutes, new_estimate_job_id, new_notes, new_manual_override) '
-            . 'VALUES (:entry_id, :actor_id, :reason, :prev_status, :prev_start, :prev_end, :prev_en_route, :prev_on_site, :prev_wrap_up, :prev_minutes, :prev_job, :prev_notes, :prev_override, :new_status, :new_start, :new_end, :new_en_route, :new_on_site, :new_wrap_up, :new_minutes, :new_job, :new_notes, :new_override)'
+            'INSERT INTO time_adjustments (time_entry_id, actor_id, reason, previous_status, previous_started_at, previous_ended_at, previous_en_route_at, previous_on_site_at, previous_wrap_up_at, previous_duration_minutes, previous_estimate_job_id, previous_task_id, previous_task_name, previous_flat_rate_minutes, previous_notes, previous_manual_override, new_status, new_started_at, new_ended_at, new_en_route_at, new_on_site_at, new_wrap_up_at, new_duration_minutes, new_estimate_job_id, new_task_id, new_task_name, new_flat_rate_minutes, new_notes, new_manual_override) '
+            . 'VALUES (:entry_id, :actor_id, :reason, :prev_status, :prev_start, :prev_end, :prev_en_route, :prev_on_site, :prev_wrap_up, :prev_minutes, :prev_job, :prev_task_id, :prev_task_name, :prev_flat_rate, :prev_notes, :prev_override, :new_status, :new_start, :new_end, :new_en_route, :new_on_site, :new_wrap_up, :new_minutes, :new_job, :new_task_id, :new_task_name, :new_flat_rate, :new_notes, :new_override)'
         );
 
         $stmt->execute([
@@ -673,6 +769,9 @@ class TimeTrackingService
             'prev_wrap_up' => $before['wrap_up_at'] ?? null,
             'prev_minutes' => $before['duration_minutes'],
             'prev_job' => $before['estimate_job_id'],
+            'prev_task_id' => $before['task_id'] ?? null,
+            'prev_task_name' => $before['task_name'] ?? null,
+            'prev_flat_rate' => $before['flat_rate_minutes'] ?? null,
             'prev_notes' => $before['notes'],
             'prev_override' => $before['manual_override'],
             'new_status' => $after['status'] ?? null,
@@ -683,6 +782,9 @@ class TimeTrackingService
             'new_wrap_up' => $after['wrap_up_at'] ?? null,
             'new_minutes' => $after['duration_minutes'],
             'new_job' => $after['estimate_job_id'],
+            'new_task_id' => $after['task_id'] ?? null,
+            'new_task_name' => $after['task_name'] ?? null,
+            'new_flat_rate' => $after['flat_rate_minutes'] ?? null,
             'new_notes' => $after['notes'],
             'new_override' => $after['manual_override'],
         ]);

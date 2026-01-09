@@ -78,7 +78,8 @@ class TimeTrackingController
         $entry = $this->service->start(
             $user->id,
             $data['estimate_job_id'] ?? null,
-            $data['location'] ?? ['lat' => $data['lat'] ?? null, 'lng' => $data['lng'] ?? null]
+            $data['location'] ?? ['lat' => $data['lat'] ?? null, 'lng' => $data['lng'] ?? null],
+            isset($data['task_id']) ? (int) $data['task_id'] : null
         );
         return $entry->toArray();
     }

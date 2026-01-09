@@ -4828,6 +4828,68 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $timeController->portal($user);
             return Response::json($data);
         });
+
+        // Labor Tasks routes (for granular labor clocking)
+        $laborTaskService = new \App\Services\TimeTracking\LaborTaskService($connection);
+        $laborTaskController = new \App\Services\TimeTracking\LaborTaskController($laborTaskService, $gate);
+
+        $router->get('/api/labor-tasks', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'search' => $request->queryParam('search'),
+                'is_active' => $request->queryParam('is_active'),
+                'service_type_id' => $request->queryParam('service_type_id'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 100),
+            ];
+            $data = $laborTaskController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/labor-tasks/active', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $data = $laborTaskController->active($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/labor-tasks/efficiency', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'technician_id' => $request->queryParam('technician_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'group_by' => $request->queryParam('group_by', 'technician'),
+            ];
+            $data = $laborTaskController->efficiencyReport($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/labor-tasks/{id}', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $laborTaskController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/labor-tasks', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $data = $laborTaskController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/labor-tasks/{id}', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $laborTaskController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/labor-tasks/{id}', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $laborTaskController->destroy($user, $id);
+            return Response::json($data);
+        });
     });
 
     // Settings routes (Admin only)
