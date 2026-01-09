@@ -11,6 +11,7 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import userService from '../../../services/user.service'
+import { useAuthStore } from '../../stores/auth.jsx'
 import { useToast } from '../../stores/toast.jsx'
 
 const roleOptions = [
@@ -86,6 +87,8 @@ export default function UsersList() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
+  const { isAdmin, hasPermission } = useAuthStore()
+  const canViewAudit = isAdmin && hasPermission('audit.view')
 
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -457,6 +460,18 @@ export default function UsersList() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </Button>
+                          {canViewAudit ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(`/cp/audit?actor_id=${user.id}`)}
+                              title="View audit log"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m-7 4h8a2 2 0 002-2V6a2 2 0 00-2-2h-5l-2-2H6a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                            </Button>
+                          ) : null}
                           {user.two_factor_enabled ? (
                             <Button variant="ghost" size="sm" onClick={() => confirmReset2FA(user)}>
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
