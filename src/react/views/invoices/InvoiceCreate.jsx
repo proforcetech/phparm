@@ -31,7 +31,16 @@ export default function InvoiceCreate() {
     notes: '',
   })
   const [lineItems, setLineItems] = useState([{ ...emptyLineItem }])
+  const [splitBilling, setSplitBilling] = useState(false)
+  const [payerAllocations, setPayerAllocations] = useState([
+    { payer_role: 'primary', payer_name: '', allocated_amount: '' },
+    { payer_role: 'secondary', payer_name: '', allocated_amount: '' },
+  ])
   const [formErrors, setFormErrors] = useState({})
+  const payerLabels = {
+    primary: 'Primary payer',
+    secondary: 'Secondary payer',
+  }
 
   const loadCustomers = useCallback(async () => {
     setLoadingCustomers(true)
@@ -65,6 +74,17 @@ export default function InvoiceCreate() {
     })
   }
 
+  const updatePayerAllocation = (index, field, value) => {
+    setPayerAllocations((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+    if (formErrors.payer_allocations) {
+      setFormErrors((prev) => ({ ...prev, payer_allocations: null }))
+    }
+  }
+
   const addLineItem = () => {
     setLineItems((prev) => [...prev, { ...emptyLineItem }])
   }
@@ -80,6 +100,12 @@ export default function InvoiceCreate() {
     }, 0)
   }
 
+  const calculateAllocationTotal = () => {
+    return payerAllocations.reduce((sum, allocation) => {
+      return sum + (parseFloat(allocation.allocated_amount) || 0)
+    }, 0)
+  }
+
   const validate = () => {
     const errors = {}
     if (!formData.customer_id) {
@@ -90,6 +116,15 @@ export default function InvoiceCreate() {
     }
     if (lineItems.length === 0 || lineItems.every((item) => !item.description.trim())) {
       errors.lineItems = 'At least one line item is required'
+    }
+    if (splitBilling) {
+      const total = calculateSubtotal()
+      const allocationTotal = calculateAllocationTotal()
+      if (allocationTotal <= 0) {
+        errors.payer_allocations = 'Enter allocation amounts for the payers'
+      } else if (Math.abs(allocationTotal - total) > 0.01) {
+        errors.payer_allocations = 'Payer allocations must equal the invoice total'
+      }
     }
     setFormErrors(errors)
     return Object.keys(errors).length === 0
@@ -106,6 +141,14 @@ export default function InvoiceCreate() {
       const validItems = lineItems.filter((item) => item.description.trim())
       await invoiceService.create({
         ...formData,
+        split_billing: splitBilling,
+        payer_allocations: splitBilling
+          ? payerAllocations.map((allocation) => ({
+            payer_role: allocation.payer_role,
+            payer_name: allocation.payer_name?.trim() || null,
+            allocated_amount: parseFloat(allocation.allocated_amount) || 0,
+          }))
+          : [],
         items: validItems.map((item) => ({
           description: item.description,
           quantity: parseFloat(item.quantity) || 1,
@@ -248,6 +291,47 @@ export default function InvoiceCreate() {
               </div>
             </div>
 
+            <div className="mb-6 border-t pt-6">
+              <div className="flex items-center gap-2">
+                <input
+                  id="split-billing"
+                  type="checkbox"
+                  className="h-4 w-4 text-primary-600 border-gray-300 rounded"
+                  checked={splitBilling}
+                  onChange={(event) => setSplitBilling(event.target.checked)}
+                />
+                <label htmlFor="split-billing" className="text-sm font-medium text-gray-700">
+                  Split billing between primary and secondary payers
+                </label>
+              </div>
+
+              {splitBilling ? (
+                <div className="mt-4 space-y-4">
+                  {payerAllocations.map((allocation, index) => (
+                    <div key={allocation.payer_role} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Input
+                        label={payerLabels[allocation.payer_role]}
+                        placeholder="Payer name (optional)"
+                        value={allocation.payer_name}
+                        onUpdateModelValue={(value) => updatePayerAllocation(index, 'payer_name', value)}
+                      />
+                      <Input
+                        label="Allocated Amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={allocation.allocated_amount}
+                        onUpdateModelValue={(value) => updatePayerAllocation(index, 'allocated_amount', value)}
+                      />
+                    </div>
+                  ))}
+                  {formErrors.payer_allocations ? (
+                    <p className="text-sm text-red-600">{formErrors.payer_allocations}</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
             <Textarea
               label="Notes"
               value={formData.notes}
@@ -266,6 +350,21 @@ export default function InvoiceCreate() {
                   ${calculateSubtotal().toFixed(2)}
                 </dd>
               </div>
+              {splitBilling ? (
+                <div className="space-y-2 border-t pt-3">
+                  <dt className="text-sm font-medium text-gray-900">Split Billing</dt>
+                  {payerAllocations.map((allocation) => (
+                    <div key={allocation.payer_role} className="flex justify-between text-sm text-gray-600">
+                      <span>{payerLabels[allocation.payer_role]}</span>
+                      <span>${(parseFloat(allocation.allocated_amount) || 0).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>Remaining</span>
+                    <span>${(calculateSubtotal() - calculateAllocationTotal()).toFixed(2)}</span>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex justify-between pt-3 border-t">
                 <dt className="text-base font-medium text-gray-900">Total</dt>
                 <dd className="text-base font-medium text-gray-900">
