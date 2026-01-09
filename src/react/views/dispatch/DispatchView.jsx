@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Pusher from 'pusher-js'
 import {
   InformationCircleIcon,
   ClockIcon,
@@ -148,6 +149,7 @@ export default function DispatchView() {
   const [loadError, setLoadError] = useState(null)
   const [scoringWeights, setScoringWeights] = useState(null)
   const [excludedDrivers, setExcludedDrivers] = useState([])
+  const [realtimeStatus, setRealtimeStatus] = useState('disabled')
 
   // Waterfall state
   const [waterfallMode, setWaterfallMode] = useState(false)
@@ -163,6 +165,17 @@ export default function DispatchView() {
   const [showHeatmap, setShowHeatmap] = useState(false)
 
   const hasSuggestions = suggestions.length > 0
+  const websocketConfig = useMemo(
+    () => ({
+      key: import.meta.env.VITE_PUSHER_KEY,
+      cluster: import.meta.env.VITE_PUSHER_CLUSTER,
+      host: import.meta.env.VITE_PUSHER_HOST,
+      channel: import.meta.env.VITE_DRIVER_LOCATION_CHANNEL || 'driver-location-updates',
+      wsPort: Number(import.meta.env.VITE_PUSHER_PORT || 6001),
+      forceTLS: (import.meta.env.VITE_PUSHER_FORCE_TLS || 'false') === 'true',
+    }),
+    []
+  )
 
   // Load idle alerts and active waterfalls on mount
   useEffect(() => {
@@ -185,29 +198,129 @@ export default function DispatchView() {
     return () => clearInterval(interval)
   }, [])
 
+  const loadSuggestions = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!dispatchRequirementId) {
+        if (!silent) {
+          setLoadError('Dispatch requirement ID is required to fetch suggestions.')
+        }
+        return
+      }
+
+      if (!silent) {
+        setLoading(true)
+        setLoadError(null)
+      }
+      try {
+        const response = await dispatchService.getSuggestions({
+          dispatch_requirement_id: dispatchRequirementId,
+          limit: Number(limit) || 5,
+        })
+        setSuggestions(response.data?.data ?? [])
+        setRequirement(response.data?.requirement ?? null)
+        setScoringWeights(response.data?.scoring_weights ?? null)
+        setExcludedDrivers(response.data?.excluded_drivers ?? [])
+      } catch (err) {
+        if (!silent) {
+          setLoadError(err?.response?.data?.message || 'Unable to load dispatch suggestions.')
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false)
+        }
+      }
+    },
+    [dispatchRequirementId, limit]
+  )
+
   const handleFetch = async () => {
-    if (!dispatchRequirementId) {
-      setLoadError('Dispatch requirement ID is required to fetch suggestions.')
+    await loadSuggestions()
+  }
+
+  useEffect(() => {
+    if (!websocketConfig.key) {
+      setRealtimeStatus('disabled')
       return
     }
 
-    setLoading(true)
-    setLoadError(null)
-    try {
-      const response = await dispatchService.getSuggestions({
-        dispatch_requirement_id: dispatchRequirementId,
-        limit: Number(limit) || 5,
-      })
-      setSuggestions(response.data?.data ?? [])
-      setRequirement(response.data?.requirement ?? null)
-      setScoringWeights(response.data?.scoring_weights ?? null)
-      setExcludedDrivers(response.data?.excluded_drivers ?? [])
-    } catch (err) {
-      setLoadError(err?.response?.data?.message || 'Unable to load dispatch suggestions.')
-    } finally {
-      setLoading(false)
+    setRealtimeStatus('connecting')
+
+    const pusher = new Pusher(websocketConfig.key, {
+      cluster: websocketConfig.cluster || undefined,
+      wsHost: websocketConfig.host || undefined,
+      wsPort: websocketConfig.wsPort,
+      wssPort: websocketConfig.wsPort,
+      forceTLS: websocketConfig.forceTLS,
+      enabledTransports: ['ws', 'wss'],
+      disableStats: true,
+    })
+    const channel = pusher.subscribe(websocketConfig.channel)
+
+    const handleLocationUpdate = (data) => {
+      const payload =
+        typeof data === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(data)
+              } catch {
+                return null
+              }
+            })()
+          : data
+
+      if (!payload?.driver_profile_id) return
+
+      setSuggestions((prev) =>
+        prev.map((suggestion) =>
+          suggestion.driver_profile_id === payload.driver_profile_id
+            ? {
+                ...suggestion,
+                current_location: {
+                  latitude: payload.latitude,
+                  longitude: payload.longitude,
+                  heading: payload.heading ?? null,
+                  speed: payload.speed ?? null,
+                  accuracy: payload.accuracy ?? null,
+                  recorded_at: payload.recorded_at ?? null,
+                },
+              }
+            : suggestion
+        )
+      )
     }
-  }
+
+    const handleConnected = () => setRealtimeStatus('connected')
+    const handleDisconnected = () => setRealtimeStatus('unavailable')
+
+    channel.bind('driver_location_updated', handleLocationUpdate)
+    pusher.connection.bind('connected', handleConnected)
+    pusher.connection.bind('error', handleDisconnected)
+    pusher.connection.bind('unavailable', handleDisconnected)
+    pusher.connection.bind('disconnected', handleDisconnected)
+
+    return () => {
+      channel.unbind('driver_location_updated', handleLocationUpdate)
+      pusher.connection.unbind('connected', handleConnected)
+      pusher.connection.unbind('error', handleDisconnected)
+      pusher.connection.unbind('unavailable', handleDisconnected)
+      pusher.connection.unbind('disconnected', handleDisconnected)
+      pusher.unsubscribe(websocketConfig.channel)
+      pusher.disconnect()
+    }
+  }, [websocketConfig])
+
+  useEffect(() => {
+    if (realtimeStatus === 'connected' || realtimeStatus === 'connecting' || !dispatchRequirementId) {
+      return
+    }
+
+    loadSuggestions({ silent: true })
+    const interval = setInterval(() => {
+      loadSuggestions({ silent: true })
+    }, 20000)
+
+    return () => clearInterval(interval)
+  }, [dispatchRequirementId, loadSuggestions, realtimeStatus])
 
   const handleAssign = async (suggestion) => {
     if (!workorderId) {
