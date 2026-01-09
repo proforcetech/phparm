@@ -131,18 +131,19 @@ class GeofencingService
     public function detectIdleDrivers(): array
     {
         $alerts = [];
+        $partitionClause = $this->getDriverLocationPartitionClause();
 
         // Find drivers who are "en route" but haven't moved
         $stmt = $this->connection->pdo()->prepare(
             'SELECT dl.driver_profile_id,
                     dl.latitude, dl.longitude, dl.recorded_at,
                     djo.job_reference
-             FROM driver_locations dl
+             FROM driver_locations ' . $partitionClause . ' dl
              INNER JOIN driver_job_offers djo ON djo.driver_profile_id = dl.driver_profile_id
                 AND djo.status = :offer_status
              WHERE dl.recorded_at = (
                 SELECT MAX(dl2.recorded_at)
-                FROM driver_locations dl2
+                FROM driver_locations ' . $partitionClause . ' dl2
                 WHERE dl2.driver_profile_id = dl.driver_profile_id
              )
              AND dl.recorded_at < DATE_SUB(NOW(), INTERVAL :threshold MINUTE)'
@@ -384,11 +385,12 @@ class GeofencingService
 
     private function getRecentDriverLocations(): array
     {
+        $partitionClause = $this->getDriverLocationPartitionClause();
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT dl.* FROM driver_locations dl
+            'SELECT dl.* FROM driver_locations ' . $partitionClause . ' dl
              INNER JOIN (
                 SELECT driver_profile_id, MAX(recorded_at) as max_time
-                FROM driver_locations
+                FROM driver_locations ' . $partitionClause . '
                 WHERE recorded_at > DATE_SUB(NOW(), INTERVAL :stale MINUTE)
                 GROUP BY driver_profile_id
              ) latest ON dl.driver_profile_id = latest.driver_profile_id
@@ -400,8 +402,9 @@ class GeofencingService
 
     private function getLatestDriverLocation(int $driverProfileId): ?array
     {
+        $partitionClause = $this->getDriverLocationPartitionClause();
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT * FROM driver_locations
+            'SELECT * FROM driver_locations ' . $partitionClause . '
              WHERE driver_profile_id = :driver_id
              ORDER BY recorded_at DESC
              LIMIT 1'
@@ -412,10 +415,11 @@ class GeofencingService
 
     private function hasDriverMoved(int $driverProfileId, int $minutes): bool
     {
+        $partitionClause = $this->getDriverLocationPartitionClause();
         $stmt = $this->connection->pdo()->prepare(
             'SELECT MIN(latitude) as min_lat, MAX(latitude) as max_lat,
                     MIN(longitude) as min_lng, MAX(longitude) as max_lng
-             FROM driver_locations
+             FROM driver_locations ' . $partitionClause . '
              WHERE driver_profile_id = :driver_id
              AND recorded_at > DATE_SUB(NOW(), INTERVAL :minutes MINUTE)'
         );
@@ -477,6 +481,11 @@ class GeofencingService
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM driver_idle_alerts WHERE id = :id');
         $stmt->execute(['id' => $alertId]);
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    private function getDriverLocationPartitionClause(): string
+    {
+        return DriverLocationPartitionResolver::recentPartitions(new DateTimeImmutable('now'), 1, 0);
     }
 
     private function markJobArrived(array $geofence, int $driverProfileId): array
