@@ -195,6 +195,7 @@ class PartnerDispatchService
                  payload = :payload,
                  external_reference = :external_reference,
                  dispatch_reference = :dispatch_reference,
+                 protocol = :protocol,
                  processed_at = NOW(),
                  error_message = NULL
              WHERE id = :id'
@@ -204,6 +205,7 @@ class PartnerDispatchService
             'payload' => $encoded !== false ? $encoded : null,
             'external_reference' => $dto->externalReference,
             'dispatch_reference' => $dispatchReference,
+            'protocol' => $dto->protocol,
             'id' => $requestId,
         ]);
     }

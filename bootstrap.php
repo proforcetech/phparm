@@ -37,6 +37,7 @@ $config = [
     'auth' => require __DIR__ . '/config/auth.php',
     'appointments' => require __DIR__ . '/config/appointments.php',
     'customer_retention' => require __DIR__ . '/config/customer_retention.php',
+    'partner_dispatch' => require __DIR__ . '/config/partner_dispatch.php',
     'cms' => require __DIR__ . '/config/cms.php',
     'recaptcha' => require __DIR__ . '/config/recaptcha.php',
 ];

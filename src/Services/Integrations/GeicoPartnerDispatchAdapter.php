@@ -11,10 +11,15 @@ class GeicoPartnerDispatchAdapter extends AbstractPartnerDispatchAdapter
 
     public function normalize(array $payload): PartnerDispatchDTO
     {
-        $metadata = $this->metadata($payload, ['claimNumber', 'policyNumber', 'priority', 'coverage']);
+        $protocol = $this->detectProtocol($payload, ['protocol', 'dispatchProtocol', 'dispatch_protocol']);
+        $metadata = $this->metadata($payload, ['claimNumber', 'policyNumber', 'priority', 'coverage', 'protocol']);
+        if ($protocol !== null) {
+            $metadata['protocol'] = $protocol;
+        }
 
         return new PartnerDispatchDTO(
             'geico',
+            $protocol,
             $this->value($payload, ['claimNumber', 'dispatchId', 'reference', 'caseId']),
             $this->value($payload, ['insuredName', 'customer.name', 'customerName', 'name']),
             $this->value($payload, ['insuredPhone', 'customer.phone', 'phone']),
@@ -28,5 +33,28 @@ class GeicoPartnerDispatchAdapter extends AbstractPartnerDispatchAdapter
             $this->intValue($payload, ['vehicle.year', 'vehicleYear', 'year']),
             $metadata
         );
+    }
+
+    public function buildAcceptancePayload(array $dispatch, array $context = []): array
+    {
+        $context['status'] = 'accepted';
+        return $this->buildStatusPayload($dispatch, 'accepted', $context);
+    }
+
+    public function buildStatusPayload(array $dispatch, string $status, array $context = []): array
+    {
+        $normalizedStatus = $this->normalizeStatus($status);
+        $context['status'] = $normalizedStatus;
+        $base = $this->baseStatusPayload($dispatch, $context);
+
+        return $this->pruneNulls([
+            'protocol' => $dispatch['protocol'] ?? null,
+            'claim_number' => $dispatch['external_reference'] ?? $dispatch['dispatch_reference'] ?? null,
+            'dispatch_reference' => $dispatch['dispatch_reference'] ?? null,
+            'status' => $normalizedStatus,
+            'updated_at' => $base['occurred_at'],
+            'provider' => $base['provider'],
+            'notes' => $base['notes'],
+        ]);
     }
 }

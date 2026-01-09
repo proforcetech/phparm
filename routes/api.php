@@ -1588,15 +1588,22 @@ return Response::json([
         return Response::json($data);
     });
 
+    $partnerDispatchRegistry = new \App\Services\Integrations\PartnerDispatchAdapterRegistry([
+        new \App\Services\Integrations\AaaPartnerDispatchAdapter(),
+        new \App\Services\Integrations\GeicoPartnerDispatchAdapter(),
+        new \App\Services\Integrations\AgeroPartnerDispatchAdapter(),
+    ]);
     $partnerDispatchService = new \App\Services\Integrations\PartnerDispatchService(
         $connection,
         $auditLogger,
-        new \App\Services\Integrations\PartnerDispatchAdapterRegistry([
-            new \App\Services\Integrations\AaaPartnerDispatchAdapter(),
-            new \App\Services\Integrations\GeicoPartnerDispatchAdapter(),
-            new \App\Services\Integrations\AgeroPartnerDispatchAdapter(),
-        ]),
+        $partnerDispatchRegistry,
         new \App\Services\Integrations\PartnerEmailParser()
+    );
+    $partnerDispatchSyncService = new \App\Services\Integrations\PartnerDispatchSyncService(
+        $connection,
+        $auditLogger,
+        $partnerDispatchRegistry,
+        $config['partner_dispatch'] ?? []
     );
 
     $router->post('/api/integrations/partners/{partner}/dispatch', function (Request $request) use ($partnerDispatchService) {
@@ -1609,6 +1616,39 @@ return Response::json([
         $status = $result['status'] === 'failed' ? 422 : 201;
 
         return Response::json($result, $status);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/accept', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $actorId = isset($body['actor_id']) ? (int) $body['actor_id'] : null;
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+        $result = $partnerDispatchSyncService->acceptDispatch($partner, $dispatchReference, $context, $actorId);
+        return Response::json($result, 200);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/status', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $status = (string) ($body['status'] ?? '');
+        if ($status === '') {
+            return Response::badRequest('Status is required');
+        }
+
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+        $result = $partnerDispatchSyncService->syncStatus($partner, $dispatchReference, $status, $context);
+        return Response::json($result, 200);
     });
 
     // Initialize AccessGate for protected routes
