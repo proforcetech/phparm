@@ -64,6 +64,9 @@ export default function ImpoundIntake() {
           <p className="text-sm text-gray-500">Capture incoming vehicles and begin storage tracking.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link to="/cp/storage/spot-checks">
+            <Button variant="secondary">Inventory Spot-Checks</Button>
+          </Link>
           <Link to="/cp/storage/ledger">
             <Button variant="secondary">Fee Ledger</Button>
           </Link>
