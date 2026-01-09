@@ -584,6 +584,7 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $authService->recordLastActivity($user->id);
 
         $sessionManager->recordSession(
             $user->id,
@@ -689,6 +690,7 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $authService->recordLastActivity($user->id);
 
         $sessionManager->recordSession(
             $user->id,
@@ -744,6 +746,7 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $authService->recordLastActivity($user->id);
 
         $sessionManager->recordSession(
             $user->id,
@@ -797,6 +800,7 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $authService->recordLastActivity($user->id);
 
         $sessionManager->recordSession(
             $user->id,
@@ -861,6 +865,7 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Not authenticated');
         }
 
+    $buildImpersonationPayload = function (): ?array {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
@@ -877,6 +882,19 @@ return function (Router $router, array $config, $connection) {
     })->middleware(Middleware::auth());
 
     $router->delete('/api/auth/sessions/{sessionId:[0-9]+}', function (Request $request) use ($sessionManager) {
+        if (!isset($_SESSION['impersonation']['impersonator'], $_SESSION['impersonation']['impersonated'])) {
+            return null;
+        }
+
+        return [
+            'active' => true,
+            'impersonator' => $_SESSION['impersonation']['impersonator'],
+            'impersonated' => $_SESSION['impersonation']['impersonated'],
+            'started_at' => $_SESSION['impersonation']['started_at'] ?? null,
+        ];
+    };
+
+    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
@@ -886,6 +904,17 @@ return function (Router $router, array $config, $connection) {
         $sessionId = $request->getAttribute('sessionId');
         if ($sessionId === null) {
             return Response::badRequest('Session ID required');
+        return Response::json([
+            'user' => $user->toArray(),
+            'impersonation' => $buildImpersonationPayload(),
+        ]);
+    })->middleware(Middleware::auth());
+
+    $router->post('/api/auth/impersonate', function (Request $request) use ($authService, $buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
         }
 
         if (session_status() === PHP_SESSION_NONE) {
@@ -905,13 +934,68 @@ return function (Router $router, array $config, $connection) {
     })->middleware(Middleware::auth());
 
     $router->get('/api/auth/me', function (Request $request) {
+        $impersonator = $user;
+        if (isset($_SESSION['impersonation']['impersonator'])) {
+            $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
+        }
+
+        if ($impersonator->role !== 'admin') {
+            return Response::json(['error' => 'Insufficient permissions'], 403);
+        }
+
+        $targetId = (int) $request->input('user_id');
+        if ($targetId <= 0) {
+            return Response::badRequest('Target user id is required.');
+        }
+
+        try {
+            $targetUser = $authService->findUserById($targetId);
+        } catch (\Throwable $e) {
+            return Response::json(['error' => 'User not found'], 404);
+        }
+
+        $_SESSION['impersonation'] = [
+            'impersonator_id' => $impersonator->id,
+            'impersonator' => $impersonator->toArray(),
+            'impersonated_id' => $targetUser->id,
+            'impersonated' => $targetUser->toArray(),
+            'started_at' => time(),
+        ];
+
+        $_SESSION['user_id'] = $targetUser->id;
+        $_SESSION['user'] = $targetUser->toArray();
+
+        return Response::json([
+            'user' => $targetUser->toArray(),
+            'impersonation' => $buildImpersonationPayload(),
+        ]);
+    })->middleware(Middleware::auth());
+
+    $router->post('/api/auth/impersonate/stop', function (Request $request) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
             return Response::unauthorized('Not authenticated');
         }
 
-        return Response::json(['user' => $user->toArray()]);
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['impersonation']['impersonator'])) {
+            return Response::badRequest('No active impersonation session.');
+        }
+
+        $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
+        unset($_SESSION['impersonation']);
+
+        $_SESSION['user_id'] = $impersonator->id;
+        $_SESSION['user'] = $impersonator->toArray();
+
+        return Response::json([
+            'user' => $impersonator->toArray(),
+            'impersonation' => null,
+        ]);
     })->middleware(Middleware::auth());
 
     // 2FA Setup Flow - Initiate setup by generating secret and QR code
@@ -3935,8 +4019,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'role' => $request->queryParam('role'),
                 'query' => $request->queryParam('query'),
+                'status' => $request->queryParam('status'),
+                'two_factor' => $request->queryParam('two_factor'),
             ];
             $data = $userController->listUsers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkDeactivate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/bulk-role', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkUpdateRole($user, $request->body());
             return Response::json($data);
         });
 

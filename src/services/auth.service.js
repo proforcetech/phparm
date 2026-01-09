@@ -119,6 +119,10 @@ export const authService = {
    */
   async listSessions() {
     const response = await api.get('/auth/sessions')
+   * Impersonate another user (admin only).
+   */
+  async impersonate(userId) {
+    const response = await api.post('/auth/impersonate', { user_id: userId })
     return response.data
   },
 
@@ -127,6 +131,10 @@ export const authService = {
    */
   async revokeSession(sessionId) {
     const response = await api.delete(`/auth/sessions/${sessionId}`)
+   * Stop impersonation and return to the original admin session.
+   */
+  async stopImpersonation() {
+    const response = await api.post('/auth/impersonate/stop')
     return response.data
   },
 }
