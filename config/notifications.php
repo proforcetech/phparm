@@ -174,9 +174,13 @@ TEMPLATE,
 
         // Inventory templates
         'inventory.low_stock_alert' => <<<'TEMPLATE'
-Low Stock Alert
+Daily Low Stock Summary
 
-{{total}} items are at or below their low stock threshold:
+{{total}} items are at or below their low stock threshold.
+Out of stock: {{out_of_stock}}
+Low stock: {{low_stock}}
+
+Top low-stock items (showing {{items_shown}}):
 
 {{items_list}}
 

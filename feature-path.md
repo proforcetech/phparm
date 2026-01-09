@@ -20,12 +20,14 @@ The current system successfully bridges the gap between Estimates and Invoices t
 ## 4. Inventory Enhancements
 
 [x] Stock Order Lifecycle: The InventoryStockOrderRepository should be linked to the financial ledger. When a stock order is marked as "Received," it should automatically update the InventoryItem quantities and create a FinancialEntry for the accounts payable.
-[ ] Automated Low-Stock Alerts: Utilize the inventory-low-stock.php cron job to send daily summaries to the manager, rather than just waiting for a manual check.
+[x] Automated Low-Stock Alerts: Utilize the inventory-low-stock.php cron job to send daily summaries to the manager, rather than just waiting for a manual check.
 
 ## 5. Advanced Reporting & KPIs
 
 [ ] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
 [x] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
+[x] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
+[ ] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
 [ ] Customer Retention Tracking: Link the CustomerRepository to Workorder history to identify "Lost" customers (e.g., those who haven't had a workorder in 6+ months) for automated re-marketing campaigns.
 
 ## 2. Security and User Managment Improvements
