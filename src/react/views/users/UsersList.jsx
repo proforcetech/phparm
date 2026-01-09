@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import Badge from '../../components/ui/Badge'
@@ -22,6 +22,8 @@ const roleOptions = [
   { label: 'CMS', value: 'cms' },
   { label: 'Customer', value: 'customer' },
 ]
+
+const bulkRoleOptions = roleOptions.filter((option) => option.value !== '')
 
 const roleLabels = {
   admin: 'Admin',
@@ -65,15 +67,23 @@ export default function UsersList() {
   const [resetting2FA, setResetting2FA] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReset2FAModal, setShowReset2FAModal] = useState(false)
+  const [showBulkDeactivateModal, setShowBulkDeactivateModal] = useState(false)
+  const [showBulkRoleModal, setShowBulkRoleModal] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [userToReset2FA, setUserToReset2FA] = useState(null)
   const [filters, setFilters] = useState({ query: '', role: '' })
+  const [selectedUserIds, setSelectedUserIds] = useState([])
+  const [bulkRole, setBulkRole] = useState('')
+  const [bulkDeactivating, setBulkDeactivating] = useState(false)
+  const [bulkUpdatingRole, setBulkUpdatingRole] = useState(false)
+  const selectAllRef = useRef(null)
 
   const loadUsers = async (nextFilters = filters) => {
     setLoading(true)
     try {
       const data = await userService.listUsers(nextFilters)
       setUsers(data)
+      setSelectedUserIds([])
     } catch (error) {
       console.error('Failed to load users:', error)
       toast.error('Failed to load users')
@@ -85,6 +95,35 @@ export default function UsersList() {
   useEffect(() => {
     loadUsers()
   }, [])
+
+  useEffect(() => {
+    if (!selectAllRef.current) return
+    const total = users.length
+    const selected = selectedUserIds.length
+    selectAllRef.current.indeterminate = selected > 0 && selected < total
+  }, [selectedUserIds, users.length])
+
+  const toggleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedUserIds(users.map((user) => user.id))
+    } else {
+      setSelectedUserIds([])
+    }
+  }
+
+  const toggleSelectUser = (id, checked) => {
+    setSelectedUserIds((prev) => {
+      if (checked) {
+        return prev.includes(id) ? prev : [...prev, id]
+      }
+      return prev.filter((selectedId) => selectedId !== id)
+    })
+  }
+
+  const clearSelection = () => {
+    setSelectedUserIds([])
+    setBulkRole('')
+  }
 
   const confirmDelete = (user) => {
     setUserToDelete(user)
@@ -131,6 +170,55 @@ export default function UsersList() {
       setResetting2FA(false)
     }
   }
+
+  const confirmBulkDeactivate = () => {
+    if (selectedUserIds.length === 0) return
+    setShowBulkDeactivateModal(true)
+  }
+
+  const handleBulkDeactivate = async () => {
+    if (selectedUserIds.length === 0) return
+
+    setBulkDeactivating(true)
+    try {
+      const result = await userService.bulkDeactivateUsers(selectedUserIds)
+      toast.success(`${result.deactivated} users deactivated`)
+      setShowBulkDeactivateModal(false)
+      clearSelection()
+      loadUsers()
+    } catch (error) {
+      console.error('Failed to deactivate users:', error)
+      toast.error(error.response?.data?.message || 'Failed to deactivate users')
+    } finally {
+      setBulkDeactivating(false)
+    }
+  }
+
+  const confirmBulkRoleUpdate = () => {
+    if (selectedUserIds.length === 0 || !bulkRole) return
+    setShowBulkRoleModal(true)
+  }
+
+  const handleBulkRoleUpdate = async () => {
+    if (selectedUserIds.length === 0 || !bulkRole) return
+
+    setBulkUpdatingRole(true)
+    try {
+      const result = await userService.bulkUpdateRole(selectedUserIds, bulkRole)
+      toast.success(`${result.updated} users updated to ${roleLabels[bulkRole] || bulkRole}`)
+      setShowBulkRoleModal(false)
+      clearSelection()
+      loadUsers()
+    } catch (error) {
+      console.error('Failed to update roles:', error)
+      toast.error(error.response?.data?.message || 'Failed to update roles')
+    } finally {
+      setBulkUpdatingRole(false)
+    }
+  }
+
+  const selectedCount = selectedUserIds.length
+  const allSelected = users.length > 0 && selectedCount === users.length
 
   return (
     <div>
@@ -184,7 +272,30 @@ export default function UsersList() {
         </div>
       ) : (
         <Card>
-          <h3 className="text-lg font-medium text-gray-900">Users ({users.length})</h3>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h3 className="text-lg font-medium text-gray-900">Users ({users.length})</h3>
+            {selectedCount > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-gray-500">{selectedCount} selected</span>
+                <div className="min-w-[180px]">
+                  <Select
+                    modelValue={bulkRole}
+                    options={bulkRoleOptions}
+                    onUpdateModelValue={setBulkRole}
+                  />
+                </div>
+                <Button size="sm" onClick={confirmBulkRoleUpdate} disabled={!bulkRole}>
+                  Update Role
+                </Button>
+                <Button variant="danger" size="sm" onClick={confirmBulkDeactivate}>
+                  Deactivate
+                </Button>
+                <Button variant="ghost" size="sm" onClick={clearSelection}>
+                  Clear
+                </Button>
+              </div>
+            ) : null}
+          </div>
 
           {users.length === 0 ? (
             <div className="text-center py-12 text-gray-500">No users found</div>
@@ -193,6 +304,16 @@ export default function UsersList() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        checked={allSelected}
+                        onChange={(event) => toggleSelectAll(event.target.checked)}
+                        aria-label="Select all users"
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -203,6 +324,15 @@ export default function UsersList() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {users.map((user) => (
                     <tr key={user.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          checked={selectedUserIds.includes(user.id)}
+                          onChange={(event) => toggleSelectUser(user.id, event.target.checked)}
+                          aria-label={`Select ${user.name}`}
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
@@ -295,6 +425,42 @@ export default function UsersList() {
       >
         <p className="text-sm text-gray-600">
           Are you sure you want to reset 2FA for <strong>{userToReset2FA?.name}</strong>? They will need to set it up again.
+        </p>
+      </Modal>
+
+      <Modal
+        open={showBulkDeactivateModal}
+        title="Deactivate Selected Users"
+        onClose={() => setShowBulkDeactivateModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowBulkDeactivateModal(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleBulkDeactivate} loading={bulkDeactivating}>
+              Deactivate {selectedCount} Users
+            </Button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          You are about to deactivate <strong>{selectedCount}</strong> users. They will no longer be able to log in.
+        </p>
+      </Modal>
+
+      <Modal
+        open={showBulkRoleModal}
+        title="Update Roles for Selected Users"
+        onClose={() => setShowBulkRoleModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowBulkRoleModal(false)}>Cancel</Button>
+            <Button onClick={handleBulkRoleUpdate} loading={bulkUpdatingRole}>
+              Update Roles
+            </Button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          Update <strong>{selectedCount}</strong> users to <strong>{roleLabels[bulkRole] || bulkRole}</strong> role?
         </p>
       </Modal>
     </div>

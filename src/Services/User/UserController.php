@@ -487,4 +487,72 @@ class UserController
             'updated_at' => $updatedUser->updated_at,
         ];
     }
+
+    /**
+     * Bulk deactivate users.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function bulkDeactivate(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'users.delete')) {
+            throw new UnauthorizedException('Cannot deactivate users');
+        }
+
+        $ids = $data['user_ids'] ?? [];
+        if (!is_array($ids) || empty($ids)) {
+            throw new InvalidArgumentException('User IDs are required');
+        }
+
+        $count = $this->repository->bulkDeactivate($ids, $user->id);
+        if ($count === 0) {
+            throw new InvalidArgumentException('No valid users selected');
+        }
+
+        return [
+            'message' => 'Users deactivated successfully',
+            'deactivated' => $count,
+        ];
+    }
+
+    /**
+     * Bulk update user roles.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function bulkUpdateRole(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'users.update')) {
+            throw new UnauthorizedException('Cannot update user roles');
+        }
+
+        $ids = $data['user_ids'] ?? [];
+        $role = $data['role'] ?? '';
+
+        if (!is_array($ids) || empty($ids)) {
+            throw new InvalidArgumentException('User IDs are required');
+        }
+
+        if ($role === '') {
+            throw new InvalidArgumentException('Role is required');
+        }
+
+        $validRoles = ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms', 'customer'];
+        if (!in_array($role, $validRoles, true)) {
+            throw new InvalidArgumentException('Invalid role');
+        }
+
+        $count = $this->repository->bulkUpdateRole($ids, $role);
+        if ($count === 0) {
+            throw new InvalidArgumentException('No valid users selected');
+        }
+
+        return [
+            'message' => 'User roles updated successfully',
+            'updated' => $count,
+            'role' => $role,
+        ];
+    }
 }
