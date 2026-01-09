@@ -230,6 +230,17 @@ class OfflineSyncService {
           }
         )
 
+      case 'workorder_job_status':
+        return workorderService.updateJobStatus(
+          item.payload.workorderId,
+          item.payload.jobId,
+          item.payload.status,
+          {
+            allowQueue: false,
+            clientEventId: item.payload.clientEventId,
+          }
+        )
+
       case 'time_clock_start':
         return timeTrackingService.start(item.payload, { allowQueue: false })
 
