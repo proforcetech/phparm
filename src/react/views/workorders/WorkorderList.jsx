@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import Alert from '../../components/ui/Alert'
 import Badge from '../../components/ui/Badge'
@@ -27,12 +27,30 @@ const columns = [
 
 const statusOptions = [
   { value: '', label: 'All Statuses' },
+  { value: 'parts_pending,awaiting_authorization', label: 'Parts Pending / Authorized' },
   { value: 'pending', label: 'Pending' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'on_hold', label: 'On Hold' },
+  { value: 'parts_pending', label: 'Parts Pending' },
+  { value: 'awaiting_authorization', label: 'Authorized' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
+
+const ageBucketOptions = [
+  { value: '', label: 'All Ages' },
+  { value: '0-2', label: '0-2 days' },
+  { value: '3-7', label: '3-7 days' },
+  { value: '8-14', label: '8-14 days' },
+  { value: '15+', label: '15+ days' },
+]
+
+const ageBucketRanges = {
+  '0-2': { min: 0, max: 2 },
+  '3-7': { min: 3, max: 7 },
+  '8-14': { min: 8, max: 14 },
+  '15+': { min: 15, max: null },
+}
 
 const priorityOptions = [
   { value: '', label: 'All Priorities' },
@@ -71,6 +89,8 @@ const getStatusVariant = (status) => {
     pending: 'default',
     in_progress: 'info',
     on_hold: 'warning',
+    parts_pending: 'warning',
+    awaiting_authorization: 'info',
     completed: 'success',
     cancelled: 'danger',
   }
@@ -89,6 +109,7 @@ const getPriorityVariant = (priority) => {
 
 export default function WorkorderList() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { success, error } = useToast()
 
   const [loading, setLoading] = useState(false)
@@ -112,6 +133,7 @@ export default function WorkorderList() {
     technician_id: '',
     customer_id: '',
     term: '',
+    age_bucket: '',
   })
   const [currentPage, setCurrentPage] = useState(1)
   const [showConvertModal, setShowConvertModal] = useState(false)
@@ -159,10 +181,21 @@ export default function WorkorderList() {
   const loadWorkorders = useCallback(async () => {
     setLoading(true)
     try {
+      const { age_bucket: ageBucket, ...filterParams } = filters
       const params = {
-        ...filters,
+        ...filterParams,
         limit: pageSize,
         offset: (currentPage - 1) * pageSize,
+      }
+
+      if (ageBucket) {
+        const range = ageBucketRanges[ageBucket]
+        if (range) {
+          params.status_age_min_days = range.min
+          if (range.max !== null) {
+            params.status_age_max_days = range.max
+          }
+        }
       }
 
       Object.keys(params).forEach((key) => {
@@ -210,6 +243,25 @@ export default function WorkorderList() {
   }, [loadWorkorders])
 
   useEffect(() => {
+    const statusParam = searchParams.get('status') || ''
+    const minDays = searchParams.get('status_age_min_days')
+    const maxDays = searchParams.get('status_age_max_days')
+    const ageBucket =
+      Object.entries(ageBucketRanges).find(
+        ([, range]) =>
+          String(range.min) === String(minDays ?? '') &&
+          String(range.max ?? '') === String(maxDays ?? '')
+      )?.[0] || ''
+
+    setFilters((prev) => ({
+      ...prev,
+      status: statusParam,
+      age_bucket: ageBucket,
+    }))
+    setCurrentPage(1)
+  }, [searchParams])
+
+  useEffect(() => {
     loadStats()
     loadTechnicians()
   }, [loadStats, loadTechnicians])
@@ -245,6 +297,7 @@ export default function WorkorderList() {
       technician_id: '',
       customer_id: '',
       term: '',
+      age_bucket: '',
     })
     setCurrentPage(1)
     scheduleLoad(0)
@@ -396,7 +449,7 @@ export default function WorkorderList() {
       </div>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Status</label>
             <Select
@@ -405,6 +458,16 @@ export default function WorkorderList() {
               placeholder="All statuses"
               className="mt-1"
               onChange={(event) => updateFilter('status', event.target.value, { immediate: true })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Age</label>
+            <Select
+              value={filters.age_bucket}
+              options={ageBucketOptions}
+              placeholder="All ages"
+              className="mt-1"
+              onChange={(event) => updateFilter('age_bucket', event.target.value, { immediate: true })}
             />
           </div>
           <div>

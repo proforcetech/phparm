@@ -67,6 +67,17 @@ class DashboardController
 
     /**
      * @param array<string, mixed> $params
+     * @return array<string, mixed>
+     */
+    public function handleWipAging(array $params): array
+    {
+        $options = $this->extractOptions($params);
+
+        return $this->service->wipAging($options);
+    }
+
+    /**
+     * @param array<string, mixed> $params
      * @return array{filename: string, content_type: string, body: string}
      */
     public function exportDashboardData(array $params): array

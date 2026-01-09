@@ -66,4 +66,12 @@ export default {
     const response = await api.get('/dashboard/inventory/pull-requests', { params })
     return response.data
   },
+
+  /**
+   * Get WIP aging buckets for parts pending/authorized workorders
+   */
+  async getWipAging(params = {}) {
+    const response = await api.get('/dashboard/workorders/wip-aging', { params })
+    return response.data
+  },
 }

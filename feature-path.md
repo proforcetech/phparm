@@ -24,6 +24,8 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 5. Advanced Reporting & KPIs
 
+[ ] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
+[x] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
 [x] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
 [ ] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
 [ ] Customer Retention Tracking: Link the CustomerRepository to Workorder history to identify "Lost" customers (e.g., those who haven't had a workorder in 6+ months) for automated re-marketing campaigns.
