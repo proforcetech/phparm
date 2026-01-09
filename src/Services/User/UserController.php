@@ -73,6 +73,7 @@ class UserController
             'two_factor_type' => $u->two_factor_type ?? 'none',
             'created_at' => $u->created_at,
             'updated_at' => $u->updated_at,
+            'last_activity_at' => $u->last_activity_at,
         ], $users);
     }
 
@@ -102,6 +103,7 @@ class UserController
             'two_factor_type' => $targetUser->two_factor_type ?? 'none',
             'created_at' => $targetUser->created_at,
             'updated_at' => $targetUser->updated_at,
+            'last_activity_at' => $targetUser->last_activity_at,
         ];
     }
 
@@ -160,6 +162,7 @@ class UserController
             'two_factor_type' => $newUser->two_factor_type ?? 'none',
             'created_at' => $newUser->created_at,
             'updated_at' => $newUser->updated_at,
+            'last_activity_at' => $newUser->last_activity_at,
         ];
     }
 
@@ -218,6 +221,7 @@ class UserController
             'two_factor_type' => $newUser->two_factor_type ?? 'none',
             'created_at' => $newUser->created_at,
             'updated_at' => $newUser->updated_at,
+            'last_activity_at' => $newUser->last_activity_at,
         ];
     }
 
