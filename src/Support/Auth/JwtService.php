@@ -278,7 +278,7 @@ class JwtService
     private function findUserById(int $id): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT * FROM users WHERE id = :id LIMIT 1'
+            'SELECT * FROM users WHERE id = :id AND active = 1 LIMIT 1'
         );
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

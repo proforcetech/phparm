@@ -15,6 +15,7 @@ CREATE TABLE users (
     email_verified TINYINT(1) DEFAULT 0,
     customer_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

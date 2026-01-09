@@ -16,15 +16,16 @@ INSERT INTO roles (name, description) VALUES
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 -- Core users
-INSERT INTO users (id, name, email, password, role, email_verified, created_at, updated_at) VALUES
-    (1, 'Admin User', 'admin@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'admin', 1, NOW(), NOW()),
-    (2, 'Shop Manager', 'manager@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'manager', 1, NOW(), NOW()),
-    (3, 'Terry Technician', 'tech@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'technician', 1, NOW(), NOW())
+INSERT INTO users (id, name, email, password, role, email_verified, active, created_at, updated_at) VALUES
+    (1, 'Admin User', 'admin@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'admin', 1, 1, NOW(), NOW()),
+    (2, 'Shop Manager', 'manager@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'manager', 1, 1, NOW(), NOW()),
+    (3, 'Terry Technician', 'tech@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'technician', 1, 1, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
     name = VALUES(name),
     password = VALUES(password),
     role = VALUES(role),
     email_verified = VALUES(email_verified),
+    active = VALUES(active),
     updated_at = NOW();
 
 -- Service types with visual metadata
