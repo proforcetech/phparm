@@ -106,9 +106,10 @@ class TrafficAwareEtaService
      */
     public function getDriverCurrentLocation(int $driverProfileId): ?array
     {
+        $partitionClause = $this->getDriverLocationPartitionClause();
         $stmt = $this->connection->pdo()->prepare(
             'SELECT latitude, longitude, accuracy, speed, heading, recorded_at
-             FROM driver_locations
+             FROM driver_locations ' . $partitionClause . '
              WHERE driver_profile_id = :driver_id
              ORDER BY recorded_at DESC
              LIMIT 1'
@@ -389,6 +390,11 @@ class TrafficAwareEtaService
         array $etaData
     ): void {
         // Could store for analytics/ML training later
+    }
+
+    private function getDriverLocationPartitionClause(): string
+    {
+        return DriverLocationPartitionResolver::recentPartitions(new DateTimeImmutable('now'), 1, 0);
     }
 
     private function httpGet(string $url): ?string
