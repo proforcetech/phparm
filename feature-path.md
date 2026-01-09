@@ -108,7 +108,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 [ ] WebSocket Integration: The DispatchView.jsx map should not poll the server. Use a real-time provider (like Pusher or a self-hosted Soketi instance) to push driver_location_updated events.
 [ ] Database Partitioning: Roadside tracking data (GPS pings) grows exponentially. Partition the driver_locations table by month to ensure the dispatch map remains fast as your history grows.
-[ ] Unified Audit Log: Ensure every status change (e.g., "En Route" -> "Arrived") logs the GPS coordinates of the action, not just the timestamp. This is critical for resolving disputes with motor clubs.
+[x] Unified Audit Log: Ensure every status change (e.g., "En Route" -> "Arrived") logs the GPS coordinates of the action, not just the timestamp. This is critical for resolving disputes with motor clubs.
 
 ## Summary of "Must-Have" Feature Set
 
