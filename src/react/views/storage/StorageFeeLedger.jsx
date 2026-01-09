@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import Alert from '../../components/ui/Alert'
@@ -34,6 +34,7 @@ const statusOptions = [
 const feeTypeOptions = [
   'Daily Storage',
   'Gate Fee',
+  'After Hours Fee',
   'Impound Fee',
   'Adjustment',
 ]
@@ -43,16 +44,24 @@ export default function StorageFeeLedger() {
   const [fees, setFees] = useState([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingFee, setEditingFee] = useState(null)
   const [form, setForm] = useState(emptyFeeForm)
+  const hasLoadedRef = useRef(false)
 
-  const loadFees = useCallback(async () => {
+  const loadFees = useCallback(async (options = {}) => {
+    const { automate = false, preserveError = false } = options
     setLoading(true)
-    setError('')
+    if (!preserveError) {
+      setError('')
+    }
 
     try {
+      if (automate) {
+        await storageService.automateFees()
+      }
       const response = await storageService.listFees({ search: search || undefined })
       const rows = Array.isArray(response) ? response : response?.data ?? []
       setFees(Array.isArray(rows) ? rows : [])
@@ -64,9 +73,32 @@ export default function StorageFeeLedger() {
     }
   }, [search])
 
-  useEffect(() => {
-    loadFees()
+  const handleSyncLedger = useCallback(async () => {
+    setSyncing(true)
+    setError('')
+    try {
+      try {
+        await storageService.automateFees()
+      } catch (syncError) {
+        setError(syncError?.response?.data?.message || syncError?.message || 'Unable to sync automated fees.')
+      }
+      await loadFees({ automate: false, preserveError: true })
+    } finally {
+      setSyncing(false)
+    }
   }, [loadFees])
+
+  useEffect(() => {
+    handleSyncLedger()
+  }, [handleSyncLedger])
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true
+      return
+    }
+    loadFees({ automate: false })
+  }, [loadFees, search])
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase()
@@ -92,8 +124,11 @@ export default function StorageFeeLedger() {
       if (row.fee_type === 'Gate Fee') {
         acc.gate += amount
       }
+      if (row.fee_type === 'After Hours Fee') {
+        acc.afterHours += amount
+      }
       return acc
-    }, { total: 0, daily: 0, gate: 0 })
+    }, { total: 0, daily: 0, gate: 0, afterHours: 0 })
   }, [filtered])
 
   const openCreateModal = () => {
@@ -174,7 +209,7 @@ export default function StorageFeeLedger() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Storage Fee Ledger</h1>
-          <p className="text-sm text-gray-500">Track daily accruals, gate fees, and adjustments.</p>
+          <p className="text-sm text-gray-500">Track daily accruals, gate fees, after-hours fees, and adjustments.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/cp/storage/impound-intake">
@@ -196,7 +231,7 @@ export default function StorageFeeLedger() {
 
       {error ? <Alert variant="danger">{error}</Alert> : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <p className="text-sm text-gray-500">Total Accrued</p>
           <p className="text-2xl font-semibold text-gray-900">${totals.total.toFixed(2)}</p>
@@ -209,6 +244,10 @@ export default function StorageFeeLedger() {
           <p className="text-sm text-gray-500">Gate Fees</p>
           <p className="text-2xl font-semibold text-gray-900">${totals.gate.toFixed(2)}</p>
         </Card>
+        <Card>
+          <p className="text-sm text-gray-500">After Hours</p>
+          <p className="text-2xl font-semibold text-gray-900">${totals.afterHours.toFixed(2)}</p>
+        </Card>
       </div>
 
       <Card>
@@ -220,6 +259,9 @@ export default function StorageFeeLedger() {
             onUpdateModelValue={setSearch}
           />
           <div className="flex items-end gap-2">
+            <Button variant="secondary" loading={syncing} onClick={handleSyncLedger}>
+              Sync Automated Fees
+            </Button>
             <Button variant="primary" onClick={openCreateModal}>Add Fee Adjustment</Button>
             <Button variant="outline">Export Ledger</Button>
           </div>
