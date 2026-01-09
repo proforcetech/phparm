@@ -102,7 +102,11 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] VIN-to-Vehicle Lookup: Integrate a VIN decoder (like your NhtsaVinDecoder.php) that automatically populates Year/Make/Model/Weight Class during intake to prevent data entry errors.
 [x] Lien Notice Automation: A workflow that flags vehicles that have been in storage for X days and generates a state-compliant PDF Lien Notice using LienNoticePdfGenerator.php.
 [ ] Auction Management: A status workflow for "Abandoned" vehicles, tracking the move from storage to the auction lot.
+[ ] Lien Notice Automation: A workflow that flags vehicles that have been in storage for X days and generates a state-compliant PDF Lien Notice using LienNoticePdfGenerator.php.
+[x] Auction Management: A status workflow for "Abandoned" vehicles, tracking the move from storage to the auction lot.
 [ ] Inventory Spot-Checks: A mobile view for yard managers to scan license plates and confirm the physical vehicle matches the digital record.
+[ ] Auction Management: A status workflow for "Abandoned" vehicles, tracking the move from storage to the auction lot.
+[x] Inventory Spot-Checks: A mobile view for yard managers to scan license plates and confirm the physical vehicle matches the digital record.
 
 ## 8. Partner & Motor Club Integration (/src/Services/Integrations)
 
