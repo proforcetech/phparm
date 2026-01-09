@@ -200,6 +200,21 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  const acceptInvite = useCallback(async (inviteToken, password) => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const data = await authService.acceptInvite(inviteToken, password)
+      return data
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invitation acceptance failed')
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   const updateProfile = useCallback(async (userData) => {
     setLoading(true)
     setError(null)
@@ -292,6 +307,7 @@ export function AuthProvider({ children }) {
       register,
       requestPasswordReset,
       resetPassword,
+      acceptInvite,
       updateProfile,
       verifyTwoFactor,
       hasPermission,
@@ -315,6 +331,7 @@ export function AuthProvider({ children }) {
       register,
       requestPasswordReset,
       resetPassword,
+      acceptInvite,
       token,
       updateProfile,
       user,

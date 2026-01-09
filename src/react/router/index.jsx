@@ -4,6 +4,7 @@ import Login from '../views/auth/Login'
 import CustomerLogin from '../views/auth/CustomerLogin'
 import ForgotPassword from '../views/auth/ForgotPassword'
 import ResetPassword from '../views/auth/ResetPassword'
+import AcceptInvite from '../views/auth/AcceptInvite'
 import Register from '../views/auth/Register'
 import AdminDashboard from '../views/dashboard/AdminDashboard'
 import StaffProfile from '../views/users/Profile'
@@ -148,6 +149,7 @@ const guestRoutes = [
   { path: '/customer-login', name: 'CustomerLogin', auth: 'guest', element: <CustomerLogin /> },
   { path: '/forgot-password', name: 'ForgotPassword', auth: 'guest', element: <ForgotPassword /> },
   { path: '/reset-password/:token', name: 'ResetPassword', auth: 'guest', element: <ResetPassword /> },
+  { path: '/accept-invite/:token', name: 'AcceptInvite', auth: 'guest', element: <AcceptInvite /> },
   { path: '/cp/register', name: 'Register', auth: 'guest', element: <Register /> },
 ]
 

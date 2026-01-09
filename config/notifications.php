@@ -167,6 +167,17 @@ If you have any questions, please don't hesitate to contact us.
 
 Thank you!
 TEMPLATE,
+        'auth.invitation' => <<<'TEMPLATE'
+Hello {{name}},
+
+You have been invited to join our Auto Repair Shop Management System. Use the secure link below to set your password and verify your email:
+
+{{invite_url}}
+
+This link will expire in {{expiry_hours}} hours.
+
+If you were not expecting this invitation, you can ignore this email.
+TEMPLATE,
 
         // Reminder campaign templates (dynamic body)
         'reminder.campaign' => '{{body}}',
