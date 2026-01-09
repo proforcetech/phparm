@@ -50,7 +50,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [x] Session Management: Provide a view within `Profile.jsx` or the Admin panel to see **Active Sessions** (IP address, device, login time) and allow for remote logout if a technician's mobile device is lost.
 [x] User Impersonation:** For support and troubleshooting, allow top-level Administrators to "Impersonate" a technician or dispatcher. This helps verify that complex role-based permissions in `AccessGate` are functioning correctly for a specific user's context.
 [ ] Session Management: Provide a view within `Profile.jsx` or the Admin panel to see **Active Sessions** (IP address, device, login time) and allow for remote logout if a technician's mobile device is lost.
-[ ] Export to CSV: Leverage the existing `CsvExportService` to allow administrators to export the current filtered user list for external reporting or payroll auditing.
+[x] Export to CSV: Leverage the existing `CsvExportService` to allow administrators to export the current filtered user list for external reporting or payroll auditing.
 [ ] Custom Role Builder: While `RoleSeeder` provides defaults, a UI to create custom roles with specific toggles from `RolePermissions.php` would allow the system to scale as the dispatch team grows.
 
 

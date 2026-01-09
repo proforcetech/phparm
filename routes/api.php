@@ -3880,7 +3880,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $userController = new \App\Services\User\UserController(
         new \App\Services\User\UserRepository($connection),
         $gate,
-        $totpService
+        $totpService,
+        new \App\Services\ImportExport\CsvExportService($connection)
     );
 
     // Role controller for role management
@@ -4026,6 +4027,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/users/export', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'role' => $request->queryParam('role'),
+                'query' => $request->queryParam('query'),
+            ];
+            $csv = $userController->exportUsers($user, $filters);
+
+            return new Response(
+                200,
+                [
+                    'Content-Type' => 'text/csv',
+                    'Content-Disposition' => 'attachment; filename="users_export_' . date('Y-m-d') . '.csv"'
+                ],
+                $csv
+            );
         $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $data = $userController->bulkDeactivate($user, $request->body());
