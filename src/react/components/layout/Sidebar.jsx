@@ -28,7 +28,24 @@ const adminMenuItems = [
     ],
   },
   { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon, moduleKey: 'towing' },
-  { path: '/cp/storage/impound-intake', label: 'Impound Storage', icon: ArchiveBoxIcon, moduleKey: 'impound' },
+  {
+    path: '/cp/storage/impound-intake',
+    label: 'Storage',
+    icon: ArchiveBoxIcon,
+    moduleKey: 'impound',
+    children: [
+      {
+        path: '/cp/storage/impound-intake',
+        label: 'Impound Intake',
+        icon: ArchiveBoxIcon,
+      },
+      {
+        path: '/cp/storage/spot-checks',
+        label: 'Inventory Spot-Checks',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
   {

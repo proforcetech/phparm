@@ -214,6 +214,8 @@ export default function ReleaseChecklist() {
           </Link>
           <Link to="/cp/storage/auction-management">
             <Button variant="secondary">Auction Management</Button>
+          <Link to="/cp/storage/spot-checks">
+            <Button variant="secondary">Inventory Spot-Checks</Button>
           </Link>
           <Link to="/cp/storage/ledger">
             <Button variant="secondary">Fee Ledger</Button>
