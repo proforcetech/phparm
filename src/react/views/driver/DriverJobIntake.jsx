@@ -14,6 +14,7 @@ const emptyVehicle = {
   make: '',
   model: '',
   trim: '',
+  weightClass: '',
 }
 
 const checkpointTypes = [
@@ -111,6 +112,7 @@ export default function DriverJobIntake() {
   const [vinText, setVinText] = useState('')
   const [vinStatus, setVinStatus] = useState('')
   const [vehicleData, setVehicleData] = useState(emptyVehicle)
+  const [vinOverrides, setVinOverrides] = useState([])
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrError, setOcrError] = useState('')
   const [damagePoints, setDamagePoints] = useState([])
@@ -133,8 +135,26 @@ export default function DriverJobIntake() {
       { label: 'Make', value: vehicleData.make || '—' },
       { label: 'Model', value: vehicleData.model || '—' },
       { label: 'Trim', value: vehicleData.trim || '—' },
+      { label: 'Weight Class', value: vehicleData.weightClass || '—' },
     ]
   }, [vehicleData])
+
+  const updateVehicleField = (field, value, trackOverride = true) => {
+    setVehicleData((prev) => {
+      if (trackOverride && prev[field] !== value) {
+        setVinOverrides((entries) => [
+          {
+            field,
+            previousValue: prev[field] ?? '—',
+            newValue: value ?? '—',
+            updatedAt: new Date().toISOString(),
+          },
+          ...entries,
+        ])
+      }
+      return { ...prev, [field]: value }
+    })
+  }
 
   const handleVinDecode = async (vinValue) => {
     if (!vinValue || vinValue.length < 17) return
@@ -147,7 +167,9 @@ export default function DriverJobIntake() {
         make: normalized.make || '',
         model: normalized.model || '',
         trim: normalized.trim || '',
+        weightClass: normalized.weightClass || '',
       })
+      setVinOverrides([])
       setVinStatus('Vehicle data populated from VIN decode.')
     } catch (error) {
       console.error('VIN decode failed', error)
@@ -390,7 +412,7 @@ export default function DriverJobIntake() {
             modelValue={vinText}
             onUpdateModelValue={(value) => {
               setVinText(value)
-              setVehicleData((prev) => ({ ...prev, vin: value }))
+              updateVehicleField('vin', value, false)
             }}
           />
           <Button
@@ -404,7 +426,7 @@ export default function DriverJobIntake() {
         </div>
 
         {summaryItems.length ? (
-          <div className="mt-4 grid gap-3 rounded-md bg-gray-50 p-4 text-sm text-gray-700 md:grid-cols-5">
+          <div className="mt-4 grid gap-3 rounded-md bg-gray-50 p-4 text-sm text-gray-700 md:grid-cols-6">
             {summaryItems.map((item) => (
               <div key={item.label}>
                 <p className="text-xs uppercase text-gray-500">{item.label}</p>
@@ -413,6 +435,62 @@ export default function DriverJobIntake() {
             ))}
           </div>
         ) : null}
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Input
+            label="Year"
+            type="number"
+            placeholder="2020"
+            modelValue={vehicleData.year ?? ''}
+            onUpdateModelValue={(value) =>
+              updateVehicleField('year', value ? Number(value) : null, true)
+            }
+          />
+          <Input
+            label="Make"
+            placeholder="Toyota"
+            modelValue={vehicleData.make}
+            onUpdateModelValue={(value) => updateVehicleField('make', value, true)}
+          />
+          <Input
+            label="Model"
+            placeholder="Camry"
+            modelValue={vehicleData.model}
+            onUpdateModelValue={(value) => updateVehicleField('model', value, true)}
+          />
+          <Input
+            label="Weight Class"
+            placeholder="Class 1"
+            modelValue={vehicleData.weightClass}
+            onUpdateModelValue={(value) => updateVehicleField('weightClass', value, true)}
+          />
+        </div>
+
+        <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+          <div className="flex items-center justify-between">
+            <p className="font-medium text-gray-900">Manual override audit trail</p>
+            <span className="text-xs text-gray-500">
+              {vinOverrides.length ? `${vinOverrides.length} override${vinOverrides.length === 1 ? '' : 's'}` : 'No overrides yet'}
+            </span>
+          </div>
+          {vinOverrides.length ? (
+            <ul className="mt-3 space-y-2 text-xs text-gray-600">
+              {vinOverrides.map((entry, index) => (
+                <li key={`${entry.field}-${entry.updatedAt}-${index}`} className="rounded-md bg-white p-2">
+                  <p className="font-medium text-gray-800">{entry.field}</p>
+                  <p>
+                    {entry.previousValue || '—'} → {entry.newValue || '—'}
+                  </p>
+                  <p className="text-[11px] text-gray-400">
+                    {new Date(entry.updatedAt).toLocaleString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-gray-500">Override entries will appear after manual edits.</p>
+          )}
+        </div>
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
