@@ -1024,6 +1024,39 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Email verified successfully']);
     });
 
+    // Accept invitation and set password
+    $router->post('/api/auth/accept-invite', function (Request $request) use ($authService, $loginLimiter) {
+        $token = $request->input('token');
+        $password = $request->input('password');
+        $identifier = 'invite-token:' . (string) ($token ?? 'none');
+        $ip = LoginRateLimiter::clientIp($request);
+
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many invitation attempts. Please wait before retrying.';
+
+            return Response::json($preCheck->toPayload($message), 429);
+        }
+
+        if (!$token || !$password) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Token and password are required', 'validation_error'), 400);
+        }
+
+        $user = $authService->acceptInvitation((string) $token, (string) $password);
+
+        if ($user === null) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Invalid or expired invitation token', 'invalid_token'), 400);
+        }
+
+        $loginLimiter->recordSuccess($identifier, $ip);
+
+        return Response::json(['message' => 'Invitation accepted successfully']);
+    });
+
     // Resend verification email
     $router->post('/api/auth/resend-verification', function (Request $request) use ($authService, $connection, $authConfig) {
         $user = $request->getAttribute('user');
@@ -3792,6 +3825,43 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $userController->createUser($user, $request->body());
             return Response::created($data);
+        });
+
+        $router->post('/api/users/invite', function (Request $request) use ($userController, $authService, $connection, $authConfig) {
+            $user = $request->getAttribute('user');
+            $data = $userController->inviteUser($user, $request->body());
+            $token = $authService->issueVerificationToken($data['id']);
+
+            $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+            $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+                $notificationsConfig,
+                new \App\Support\Notifications\TemplateEngine(),
+                new \App\Support\Notifications\NotificationLogRepository($connection)
+            );
+
+            $appUrl = env('APP_URL', 'http://localhost:8080');
+            $inviteUrl = $appUrl . '/accept-invite/' . urlencode($token->token);
+            $expiryHours = $authConfig['verification']['token_ttl_hours'] ?? 48;
+
+            try {
+                $dispatcher->sendMail(
+                    'auth.invitation',
+                    $data['email'],
+                    [
+                        'name' => $data['name'],
+                        'invite_url' => $inviteUrl,
+                        'expiry_hours' => $expiryHours,
+                    ],
+                    'You are invited to Auto Repair Shop Management'
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to send invitation email: ' . $e->getMessage());
+            }
+
+            return Response::created([
+                'user' => $data,
+                'message' => 'Invitation email has been sent',
+            ]);
         });
 
         $router->put('/api/users/{id}', function (Request $request) use ($userController) {

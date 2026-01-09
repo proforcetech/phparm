@@ -60,6 +60,14 @@ export const authService = {
   },
 
   /**
+   * Accept invitation and set password
+   */
+  async acceptInvite(token, password) {
+    const response = await api.post('/auth/accept-invite', { token, password })
+    return response.data
+  },
+
+  /**
    * Get current user
    */
   async me() {

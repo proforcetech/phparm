@@ -165,6 +165,28 @@ class AuthService
         return true;
     }
 
+    public function acceptInvitation(string $token, string $password): ?User
+    {
+        $this->assertPasswordStrength($password);
+
+        $verification = $this->verifications->findValidToken($token);
+        if ($verification === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users SET password = :password, email_verified = 1, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute([
+            'password' => password_hash($password, PASSWORD_BCRYPT),
+            'id' => $verification->user_id,
+        ]);
+
+        $this->verifications->markUsed($token);
+
+        return $this->findUserById($verification->user_id);
+    }
+
     public function linkCustomerUserByEmail(int $customerId, string $email, ?string $name = null): User
     {
         $user = $this->findByEmail($email);

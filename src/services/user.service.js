@@ -12,6 +12,10 @@ export function createUser(data) {
   return api.post('/users', data).then((r) => r.data)
 }
 
+export function inviteUser(data) {
+  return api.post('/users/invite', data).then((r) => r.data)
+}
+
 export function updateUser(id, data) {
   return api.put(`/users/${id}`, data).then((r) => r.data)
 }
@@ -36,6 +40,7 @@ const userService = {
   listUsers,
   getUser,
   createUser,
+  inviteUser,
   updateUser,
   updateProfile,
   deleteUser,
