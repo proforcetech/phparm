@@ -53,10 +53,11 @@ const DriverScoreBreakdown = ({ scores }) => {
     { key: 'eta', label: 'ETA', value: scores?.eta },
     { key: 'shift', label: 'Shift', value: scores?.shift },
     { key: 'performance', label: 'Performance', value: scores?.performance },
+    { key: 'deadhead', label: 'Deadhead', value: scores?.deadhead },
   ]
 
   return (
-    <div className="grid grid-cols-5 gap-2 mt-2">
+    <div className="grid grid-cols-3 gap-2 mt-2 md:grid-cols-6">
       {scoreItems.map((item) => (
         <div key={item.key} className="text-center">
           <div className="text-xs text-gray-500">{item.label}</div>
@@ -325,7 +326,7 @@ export default function DispatchView() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Dispatch Console</h1>
           <p className="text-sm text-gray-500">
-            Rank drivers by ETA, equipment fit, performance, and availability.
+            Rank drivers by ETA, equipment fit, performance, availability, and deadhead proximity.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -524,6 +525,10 @@ export default function DispatchView() {
                     {/* Additional Info */}
                     <div className="text-xs text-gray-500 flex flex-wrap gap-4">
                       <span>Shift remaining: {formatNumber(suggestion.remaining_shift_hours, 1)} hrs</span>
+                      {suggestion.deadhead_distance_km !== null &&
+                        suggestion.deadhead_distance_km !== undefined && (
+                          <span>Drop-off proximity: {formatNumber(suggestion.deadhead_distance_km)} km</span>
+                        )}
                       {suggestion.certifications && suggestion.certifications.length > 0 && (
                         <span>Certifications: {suggestion.certifications.join(', ')}</span>
                       )}

@@ -74,7 +74,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
 [ ] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
 [ ] Predictive ETA (Traffic-Aware): Integrate the Google Distance Matrix API into DispatchRecommendationService. Standard straight-line distance is often inaccurate in urban towing scenarios.
-[ ] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
+[x] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
 
 ## 5. Driver Experience (/src/react/views/driver & /src/Services/drive)
 
