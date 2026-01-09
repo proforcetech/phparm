@@ -53,10 +53,11 @@ const DriverScoreBreakdown = ({ scores }) => {
     { key: 'eta', label: 'ETA', value: scores?.eta },
     { key: 'shift', label: 'Shift', value: scores?.shift },
     { key: 'performance', label: 'Performance', value: scores?.performance },
+    { key: 'deadhead', label: 'Deadhead', value: scores?.deadhead },
   ]
 
   return (
-    <div className="grid grid-cols-5 gap-2 mt-2">
+    <div className="grid grid-cols-3 gap-2 mt-2 md:grid-cols-6">
       {scoreItems.map((item) => (
         <div key={item.key} className="text-center">
           <div className="text-xs text-gray-500">{item.label}</div>
@@ -299,7 +300,15 @@ export default function DispatchView() {
   const requirementMeta = useMemo(() => {
     if (!requirement) return []
     return [
+      { label: 'Job Category', value: requirement.job_category || 'N/A' },
       { label: 'Required Equipment', value: requirement.required_equipment_class || 'Any' },
+      {
+        label: 'Equipment Requirements',
+        value:
+          requirement.equipment_requirements && requirement.equipment_requirements.length > 0
+            ? requirement.equipment_requirements.join(', ')
+            : 'None',
+      },
       { label: 'Required Capacity', value: requirement.required_capacity ?? 'N/A' },
       { label: 'Estimated Hours', value: requirement.estimated_duration_hours ?? 'N/A' },
       {
@@ -325,7 +334,7 @@ export default function DispatchView() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Dispatch Console</h1>
           <p className="text-sm text-gray-500">
-            Rank drivers by ETA, equipment fit, performance, and availability.
+            Rank drivers by ETA, equipment fit, performance, availability, and deadhead proximity.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -407,7 +416,7 @@ export default function DispatchView() {
 
       {requirement ? (
         <Card title="Dispatch Requirement Summary">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             {requirementMeta.map((item) => (
               <div key={item.label} className="rounded-md border border-gray-200 p-3">
                 <p className="text-xs uppercase text-gray-400">{item.label}</p>
@@ -420,10 +429,69 @@ export default function DispatchView() {
 
       {/* Excluded Drivers Info */}
       {excludedDrivers.length > 0 && (
-        <Alert
-          variant="warning"
-          message={`${excludedDrivers.length} driver(s) excluded due to equipment or certification requirements.`}
-        />
+        <Card title="Excluded Drivers">
+          <div className="space-y-3 text-sm">
+            <p className="text-gray-500">
+              {excludedDrivers.length} driver(s) excluded due to equipment or certification requirements.
+            </p>
+            <div className="space-y-2">
+              {excludedDrivers.map((driver) => {
+                const reasonLabel =
+                  driver.reason === 'missing_certifications'
+                    ? 'Missing certifications'
+                    : driver.reason === 'equipment_incompatible'
+                      ? 'Equipment incompatible'
+                      : 'Not eligible'
+                return (
+                  <div
+                    key={`${driver.driver_profile_id}-${driver.reason}`}
+                    className="rounded-md border border-gray-200 bg-gray-50 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {driver.driver_name ? driver.driver_name : `Driver #${driver.driver_profile_id}`}
+                        </p>
+                        <p className="text-xs text-gray-500">{reasonLabel}</p>
+                      </div>
+                      <Badge variant="warning">
+                        <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
+                        Excluded
+                      </Badge>
+                    </div>
+                    {driver.reason === 'missing_certifications' && Array.isArray(driver.details) ? (
+                      <p className="mt-2 text-xs text-gray-600">
+                        Missing: {driver.details.join(', ') || 'Unknown'}
+                      </p>
+                    ) : null}
+                    {driver.reason === 'equipment_incompatible' && driver.details ? (
+                      <div className="mt-2 text-xs text-gray-600 space-y-1">
+                        <p>
+                          Required:{' '}
+                          {driver.details.allowed_equipment_classes &&
+                          driver.details.allowed_equipment_classes.length > 0
+                            ? driver.details.allowed_equipment_classes.join(', ')
+                            : driver.details.required_equipment_class || 'Unspecified'}
+                        </p>
+                        {driver.details.required_equipment_requirements &&
+                        driver.details.required_equipment_requirements.length > 0 ? (
+                          <p>Job flags: {driver.details.required_equipment_requirements.join(', ')}</p>
+                        ) : null}
+                        <p>
+                          Driver equipment:{' '}
+                          {driver.details.available_equipment_classes &&
+                          driver.details.available_equipment_classes.length > 0
+                            ? driver.details.available_equipment_classes.join(', ')
+                            : 'None on file'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Scoring Weights */}
@@ -525,6 +593,10 @@ export default function DispatchView() {
                     {/* Additional Info */}
                     <div className="text-xs text-gray-500 flex flex-wrap gap-4">
                       <span>Shift remaining: {formatNumber(suggestion.remaining_shift_hours, 1)} hrs</span>
+                      {suggestion.deadhead_distance_km !== null &&
+                        suggestion.deadhead_distance_km !== undefined && (
+                          <span>Drop-off proximity: {formatNumber(suggestion.deadhead_distance_km)} km</span>
+                        )}
                       {suggestion.certifications && suggestion.certifications.length > 0 && (
                         <span>Certifications: {suggestion.certifications.join(', ')}</span>
                       )}

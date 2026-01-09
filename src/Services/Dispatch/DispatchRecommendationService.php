@@ -9,11 +9,22 @@ use PDO;
 
 class DispatchRecommendationService
 {
-    private const DISTANCE_WEIGHT = 0.35;
+    private const DISTANCE_WEIGHT = 0.30;
+    private const EQUIPMENT_WEIGHT = 0.23;
+    private const SHIFT_WEIGHT = 0.14;
+    private const ETA_WEIGHT = 0.13;
+    private const PERFORMANCE_WEIGHT = 0.10;
+    private const DEADHEAD_WEIGHT = 0.10;
     private const EQUIPMENT_WEIGHT = 0.25;
-    private const SHIFT_WEIGHT = 0.15;
+    private const SHIFT_WEIGHT = 0.10;
     private const ETA_WEIGHT = 0.15;
     private const PERFORMANCE_WEIGHT = 0.10;
+    private const EQUIPMENT_REQUIREMENT_CLASS_MAP = [
+        'awd' => ['flatbed', 'low-profile'],
+        'all_wheel_drive' => ['flatbed', 'low-profile'],
+        'low_clearance' => ['flatbed', 'low-profile'],
+    ];
+    private const WORKLOAD_WEIGHT = 0.10;
 
     private Connection $connection;
     private ?TrafficAwareEtaService $etaService;
@@ -57,6 +68,7 @@ class DispatchRecommendationService
         $shiftsByDriver = $this->fetchShiftsByDriver($referenceTime);
         $performanceByDriver = $this->fetchPerformanceMetrics();
         $certificationsByDriver = $this->fetchVerifiedCertifications();
+        $workloadByDriver = $this->fetchDriverWorkloads($referenceTime);
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
         $driverLocations = $this->resolveDriverLocations($drivers);
         $bulkEtas = $this->resolveBulkEtas(
@@ -64,6 +76,8 @@ class DispatchRecommendationService
             $requirement['pickup_latitude'] ?? null,
             $requirement['pickup_longitude'] ?? null
         );
+        $activeDropoffsByDriver = $this->fetchActiveJobDropoffs();
+        $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
 
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
@@ -84,6 +98,7 @@ class DispatchRecommendationService
                 if ($this->enforceHardFilters) {
                     $excludedDrivers[] = [
                         'driver_profile_id' => $driverId,
+                        'driver_name' => $driver['name'],
                         'reason' => 'missing_certifications',
                         'details' => $missingCertifications,
                     ];
@@ -93,13 +108,24 @@ class DispatchRecommendationService
 
             // Check equipment compatibility (hard filter)
             $equipmentOptions = $equipmentByDriver[$driverId] ?? [];
-            $equipmentResult = $this->scoreEquipment($equipmentOptions, $requirement, $equipmentCompatibility);
+            $equipmentResult = $this->scoreEquipment(
+                $equipmentOptions,
+                $requirement,
+                $equipmentCompatibility,
+                $requiredEquipmentClasses
+            );
 
-            if ($this->enforceHardFilters && !empty($equipmentCompatibility) && $equipmentResult['is_compatible'] === false) {
+            if ($this->enforceHardFilters && $equipmentResult['is_compatible'] === false) {
                 $excludedDrivers[] = [
                     'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
                     'reason' => 'equipment_incompatible',
-                    'details' => ['required' => $requirement['required_equipment_class'], 'available' => $equipmentResult['equipment']],
+                    'details' => [
+                        'required_equipment_class' => $requirement['required_equipment_class'],
+                        'required_equipment_requirements' => $requirement['equipment_requirements'] ?? [],
+                        'allowed_equipment_classes' => $requiredEquipmentClasses,
+                        'available_equipment_classes' => $this->listEquipmentClasses($equipmentOptions),
+                    ],
                 ];
                 continue;
             }
@@ -135,6 +161,20 @@ class DispatchRecommendationService
             $performance = $performanceByDriver[$driverId] ?? null;
             $performanceScore = $this->scorePerformance($performance);
 
+            $activeDropoff = $activeDropoffsByDriver[$driverId] ?? null;
+            $deadheadDistanceKm = $activeDropoff
+                ? $this->calculateDistanceKm(
+                    $activeDropoff['dropoff_latitude'],
+                    $activeDropoff['dropoff_longitude'],
+                    $requirement['pickup_latitude'] ?? null,
+                    $requirement['pickup_longitude'] ?? null
+                )
+                : null;
+            $deadheadScore = $this->scoreDeadheadDistance($deadheadDistanceKm);
+            // Get workload metrics
+            $workload = $workloadByDriver[$driverId] ?? null;
+            $workloadScore = $this->scoreWorkload($workload);
+
             // Calculate heading score if available
             $headingScore = null;
             if ($this->etaService !== null && $driverLocation['heading'] !== null) {
@@ -153,7 +193,9 @@ class DispatchRecommendationService
                 $equipmentResult['score'],
                 $shiftScore,
                 $etaScore,
-                $performanceScore
+                $performanceScore,
+                $deadheadScore
+                $workloadScore
             );
 
             // Build recommendation justification
@@ -163,7 +205,9 @@ class DispatchRecommendationService
                 $equipmentResult,
                 $remainingHours,
                 $performance,
-                $headingScore
+                $headingScore,
+                $deadheadDistanceKm
+                $workload
             );
 
             $suggestions[] = [
@@ -179,6 +223,8 @@ class DispatchRecommendationService
                 'equipment' => $equipmentResult['equipment'],
                 'equipment_compatible' => $equipmentResult['is_compatible'],
                 'remaining_shift_hours' => $remainingHours,
+                'deadhead_distance_km' => $deadheadDistanceKm,
+                'active_job_dropoff' => $activeDropoff,
                 'current_location' => $driverLocation['is_realtime'] ? [
                     'latitude' => $driverLocation['latitude'],
                     'longitude' => $driverLocation['longitude'],
@@ -189,12 +235,22 @@ class DispatchRecommendationService
                     'avg_rating' => $performance['avg_customer_rating'],
                     'on_time_rate' => $performance['on_time_rate'],
                 ] : null,
+                'workload' => $workload !== null ? [
+                    'active_job_id' => $workload['workorder_job_id'],
+                    'active_job_title' => $workload['title'],
+                    'minutes_in_progress' => $workload['minutes_in_progress'],
+                    'complexity_score' => $workload['complexity_score'],
+                    'item_count' => $workload['item_count'],
+                    'job_total' => $workload['job_total'],
+                ] : null,
                 'scores' => [
                     'distance' => $distanceScore,
                     'equipment' => $equipmentResult['score'],
                     'shift' => $shiftScore,
                     'eta' => $etaScore,
                     'performance' => $performanceScore,
+                    'deadhead' => $deadheadScore,
+                    'workload' => $workloadScore,
                     'heading' => $headingScore,
                     'overall' => $overall,
                 ],
@@ -221,6 +277,8 @@ class DispatchRecommendationService
                 'shift' => self::SHIFT_WEIGHT,
                 'eta' => self::ETA_WEIGHT,
                 'performance' => self::PERFORMANCE_WEIGHT,
+                'deadhead' => self::DEADHEAD_WEIGHT,
+                'workload' => self::WORKLOAD_WEIGHT,
             ],
         ];
     }
@@ -234,7 +292,9 @@ class DispatchRecommendationService
         array $equipmentResult,
         float $remainingHours,
         ?array $performance,
-        ?float $headingScore
+        ?float $headingScore,
+        ?float $deadheadDistanceKm
+        ?array $workload
     ): array {
         $reasons = [];
 
@@ -274,6 +334,15 @@ class DispatchRecommendationService
                 'type' => 'heading',
                 'priority' => 'positive',
                 'text' => 'Already heading toward job site',
+            ];
+        }
+
+        if ($deadheadDistanceKm !== null) {
+            $priority = $deadheadDistanceKm <= 5 ? 'positive' : 'info';
+            $reasons[] = [
+                'type' => 'deadhead',
+                'priority' => $priority,
+                'text' => sprintf('Drop-off %.1f km from new pickup', $deadheadDistanceKm),
             ];
         }
 
@@ -323,6 +392,28 @@ class DispatchRecommendationService
                 'type' => 'availability',
                 'priority' => 'warning',
                 'text' => sprintf('Only %.1f hours left in shift', $remainingHours),
+            ];
+        }
+
+        if ($workload === null) {
+            $reasons[] = [
+                'type' => 'workload',
+                'priority' => 'positive',
+                'text' => 'No active job in progress',
+            ];
+        } else {
+            $workloadText = sprintf(
+                'Current job in progress for %d minutes (complexity %.2f)',
+                $workload['minutes_in_progress'],
+                $workload['complexity_score']
+            );
+            $priority = $workload['complexity_score'] >= 0.7 || $workload['minutes_in_progress'] >= 90
+                ? 'warning'
+                : 'info';
+            $reasons[] = [
+                'type' => 'workload',
+                'priority' => $priority,
+                'text' => $workloadText,
             ];
         }
 
@@ -472,6 +563,23 @@ class DispatchRecommendationService
     }
 
     /**
+     * Score driver workload (higher score for less workload).
+     */
+    private function scoreWorkload(?array $workload): float
+    {
+        if ($workload === null) {
+            return 1.0;
+        }
+
+        $complexityScore = $workload['complexity_score'] ?? 0.5;
+        $minutesInProgress = $workload['minutes_in_progress'] ?? 0;
+        $timeFactor = min(1.0, $minutesInProgress / 120);
+        $penalty = ($complexityScore * 0.6) + ($timeFactor * 0.4);
+
+        return round(max(0.0, 1.0 - $penalty), 4);
+    }
+
+    /**
      * Fetch verified certifications from driver_certifications table.
      */
     private function fetchVerifiedCertifications(): array
@@ -488,6 +596,40 @@ class DispatchRecommendationService
         foreach ($rows as $row) {
             $driverId = (int)$row['driver_profile_id'];
             $byDriver[$driverId][] = $row['certification_code'];
+        }
+
+        return $byDriver;
+    }
+
+    /**
+     * Fetch active job drop-offs for drivers (accepted offers).
+     *
+     * @return array<int, array{dropoff_latitude: float, dropoff_longitude: float, job_reference: string|null, accepted_at: string|null}>
+     */
+    private function fetchActiveJobDropoffs(): array
+    {
+        $stmt = $this->connection->pdo()->query(
+            'SELECT driver_profile_id, job_reference, dropoff_latitude, dropoff_longitude, accepted_at
+             FROM driver_job_offers
+             WHERE status = \'accepted\'
+             AND dropoff_latitude IS NOT NULL
+             AND dropoff_longitude IS NOT NULL
+             ORDER BY accepted_at DESC, id DESC'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byDriver = [];
+        foreach ($rows as $row) {
+            $driverId = (int) $row['driver_profile_id'];
+            if (isset($byDriver[$driverId])) {
+                continue;
+            }
+            $byDriver[$driverId] = [
+                'dropoff_latitude' => (float) $row['dropoff_latitude'],
+                'dropoff_longitude' => (float) $row['dropoff_longitude'],
+                'job_reference' => $row['job_reference'] ?? null,
+                'accepted_at' => $row['accepted_at'] ?? null,
+            ];
         }
 
         return $byDriver;
@@ -518,6 +660,61 @@ class DispatchRecommendationService
                 'on_time_rate' => $totalArrivals > 0 ? (int)$row['on_time_arrivals'] / $totalArrivals : null,
                 'acceptance_rate' => $totalOffers > 0 ? (int)$row['jobs_accepted'] / $totalOffers : null,
             ];
+        }
+
+        return $byDriver;
+    }
+
+    /**
+     * Fetch driver workload metrics for active jobs.
+     */
+    private function fetchDriverWorkloads(DateTimeImmutable $referenceTime): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT dp.id AS driver_profile_id,
+                    wj.id AS workorder_job_id,
+                    wj.title,
+                    wj.started_at,
+                    wj.total,
+                    COUNT(wi.id) AS item_count
+             FROM driver_profiles dp
+             INNER JOIN workorders w ON w.assigned_technician_id = dp.user_id
+             INNER JOIN workorder_jobs wj ON wj.workorder_id = w.id
+             LEFT JOIN workorder_items wi ON wi.workorder_job_id = wj.id
+             WHERE wj.status = :status
+             GROUP BY dp.id, wj.id, wj.title, wj.started_at, wj.total'
+        );
+        $stmt->execute(['status' => 'in_progress']);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byDriver = [];
+        foreach ($rows as $row) {
+            $driverId = (int)$row['driver_profile_id'];
+            $startedAt = $row['started_at'] ? new DateTimeImmutable($row['started_at']) : null;
+            $minutesInProgress = $startedAt
+                ? max(0, (int) round(($referenceTime->getTimestamp() - $startedAt->getTimestamp()) / 60))
+                : 0;
+            $itemCount = (int) $row['item_count'];
+            $jobTotal = $row['total'] !== null ? (float) $row['total'] : 0.0;
+            $itemFactor = min(1.0, $itemCount / 8);
+            $totalFactor = $jobTotal > 0 ? min(1.0, $jobTotal / 1000) : 0.0;
+            $complexityScore = round(min(1.0, ($itemFactor * 0.6) + ($totalFactor * 0.4)), 4);
+
+            $payload = [
+                'workorder_job_id' => (int) $row['workorder_job_id'],
+                'title' => $row['title'],
+                'minutes_in_progress' => $minutesInProgress,
+                'complexity_score' => $complexityScore,
+                'item_count' => $itemCount,
+                'job_total' => $jobTotal,
+                'started_at' => $startedAt,
+            ];
+
+            $existing = $byDriver[$driverId] ?? null;
+            if ($existing === null || ($payload['started_at'] !== null && $existing['started_at'] !== null
+                && $payload['started_at'] > $existing['started_at'])) {
+                $byDriver[$driverId] = $payload;
+            }
         }
 
         return $byDriver;
@@ -634,12 +831,14 @@ class DispatchRecommendationService
         return [
             'id' => $id ?? ($payload['id'] ?? null),
             'dispatch_reference' => $payload['dispatch_reference'] ?? null,
+            'job_category' => $payload['job_category'] ?? null,
             'scheduled_start' => $payload['scheduled_start'] ?? null,
             'estimated_duration_hours' => $payload['estimated_duration_hours'] !== null
                 ? (float) $payload['estimated_duration_hours']
                 : null,
             'required_capacity' => $payload['required_capacity'] !== null ? (float) $payload['required_capacity'] : null,
             'required_equipment_class' => $payload['required_equipment_class'] ?? null,
+            'equipment_requirements' => $this->decodeJsonArray($payload['equipment_requirements'] ?? null),
             'required_certifications' => $this->decodeJsonArray($payload['required_certifications'] ?? null),
             'pickup_latitude' => $payload['pickup_latitude'] !== null ? (float) $payload['pickup_latitude'] : null,
             'pickup_longitude' => $payload['pickup_longitude'] !== null ? (float) $payload['pickup_longitude'] : null,
@@ -676,7 +875,12 @@ class DispatchRecommendationService
         return [$value];
     }
 
-    private function scoreEquipment(array $equipmentOptions, array $requirement, array $compatibilityRules = []): array
+    private function scoreEquipment(
+        array $equipmentOptions,
+        array $requirement,
+        array $compatibilityRules = [],
+        array $requiredEquipmentClasses = []
+    ): array
     {
         $requiredClass = $requirement['required_equipment_class'] ?? null;
         $requiredCapacity = $requirement['required_capacity'] ?? null;
@@ -692,10 +896,16 @@ class DispatchRecommendationService
             $classMatch = 1.0;
             $capacityScore = 1.0;
             $equipmentIsCompatible = true;
+            $equipmentClass = $equipment['equipment_class'] ?? null;
+
+            if (!empty($requiredEquipmentClasses) && !in_array($equipmentClass, $requiredEquipmentClasses, true)) {
+                $equipmentIsCompatible = false;
+                $classMatch = 0.0;
+            }
 
             // Check against compatibility rules if available
-            if (!empty($compatibilityRules) && isset($compatibilityRules[$equipment['equipment_class']])) {
-                $rule = $compatibilityRules[$equipment['equipment_class']];
+            if (!empty($compatibilityRules) && isset($compatibilityRules[$equipmentClass])) {
+                $rule = $compatibilityRules[$equipmentClass];
                 if (!$rule['is_compatible']) {
                     $equipmentIsCompatible = false;
                     $classMatch = 0.0;
@@ -705,7 +915,10 @@ class DispatchRecommendationService
                     $capacityScore = 0.0;
                 }
             } elseif ($requiredClass !== null) {
-                $classMatch = $equipment['equipment_class'] === $requiredClass ? 1.0 : 0.0;
+                $classMatch = $equipmentClass === $requiredClass ? 1.0 : 0.0;
+                if ($classMatch === 0.0) {
+                    $equipmentIsCompatible = false;
+                }
             }
 
             if ($requiredCapacity !== null) {
@@ -724,7 +937,7 @@ class DispatchRecommendationService
             }
         }
 
-        if (empty($equipmentOptions) && ($requiredClass !== null || $requiredCapacity !== null)) {
+        if (empty($equipmentOptions) && ($requiredClass !== null || $requiredCapacity !== null || !empty($requiredEquipmentClasses))) {
             $bestScore = 0.0;
             $isCompatible = false;
         } elseif (empty($equipmentOptions)) {
@@ -736,6 +949,51 @@ class DispatchRecommendationService
             'equipment' => $bestEquipment,
             'is_compatible' => $isCompatible,
         ];
+    }
+
+    private function resolveRequiredEquipmentClasses(array $requirement): array
+    {
+        $requirements = $requirement['equipment_requirements'] ?? [];
+        if (empty($requirements)) {
+            return [];
+        }
+
+        $classes = [];
+        foreach ($requirements as $requirementTag) {
+            $normalized = $this->normalizeEquipmentRequirementTag($requirementTag);
+            if ($normalized === null) {
+                continue;
+            }
+            $mapped = self::EQUIPMENT_REQUIREMENT_CLASS_MAP[$normalized] ?? null;
+            if ($mapped) {
+                $classes = array_merge($classes, $mapped);
+            }
+        }
+
+        return array_values(array_unique($classes));
+    }
+
+    private function normalizeEquipmentRequirementTag(?string $tag): ?string
+    {
+        if ($tag === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim($tag));
+        $normalized = str_replace([' ', '-'], '_', $normalized);
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function listEquipmentClasses(array $equipmentOptions): array
+    {
+        $classes = [];
+        foreach ($equipmentOptions as $equipment) {
+            if (!empty($equipment['equipment_class'])) {
+                $classes[] = $equipment['equipment_class'];
+            }
+        }
+
+        return array_values(array_unique($classes));
     }
 
     private function calculateDistanceKm(?float $fromLat, ?float $fromLon, ?float $toLat, ?float $toLon): ?float
@@ -767,6 +1025,15 @@ class DispatchRecommendationService
         }
 
         return round(1 / (1 + ($distanceKm / 50)), 4);
+    }
+
+    private function scoreDeadheadDistance(?float $distanceKm): float
+    {
+        if ($distanceKm === null) {
+            return 0.5;
+        }
+
+        return round(1 / (1 + ($distanceKm / 30)), 4);
     }
 
     private function calculateRemainingShiftHours(?array $shift, DateTimeImmutable $referenceTime): float
@@ -802,14 +1069,18 @@ class DispatchRecommendationService
         float $equipmentScore,
         float $shiftScore,
         float $etaScore = 0.5,
-        float $performanceScore = 0.5
+        float $performanceScore = 0.5,
+        float $deadheadScore = 0.5
+        float $workloadScore = 0.5
     ): float {
         return round(
             ($distanceScore * self::DISTANCE_WEIGHT)
             + ($equipmentScore * self::EQUIPMENT_WEIGHT)
             + ($shiftScore * self::SHIFT_WEIGHT)
             + ($etaScore * self::ETA_WEIGHT)
-            + ($performanceScore * self::PERFORMANCE_WEIGHT),
+            + ($performanceScore * self::PERFORMANCE_WEIGHT)
+            + ($deadheadScore * self::DEADHEAD_WEIGHT),
+            + ($workloadScore * self::WORKLOAD_WEIGHT),
             4
         );
     }

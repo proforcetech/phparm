@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
+import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import workorderService from '../../../services/workorder.service'
 import { decodeVin } from '../../../services/vehicle.service'
@@ -16,12 +17,48 @@ const emptyVehicle = {
 }
 
 const checkpointTypes = [
-  { key: 'pre_load', label: 'Pre-load photo' },
-  { key: 'hookup', label: 'Hookup photo' },
-  { key: 'dropoff', label: 'Drop-off photo' },
+  { key: 'front_left', label: 'Front-left corner photo' },
+  { key: 'front_right', label: 'Front-right corner photo' },
+  { key: 'rear_left', label: 'Rear-left corner photo' },
+  { key: 'rear_right', label: 'Rear-right corner photo' },
+  { key: 'vin_odometer', label: 'VIN/Odometer photo' },
 ]
 
 const clampPoint = (value) => Math.min(1, Math.max(0, value))
+const formatReportedAt = (date) => date.toISOString().replace('T', ' ').replace('Z', '')
+const isMobileDevice = () =>
+  typeof navigator !== 'undefined' &&
+  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+const isAndroidDevice = () => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+const parseCoordinate = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+const buildMapLinks = (provider, lat, lng, androidDevice) => {
+  const coordinates = `${lat},${lng}`
+  switch (provider) {
+    case 'waze':
+      return {
+        deepLink: `waze://?ll=${coordinates}&navigate=yes`,
+        webLink: `https://www.waze.com/ul?ll=${coordinates}&navigate=yes`,
+      }
+    case 'apple':
+      return {
+        deepLink: `maps://?daddr=${coordinates}`,
+        webLink: `https://maps.apple.com/?daddr=${coordinates}`,
+      }
+    case 'google':
+    default: {
+      const deepLink = androidDevice
+        ? `google.navigation:q=${coordinates}`
+        : `comgooglemaps://?daddr=${coordinates}&directionsmode=driving`
+      return {
+        deepLink,
+        webLink: `https://www.google.com/maps/search/?api=1&query=${coordinates}`,
+      }
+    }
+  }
+}
 
 const DamageDiagram = ({ points, onAddPoint, onClear }) => {
   const handleClick = (event) => {
@@ -66,6 +103,10 @@ const DamageDiagram = ({ points, onAddPoint, onClear }) => {
 export default function DriverJobIntake() {
   const [workorderId, setWorkorderId] = useState('')
   const [jobId, setJobId] = useState('')
+  const [destinationLat, setDestinationLat] = useState('')
+  const [destinationLng, setDestinationLng] = useState('')
+  const [mapProvider, setMapProvider] = useState('google')
+  const [navigationStatus, setNavigationStatus] = useState('')
   const [vinFile, setVinFile] = useState(null)
   const [vinText, setVinText] = useState('')
   const [vinStatus, setVinStatus] = useState('')
@@ -75,6 +116,9 @@ export default function DriverJobIntake() {
   const [damagePoints, setDamagePoints] = useState([])
   const [damageNotes, setDamageNotes] = useState('')
   const [damageStatus, setDamageStatus] = useState('')
+  const [damageLocation, setDamageLocation] = useState(null)
+  const [damageLocationStatus, setDamageLocationStatus] = useState('')
+  const [damageLocationLoading, setDamageLocationLoading] = useState(false)
   const [checkpointFiles, setCheckpointFiles] = useState({})
   const [checkpointStatus, setCheckpointStatus] = useState(null)
   const [checkpointMessage, setCheckpointMessage] = useState('')
@@ -157,15 +201,49 @@ export default function DriverJobIntake() {
 
     try {
       setDamageStatus('Saving damage report...')
+      const reportedAt = formatReportedAt(new Date())
       await workorderService.createDamageReport(Number(workorderId), Number(jobId), {
         diagram_points: damagePoints,
         notes: damageNotes,
+        reported_at: reportedAt,
+        latitude: damageLocation?.latitude ?? null,
+        longitude: damageLocation?.longitude ?? null,
+        location_accuracy_meters: damageLocation?.accuracy ?? null,
       })
       setDamageStatus('Damage report saved.')
     } catch (error) {
       console.error('Damage report failed', error)
       setDamageStatus('Unable to save damage report.')
     }
+  }
+
+  const captureDamageLocation = () => {
+    if (!navigator.geolocation) {
+      setDamageLocationStatus('Geolocation is not supported on this device.')
+      return
+    }
+
+    setDamageLocationLoading(true)
+    setDamageLocationStatus('Capturing current location...')
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDamageLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          capturedAt: new Date().toISOString(),
+        })
+        setDamageLocationStatus('Location captured.')
+        setDamageLocationLoading(false)
+      },
+      (error) => {
+        console.error('Location capture failed', error)
+        setDamageLocationStatus('Unable to capture location.')
+        setDamageLocationLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    )
   }
 
   const uploadCheckpoint = async (type) => {
@@ -202,12 +280,35 @@ export default function DriverJobIntake() {
     }
   }
 
+  const handleNavigate = () => {
+    const lat = parseCoordinate(destinationLat)
+    const lng = parseCoordinate(destinationLng)
+    if (lat == null || lng == null) {
+      setNavigationStatus('Enter valid latitude and longitude coordinates before navigating.')
+      return
+    }
+
+    const links = buildMapLinks(mapProvider, lat, lng, isAndroidDevice())
+    const useMobile = isMobileDevice()
+    const url = useMobile ? links.deepLink : links.webLink
+
+    setNavigationStatus(
+      useMobile ? 'Opening navigation app…' : 'Opening web map in a new tab for desktop browsers.'
+    )
+
+    if (useMobile) {
+      window.location.href = url
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Driver Job Intake</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Capture VIN, log vehicle damage, and upload photo checkpoints before moving job status.
+          Capture VIN, log vehicle damage, and upload required photo evidence before moving job status.
         </p>
       </div>
 
@@ -220,6 +321,46 @@ export default function DriverJobIntake() {
         />
         <Input label="Job ID" placeholder="Enter job ID" modelValue={jobId} onUpdateModelValue={setJobId} />
       </div>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">Navigation</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Enter destination coordinates and launch turn-by-turn directions in your preferred map app.
+        </p>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <Input
+            label="Latitude"
+            placeholder="e.g. 34.0522"
+            modelValue={destinationLat}
+            onUpdateModelValue={setDestinationLat}
+          />
+          <Input
+            label="Longitude"
+            placeholder="e.g. -118.2437"
+            modelValue={destinationLng}
+            onUpdateModelValue={setDestinationLng}
+          />
+          <Select
+            label="Map provider"
+            modelValue={mapProvider}
+            onUpdateModelValue={setMapProvider}
+            placeholder=""
+            options={[
+              { label: 'Google Maps', value: 'google' },
+              { label: 'Waze', value: 'waze' },
+              { label: 'Apple Maps', value: 'apple' },
+            ]}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button onClick={handleNavigate} disabled={!destinationLat || !destinationLng}>
+            Navigate
+          </Button>
+          {navigationStatus ? <span className="text-sm text-gray-600">{navigationStatus}</span> : null}
+        </div>
+      </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">VIN OCR & Vehicle Data</h2>
@@ -298,6 +439,37 @@ export default function DriverJobIntake() {
           />
         </div>
 
+        <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-gray-900">Capture GPS location</p>
+              <p className="text-xs text-gray-500">
+                Save the current location for audit and dispute resolution.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={captureDamageLocation} loading={damageLocationLoading}>
+              Capture location
+            </Button>
+          </div>
+          {damageLocation ? (
+            <div className="mt-3 grid gap-2 text-xs text-gray-600 md:grid-cols-2">
+              <div>
+                <span className="font-medium text-gray-800">Lat/Lng:</span>{' '}
+                {damageLocation.latitude.toFixed(6)}, {damageLocation.longitude.toFixed(6)}
+              </div>
+              <div>
+                <span className="font-medium text-gray-800">Accuracy:</span>{' '}
+                {Math.round(damageLocation.accuracy)} m
+              </div>
+              <div className="md:col-span-2">
+                <span className="font-medium text-gray-800">Captured:</span>{' '}
+                {new Date(damageLocation.capturedAt).toLocaleString()}
+              </div>
+            </div>
+          ) : null}
+          {damageLocationStatus ? <p className="mt-2 text-xs text-gray-500">{damageLocationStatus}</p> : null}
+        </div>
+
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button onClick={saveDamageReport} disabled={!damagePoints.length}>
             Save damage report
@@ -309,7 +481,7 @@ export default function DriverJobIntake() {
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Photo Checkpoints</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Upload required pre-load, hookup, and drop-off photos to advance job status.
+          Upload all 4-corner photos plus a VIN/Odometer photo to unlock the Hooked status.
         </p>
 
         <div className="mt-4 space-y-4">

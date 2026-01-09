@@ -31,12 +31,21 @@ class DriverJobOfferService
         $jobType = (string) ($payload['job_type'] ?? 'workorder');
         $expiresAt = $payload['expires_at'] ?? null;
         $offerPayload = $payload['offer_payload'] ?? null;
+        $dropoffLatitude = $payload['dropoff_latitude'] ?? null;
+        $dropoffLongitude = $payload['dropoff_longitude'] ?? null;
+
+        if (is_array($offerPayload)) {
+            $dropoffLatitude = $dropoffLatitude ?? ($offerPayload['dropoff_latitude'] ?? null);
+            $dropoffLongitude = $dropoffLongitude ?? ($offerPayload['dropoff_longitude'] ?? null);
+        }
 
         $insert = $this->connection->pdo()->prepare(
             'INSERT INTO driver_job_offers
-                (driver_profile_id, job_reference, job_type, status, offer_payload, created_by, expires_at, created_at)
+                (driver_profile_id, job_reference, job_type, status, offer_payload, created_by, expires_at,
+                 dropoff_latitude, dropoff_longitude, created_at)
              VALUES
-                (:driver_profile_id, :job_reference, :job_type, :status, :offer_payload, :created_by, :expires_at, NOW())'
+                (:driver_profile_id, :job_reference, :job_type, :status, :offer_payload, :created_by, :expires_at,
+                 :dropoff_latitude, :dropoff_longitude, NOW())'
         );
 
         $insert->execute([
@@ -47,6 +56,8 @@ class DriverJobOfferService
             'offer_payload' => $offerPayload !== null ? json_encode($offerPayload, JSON_THROW_ON_ERROR) : null,
             'created_by' => $actorId,
             'expires_at' => $expiresAt,
+            'dropoff_latitude' => $dropoffLatitude !== null ? (float) $dropoffLatitude : null,
+            'dropoff_longitude' => $dropoffLongitude !== null ? (float) $dropoffLongitude : null,
         ]);
 
         $id = (int) $this->connection->pdo()->lastInsertId();

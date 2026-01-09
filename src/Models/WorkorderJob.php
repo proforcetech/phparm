@@ -6,11 +6,15 @@ class WorkorderJob extends BaseModel
 {
     public const STATUS_PENDING = 'pending';
     public const STATUS_IN_PROGRESS = 'in_progress';
+    public const STATUS_HOOKED = 'hooked';
+    public const STATUS_ARRIVED = 'arrived';
     public const STATUS_COMPLETED = 'completed';
 
     public const ALLOWED_STATUSES = [
         self::STATUS_PENDING,
         self::STATUS_IN_PROGRESS,
+        self::STATUS_HOOKED,
+        self::STATUS_ARRIVED,
         self::STATUS_COMPLETED,
     ];
 

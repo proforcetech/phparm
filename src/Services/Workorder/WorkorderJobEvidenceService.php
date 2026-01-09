@@ -12,9 +12,11 @@ use RuntimeException;
 
 class WorkorderJobEvidenceService
 {
-    public const CHECKPOINT_PRE_LOAD = 'pre_load';
-    public const CHECKPOINT_HOOKUP = 'hookup';
-    public const CHECKPOINT_DROPOFF = 'dropoff';
+    public const CHECKPOINT_FRONT_LEFT = 'front_left';
+    public const CHECKPOINT_FRONT_RIGHT = 'front_right';
+    public const CHECKPOINT_REAR_LEFT = 'rear_left';
+    public const CHECKPOINT_REAR_RIGHT = 'rear_right';
+    public const CHECKPOINT_VIN_ODOMETER = 'vin_odometer';
 
     public const SIGNATURE_TYPES = [
         JobSignature::TYPE_AUTHORIZATION,
@@ -22,9 +24,11 @@ class WorkorderJobEvidenceService
     ];
 
     public const CHECKPOINT_TYPES = [
-        self::CHECKPOINT_PRE_LOAD,
-        self::CHECKPOINT_HOOKUP,
-        self::CHECKPOINT_DROPOFF,
+        self::CHECKPOINT_FRONT_LEFT,
+        self::CHECKPOINT_FRONT_RIGHT,
+        self::CHECKPOINT_REAR_LEFT,
+        self::CHECKPOINT_REAR_RIGHT,
+        self::CHECKPOINT_VIN_ODOMETER,
     ];
 
     private Connection $connection;
@@ -129,7 +133,16 @@ class WorkorderJobEvidenceService
     /**
      * @param array<int, array<string, float|int>> $diagramPoints
      */
-    public function createDamageReport(int $jobId, array $diagramPoints, ?string $notes = null, ?int $reportedBy = null): JobDamageReport
+    public function createDamageReport(
+        int $jobId,
+        array $diagramPoints,
+        ?string $notes = null,
+        ?int $reportedBy = null,
+        ?string $reportedAt = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        ?float $locationAccuracyMeters = null
+    ): JobDamageReport
     {
         if (empty($diagramPoints)) {
             throw new InvalidArgumentException('Damage report requires at least one point.');
@@ -137,9 +150,18 @@ class WorkorderJobEvidenceService
 
         $encoded = json_encode($diagramPoints, JSON_THROW_ON_ERROR);
 
+        if ($reportedAt === null) {
+            $reportedAt = date('Y-m-d H:i:s');
+        }
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO job_damage_reports (workorder_job_id, diagram_points, notes, reported_by, created_at)
-            VALUES (:job_id, :diagram_points, :notes, :reported_by, NOW())
+            INSERT INTO job_damage_reports (
+                workorder_job_id, diagram_points, notes, reported_by, reported_at,
+                latitude, longitude, location_accuracy_meters, created_at
+            ) VALUES (
+                :job_id, :diagram_points, :notes, :reported_by, :reported_at,
+                :latitude, :longitude, :location_accuracy_meters, NOW()
+            )
         SQL);
 
         $stmt->execute([
@@ -147,6 +169,10 @@ class WorkorderJobEvidenceService
             'diagram_points' => $encoded,
             'notes' => $notes,
             'reported_by' => $reportedBy,
+            'reported_at' => $reportedAt,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'location_accuracy_meters' => $locationAccuracyMeters,
         ]);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
@@ -157,11 +183,19 @@ class WorkorderJobEvidenceService
             'diagram_points' => $diagramPoints,
             'notes' => $notes,
             'reported_by' => $reportedBy,
+            'reported_at' => $reportedAt,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'location_accuracy_meters' => $locationAccuracyMeters,
         ]);
 
         $this->log('workorder_job.damage_reported', $jobId, $reportedBy, [
             'report_id' => $id,
             'points' => count($diagramPoints),
+            'reported_at' => $reportedAt,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'location_accuracy_meters' => $locationAccuracyMeters,
         ]);
 
         return $report;
@@ -183,6 +217,10 @@ class WorkorderJobEvidenceService
                 'diagram_points' => is_array($points) ? $points : [],
                 'notes' => $row['notes'],
                 'reported_by' => $row['reported_by'] !== null ? (int) $row['reported_by'] : null,
+                'reported_at' => $row['reported_at'],
+                'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
+                'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                'location_accuracy_meters' => $row['location_accuracy_meters'] !== null ? (float) $row['location_accuracy_meters'] : null,
                 'created_at' => $row['created_at'],
             ]);
         }, $stmt->fetchAll(\PDO::FETCH_ASSOC));

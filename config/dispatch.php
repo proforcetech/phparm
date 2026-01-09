@@ -93,11 +93,12 @@ return [
     |
     */
     'recommendation_weights' => [
-        'distance' => 0.35,
-        'equipment' => 0.25,
-        'shift' => 0.15,
-        'eta' => 0.15,
+        'distance' => 0.30,
+        'equipment' => 0.23,
+        'shift' => 0.14,
+        'eta' => 0.13,
         'performance' => 0.10,
+        'deadhead' => 0.10,
     ],
 
     /*

@@ -111,6 +111,7 @@ class WaterfallDispatchService
             return null;
         }
 
+        $dropoff = $this->fetchRequirementDropoff((int) ($sequence['dispatch_requirement_id'] ?? 0));
         $driverQueue = json_decode($sequence['driver_queue'], true) ?? [];
         $currentPosition = (int) $sequence['current_position'];
 
@@ -129,12 +130,16 @@ class WaterfallDispatchService
             'job_reference' => $sequence['job_reference'],
             'job_type' => $sequence['job_type'],
             'expires_at' => $expiresAt,
+            'dropoff_latitude' => $dropoff['dropoff_latitude'] ?? null,
+            'dropoff_longitude' => $dropoff['dropoff_longitude'] ?? null,
             'offer_payload' => [
                 'waterfall_sequence_id' => $sequence['sequence_reference'],
                 'waterfall_position' => $currentPosition,
                 'scores' => $driver['scores'],
                 'distance_km' => $driver['distance_km'],
                 'equipment' => $driver['equipment'],
+                'dropoff_latitude' => $dropoff['dropoff_latitude'] ?? null,
+                'dropoff_longitude' => $dropoff['dropoff_longitude'] ?? null,
             ],
         ], $sequence['initiated_by'] ?? 0);
 
@@ -166,6 +171,29 @@ class WaterfallDispatchService
         ]);
 
         return $offer;
+    }
+
+    /**
+     * @return array{dropoff_latitude: float|null, dropoff_longitude: float|null}
+     */
+    private function fetchRequirementDropoff(int $dispatchRequirementId): array
+    {
+        if ($dispatchRequirementId <= 0) {
+            return ['dropoff_latitude' => null, 'dropoff_longitude' => null];
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT dropoff_latitude, dropoff_longitude
+             FROM dispatch_requirements
+             WHERE id = :id'
+        );
+        $stmt->execute(['id' => $dispatchRequirementId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return [
+            'dropoff_latitude' => $row && $row['dropoff_latitude'] !== null ? (float) $row['dropoff_latitude'] : null,
+            'dropoff_longitude' => $row && $row['dropoff_longitude'] !== null ? (float) $row['dropoff_longitude'] : null,
+        ];
     }
 
     /**

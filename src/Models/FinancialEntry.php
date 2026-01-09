@@ -14,4 +14,5 @@ class FinancialEntry extends BaseModel
     public ?string $vendor = null;
     public ?string $description = null;
     public ?string $attachment_path = null;
+    public ?string $idempotency_key = null;
 }

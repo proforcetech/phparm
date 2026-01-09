@@ -11,6 +11,7 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
+import ChatWidget from '../../components/chat/ChatWidget'
 import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
@@ -101,6 +102,7 @@ const getJobStatusVariant = (status) => {
   const variants = {
     pending: 'default',
     in_progress: 'info',
+    hooked: 'info',
     completed: 'success',
   }
   return variants[status?.toLowerCase()] || 'default'
@@ -861,7 +863,7 @@ export default function WorkorderDetail() {
                 {jobs.map((job) => (
                   <div
                     key={job.id}
-                    className={`border border-gray-200 rounded-lg p-4 ${job.status === 'completed' ? 'bg-green-50 border-green-200' : ''} ${job.status === 'in_progress' ? 'bg-blue-50 border-blue-200' : ''}`}
+                    className={`border border-gray-200 rounded-lg p-4 ${job.status === 'completed' ? 'bg-green-50 border-green-200' : ''} ${['in_progress', 'hooked'].includes(job.status) ? 'bg-blue-50 border-blue-200' : ''}`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
@@ -1115,6 +1117,14 @@ export default function WorkorderDetail() {
               </div>
             </div>
           </Card>
+
+          <div>
+            <ChatWidget
+              variant="embedded"
+              title="Dispatch Chat"
+              subtitle="Coordinate updates with dispatch"
+            />
+          </div>
 
           <Card>
             <div className="mb-4">
