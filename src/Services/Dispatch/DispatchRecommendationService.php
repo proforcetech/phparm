@@ -9,9 +9,9 @@ use PDO;
 
 class DispatchRecommendationService
 {
-    private const DISTANCE_WEIGHT = 0.35;
+    private const DISTANCE_WEIGHT = 0.30;
     private const EQUIPMENT_WEIGHT = 0.25;
-    private const SHIFT_WEIGHT = 0.15;
+    private const SHIFT_WEIGHT = 0.10;
     private const ETA_WEIGHT = 0.15;
     private const PERFORMANCE_WEIGHT = 0.10;
     private const EQUIPMENT_REQUIREMENT_CLASS_MAP = [
@@ -19,6 +19,7 @@ class DispatchRecommendationService
         'all_wheel_drive' => ['flatbed', 'low-profile'],
         'low_clearance' => ['flatbed', 'low-profile'],
     ];
+    private const WORKLOAD_WEIGHT = 0.10;
 
     private Connection $connection;
     private ?TrafficAwareEtaService $etaService;
@@ -62,6 +63,7 @@ class DispatchRecommendationService
         $shiftsByDriver = $this->fetchShiftsByDriver($referenceTime);
         $performanceByDriver = $this->fetchPerformanceMetrics();
         $certificationsByDriver = $this->fetchVerifiedCertifications();
+        $workloadByDriver = $this->fetchDriverWorkloads($referenceTime);
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
         $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
 
@@ -146,6 +148,10 @@ class DispatchRecommendationService
             $performance = $performanceByDriver[$driverId] ?? null;
             $performanceScore = $this->scorePerformance($performance);
 
+            // Get workload metrics
+            $workload = $workloadByDriver[$driverId] ?? null;
+            $workloadScore = $this->scoreWorkload($workload);
+
             // Calculate heading score if available
             $headingScore = null;
             if ($this->etaService !== null && $driverLocation['heading'] !== null) {
@@ -164,7 +170,8 @@ class DispatchRecommendationService
                 $equipmentResult['score'],
                 $shiftScore,
                 $etaScore,
-                $performanceScore
+                $performanceScore,
+                $workloadScore
             );
 
             // Build recommendation justification
@@ -174,7 +181,8 @@ class DispatchRecommendationService
                 $equipmentResult,
                 $remainingHours,
                 $performance,
-                $headingScore
+                $headingScore,
+                $workload
             );
 
             $suggestions[] = [
@@ -199,12 +207,21 @@ class DispatchRecommendationService
                     'avg_rating' => $performance['avg_customer_rating'],
                     'on_time_rate' => $performance['on_time_rate'],
                 ] : null,
+                'workload' => $workload !== null ? [
+                    'active_job_id' => $workload['workorder_job_id'],
+                    'active_job_title' => $workload['title'],
+                    'minutes_in_progress' => $workload['minutes_in_progress'],
+                    'complexity_score' => $workload['complexity_score'],
+                    'item_count' => $workload['item_count'],
+                    'job_total' => $workload['job_total'],
+                ] : null,
                 'scores' => [
                     'distance' => $distanceScore,
                     'equipment' => $equipmentResult['score'],
                     'shift' => $shiftScore,
                     'eta' => $etaScore,
                     'performance' => $performanceScore,
+                    'workload' => $workloadScore,
                     'heading' => $headingScore,
                     'overall' => $overall,
                 ],
@@ -231,6 +248,7 @@ class DispatchRecommendationService
                 'shift' => self::SHIFT_WEIGHT,
                 'eta' => self::ETA_WEIGHT,
                 'performance' => self::PERFORMANCE_WEIGHT,
+                'workload' => self::WORKLOAD_WEIGHT,
             ],
         ];
     }
@@ -244,7 +262,8 @@ class DispatchRecommendationService
         array $equipmentResult,
         float $remainingHours,
         ?array $performance,
-        ?float $headingScore
+        ?float $headingScore,
+        ?array $workload
     ): array {
         $reasons = [];
 
@@ -333,6 +352,28 @@ class DispatchRecommendationService
                 'type' => 'availability',
                 'priority' => 'warning',
                 'text' => sprintf('Only %.1f hours left in shift', $remainingHours),
+            ];
+        }
+
+        if ($workload === null) {
+            $reasons[] = [
+                'type' => 'workload',
+                'priority' => 'positive',
+                'text' => 'No active job in progress',
+            ];
+        } else {
+            $workloadText = sprintf(
+                'Current job in progress for %d minutes (complexity %.2f)',
+                $workload['minutes_in_progress'],
+                $workload['complexity_score']
+            );
+            $priority = $workload['complexity_score'] >= 0.7 || $workload['minutes_in_progress'] >= 90
+                ? 'warning'
+                : 'info';
+            $reasons[] = [
+                'type' => 'workload',
+                'priority' => $priority,
+                'text' => $workloadText,
             ];
         }
 
@@ -430,6 +471,23 @@ class DispatchRecommendationService
     }
 
     /**
+     * Score driver workload (higher score for less workload).
+     */
+    private function scoreWorkload(?array $workload): float
+    {
+        if ($workload === null) {
+            return 1.0;
+        }
+
+        $complexityScore = $workload['complexity_score'] ?? 0.5;
+        $minutesInProgress = $workload['minutes_in_progress'] ?? 0;
+        $timeFactor = min(1.0, $minutesInProgress / 120);
+        $penalty = ($complexityScore * 0.6) + ($timeFactor * 0.4);
+
+        return round(max(0.0, 1.0 - $penalty), 4);
+    }
+
+    /**
      * Fetch verified certifications from driver_certifications table.
      */
     private function fetchVerifiedCertifications(): array
@@ -476,6 +534,61 @@ class DispatchRecommendationService
                 'on_time_rate' => $totalArrivals > 0 ? (int)$row['on_time_arrivals'] / $totalArrivals : null,
                 'acceptance_rate' => $totalOffers > 0 ? (int)$row['jobs_accepted'] / $totalOffers : null,
             ];
+        }
+
+        return $byDriver;
+    }
+
+    /**
+     * Fetch driver workload metrics for active jobs.
+     */
+    private function fetchDriverWorkloads(DateTimeImmutable $referenceTime): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT dp.id AS driver_profile_id,
+                    wj.id AS workorder_job_id,
+                    wj.title,
+                    wj.started_at,
+                    wj.total,
+                    COUNT(wi.id) AS item_count
+             FROM driver_profiles dp
+             INNER JOIN workorders w ON w.assigned_technician_id = dp.user_id
+             INNER JOIN workorder_jobs wj ON wj.workorder_id = w.id
+             LEFT JOIN workorder_items wi ON wi.workorder_job_id = wj.id
+             WHERE wj.status = :status
+             GROUP BY dp.id, wj.id, wj.title, wj.started_at, wj.total'
+        );
+        $stmt->execute(['status' => 'in_progress']);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byDriver = [];
+        foreach ($rows as $row) {
+            $driverId = (int)$row['driver_profile_id'];
+            $startedAt = $row['started_at'] ? new DateTimeImmutable($row['started_at']) : null;
+            $minutesInProgress = $startedAt
+                ? max(0, (int) round(($referenceTime->getTimestamp() - $startedAt->getTimestamp()) / 60))
+                : 0;
+            $itemCount = (int) $row['item_count'];
+            $jobTotal = $row['total'] !== null ? (float) $row['total'] : 0.0;
+            $itemFactor = min(1.0, $itemCount / 8);
+            $totalFactor = $jobTotal > 0 ? min(1.0, $jobTotal / 1000) : 0.0;
+            $complexityScore = round(min(1.0, ($itemFactor * 0.6) + ($totalFactor * 0.4)), 4);
+
+            $payload = [
+                'workorder_job_id' => (int) $row['workorder_job_id'],
+                'title' => $row['title'],
+                'minutes_in_progress' => $minutesInProgress,
+                'complexity_score' => $complexityScore,
+                'item_count' => $itemCount,
+                'job_total' => $jobTotal,
+                'started_at' => $startedAt,
+            ];
+
+            $existing = $byDriver[$driverId] ?? null;
+            if ($existing === null || ($payload['started_at'] !== null && $existing['started_at'] !== null
+                && $payload['started_at'] > $existing['started_at'])) {
+                $byDriver[$driverId] = $payload;
+            }
         }
 
         return $byDriver;
@@ -821,14 +934,16 @@ class DispatchRecommendationService
         float $equipmentScore,
         float $shiftScore,
         float $etaScore = 0.5,
-        float $performanceScore = 0.5
+        float $performanceScore = 0.5,
+        float $workloadScore = 0.5
     ): float {
         return round(
             ($distanceScore * self::DISTANCE_WEIGHT)
             + ($equipmentScore * self::EQUIPMENT_WEIGHT)
             + ($shiftScore * self::SHIFT_WEIGHT)
             + ($etaScore * self::ETA_WEIGHT)
-            + ($performanceScore * self::PERFORMANCE_WEIGHT),
+            + ($performanceScore * self::PERFORMANCE_WEIGHT)
+            + ($workloadScore * self::WORKLOAD_WEIGHT),
             4
         );
     }
