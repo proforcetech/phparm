@@ -212,6 +212,9 @@ export default function ReleaseChecklist() {
           <Link to="/cp/storage/impound-intake">
             <Button variant="secondary">Impound Intake</Button>
           </Link>
+          <Link to="/cp/storage/auction-management">
+            <Button variant="secondary">Auction Management</Button>
+          </Link>
           <Link to="/cp/storage/ledger">
             <Button variant="secondary">Fee Ledger</Button>
           </Link>
