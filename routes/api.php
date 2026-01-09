@@ -3329,6 +3329,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $publicInvoiceController = new \App\Services\Invoice\InvoicePublicController(
         new \App\Services\Invoice\InvoiceService($connection),
         new \App\Services\Invoice\PaymentProcessingService($connection, $publicGatewayFactory),
+        new \App\Services\Invoice\InvoicePublicPaymentTokenService($connection),
         new \App\Support\Pdf\InvoicePdfGenerator($connection)
     );
 

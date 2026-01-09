@@ -103,6 +103,7 @@ import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
+import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
 import TrackingView from '../views/tracking/TrackingView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
@@ -164,6 +165,7 @@ const publicRoutes = [
   { path: '/request-estimate', name: 'EstimateRequestForm', auth: 'public', element: <EstimateRequestPage /> },
   { path: '/estimate/view', name: 'PublicEstimateView', auth: 'public', element: <PublicEstimateView /> },
   { path: '/track/:token', name: 'TrackingView', auth: 'public', element: <TrackingView /> },
+  { path: '/pay/:token', name: 'PublicPaymentPortal', auth: 'public', element: <PublicPaymentPortal /> },
   { path: '/customers/:id', name: 'CustomerPublicDetail', auth: 'public', element: <CustomerPublicDetail /> },
   { path: '/vehicles/:id', name: 'VehiclePublicDetail', auth: 'public', element: <VehiclePublicDetail /> },
   { path: '/vehicles/:id/edit', name: 'VehiclePublicEdit', auth: 'public', element: <VehiclePublicEdit /> },
