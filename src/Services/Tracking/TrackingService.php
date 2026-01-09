@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\WorkorderJob;
 use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
+use App\Services\Notification\NotificationEventService;
 use App\Support\Notifications\NotificationDispatcher;
 use InvalidArgumentException;
 use RuntimeException;
@@ -18,17 +19,20 @@ class TrackingService
     private ?NotificationDispatcher $notifications;
     private ?MessagingNotificationService $messagingNotifications;
     private ?DispatchAuditService $dispatchAudit;
+    private ?NotificationEventService $notificationEvents;
 
     public function __construct(
         Connection $connection,
         ?NotificationDispatcher $notifications = null,
         ?MessagingNotificationService $messagingNotifications = null,
-        ?DispatchAuditService $dispatchAudit = null
+        ?DispatchAuditService $dispatchAudit = null,
+        ?NotificationEventService $notificationEvents = null
     ) {
         $this->connection = $connection;
         $this->notifications = $notifications;
         $this->messagingNotifications = $messagingNotifications;
         $this->dispatchAudit = $dispatchAudit;
+        $this->notificationEvents = $notificationEvents;
     }
 
     /**
@@ -144,17 +148,7 @@ class TrackingService
     public function sendTrackingLinkForJob(int $jobId, string $baseUrl, ?int $actorId = null): array
     {
         $context = $this->fetchJobContext($jobId);
-        $link = $this->fetchActiveLinkByJob($jobId);
-
-        if ($link === null) {
-            $link = $this->issueLink($jobId, $baseUrl, null, $actorId);
-        } else {
-            $link = [
-                'token' => $link['token'],
-                'tracking_url' => rtrim($baseUrl, '/') . '/track/' . $link['token'],
-                'expires_at' => $link['expires_at'],
-            ];
-        }
+        $link = $this->issueLink($jobId, $baseUrl, null, $actorId);
 
         if ($this->notifications !== null) {
             $payload = [
@@ -177,7 +171,20 @@ class TrackingService
             }
 
             if (!empty($context['customer_phone'])) {
-                $this->notifications->sendSms('tracking.link_sms', $context['customer_phone'], $payload);
+                if ($this->notificationEvents !== null) {
+                    $this->notificationEvents->trigger('job_tracking_link', [
+                        'recipient' => $context['customer_phone'],
+                        'customer_name' => $context['customer_name'],
+                        'workorder_number' => $context['workorder_number'],
+                        'job_title' => $context['job_title'],
+                        'vehicle' => $context['vehicle'],
+                        'eta' => $context['eta'],
+                        'tracking_url' => $link['tracking_url'],
+                        'job_tracking_link' => $link['tracking_url'],
+                    ]);
+                } else {
+                    $this->notifications->sendSms('tracking.link_sms', $context['customer_phone'], $payload);
+                }
                 $this->messagingNotifications?->dispatch('tracking.link_sent', [
                     'job_id' => $jobId,
                     'channel' => 'sms',

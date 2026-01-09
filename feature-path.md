@@ -94,20 +94,20 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 8. Partner & Motor Club Integration (/src/Services/Integrations)
 
-[ ] Bi-Directional Digital Dispatch: Your AgeroPartnerDispatchAdapter and AaaPartnerDispatchAdapter should support SWIFT and Digital Dispatch protocols. This allows you to "Accept" a job in your software and have it automatically update the motor club's portal.
-[ ] Split Billing: Support for "Primary" and "Secondary" payers. (e.g., Agero pays the first $50, the customer pays the remaining $120 for over-mileage).
-[ ] Email Parser Enhancements: Ensure your PartnerEmailParser.php handles "Job Cancelled" emails to automatically remove offered jobs from your dispatch queue.
+[x] Email Parser Enhancements: Ensure your PartnerEmailParser.php handles "Job Cancelled" emails to automatically remove offered jobs from your dispatch queue.
+[x] Split Billing: Support for "Primary" and "Secondary" payers. (e.g., Agero pays the first $50, the customer pays the remaining $120 for over-mileage).
+[x] Bi-Directional Digital Dispatch: Your AgeroPartnerDispatchAdapter and AaaPartnerDispatchAdapter should support SWIFT and Digital Dispatch protocols. This allows you to "Accept" a job in your software and have it automatically update the motor club's portal.
 
 ## 9. Customer Experience (Tracking & Public Views)
 
-[ ] "Uber-Style" Tracking Link: When a driver is dispatched, the NotificationEventService should SMS a unique job_tracking_link to the customer. This link should show the driver's real-time position on a map (from TrackingService) and an updated ETA.
+[x] "Uber-Style" Tracking Link: When a driver is dispatched, the NotificationEventService should SMS a unique job_tracking_link to the customer. This link should show the driver's real-time position on a map (from TrackingService) and an updated ETA.
 
-[ ] Public Payment Portal: Allow customers to pay their over-mileage or storage fees via Stripe/Square directly from their phone before the driver releases the vehicle.
+[x] Public Payment Portal: Allow customers to pay their over-mileage or storage fees via Stripe/Square directly from their phone before the driver releases the vehicle.
 
 ## 10. Technical & Performance Improvements
 
-[ ] WebSocket Integration: The DispatchView.jsx map should not poll the server. Use a real-time provider (like Pusher or a self-hosted Soketi instance) to push driver_location_updated events.
 [x] Database Partitioning: Roadside tracking data (GPS pings) grows exponentially. Partition the driver_locations table by month to ensure the dispatch map remains fast as your history grows.
+[x] WebSocket Integration: The DispatchView.jsx map should not poll the server. Use a real-time provider (like Pusher or a self-hosted Soketi instance) to push driver_location_updated events.
 [ ] Unified Audit Log: Ensure every status change (e.g., "En Route" -> "Arrived") logs the GPS coordinates of the action, not just the timestamp. This is critical for resolving disputes with motor clubs.
 
 ## Summary of "Must-Have" Feature Set

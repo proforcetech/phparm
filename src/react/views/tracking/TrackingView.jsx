@@ -56,6 +56,32 @@ const TrackingView = () => {
     return [data.vehicle.year, data.vehicle.make, data.vehicle.model].filter(Boolean).join(' ') || 'Vehicle details pending'
   }, [data])
 
+  const position = useMemo(() => {
+    const lastPosition = data?.tracking?.last_position
+    if (!lastPosition) return null
+    const lat = Number(lastPosition.lat ?? lastPosition.latitude)
+    const lng = Number(lastPosition.lng ?? lastPosition.longitude)
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+    return { lat, lng }
+  }, [data])
+
+  const mapUrl = useMemo(() => {
+    if (!position) return null
+    const delta = 0.02
+    const bbox = [
+      position.lng - delta,
+      position.lat - delta,
+      position.lng + delta,
+      position.lat + delta,
+    ]
+    const bboxParam = bbox.map((value) => value.toFixed(5)).join('%2C')
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${bboxParam}&marker=${position.lat}%2C${position.lng}&layer=mapnik`
+  }, [position])
+
+  const mapLink = position
+    ? `https://www.openstreetmap.org/?mlat=${position.lat}&mlon=${position.lng}#map=15/${position.lat}/${position.lng}`
+    : null
+
   const positionLabel = formatPosition(data?.tracking?.last_position)
 
   if (isLoading) {
@@ -96,12 +122,32 @@ const TrackingView = () => {
               <h2 className="text-lg font-semibold text-slate-900">Live map</h2>
               <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Auto-refreshes every 15s</span>
             </div>
-            <div className="h-80 rounded-xl border border-dashed border-slate-200 bg-gradient-to-br from-indigo-50 via-white to-slate-50 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-sm font-semibold text-slate-700">Current position</div>
-                <div className="mt-1 text-xs text-slate-500">{positionLabel}</div>
-                <div className="mt-3 text-xs text-slate-400">Map provider integration placeholder</div>
+            {mapUrl ? (
+              <div className="h-80 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                <iframe
+                  title="Technician location"
+                  src={mapUrl}
+                  className="w-full h-full"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
               </div>
+            ) : (
+              <div className="h-80 rounded-xl border border-dashed border-slate-200 bg-gradient-to-br from-indigo-50 via-white to-slate-50 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-slate-700">Current position</div>
+                  <div className="mt-1 text-xs text-slate-500">{positionLabel}</div>
+                  <div className="mt-3 text-xs text-slate-400">Waiting for the first location ping...</div>
+                </div>
+              </div>
+            )}
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+              <span>Last position: {positionLabel}</span>
+              {mapLink ? (
+                <a className="text-indigo-600 hover:text-indigo-500" href={mapLink} target="_blank" rel="noreferrer">
+                  Open in maps
+                </a>
+              ) : null}
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm text-slate-600">
               <div>
