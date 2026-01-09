@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS labor_tasks (
 -- Add task_id and flat_rate_minutes to time_entries
 ALTER TABLE time_entries
     ADD COLUMN IF NOT EXISTS task_id INT UNSIGNED NULL AFTER estimate_job_id,
-    ADD COLUMN IF NOT EXISTS task_name VARCHAR(160) NULL AFTER task_id COMMENT 'Snapshot of task name at clock-in time',
-    ADD COLUMN IF NOT EXISTS flat_rate_minutes DECIMAL(10,2) NULL AFTER task_name COMMENT 'Snapshot of expected time for efficiency calculation',
+    ADD COLUMN IF NOT EXISTS task_name VARCHAR(160) NULL COMMENT 'Snapshot of task name at clock-in time' AFTER task_id,
+    ADD COLUMN IF NOT EXISTS flat_rate_minutes DECIMAL(10,2) NULL COMMENT 'Snapshot of expected time for efficiency calculation' AFTER task_name,
     ADD INDEX idx_time_entries_task (task_id),
     ADD CONSTRAINT fk_time_entries_task FOREIGN KEY (task_id) REFERENCES labor_tasks (id) ON DELETE SET NULL;
 
