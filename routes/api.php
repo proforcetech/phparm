@@ -3410,7 +3410,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $trackingService = new \App\Services\Tracking\TrackingService(
             $connection,
             $trackingDispatcher,
-            $workorderMessagingNotifications
+            $workorderMessagingNotifications,
+            new \App\Services\Dispatch\DispatchAuditService($connection)
         );
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
