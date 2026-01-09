@@ -11,6 +11,10 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import userService from '../../../services/user.service'
+import roleService from '../../../services/role.service'
+import { useToast } from '../../stores/toast.jsx'
+
+const defaultRoleOptions = [{ label: 'All Roles', value: '' }]
 import { useAuthStore } from '../../stores/auth.jsx'
 import { useToast } from '../../stores/toast.jsx'
 
@@ -102,6 +106,8 @@ export default function UsersList() {
   const [userToDelete, setUserToDelete] = useState(null)
   const [userToReset2FA, setUserToReset2FA] = useState(null)
   const [filters, setFilters] = useState({ query: '', role: '' })
+  const [roleOptions, setRoleOptions] = useState(defaultRoleOptions)
+  const [roleLabels, setRoleLabels] = useState({})
   const [selectedUserIds, setSelectedUserIds] = useState([])
   const [bulkRole, setBulkRole] = useState('')
   const [bulkDeactivating, setBulkDeactivating] = useState(false)
@@ -128,6 +134,29 @@ export default function UsersList() {
     }
   }
 
+  const loadRoles = async () => {
+    try {
+      const roles = await roleService.listRoles({ include_system: true })
+      setRoleOptions([
+        ...defaultRoleOptions,
+        ...roles.map((role) => ({ label: role.label, value: role.name })),
+      ])
+      setRoleLabels(
+        roles.reduce((acc, role) => {
+          acc[role.name] = role.label
+          return acc
+        }, {})
+      )
+    } catch (error) {
+      console.error('Failed to load roles:', error)
+      toast.error('Failed to load roles')
+    }
+  }
+
+  useEffect(() => {
+    loadUsers()
+    loadRoles()
+  }, [])
   const buildSearchParams = (nextFilters) => {
     const params = new URLSearchParams()
     Object.entries(nextFilters).forEach(([key, value]) => {
@@ -312,10 +341,21 @@ export default function UsersList() {
   return (
     <div>
       <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-            <p className="mt-1 text-sm text-gray-500">Manage system users, roles, and permissions</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+              <p className="mt-1 text-sm text-gray-500">Manage system users, roles, and permissions</p>
+            </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => navigate('/cp/users/roles')}>
+              Manage Roles
+            </Button>
+            <Button onClick={() => navigate('/cp/users/create')}>
+              <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Create User
+            </Button>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleExport} loading={exporting}>

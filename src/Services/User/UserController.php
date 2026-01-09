@@ -5,6 +5,7 @@ namespace App\Services\User;
 use App\Services\ImportExport\CsvExportService;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\RolePermissions;
 use App\Support\Auth\TotpService;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -14,6 +15,9 @@ class UserController
     private UserRepository $repository;
     private AccessGate $gate;
     private TotpService $totpService;
+    private RolePermissions $roles;
+
+    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService, RolePermissions $roles)
     private CsvExportService $csvExportService;
 
     public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService, CsvExportService $csvExportService)
@@ -21,6 +25,7 @@ class UserController
         $this->repository = $repository;
         $this->gate = $gate;
         $this->totpService = $totpService;
+        $this->roles = $roles;
         $this->csvExportService = $csvExportService;
     }
 
@@ -154,10 +159,7 @@ class UserController
         }
 
         // Validate role
-        $validRoles = ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms', 'customer'];
-        if (!in_array($data['role'], $validRoles, true)) {
-            throw new InvalidArgumentException('Invalid role');
-        }
+        $this->roles->validateRole($data['role']);
 
         // Check if email already exists
         if ($this->repository->findByEmail($data['email'])) {
@@ -207,10 +209,7 @@ class UserController
             throw new InvalidArgumentException('Role is required');
         }
 
-        $validRoles = ['admin', 'manager', 'technician', 'customer'];
-        if (!in_array($data['role'], $validRoles, true)) {
-            throw new InvalidArgumentException('Invalid role');
-        }
+        $this->roles->validateRole($data['role']);
 
         if ($this->repository->findByEmail($data['email'])) {
             throw new InvalidArgumentException('Email already exists');
@@ -261,10 +260,7 @@ class UserController
 
         // Validate role if provided
         if (isset($data['role'])) {
-            $validRoles = ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms', 'customer'];
-            if (!in_array($data['role'], $validRoles, true)) {
-                throw new InvalidArgumentException('Invalid role');
-            }
+            $this->roles->validateRole($data['role']);
         }
 
         // Check if email already exists (for different user)

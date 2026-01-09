@@ -8,18 +8,8 @@ import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import userService from '../../../services/user.service'
+import roleService from '../../../services/role.service'
 import { useToast } from '../../stores/toast.jsx'
-
-const roleOptions = [
-  { label: 'Admin', value: 'admin' },
-  { label: 'Dispatcher', value: 'dispatcher' },
-  { label: 'Manager', value: 'manager' },
-  { label: 'Technician', value: 'technician' },
-  { label: 'Parts', value: 'parts' },
-  { label: 'Roadside', value: 'roadside' },
-  { label: 'CMS', value: 'cms' },
-  { label: 'Customer', value: 'customer' },
-]
 
 const twoFactorOptions = [
   { label: 'Disabled', value: 'none' },
@@ -27,49 +17,6 @@ const twoFactorOptions = [
   { label: 'SMS', value: 'sms' },
   { label: 'Email', value: 'email' },
 ]
-
-const roleInfo = {
-  admin: {
-    label: 'Admin',
-    description: 'Full control across all modules',
-    permissions: ['*'],
-  },
-  dispatcher: {
-    label: 'Dispatcher',
-    description: 'Coordinate dispatch operations and roadside workflows',
-    permissions: ['dispatch.*', 'roadside.*', 'messages.*'],
-  },
-  manager: {
-    label: 'Manager',
-    description: 'Manage shop operations, estimates, invoices, schedules, inventory',
-    permissions: ['users.view', 'users.invite', 'users.update', 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*', 'inventory.*', 'inspections.*', 'cms.*'],
-  },
-  technician: {
-    label: 'Technician',
-    description: 'Work estimates, inspections, jobs, and time tracking',
-    permissions: ['customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view'],
-  },
-  parts: {
-    label: 'Parts',
-    description: 'Manage inventory alerts and ordering',
-    permissions: ['inventory.*'],
-  },
-  roadside: {
-    label: 'Roadside',
-    description: 'Roadside assistance and dispatch operations',
-    permissions: ['roadside.*', 'dispatch.*'],
-  },
-  cms: {
-    label: 'CMS',
-    description: 'Manage CMS content and redirects',
-    permissions: ['cms.*'],
-  },
-  customer: {
-    label: 'Customer',
-    description: 'Customer portal scoped to their profile and documents',
-    permissions: ['portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.invoices', 'portal.warranty', 'portal.reminders'],
-  },
-}
 
 const twoFactorDescriptions = {
   totp: 'User will need an authenticator app like Google Authenticator or Authy',
@@ -99,6 +46,8 @@ export default function UserForm() {
     password: '',
     role: '',
   })
+  const [roleOptions, setRoleOptions] = useState([])
+  const [roleInfo, setRoleInfo] = useState({})
 
   const isEditMode = useMemo(() => id && id !== 'create', [id])
 
@@ -204,6 +153,28 @@ export default function UserForm() {
   }
 
   useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const roles = await roleService.listRoles({ include_system: true })
+        setRoleOptions(roles.map((role) => ({ label: role.label, value: role.name })))
+        setRoleInfo(
+          roles.reduce((acc, role) => {
+            acc[role.name] = {
+              label: role.label,
+              description: role.description || '',
+              permissions: role.permissions || [],
+            }
+            return acc
+          }, {})
+        )
+      } catch (error) {
+        console.error('Failed to load roles:', error)
+        toast.error('Failed to load roles')
+      }
+    }
+
+    loadRoles()
+
     if (isEditMode) {
       loadUser()
     }

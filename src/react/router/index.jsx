@@ -72,6 +72,7 @@ import ServiceTypes from '../views/settings/ServiceTypes'
 import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
 import UserGroups from '../views/users/UserGroups'
+import RoleManagement from '../views/users/RoleManagement'
 import ModuleSettings from '../views/settings/ModuleSettings'
 import InspectionTemplates from '../views/inspections/TemplateManager'
 import TechnicianInspections from '../views/inspections/TechnicianInspections'
@@ -228,6 +229,7 @@ const protectedRoutes = [
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/users/groups', name: 'UserGroups', auth: 'requiresAuth', element: <UserGroups /> },
+  { path: '/cp/users/roles', name: 'RoleManagement', auth: 'requiresAuth', element: <RoleManagement /> },
   { path: '/cp/users/:id', name: 'UserEdit', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/inspections/templates', name: 'InspectionTemplates', auth: 'requiresAuth', element: <InspectionTemplates /> },
   { path: '/cp/inspections/work', name: 'TechnicianInspections', auth: 'requiresAuth', element: <TechnicianInspections /> },

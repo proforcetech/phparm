@@ -86,7 +86,7 @@ class Middleware
             $connection = new Connection($dbConfig);
 
             // Create role permissions and access gate
-            $rolePermissions = new RolePermissions($config['roles'] ?? []);
+            $rolePermissions = RolePermissions::fromDatabase($connection, $config['roles'] ?? []);
             $gate = new AccessGate($rolePermissions);
 
             self::$moduleService = new ModuleAccessService($connection, $gate);

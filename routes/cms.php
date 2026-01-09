@@ -21,7 +21,7 @@ return function (Router $router, array $config, $connection) {
 
     // Initialize AccessGate for PageController
     $authConfig = $config['auth'] ?? [];
-    $gate = new AccessGate(new RolePermissions($authConfig['roles'] ?? []));
+    $gate = new AccessGate(RolePermissions::fromDatabase($connection, $authConfig['roles'] ?? []));
 
     $reservedPrefixes = [
         'api',
