@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 
-import ChatWidget from '../chat/ChatWidget'
 import Navbar from './Navbar'
 import Sidebar from './Sidebar'
 import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
@@ -88,7 +87,6 @@ export default function AdminLayout({ children }) {
           <CmsPageProvider>
             <CmsMenuProvider>
               <main className="p-4 sm:p-6 lg:p-8">{children ?? <Outlet />}</main>
-              <ChatWidget />
             </CmsMenuProvider>
           </CmsPageProvider>
         </div>

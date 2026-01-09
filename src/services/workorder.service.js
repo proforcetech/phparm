@@ -1,5 +1,6 @@
 import api from './api'
 import { enqueueItem } from '../react/utils/offlineQueue'
+import offlineSync from '../react/services/offlineSync'
 
 export default {
   /**
@@ -51,21 +52,27 @@ export default {
    */
   updateStatus(id, status, notes = null, options = {}) {
     const { allowQueue = true, clientEventId = null } = options
-    if (allowQueue && typeof navigator !== 'undefined' && !navigator.onLine) {
-      const eventId = clientEventId || crypto.randomUUID()
-      enqueueItem('workorder_status', {
-        id,
+    if (!allowQueue) {
+      return api.patch(`/workorders/${id}/status`, {
         status,
         notes,
-        clientEventId: eventId,
+        client_event_id: clientEventId,
       })
-      return Promise.resolve({ queued: true, client_event_id: eventId })
     }
-    return api.patch(`/workorders/${id}/status`, {
+
+    const eventId = clientEventId || crypto.randomUUID()
+    enqueueItem('workorder_status', {
+      id,
       status,
       notes,
-      client_event_id: clientEventId,
+      clientEventId: eventId,
     })
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      return offlineSync.manualSync().then(() => ({ queued: true, client_event_id: eventId }))
+    }
+
+    return Promise.resolve({ queued: true, client_event_id: eventId })
   },
 
   /**
@@ -137,8 +144,28 @@ export default {
    * @param {string} status - New status
    * @returns {Promise}
    */
-  updateJobStatus(workorderId, jobId, status) {
-    return api.patch(`/workorders/${workorderId}/jobs/${jobId}/status`, { status })
+  updateJobStatus(workorderId, jobId, status, options = {}) {
+    const { allowQueue = true, clientEventId = null } = options
+    if (!allowQueue) {
+      return api.patch(`/workorders/${workorderId}/jobs/${jobId}/status`, {
+        status,
+        client_event_id: clientEventId,
+      })
+    }
+
+    const eventId = clientEventId || crypto.randomUUID()
+    enqueueItem('workorder_job_status', {
+      workorderId,
+      jobId,
+      status,
+      clientEventId: eventId,
+    })
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      return offlineSync.manualSync().then(() => ({ queued: true, client_event_id: eventId }))
+    }
+
+    return Promise.resolve({ queued: true, client_event_id: eventId })
   },
 
   /**
