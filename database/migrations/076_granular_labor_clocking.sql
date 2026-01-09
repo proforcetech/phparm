@@ -20,20 +20,20 @@ CREATE TABLE IF NOT EXISTS labor_tasks (
 
 -- Add task_id and flat_rate_minutes to time_entries
 ALTER TABLE time_entries
-    ADD COLUMN task_id INT UNSIGNED NULL AFTER estimate_job_id,
-    ADD COLUMN task_name VARCHAR(160) NULL AFTER task_id COMMENT 'Snapshot of task name at clock-in time',
-    ADD COLUMN flat_rate_minutes DECIMAL(10,2) NULL AFTER task_name COMMENT 'Snapshot of expected time for efficiency calculation',
+    ADD COLUMN IF NOT EXISTS task_id INT UNSIGNED NULL AFTER estimate_job_id,
+    ADD COLUMN IF NOT EXISTS task_name VARCHAR(160) NULL AFTER task_id COMMENT 'Snapshot of task name at clock-in time',
+    ADD COLUMN IF NOT EXISTS flat_rate_minutes DECIMAL(10,2) NULL AFTER task_name COMMENT 'Snapshot of expected time for efficiency calculation',
     ADD INDEX idx_time_entries_task (task_id),
     ADD CONSTRAINT fk_time_entries_task FOREIGN KEY (task_id) REFERENCES labor_tasks (id) ON DELETE SET NULL;
 
 -- Add task tracking to time_adjustments for audit trail
 ALTER TABLE time_adjustments
-    ADD COLUMN previous_task_id INT UNSIGNED NULL AFTER previous_estimate_job_id,
-    ADD COLUMN previous_task_name VARCHAR(160) NULL AFTER previous_task_id,
-    ADD COLUMN previous_flat_rate_minutes DECIMAL(10,2) NULL AFTER previous_task_name,
-    ADD COLUMN new_task_id INT UNSIGNED NULL AFTER new_estimate_job_id,
-    ADD COLUMN new_task_name VARCHAR(160) NULL AFTER new_task_id,
-    ADD COLUMN new_flat_rate_minutes DECIMAL(10,2) NULL AFTER new_task_name;
+    ADD COLUMN IF NOT EXISTS previous_task_id INT UNSIGNED NULL AFTER previous_estimate_job_id,
+    ADD COLUMN IF NOT EXISTS previous_task_name VARCHAR(160) NULL AFTER previous_task_id,
+    ADD COLUMN IF NOT EXISTS previous_flat_rate_minutes DECIMAL(10,2) NULL AFTER previous_task_name,
+    ADD COLUMN IF NOT EXISTS new_task_id INT UNSIGNED NULL AFTER new_estimate_job_id,
+    ADD COLUMN IF NOT EXISTS new_task_name VARCHAR(160) NULL AFTER new_task_id,
+    ADD COLUMN IF NOT EXISTS new_flat_rate_minutes DECIMAL(10,2) NULL AFTER new_task_name;
 
 -- Insert common labor tasks with industry-standard flat rates
 INSERT INTO labor_tasks (name, description, flat_rate_minutes, display_order) VALUES
