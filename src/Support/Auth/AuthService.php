@@ -42,11 +42,10 @@ class AuthService
     public function registerStaff(string $name, string $email, string $password, string $role): User
     {
         $role = strtolower($role);
-        if (!in_array($role, ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms'], true)) {
-            throw new InvalidArgumentException('Staff role must be admin, dispatcher, manager, technician, parts, roadside, or cms.');
-        }
-
         $this->roles->validateRole($role);
+        if ($role === 'customer') {
+            throw new InvalidArgumentException('Staff role cannot be customer.');
+        }
         $this->assertPasswordStrength($password);
 
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
@@ -96,7 +95,7 @@ class AuthService
     public function staffLogin(string $email, string $password): ?User
     {
         $user = $this->findByEmail($email);
-        if (!$user || !in_array($user->role, ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms'], true)) {
+        if (!$user || $user->role === 'customer' || !$this->roles->hasRole($user->role)) {
             return null;
         }
 

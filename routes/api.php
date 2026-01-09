@@ -29,9 +29,10 @@ use App\Services\CMS\CMSCacheService;
  */
 return function (Router $router, array $config, $connection) {
     $authConfig = $config['auth'];
+    $rolePermissions = RolePermissions::fromDatabase($connection, $authConfig['roles'] ?? []);
     $authService = new \App\Support\Auth\AuthService(
         $connection,
-        new RolePermissions($authConfig['roles']),
+        $rolePermissions,
         new \App\Support\Auth\PasswordResetRepository(
             $connection,
             (int) ($authConfig['passwords']['expire_minutes'] ?? 60)
@@ -1270,7 +1271,7 @@ return Response::json([
     });
 
     // Initialize AccessGate for protected routes
-    $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
+    $gate = new AccessGate($rolePermissions);
 
     $cmsCacheService = new CMSCacheService($config['cms'] ?? []);
     // CMS controllers reuse the same gate and connection
@@ -3707,13 +3708,15 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $userController = new \App\Services\User\UserController(
         new \App\Services\User\UserRepository($connection),
         $gate,
-        $totpService
+        $totpService,
+        $rolePermissions
     );
 
     // Role controller for role management
     $roleController = new \App\Services\Role\RoleController(
         new \App\Services\Role\RoleRepository($connection),
-        $gate
+        $gate,
+        $rolePermissions
     );
 
     $messagingController = new \App\Services\Messaging\MessagingController(

@@ -90,6 +90,11 @@ const adminMenuItems = [
     icon: UsersIcon,
     children: [
       {
+        path: '/cp/users/roles',
+        label: 'Roles',
+        icon: ShieldCheckIcon,
+      },
+      {
         path: '/cp/users/groups',
         label: 'User Groups',
         icon: UserGroupIcon,
