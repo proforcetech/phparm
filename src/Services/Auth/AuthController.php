@@ -54,6 +54,7 @@ class AuthController
         }
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $this->auth->recordLastActivity($user->id);
 
         return [
             'user' => $user->toArray(),
@@ -85,6 +86,7 @@ class AuthController
         }
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $this->auth->recordLastActivity($user->id);
 
         return [
             'user' => $user->toArray(),

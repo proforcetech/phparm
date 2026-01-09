@@ -582,6 +582,7 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $authService->recordLastActivity($user->id);
 
         // Generate JWT tokens
         $accessToken = $jwtService->generateToken($user);
@@ -679,6 +680,7 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $authService->recordLastActivity($user->id);
 
         // Generate JWT tokens
         $accessToken = $jwtService->generateToken($user);
@@ -727,6 +729,7 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $authService->recordLastActivity($user->id);
 
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -773,6 +776,7 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $authService->recordLastActivity($user->id);
 
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -3846,8 +3850,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'role' => $request->queryParam('role'),
                 'query' => $request->queryParam('query'),
+                'status' => $request->queryParam('status'),
+                'two_factor' => $request->queryParam('two_factor'),
             ];
             $data = $userController->listUsers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkDeactivate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/bulk-role', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkUpdateRole($user, $request->body());
             return Response::json($data);
         });
 
