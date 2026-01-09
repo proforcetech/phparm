@@ -3857,6 +3857,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkDeactivate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/bulk-role', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkUpdateRole($user, $request->body());
+            return Response::json($data);
+        });
+
         $router->get('/api/users/{id}', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');

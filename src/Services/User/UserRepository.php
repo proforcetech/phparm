@@ -324,4 +324,62 @@ if (isset($data['two_factor_enabled'])) {
 
         return $this->find($id);
     }
+
+    /**
+     * Bulk deactivate users.
+     *
+     * @param array<int, int> $ids
+     */
+    public function bulkDeactivate(array $ids, int $currentUserId): int
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $ids = array_values(array_filter($ids, static fn ($id) => $id > 0 && $id !== $currentUserId));
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $placeholders = [];
+        $bindings = [];
+        foreach ($ids as $index => $id) {
+            $key = 'id' . $index;
+            $placeholders[] = ':' . $key;
+            $bindings[$key] = $id;
+        }
+
+        $query = 'UPDATE users SET active = 0, updated_at = NOW() WHERE id IN (' . implode(',', $placeholders) . ')';
+        $stmt = $this->connection->pdo()->prepare($query);
+        $stmt->execute($bindings);
+
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Bulk update user roles.
+     *
+     * @param array<int, int> $ids
+     */
+    public function bulkUpdateRole(array $ids, string $role): int
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $ids = array_values(array_filter($ids, static fn ($id) => $id > 0));
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $placeholders = [];
+        $bindings = ['role' => $role];
+        foreach ($ids as $index => $id) {
+            $key = 'id' . $index;
+            $placeholders[] = ':' . $key;
+            $bindings[$key] = $id;
+        }
+
+        $query = 'UPDATE users SET role = :role, updated_at = NOW() WHERE id IN (' . implode(',', $placeholders) . ') AND active = 1';
+        $stmt = $this->connection->pdo()->prepare($query);
+        $stmt->execute($bindings);
+
+        return $stmt->rowCount();
+    }
 }
