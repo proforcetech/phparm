@@ -100,7 +100,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 9. Customer Experience (Tracking & Public Views)
 
-[ ] "Uber-Style" Tracking Link: When a driver is dispatched, the NotificationEventService should SMS a unique job_tracking_link to the customer. This link should show the driver's real-time position on a map (from TrackingService) and an updated ETA.
+[x] "Uber-Style" Tracking Link: When a driver is dispatched, the NotificationEventService should SMS a unique job_tracking_link to the customer. This link should show the driver's real-time position on a map (from TrackingService) and an updated ETA.
 
 [ ] Public Payment Portal: Allow customers to pay their over-mileage or storage fees via Stripe/Square directly from their phone before the driver releases the vehicle.
 
