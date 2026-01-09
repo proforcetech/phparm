@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import Alert from '../../components/ui/Alert'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Select from '../../components/ui/Select'
 import Table from '../../components/ui/Table'
 import { useToast } from '../../stores/toast.jsx'
+import impoundService from '../../../services/impound.service'
 
 const initialForm = {
   case_number: '',
@@ -17,43 +19,89 @@ const initialForm = {
   gate_fee: '125.00',
   daily_rate: '45.00',
   hold_release_contact: '',
+  status: 'open',
+  auction_status: 'in_storage',
 }
 
-const sampleCases = [
-  {
-    id: 1,
-    case_number: 'IMP-2024-017',
-    vehicle: '2019 Ford F-150',
-    intake_date: '2024-03-12',
-    state_code: 'CA',
-    status: 'open',
-  },
-  {
-    id: 2,
-    case_number: 'IMP-2024-018',
-    vehicle: '2021 Honda Accord',
-    intake_date: '2024-03-14',
-    state_code: 'TX',
-    status: 'hold',
-  },
+const statusOptions = [
+  { value: 'open', label: 'Open' },
+  { value: 'hold', label: 'Hold' },
+  { value: 'released', label: 'Released' },
+]
+
+const auctionStatusOptions = [
+  { value: 'in_storage', label: 'In Storage' },
+  { value: 'lien_notice', label: 'Lien Notice' },
+  { value: 'auction_ready', label: 'Auction Ready' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'in_lot', label: 'In Lot' },
+  { value: 'sold', label: 'Sold' },
+  { value: 'released', label: 'Released' },
 ]
 
 export default function ImpoundIntake() {
   const { success } = useToast()
+  const [cases, setCases] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [form, setForm] = useState(initialForm)
 
   const columns = useMemo(() => ([
     { key: 'case_number', label: 'Case #' },
-    { key: 'vehicle', label: 'Vehicle' },
-    { key: 'intake_date', label: 'Impound Date' },
+    { key: 'impound_date', label: 'Impound Date' },
     { key: 'state_code', label: 'State' },
     { key: 'status', label: 'Status' },
+    { key: 'auction_status', label: 'Auction Status' },
   ]), [])
 
-  const submitIntake = (event) => {
+  const loadCases = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const response = await impoundService.listCases()
+      const rows = Array.isArray(response) ? response : response?.data ?? []
+      setCases(Array.isArray(rows) ? rows : [])
+    } catch (fetchError) {
+      setError(fetchError?.response?.data?.message || fetchError?.message || 'Unable to load impound cases.')
+      setCases([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadCases()
+  }, [loadCases])
+
+  const submitIntake = async (event) => {
     event.preventDefault()
-    success(`Impound case ${form.case_number || 'draft'} saved`)
-    setForm(initialForm)
+    setError('')
+
+    try {
+      const payload = {
+        case_number: form.case_number,
+        impound_date: form.intake_date,
+        state_code: form.state_code,
+        tow_agency: form.tow_agency,
+        intake_location: form.intake_location,
+        hold_release_contact: form.hold_release_contact,
+        gate_fee: Number(form.gate_fee) || 0,
+        daily_rate: Number(form.daily_rate) || 0,
+        status: form.status,
+        auction_status: form.auction_status,
+      }
+      const response = await impoundService.createCase(payload)
+      const created = response?.data ?? response
+      if (created?.id) {
+        setCases((prev) => [created, ...prev])
+      } else {
+        await loadCases()
+      }
+      success(`Impound case ${form.case_number || 'draft'} saved`)
+      setForm(initialForm)
+    } catch (saveError) {
+      setError(saveError?.response?.data?.message || saveError?.message || 'Unable to save impound case.')
+    }
   }
 
   return (
@@ -69,6 +117,9 @@ export default function ImpoundIntake() {
           </Link>
           <Link to="/cp/storage/ledger">
             <Button variant="secondary">Fee Ledger</Button>
+          </Link>
+          <Link to="/cp/storage/auction-management">
+            <Button variant="secondary">Auction Management</Button>
           </Link>
           <Link to="/cp/storage/notices">
             <Button variant="secondary">Notice Generation</Button>
@@ -121,6 +172,18 @@ export default function ImpoundIntake() {
             placeholder="Officer Jackson"
             onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, hold_release_contact: value }))}
           />
+          <Select
+            label="Case Status"
+            modelValue={form.status}
+            options={statusOptions}
+            onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, status: value }))}
+          />
+          <Select
+            label="Auction Status"
+            modelValue={form.auction_status}
+            options={auctionStatusOptions}
+            onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, auction_status: value }))}
+          />
           <Input
             label="Gate Fee"
             type="number"
@@ -139,6 +202,8 @@ export default function ImpoundIntake() {
         </form>
       </Card>
 
+      {error ? <Alert variant="danger">{error}</Alert> : null}
+
       <Card>
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Active Impound Cases</h2>
@@ -146,7 +211,8 @@ export default function ImpoundIntake() {
         </div>
         <Table
           columns={columns}
-          data={sampleCases}
+          data={cases}
+          loading={loading}
           hoverable={false}
         />
       </Card>

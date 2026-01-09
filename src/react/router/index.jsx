@@ -49,6 +49,7 @@ import ImpoundIntake from '../views/storage/ImpoundIntake'
 import StorageFeeLedger from '../views/storage/StorageFeeLedger'
 import NoticeGeneration from '../views/storage/NoticeGeneration'
 import ReleaseChecklist from '../views/storage/ReleaseChecklist'
+import AuctionManagement from '../views/storage/AuctionManagement'
 import InventorySpotChecks from '../views/storage/InventorySpotChecks'
 import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
@@ -218,6 +219,7 @@ const protectedRoutes = [
   { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
   { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },
   { path: '/cp/storage/release-checklist', name: 'StorageReleaseChecklist', auth: 'requiresAuth', element: <ReleaseChecklist /> },
+  { path: '/cp/storage/auction-management', name: 'AuctionManagement', auth: 'requiresAuth', element: <AuctionManagement /> },
   { path: '/cp/storage/spot-checks', name: 'StorageSpotChecks', auth: 'requiresAuth', element: <InventorySpotChecks /> },
   { path: '/cp/towing/pricing', name: 'TowingPricingMatrix', auth: 'requiresAuth', element: <TowingPricingMatrix /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },

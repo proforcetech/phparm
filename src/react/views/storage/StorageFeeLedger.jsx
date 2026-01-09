@@ -180,6 +180,8 @@ export default function StorageFeeLedger() {
           <Link to="/cp/storage/impound-intake">
             <Button variant="secondary">Impound Intake</Button>
           </Link>
+          <Link to="/cp/storage/auction-management">
+            <Button variant="secondary">Auction Management</Button>
           <Link to="/cp/storage/spot-checks">
             <Button variant="secondary">Inventory Spot-Checks</Button>
           </Link>
