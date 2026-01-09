@@ -5399,6 +5399,224 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['data' => $fees]);
         });
 
+        $router->post('/api/storage/fees/automate', function (Request $request) use ($connection, $settingsRepository) {
+            $user = $request->getAttribute('user');
+            $payload = $request->body();
+            $asOfInput = $payload['as_of'] ?? null;
+            $asOf = $asOfInput ? new \DateTimeImmutable((string) $asOfInput) : new \DateTimeImmutable('now');
+            $asOf = $asOf->setTime(23, 59, 59);
+
+            $pdo = $connection->pdo();
+            $caseStmt = $pdo->prepare(
+                'SELECT id, case_number, impound_date AS intake_at, released_at, state_code, gate_fee, daily_rate, after_hours_gate
+                 FROM impound_cases
+                 WHERE impound_date <= :as_of'
+            );
+            $caseStmt->execute(['as_of' => $asOf->format('Y-m-d')]);
+            $cases = $caseStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $caseStmt->closeCursor();
+
+            if (!$cases) {
+                return Response::json(['created_fees' => 0, 'financial_entries' => 0]);
+            }
+
+            $rateStmt = $pdo->query(
+                "SELECT state_code, daily_rate, gate_fee, after_hours_multiplier, grace_period_hours, max_billable_days, effective_date
+                 FROM storage_rates
+                 WHERE status = 'active'
+                 ORDER BY state_code, effective_date DESC"
+            );
+            $rates = $rateStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $rateStmt->closeCursor();
+
+            $ratesByState = [];
+            foreach ($rates as $rate) {
+                $ratesByState[$rate['state_code']][] = $rate;
+            }
+
+            $defaultDailyRate = (float) $settingsRepository->get('storage.daily_fee', 0);
+            $defaultGateFee = (float) $settingsRepository->get('storage.gate_fee', 0);
+
+            $caseIds = array_map(static fn ($row) => (int) $row['id'], $cases);
+            $placeholders = implode(',', array_fill(0, count($caseIds), '?'));
+            $feeStmt = $pdo->prepare(
+                "SELECT id, impound_case_id, fee_date, fee_type, amount
+                 FROM storage_fees
+                 WHERE impound_case_id IN ({$placeholders})"
+            );
+            $feeStmt->execute($caseIds);
+            $existingFees = [];
+            foreach ($feeStmt->fetchAll(\PDO::FETCH_ASSOC) as $fee) {
+                $existingFees[$fee['impound_case_id']][$fee['fee_type']][$fee['fee_date']] = [
+                    'id' => (int) $fee['id'],
+                    'amount' => (float) $fee['amount'],
+                ];
+            }
+            $feeStmt->closeCursor();
+
+            $insertFeeStmt = $pdo->prepare(
+                'INSERT INTO storage_fees (impound_case_id, fee_date, fee_type, description, amount, status)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+            $createdFees = 0;
+            $createdFinancial = 0;
+
+            $resolveRate = static function (array $ratesByState, ?string $stateCode, \DateTimeImmutable $date): array {
+                if (!$stateCode || empty($ratesByState[$stateCode])) {
+                    return [];
+                }
+
+                $dateValue = $date->format('Y-m-d');
+                foreach ($ratesByState[$stateCode] as $rate) {
+                    if ($rate['effective_date'] <= $dateValue) {
+                        return $rate;
+                    }
+                }
+
+                return [];
+            };
+
+            $createFinancialEntry = function (
+                int $caseId,
+                string $caseNumber,
+                string $feeType,
+                string $feeDate,
+                float $amount
+            ) use (&$createdFinancial, $financialEntryService, $user): void {
+                if ($amount <= 0) {
+                    return;
+                }
+
+                $idempotency = sprintf('storage-fee-%d-%s-%s', $caseId, strtolower(str_replace(' ', '-', $feeType)), $feeDate);
+                $idempotency = substr($idempotency, 0, 120);
+
+                $financialEntryService->create([
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $caseNumber,
+                    'purchase_order' => $caseNumber,
+                    'amount' => $amount,
+                    'entry_date' => $feeDate,
+                    'vendor' => 'Impound Storage',
+                    'description' => sprintf('%s for %s', $feeType, $caseNumber),
+                    'idempotency_key' => $idempotency,
+                ], $user->id);
+                $createdFinancial += 1;
+            };
+
+            $pdo->beginTransaction();
+            try {
+                foreach ($cases as $case) {
+                    $caseId = (int) $case['id'];
+                    $caseNumber = (string) ($case['case_number'] ?? '');
+                    $intakeAt = new \DateTimeImmutable((string) $case['intake_at']);
+                    $releaseAt = !empty($case['released_at'])
+                        ? new \DateTimeImmutable((string) $case['released_at'])
+                        : $asOf;
+
+                    if ($releaseAt < $intakeAt) {
+                        continue;
+                    }
+
+                    $rateForIntake = $resolveRate($ratesByState, $case['state_code'] ?? null, $intakeAt);
+                    $graceHours = (int) ($rateForIntake['grace_period_hours'] ?? 0);
+                    $maxBillableDays = (int) ($rateForIntake['max_billable_days'] ?? 0);
+                    $afterHoursMultiplier = (float) ($rateForIntake['after_hours_multiplier'] ?? 1.0);
+
+                    $startAt = $graceHours > 0 ? $intakeAt->modify(sprintf('+%d hours', $graceHours)) : $intakeAt;
+                    if ($startAt > $releaseAt) {
+                        continue;
+                    }
+
+                    $seconds = max(0, $releaseAt->getTimestamp() - $startAt->getTimestamp());
+                    $billableDays = (int) ceil($seconds / 86400);
+                    if ($maxBillableDays > 0 && $billableDays > $maxBillableDays) {
+                        $billableDays = $maxBillableDays;
+                    }
+
+                    $baseGateFee = (float) ($case['gate_fee'] ?? 0);
+                    if ($baseGateFee <= 0) {
+                        $baseGateFee = (float) ($rateForIntake['gate_fee'] ?? $defaultGateFee);
+                    }
+
+                    if ($baseGateFee > 0 && empty($existingFees[$caseId]['Gate Fee'])) {
+                        $insertFeeStmt->execute([
+                            $caseId,
+                            $intakeAt->format('Y-m-d'),
+                            'Gate Fee',
+                            'Automated gate fee',
+                            $baseGateFee,
+                            'posted',
+                        ]);
+                        $createdFees += 1;
+                        $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
+                    } elseif (!empty($existingFees[$caseId]['Gate Fee'])) {
+                        foreach ($existingFees[$caseId]['Gate Fee'] as $feeDate => $fee) {
+                            $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
+                        }
+                    }
+
+                    if (!empty($case['after_hours_gate']) && $baseGateFee > 0 && $afterHoursMultiplier > 1.0) {
+                        $afterHoursFee = round($baseGateFee * ($afterHoursMultiplier - 1.0), 2);
+                        if ($afterHoursFee > 0 && empty($existingFees[$caseId]['After Hours Fee'])) {
+                            $insertFeeStmt->execute([
+                                $caseId,
+                                $intakeAt->format('Y-m-d'),
+                                'After Hours Fee',
+                                'Automated after-hours fee',
+                                $afterHoursFee,
+                                'posted',
+                            ]);
+                            $createdFees += 1;
+                            $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
+                        } elseif (!empty($existingFees[$caseId]['After Hours Fee'])) {
+                            foreach ($existingFees[$caseId]['After Hours Fee'] as $feeDate => $fee) {
+                                $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
+                            }
+                        }
+                    }
+
+                    for ($day = 0; $day < $billableDays; $day += 1) {
+                        $feeDate = $startAt->modify(sprintf('+%d days', $day))->format('Y-m-d');
+                        $existingDaily = $existingFees[$caseId]['Daily Storage'][$feeDate] ?? null;
+                        if ($existingDaily) {
+                            $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
+                            continue;
+                        }
+
+                        $rateForDay = $resolveRate($ratesByState, $case['state_code'] ?? null, new \DateTimeImmutable($feeDate));
+                        $dailyRate = (float) ($case['daily_rate'] ?? 0);
+                        if ($dailyRate <= 0) {
+                            $dailyRate = (float) ($rateForDay['daily_rate'] ?? $defaultDailyRate);
+                        }
+
+                        if ($dailyRate <= 0) {
+                            continue;
+                        }
+
+                        $insertFeeStmt->execute([
+                            $caseId,
+                            $feeDate,
+                            'Daily Storage',
+                            'Automated daily storage fee',
+                            $dailyRate,
+                            'posted',
+                        ]);
+                        $createdFees += 1;
+                        $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
+                    }
+                }
+
+                $pdo->commit();
+            } catch (\Throwable $error) {
+                $pdo->rollBack();
+                throw $error;
+            }
+
+            return Response::json(['created_fees' => $createdFees, 'financial_entries' => $createdFinancial]);
+        });
+
         $router->post('/api/storage/fees', function (Request $request) use ($connection) {
             $payload = $request->body();
             $caseNumber = trim((string) ($payload['case_number'] ?? ''));

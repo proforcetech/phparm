@@ -5,6 +5,10 @@ export default {
     const response = await api.get('/storage/fees', { params })
     return response.data
   },
+  async automateFees(payload = {}) {
+    const response = await api.post('/storage/fees/automate', payload)
+    return response.data
+  },
 
   async createFee(payload) {
     const response = await api.post('/storage/fees', payload)
