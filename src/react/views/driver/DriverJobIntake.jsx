@@ -22,6 +22,7 @@ const checkpointTypes = [
 ]
 
 const clampPoint = (value) => Math.min(1, Math.max(0, value))
+const formatReportedAt = (date) => date.toISOString().replace('T', ' ').replace('Z', '')
 
 const DamageDiagram = ({ points, onAddPoint, onClear }) => {
   const handleClick = (event) => {
@@ -75,6 +76,9 @@ export default function DriverJobIntake() {
   const [damagePoints, setDamagePoints] = useState([])
   const [damageNotes, setDamageNotes] = useState('')
   const [damageStatus, setDamageStatus] = useState('')
+  const [damageLocation, setDamageLocation] = useState(null)
+  const [damageLocationStatus, setDamageLocationStatus] = useState('')
+  const [damageLocationLoading, setDamageLocationLoading] = useState(false)
   const [checkpointFiles, setCheckpointFiles] = useState({})
   const [checkpointStatus, setCheckpointStatus] = useState(null)
   const [checkpointMessage, setCheckpointMessage] = useState('')
@@ -157,15 +161,49 @@ export default function DriverJobIntake() {
 
     try {
       setDamageStatus('Saving damage report...')
+      const reportedAt = formatReportedAt(new Date())
       await workorderService.createDamageReport(Number(workorderId), Number(jobId), {
         diagram_points: damagePoints,
         notes: damageNotes,
+        reported_at: reportedAt,
+        latitude: damageLocation?.latitude ?? null,
+        longitude: damageLocation?.longitude ?? null,
+        location_accuracy_meters: damageLocation?.accuracy ?? null,
       })
       setDamageStatus('Damage report saved.')
     } catch (error) {
       console.error('Damage report failed', error)
       setDamageStatus('Unable to save damage report.')
     }
+  }
+
+  const captureDamageLocation = () => {
+    if (!navigator.geolocation) {
+      setDamageLocationStatus('Geolocation is not supported on this device.')
+      return
+    }
+
+    setDamageLocationLoading(true)
+    setDamageLocationStatus('Capturing current location...')
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDamageLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          capturedAt: new Date().toISOString(),
+        })
+        setDamageLocationStatus('Location captured.')
+        setDamageLocationLoading(false)
+      },
+      (error) => {
+        console.error('Location capture failed', error)
+        setDamageLocationStatus('Unable to capture location.')
+        setDamageLocationLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    )
   }
 
   const uploadCheckpoint = async (type) => {
@@ -296,6 +334,37 @@ export default function DriverJobIntake() {
             onUpdateModelValue={setDamageNotes}
             rows={3}
           />
+        </div>
+
+        <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-gray-900">Capture GPS location</p>
+              <p className="text-xs text-gray-500">
+                Save the current location for audit and dispute resolution.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={captureDamageLocation} loading={damageLocationLoading}>
+              Capture location
+            </Button>
+          </div>
+          {damageLocation ? (
+            <div className="mt-3 grid gap-2 text-xs text-gray-600 md:grid-cols-2">
+              <div>
+                <span className="font-medium text-gray-800">Lat/Lng:</span>{' '}
+                {damageLocation.latitude.toFixed(6)}, {damageLocation.longitude.toFixed(6)}
+              </div>
+              <div>
+                <span className="font-medium text-gray-800">Accuracy:</span>{' '}
+                {Math.round(damageLocation.accuracy)} m
+              </div>
+              <div className="md:col-span-2">
+                <span className="font-medium text-gray-800">Captured:</span>{' '}
+                {new Date(damageLocation.capturedAt).toLocaleString()}
+              </div>
+            </div>
+          ) : null}
+          {damageLocationStatus ? <p className="mt-2 text-xs text-gray-500">{damageLocationStatus}</p> : null}
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
