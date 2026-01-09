@@ -94,7 +94,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 8. Partner & Motor Club Integration (/src/Services/Integrations)
 
-[ ] Bi-Directional Digital Dispatch: Your AgeroPartnerDispatchAdapter and AaaPartnerDispatchAdapter should support SWIFT and Digital Dispatch protocols. This allows you to "Accept" a job in your software and have it automatically update the motor club's portal.
+[x] Bi-Directional Digital Dispatch: Your AgeroPartnerDispatchAdapter and AaaPartnerDispatchAdapter should support SWIFT and Digital Dispatch protocols. This allows you to "Accept" a job in your software and have it automatically update the motor club's portal.
 [ ] Split Billing: Support for "Primary" and "Secondary" payers. (e.g., Agero pays the first $50, the customer pays the remaining $120 for over-mileage).
 [ ] Email Parser Enhancements: Ensure your PartnerEmailParser.php handles "Job Cancelled" emails to automatically remove offered jobs from your dispatch queue.
 
