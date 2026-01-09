@@ -475,7 +475,7 @@ export default function DispatchView() {
                       <div className="flex items-center gap-2">
                         <ClockIcon className="h-4 w-4 text-gray-400" />
                         <span>
-                          ETA:{' '}
+                          Traffic-aware ETA:{' '}
                           {suggestion.eta_minutes !== null
                             ? `${suggestion.eta_minutes} min`
                             : 'N/A'}
@@ -487,6 +487,7 @@ export default function DispatchView() {
                       <div className="flex items-center gap-2">
                         <MapPinIcon className="h-4 w-4 text-gray-400" />
                         <span>
+                          Raw distance:{' '}
                           {suggestion.distance_km !== null
                             ? `${formatNumber(suggestion.distance_km)} km`
                             : 'N/A'}
