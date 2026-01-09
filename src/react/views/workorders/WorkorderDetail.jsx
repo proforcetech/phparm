@@ -11,6 +11,7 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
+import ChatWidget from '../../components/chat/ChatWidget'
 import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
@@ -1115,6 +1116,14 @@ export default function WorkorderDetail() {
               </div>
             </div>
           </Card>
+
+          <div>
+            <ChatWidget
+              variant="embedded"
+              title="Dispatch Chat"
+              subtitle="Coordinate updates with dispatch"
+            />
+          </div>
 
           <Card>
             <div className="mb-4">
