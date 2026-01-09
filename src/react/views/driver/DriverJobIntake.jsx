@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
+import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import workorderService from '../../../services/workorder.service'
 import { decodeVin } from '../../../services/vehicle.service'
@@ -22,6 +23,39 @@ const checkpointTypes = [
 ]
 
 const clampPoint = (value) => Math.min(1, Math.max(0, value))
+const isMobileDevice = () =>
+  typeof navigator !== 'undefined' &&
+  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+const isAndroidDevice = () => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+const parseCoordinate = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+const buildMapLinks = (provider, lat, lng, androidDevice) => {
+  const coordinates = `${lat},${lng}`
+  switch (provider) {
+    case 'waze':
+      return {
+        deepLink: `waze://?ll=${coordinates}&navigate=yes`,
+        webLink: `https://www.waze.com/ul?ll=${coordinates}&navigate=yes`,
+      }
+    case 'apple':
+      return {
+        deepLink: `maps://?daddr=${coordinates}`,
+        webLink: `https://maps.apple.com/?daddr=${coordinates}`,
+      }
+    case 'google':
+    default: {
+      const deepLink = androidDevice
+        ? `google.navigation:q=${coordinates}`
+        : `comgooglemaps://?daddr=${coordinates}&directionsmode=driving`
+      return {
+        deepLink,
+        webLink: `https://www.google.com/maps/search/?api=1&query=${coordinates}`,
+      }
+    }
+  }
+}
 
 const DamageDiagram = ({ points, onAddPoint, onClear }) => {
   const handleClick = (event) => {
@@ -66,6 +100,10 @@ const DamageDiagram = ({ points, onAddPoint, onClear }) => {
 export default function DriverJobIntake() {
   const [workorderId, setWorkorderId] = useState('')
   const [jobId, setJobId] = useState('')
+  const [destinationLat, setDestinationLat] = useState('')
+  const [destinationLng, setDestinationLng] = useState('')
+  const [mapProvider, setMapProvider] = useState('google')
+  const [navigationStatus, setNavigationStatus] = useState('')
   const [vinFile, setVinFile] = useState(null)
   const [vinText, setVinText] = useState('')
   const [vinStatus, setVinStatus] = useState('')
@@ -202,6 +240,29 @@ export default function DriverJobIntake() {
     }
   }
 
+  const handleNavigate = () => {
+    const lat = parseCoordinate(destinationLat)
+    const lng = parseCoordinate(destinationLng)
+    if (lat == null || lng == null) {
+      setNavigationStatus('Enter valid latitude and longitude coordinates before navigating.')
+      return
+    }
+
+    const links = buildMapLinks(mapProvider, lat, lng, isAndroidDevice())
+    const useMobile = isMobileDevice()
+    const url = useMobile ? links.deepLink : links.webLink
+
+    setNavigationStatus(
+      useMobile ? 'Opening navigation app…' : 'Opening web map in a new tab for desktop browsers.'
+    )
+
+    if (useMobile) {
+      window.location.href = url
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -220,6 +281,46 @@ export default function DriverJobIntake() {
         />
         <Input label="Job ID" placeholder="Enter job ID" modelValue={jobId} onUpdateModelValue={setJobId} />
       </div>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">Navigation</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Enter destination coordinates and launch turn-by-turn directions in your preferred map app.
+        </p>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <Input
+            label="Latitude"
+            placeholder="e.g. 34.0522"
+            modelValue={destinationLat}
+            onUpdateModelValue={setDestinationLat}
+          />
+          <Input
+            label="Longitude"
+            placeholder="e.g. -118.2437"
+            modelValue={destinationLng}
+            onUpdateModelValue={setDestinationLng}
+          />
+          <Select
+            label="Map provider"
+            modelValue={mapProvider}
+            onUpdateModelValue={setMapProvider}
+            placeholder=""
+            options={[
+              { label: 'Google Maps', value: 'google' },
+              { label: 'Waze', value: 'waze' },
+              { label: 'Apple Maps', value: 'apple' },
+            ]}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button onClick={handleNavigate} disabled={!destinationLat || !destinationLng}>
+            Navigate
+          </Button>
+          {navigationStatus ? <span className="text-sm text-gray-600">{navigationStatus}</span> : null}
+        </div>
+      </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">VIN OCR & Vehicle Data</h2>

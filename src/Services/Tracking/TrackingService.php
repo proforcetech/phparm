@@ -4,6 +4,7 @@ namespace App\Services\Tracking;
 
 use App\Database\Connection;
 use App\Models\WorkorderJob;
+use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Notifications\NotificationDispatcher;
 use InvalidArgumentException;
@@ -11,18 +12,23 @@ use RuntimeException;
 
 class TrackingService
 {
+    private const ARRIVAL_RADIUS_METERS = 152.4;
+
     private Connection $connection;
     private ?NotificationDispatcher $notifications;
     private ?MessagingNotificationService $messagingNotifications;
+    private ?DispatchAuditService $dispatchAudit;
 
     public function __construct(
         Connection $connection,
         ?NotificationDispatcher $notifications = null,
-        ?MessagingNotificationService $messagingNotifications = null
+        ?MessagingNotificationService $messagingNotifications = null,
+        ?DispatchAuditService $dispatchAudit = null
     ) {
         $this->connection = $connection;
         $this->notifications = $notifications;
         $this->messagingNotifications = $messagingNotifications;
+        $this->dispatchAudit = $dispatchAudit;
     }
 
     /**
@@ -126,6 +132,8 @@ class TrackingService
             'last_position' => json_encode($normalized, JSON_THROW_ON_ERROR),
             'id' => $link['id'],
         ]);
+
+        $this->checkForArrival($job, $normalized);
 
         return $normalized;
     }
@@ -384,5 +392,149 @@ class TrackingService
             'vehicle' => $vehicleParts ? implode(' ', $vehicleParts) : null,
             'eta' => $this->formatEta($row['estimated_completion'] ?? null),
         ];
+    }
+
+    private function checkForArrival(array $job, array $position): void
+    {
+        if (($job['status'] ?? null) === WorkorderJob::STATUS_COMPLETED) {
+            return;
+        }
+
+        if (($job['status'] ?? null) === WorkorderJob::STATUS_ARRIVED) {
+            return;
+        }
+
+        $workorder = $this->fetchWorkorder((int) $job['workorder_id']);
+        $pickup = $this->fetchPickupCoordinates($workorder);
+        if ($pickup === null) {
+            return;
+        }
+
+        $distance = $this->calculateDistanceMeters(
+            (float) $position['lat'],
+            (float) $position['lng'],
+            (float) $pickup['latitude'],
+            (float) $pickup['longitude']
+        );
+
+        if ($distance > self::ARRIVAL_RADIUS_METERS) {
+            return;
+        }
+
+        if (!$this->markJobArrived((int) $job['id'])) {
+            return;
+        }
+
+        $driverProfileId = $this->resolveDriverProfileId(
+            $job['assigned_technician_id'] ?? $workorder['assigned_technician_id'] ?? null
+        );
+
+        $this->dispatchAudit?->logEvent(
+            'geofence_arrived',
+            'workorder_job',
+            (int) $job['id'],
+            [
+                'job_reference' => (string) $workorder['id'],
+                'job_id' => (int) $job['id'],
+                'workorder_id' => (int) $workorder['id'],
+                'driver_profile_id' => $driverProfileId,
+                'pickup_latitude' => $pickup['latitude'],
+                'pickup_longitude' => $pickup['longitude'],
+                'driver_latitude' => $position['lat'],
+                'driver_longitude' => $position['lng'],
+                'distance_meters' => $distance,
+                'arrival_radius_meters' => self::ARRIVAL_RADIUS_METERS,
+                'recorded_at' => $position['recorded_at'] ?? null,
+            ]
+        );
+    }
+
+    private function fetchPickupCoordinates(array $workorder): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT dr.id, dr.pickup_latitude, dr.pickup_longitude
+            FROM waterfall_dispatch_sequences wds
+            INNER JOIN dispatch_requirements dr ON dr.id = wds.dispatch_requirement_id
+            WHERE wds.job_reference = :job_reference
+              AND wds.job_type = 'workorder'
+            ORDER BY wds.created_at DESC
+            LIMIT 1
+        SQL);
+        $stmt->execute(['job_reference' => (string) $workorder['id']]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$row || $row['pickup_latitude'] === null || $row['pickup_longitude'] === null) {
+            $fallback = $this->connection->pdo()->prepare(<<<SQL
+                SELECT id, pickup_latitude, pickup_longitude
+                FROM dispatch_requirements
+                WHERE dispatch_reference = :workorder_number
+                   OR dispatch_reference = :workorder_id
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT 1
+            SQL);
+            $fallback->execute([
+                'workorder_number' => (string) ($workorder['number'] ?? ''),
+                'workorder_id' => (string) $workorder['id'],
+            ]);
+            $row = $fallback->fetch(\PDO::FETCH_ASSOC);
+        }
+
+        if (!$row || $row['pickup_latitude'] === null || $row['pickup_longitude'] === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) ($row['id'] ?? 0),
+            'latitude' => (float) $row['pickup_latitude'],
+            'longitude' => (float) $row['pickup_longitude'],
+        ];
+    }
+
+    private function markJobArrived(int $jobId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            UPDATE workorder_jobs
+            SET status = :status, updated_at = NOW()
+            WHERE id = :id
+              AND status IN (:pending_status, :in_progress_status)
+        SQL);
+        $stmt->execute([
+            'status' => WorkorderJob::STATUS_ARRIVED,
+            'id' => $jobId,
+            'pending_status' => WorkorderJob::STATUS_PENDING,
+            'in_progress_status' => WorkorderJob::STATUS_IN_PROGRESS,
+        ]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    private function resolveDriverProfileId(?int $technicianId): ?int
+    {
+        if ($technicianId === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id FROM driver_profiles WHERE user_id = :user_id LIMIT 1'
+        );
+        $stmt->execute(['user_id' => $technicianId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        return $row ? (int) $row['id'] : null;
+    }
+
+    private function calculateDistanceMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadius = 6371000;
+        $lat1Rad = deg2rad($lat1);
+        $lat2Rad = deg2rad($lat2);
+        $latDelta = deg2rad($lat2 - $lat1);
+        $lngDelta = deg2rad($lng2 - $lng1);
+
+        $a = sin($latDelta / 2) ** 2 +
+            cos($lat1Rad) * cos($lat2Rad) * sin($lngDelta / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
     }
 }
