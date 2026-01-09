@@ -24,36 +24,24 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 5. Advanced Reporting & KPIs
 
-[ ] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
 [x] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
 [x] Technician Efficiency Dashboard: A view in Reports.jsx that shows labor profit margins per technician.
-[ ] Work-in-Progress (WIP) Aging: A dashboard widget showing how long workorders have been sitting in "Parts Pending" or "Authorized" status to identify bottlenecks.
 [x] Customer Retention Tracking: Link the CustomerRepository to Workorder history to identify "Lost" customers (e.g., those who haven't had a workorder in 6+ months) for automated re-marketing campaigns.
 
 ## 2. Security and User Managment Improvements
 
-[ ] Secure Invitation Flow: Currently, user creation likely involves an administrator setting a temporary password. It is safer to implement an **email-based invitation system** using `EmailVerificationToken` logic. This ensures users set their own secure passwords and validates their email access immediately.
 [x] Mandatory 2FA for High-Privilege Roles: While a `TwoFactorSetupWizard` exists, user management should allow administrators to enforce **Two-Factor Authentication (2FA)** for specific roles, such as Admins and Dispatchers, to protect sensitive customer data.
 [x] Secure Invitation Flow: Currently, user creation likely involves an administrator setting a temporary password. It is safer to implement an **email-based invitation system** using `EmailVerificationToken` logic. This ensures users set their own secure passwords and validates their email access immediately.
-[ ] Mandatory 2FA for High-Privilege Roles: While a `TwoFactorSetupWizard` exists, user management should allow administrators to enforce **Two-Factor Authentication (2FA)** for specific roles, such as Admins and Dispatchers, to protect sensitive customer data.
 [x] Account Deactivation Logic: Ensure that the `UserRepository` supports a "Soft Delete" or "Active" flag. Users involved in roadside assistance (Technicians/Dispatchers) should be **deactivated rather than deleted** to maintain the integrity of historical audit logs and financial entries associated with their ID.
 [ ] Password Complexity & History: Implement strict validation in `UserForm.jsx` and the backend to ensure password strength and prevent the reuse of recently used passwords.
-[ ] Enhanced User List Filtering: The `UsersList.jsx` should include advanced filters for **Role**, **Status (Active/Inactive)**, and **2FA Status**. This allows administrators to quickly identify users who haven't completed security setups.
 [x] "Last Active" Tracking: Add a `last_login_at` or `last_activity_at` column to the `users` table and display it in the list view. This is critical for auditing technician availability and identifying stale accounts.
 [x] Enhanced User List Filtering: The `UsersList.jsx` should include advanced filters for **Role**, **Status (Active/Inactive)**, and **2FA Status**. This allows administrators to quickly identify users who haven't completed security setups.
-[ ] "Last Active" Tracking: Add a `last_login_at` or `last_activity_at` column to the `users` table and display it in the list view. This is critical for auditing technician availability and identifying stale accounts.
-[ ] Bulk Actions: To improve efficiency, implement multi-select checkboxes in the `UsersList` to allow for **bulk deactivation** or **bulk role updates**.
 [x] Integrated Audit Links:** Each user row in the management panel should have a direct link to their filtered **Audit Log**. This allows an admin to instantly see a specific user's change history (e.g., which jobs they assigned or edited).
 [x] Bulk Actions: To improve efficiency, implement multi-select checkboxes in the `UsersList` to allow for **bulk deactivation** or **bulk role updates**.
-[ ] Integrated Audit Links:** Each user row in the management panel should have a direct link to their filtered **Audit Log**. This allows an admin to instantly see a specific user's change history (e.g., which jobs they assigned or edited).
-[ ] User Impersonation:** For support and troubleshooting, allow top-level Administrators to "Impersonate" a technician or dispatcher. This helps verify that complex role-based permissions in `AccessGate` are functioning correctly for a specific user's context.
 [x] Session Management: Provide a view within `Profile.jsx` or the Admin panel to see **Active Sessions** (IP address, device, login time) and allow for remote logout if a technician's mobile device is lost.
 [x] User Impersonation:** For support and troubleshooting, allow top-level Administrators to "Impersonate" a technician or dispatcher. This helps verify that complex role-based permissions in `AccessGate` are functioning correctly for a specific user's context.
-[ ] Session Management: Provide a view within `Profile.jsx` or the Admin panel to see **Active Sessions** (IP address, device, login time) and allow for remote logout if a technician's mobile device is lost.
-[ ] Export to CSV: Leverage the existing `CsvExportService` to allow administrators to export the current filtered user list for external reporting or payroll auditing.
 [x] Custom Role Builder: While `RoleSeeder` provides defaults, a UI to create custom roles with specific toggles from `RolePermissions.php` would allow the system to scale as the dispatch team grows.
 [x] Export to CSV: Leverage the existing `CsvExportService` to allow administrators to export the current filtered user list for external reporting or payroll auditing.
-[ ] Custom Role Builder: While `RoleSeeder` provides defaults, a UI to create custom roles with specific toggles from `RolePermissions.php` would allow the system to scale as the dispatch team grows.
 
 
 ## 3. Performance Enhancements and Changes For CMS
@@ -99,17 +87,9 @@ The current system successfully bridges the gap between Estimates and Invoices t
 ## 7. Storage & Impound Management (/src/react/views/storage)
 
 [x] Automated Fee Ledger: The StorageFeeLedger.jsx should automatically calculate daily storage, gate fees, and after-hours release fees based on the intake_at timestamp.
-[ ] VIN-to-Vehicle Lookup: Integrate a VIN decoder (like your NhtsaVinDecoder.php) that automatically populates Year/Make/Model/Weight Class during intake to prevent data entry errors.
-[ ] Automated Fee Ledger: The StorageFeeLedger.jsx should automatically calculate daily storage, gate fees, and after-hours release fees based on the intake_at timestamp.
 [x] VIN-to-Vehicle Lookup: Integrate a VIN decoder (like your NhtsaVinDecoder.php) that automatically populates Year/Make/Model/Weight Class during intake to prevent data entry errors.
-[ ] Lien Notice Automation: A workflow that flags vehicles that have been in storage for X days and generates a state-compliant PDF Lien Notice using LienNoticePdfGenerator.php.
-[ ] VIN-to-Vehicle Lookup: Integrate a VIN decoder (like your NhtsaVinDecoder.php) that automatically populates Year/Make/Model/Weight Class during intake to prevent data entry errors.
 [x] Lien Notice Automation: A workflow that flags vehicles that have been in storage for X days and generates a state-compliant PDF Lien Notice using LienNoticePdfGenerator.php.
-[ ] Auction Management: A status workflow for "Abandoned" vehicles, tracking the move from storage to the auction lot.
-[ ] Lien Notice Automation: A workflow that flags vehicles that have been in storage for X days and generates a state-compliant PDF Lien Notice using LienNoticePdfGenerator.php.
 [x] Auction Management: A status workflow for "Abandoned" vehicles, tracking the move from storage to the auction lot.
-[ ] Inventory Spot-Checks: A mobile view for yard managers to scan license plates and confirm the physical vehicle matches the digital record.
-[ ] Auction Management: A status workflow for "Abandoned" vehicles, tracking the move from storage to the auction lot.
 [x] Inventory Spot-Checks: A mobile view for yard managers to scan license plates and confirm the physical vehicle matches the digital record.
 
 ## 8. Partner & Motor Club Integration (/src/Services/Integrations)
