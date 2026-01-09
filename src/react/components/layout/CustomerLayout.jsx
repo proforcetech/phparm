@@ -1,11 +1,28 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import Navbar from './Navbar'
 import Sidebar from './Sidebar'
+import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
+import { useAuthStore } from '../../stores/auth'
 
 export default function CustomerLayout({ children }) {
   const sidebarRef = useRef(null)
+  const { user, checkAuth } = useAuthStore()
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        await checkAuth()
+      } catch (error) {
+        console.error('Auth check failed:', error)
+      }
+    }
+
+    if (!user) {
+      loadUser()
+    }
+  }, [checkAuth, user])
 
   const toggleSidebar = () => {
     sidebarRef.current?.toggleSidebar()
@@ -41,6 +58,7 @@ export default function CustomerLayout({ children }) {
           <main className="p-4 sm:p-6 lg:p-8">{children ?? <Outlet />}</main>
         </div>
       </div>
+      {user?.two_factor_setup_pending && !user?.two_factor_enabled ? <TwoFactorSetupWizard /> : null}
     </div>
   )
 }

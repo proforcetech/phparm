@@ -24,11 +24,23 @@ return [
         'admin' => [
             'label' => 'Admin',
             'description' => 'Full control across all modules',
+            'requires_2fa' => true,
             'permissions' => ['*'],
+        ],
+        'dispatcher' => [
+            'label' => 'Dispatcher',
+            'description' => 'Coordinate dispatch operations and roadside workflows',
+            'requires_2fa' => true,
+            'permissions' => [
+                'dispatch.*',
+                'roadside.*',
+                'messages.*',
+            ],
         ],
         'manager' => [
             'label' => 'Manager',
             'description' => 'Manage shop operations, estimates, workorders, invoices, schedules, inventory',
+            'requires_2fa' => false,
             'permissions' => [
                 'users.view', 'users.create', 'users.update', 'users.delete', 'users.invite',
                 'customers.*', 'vehicles.*', 'estimates.*', 'workorders.*', 'invoices.*', 'payments.*', 'appointments.*',
@@ -42,6 +54,7 @@ return [
         'technician' => [
             'label' => 'Technician',
             'description' => 'Work estimates, workorders, inspections, jobs, and time tracking',
+            'requires_2fa' => false,
             'permissions' => [
                 'customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update',
                 'workorders.view', 'workorders.manage',
@@ -60,6 +73,7 @@ return [
         'parts' => [
             'label' => 'Parts',
             'description' => 'Manage inventory alerts and pull/order requests',
+            'requires_2fa' => false,
             'permissions' => [
                 'inventory.view',
                 'inventory.*',
@@ -68,6 +82,7 @@ return [
         'roadside' => [
             'label' => 'Roadside',
             'description' => 'Roadside assistance access (placeholder)',
+            'requires_2fa' => false,
             'permissions' => [
                 'roadside.*',
                 'dispatch.*',
@@ -76,6 +91,7 @@ return [
         'cms' => [
             'label' => 'CMS',
             'description' => 'Manage CMS content, 404 logs, and redirects',
+            'requires_2fa' => false,
             'permissions' => [
                 'cms.*',
             ],
@@ -83,6 +99,7 @@ return [
         'customer' => [
             'label' => 'Customer',
             'description' => 'Customer portal scoped to their profile and documents',
+            'requires_2fa' => false,
             'permissions' => [
                 'portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.workorders', 'portal.invoices', 'portal.warranty', 'portal.reminders',
                 'workorders.view'

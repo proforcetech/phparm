@@ -14,22 +14,34 @@ import { useToast } from '../../stores/toast.jsx'
 const roleOptions = [
   { label: 'All Roles', value: '' },
   { label: 'Admin', value: 'admin' },
+  { label: 'Dispatcher', value: 'dispatcher' },
   { label: 'Manager', value: 'manager' },
   { label: 'Technician', value: 'technician' },
+  { label: 'Parts', value: 'parts' },
+  { label: 'Roadside', value: 'roadside' },
+  { label: 'CMS', value: 'cms' },
   { label: 'Customer', value: 'customer' },
 ]
 
 const roleLabels = {
   admin: 'Admin',
+  dispatcher: 'Dispatcher',
   manager: 'Manager',
   technician: 'Technician',
+  parts: 'Parts',
+  roadside: 'Roadside',
+  cms: 'CMS',
   customer: 'Customer',
 }
 
 const roleVariants = {
   admin: 'danger',
+  dispatcher: 'info',
   manager: 'warning',
   technician: 'primary',
+  parts: 'secondary',
+  roadside: 'warning',
+  cms: 'primary',
   customer: 'secondary',
 }
 

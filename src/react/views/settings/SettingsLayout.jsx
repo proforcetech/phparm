@@ -17,6 +17,7 @@ export default function SettingsLayout() {
           { label: 'Templates', to: '/cp/settings/templates' },
           { label: 'Rejection reasons', to: '/cp/settings/rejection-reasons' },
           { label: 'Pricing', to: '/cp/settings/pricing' },
+          { label: 'Security', to: '/cp/settings/security' },
           { label: 'Notifications', to: '/cp/settings/notifications' },
           { label: 'Payments', to: '/cp/settings/payments' },
           { label: 'Integrations', to: '/cp/settings/integrations' },

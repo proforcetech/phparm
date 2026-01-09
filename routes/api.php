@@ -113,6 +113,36 @@ return function (Router $router, array $config, $connection) {
         return Response::json($result->toPayload($message, $error), $status);
     };
 
+    $resolveMandatoryTwoFactorRoles = function () use ($settingsRepository, $authConfig): array {
+        $defaultRoles = [];
+        foreach ($authConfig['roles'] ?? [] as $roleKey => $roleConfig) {
+            if (($roleConfig['requires_2fa'] ?? false) === true) {
+                $defaultRoles[] = $roleKey;
+            }
+        }
+
+        $configuredRoles = $settingsRepository->get('security.mandatory_2fa_roles', $defaultRoles);
+        if (!is_array($configuredRoles)) {
+            return $defaultRoles;
+        }
+
+        return $configuredRoles;
+    };
+
+    $enforceMandatoryTwoFactorSetup = function (\App\Models\User $user) use ($resolveMandatoryTwoFactorRoles, $connection): \App\Models\User {
+        $requiredRoles = $resolveMandatoryTwoFactorRoles();
+        if (!in_array($user->role, $requiredRoles, true) || $user->two_factor_enabled) {
+            return $user;
+        }
+
+        if ($user->two_factor_setup_pending) {
+            return $user;
+        }
+
+        $userRepo = new \App\Services\User\UserRepository($connection);
+        return $userRepo->requireTwoFactorSetup($user->id);
+    };
+
     // Apply global rate limiting (60 requests per minute per IP+path)
     $router->middleware(Middleware::throttleWithOverrides(60, 60, [
         '/api/time-tracking*' => ['max' => 240, 'decay' => 60],
@@ -533,6 +563,8 @@ return function (Router $router, array $config, $connection) {
             session_start();
         }
 
+        $user = $enforceMandatoryTwoFactorSetup($user);
+
         if ($user->two_factor_enabled && $user->two_factor_secret) {
             $challengeToken = bin2hex(random_bytes(32));
             $_SESSION['2fa_challenges'][$challengeToken] = [
@@ -626,6 +658,8 @@ return function (Router $router, array $config, $connection) {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
+
+        $user = $enforceMandatoryTwoFactorSetup($user);
 
         if ($user->two_factor_enabled && $user->two_factor_secret) {
             $challengeToken = bin2hex(random_bytes(32));

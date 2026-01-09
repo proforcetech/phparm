@@ -12,8 +12,12 @@ import { useToast } from '../../stores/toast.jsx'
 
 const roleOptions = [
   { label: 'Admin', value: 'admin' },
+  { label: 'Dispatcher', value: 'dispatcher' },
   { label: 'Manager', value: 'manager' },
   { label: 'Technician', value: 'technician' },
+  { label: 'Parts', value: 'parts' },
+  { label: 'Roadside', value: 'roadside' },
+  { label: 'CMS', value: 'cms' },
   { label: 'Customer', value: 'customer' },
 ]
 
@@ -30,6 +34,11 @@ const roleInfo = {
     description: 'Full control across all modules',
     permissions: ['*'],
   },
+  dispatcher: {
+    label: 'Dispatcher',
+    description: 'Coordinate dispatch operations and roadside workflows',
+    permissions: ['dispatch.*', 'roadside.*', 'messages.*'],
+  },
   manager: {
     label: 'Manager',
     description: 'Manage shop operations, estimates, invoices, schedules, inventory',
@@ -39,6 +48,21 @@ const roleInfo = {
     label: 'Technician',
     description: 'Work estimates, inspections, jobs, and time tracking',
     permissions: ['customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view'],
+  },
+  parts: {
+    label: 'Parts',
+    description: 'Manage inventory alerts and ordering',
+    permissions: ['inventory.*'],
+  },
+  roadside: {
+    label: 'Roadside',
+    description: 'Roadside assistance and dispatch operations',
+    permissions: ['roadside.*', 'dispatch.*'],
+  },
+  cms: {
+    label: 'CMS',
+    description: 'Manage CMS content and redirects',
+    permissions: ['cms.*'],
   },
   customer: {
     label: 'Customer',

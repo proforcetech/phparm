@@ -60,6 +60,7 @@ import SettingsTerms from '../views/settings/SettingsTerms'
 import SettingsTemplates from '../views/settings/SettingsTemplates'
 import SettingsRejectionReasons from '../views/settings/SettingsRejectionReasons'
 import SettingsPricing from '../views/settings/SettingsPricing'
+import SettingsSecurity from '../views/settings/SettingsSecurity'
 import SettingsNotifications from '../views/settings/SettingsNotifications'
 import SettingsPayments from '../views/settings/SettingsPayments'
 import SettingsIntegrations from '../views/settings/SettingsIntegrations'
@@ -259,6 +260,7 @@ const settingsRoutes = [
   { path: '/cp/settings/templates', name: 'SettingsTemplates', element: <SettingsTemplates /> },
   { path: '/cp/settings/rejection-reasons', name: 'SettingsRejectionReasons', element: <SettingsRejectionReasons /> },
   { path: '/cp/settings/pricing', name: 'SettingsPricing', element: <SettingsPricing /> },
+  { path: '/cp/settings/security', name: 'SettingsSecurity', element: <SettingsSecurity /> },
   { path: '/cp/settings/notifications', name: 'SettingsNotifications', element: <SettingsNotifications /> },
   { path: '/cp/settings/payments', name: 'SettingsPayments', element: <SettingsPayments /> },
   { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: <SettingsIntegrations /> },
@@ -299,6 +301,7 @@ adminChildren.push({
     { path: 'templates', element: <SettingsTemplates /> },
     { path: 'rejection-reasons', element: <SettingsRejectionReasons /> },
     { path: 'pricing', element: <SettingsPricing /> },
+    { path: 'security', element: <SettingsSecurity /> },
     { path: 'notifications', element: <SettingsNotifications /> },
     { path: 'payments', element: <SettingsPayments /> },
     { path: 'integrations', element: <SettingsIntegrations /> },

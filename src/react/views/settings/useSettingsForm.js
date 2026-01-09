@@ -32,7 +32,12 @@ const initialFormState = {
     paypalClientSecret: '',
     paypalWebhook: '',
   },
-  security: { recaptchaEnabled: false, recaptchaSiteKey: '', recaptchaSecretKey: '' },
+  security: {
+    recaptchaEnabled: false,
+    recaptchaSiteKey: '',
+    recaptchaSecretKey: '',
+    mandatoryTwoFactorRoles: [],
+  },
   integrations: {
     zohoClientId: '',
     zohoClientSecret: '',
@@ -80,6 +85,8 @@ export default function useSettingsForm() {
         const rejectionReasons = formatRejectionReasons(
           getSetting(settings, 'estimates.rejection_reasons', [])
         )
+
+        const mandatoryTwoFactorRoles = getSetting(settings, 'security.mandatory_2fa_roles', [])
 
         return {
           ...prev,
@@ -137,6 +144,9 @@ export default function useSettingsForm() {
             recaptchaEnabled: !!getSetting(settings, 'integrations.recaptcha.enabled', false),
             recaptchaSiteKey: getSetting(settings, 'integrations.recaptcha.site_key', ''),
             recaptchaSecretKey: getSetting(settings, 'integrations.recaptcha.secret_key', ''),
+            mandatoryTwoFactorRoles: Array.isArray(mandatoryTwoFactorRoles)
+              ? mandatoryTwoFactorRoles
+              : [],
           },
           integrations: {
             zohoClientId: getSetting(settings, 'integrations.zoho.client_id', ''),
@@ -223,6 +233,7 @@ export default function useSettingsForm() {
       'integrations.recaptcha.enabled': !!form.security.recaptchaEnabled,
       'integrations.recaptcha.site_key': form.security.recaptchaSiteKey,
       'integrations.recaptcha.secret_key': form.security.recaptchaSecretKey,
+      'security.mandatory_2fa_roles': form.security.mandatoryTwoFactorRoles,
       'integrations.zoho.client_id': form.integrations.zohoClientId,
       'integrations.zoho.client_secret': form.integrations.zohoClientSecret,
       'integrations.zoho.refresh_token': form.integrations.zohoRefreshToken,

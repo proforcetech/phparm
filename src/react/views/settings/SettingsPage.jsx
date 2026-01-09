@@ -72,6 +72,11 @@ const settingsLinks = [
     to: '/cp/settings/pricing',
   },
   {
+    title: 'Security',
+    description: 'Require two-factor authentication for high-privilege roles.',
+    to: '/cp/settings/security',
+  },
+  {
     title: 'Notifications',
     description: 'Configure outbound email and SMS settings.',
     to: '/cp/settings/notifications',
