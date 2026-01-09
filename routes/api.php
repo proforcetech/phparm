@@ -3846,6 +3846,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'role' => $request->queryParam('role'),
                 'query' => $request->queryParam('query'),
+                'status' => $request->queryParam('status'),
+                'two_factor' => $request->queryParam('two_factor'),
             ];
             $data = $userController->listUsers($user, $filters);
             return Response::json($data);

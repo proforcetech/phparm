@@ -77,8 +77,17 @@ class UserRepository
      */
     public function list(array $filters = []): array
     {
-        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE active = 1';
+        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE 1 = 1';
         $bindings = [];
+
+        $status = $filters['status'] ?? '';
+        if ($status === 'inactive') {
+            $query .= ' AND active = :active';
+            $bindings['active'] = 0;
+        } elseif ($status !== 'all') {
+            $query .= ' AND active = :active';
+            $bindings['active'] = 1;
+        }
 
         if (!empty($filters['role'])) {
             $query .= ' AND role = :role';
@@ -89,6 +98,17 @@ class UserRepository
             $query .= ' AND (id = :exact_id OR name LIKE :query OR email LIKE :query)';
             $bindings['exact_id'] = is_numeric($filters['query']) ? (int) $filters['query'] : 0;
             $bindings['query'] = '%' . $filters['query'] . '%';
+        }
+
+        if (!empty($filters['two_factor'])) {
+            $twoFactorMap = [
+                'enabled' => 1,
+                'disabled' => 0,
+            ];
+            if (array_key_exists($filters['two_factor'], $twoFactorMap)) {
+                $query .= ' AND two_factor_enabled = :two_factor_enabled';
+                $bindings['two_factor_enabled'] = $twoFactorMap[$filters['two_factor']];
+            }
         }
 
         $query .= ' ORDER BY created_at DESC';
