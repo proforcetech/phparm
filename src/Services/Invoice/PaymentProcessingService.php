@@ -43,10 +43,12 @@ class PaymentProcessingService
         try {
             $gateway = $this->gatewayFactory->create($provider);
 
+            $amount = $this->resolveInvoiceAmount($invoice, $options);
+
             // Prepare invoice data for gateway
             $invoiceData = [
                 'id' => $invoiceId,
-                'amount' => (float) $invoice['total'],
+                'amount' => $amount,
                 'description' => 'Invoice #' . $invoiceId,
                 'notes' => $invoice['notes'] ?? null,
                 'customer_id' => $invoice['customer_id'] ?? null,
@@ -258,7 +260,7 @@ class PaymentProcessingService
         ]);
 
         // Update invoice status based on payment
-        $this->syncInvoiceStatus($invoiceId, $status, $amount);
+        $this->syncInvoiceStatus($invoiceId, $status, $amount, $provider, $paymentData);
     }
 
     /**
@@ -321,19 +323,54 @@ class PaymentProcessingService
         return $row ?: null;
     }
 
-    private function syncInvoiceStatus(int $invoiceId, string $status, float $amount): void
+    /**
+     * @param array<string, mixed> $paymentData
+     */
+    private function syncInvoiceStatus(
+        int $invoiceId,
+        string $status,
+        float $amount,
+        string $provider,
+        array $paymentData
+    ): void
     {
         $pdo = $this->connection->pdo();
+        if ($status !== 'succeeded') {
+            $pdo->prepare('UPDATE invoices SET status = :status WHERE id = :id')->execute([
+                'status' => 'pending',
+                'id' => $invoiceId,
+            ]);
+            $this->log('invoice.balance_synced', $invoiceId, ['status' => $status, 'amount' => $amount]);
+            return;
+        }
+
+        if ($amount > 0) {
+            $pdo->prepare(
+                'UPDATE invoices SET amount_paid = COALESCE(amount_paid, 0) + :amount, '
+                . 'balance_due = GREATEST(total - (COALESCE(amount_paid, 0) + :amount), 0) '
+                . 'WHERE id = :id'
+            )->execute([
+                'amount' => $amount,
+                'id' => $invoiceId,
+            ]);
+        }
+
+        $balanceStmt = $pdo->prepare('SELECT balance_due FROM invoices WHERE id = :id');
+        $balanceStmt->execute(['id' => $invoiceId]);
+        $balance = (float) ($balanceStmt->fetch(PDO::FETCH_ASSOC)['balance_due'] ?? 0.0);
+
+        $newStatus = $balance <= 0.0 ? 'paid' : 'partial';
         $pdo->prepare('UPDATE invoices SET status = :status WHERE id = :id')->execute([
-            'status' => $status === 'succeeded' ? 'paid' : 'pending',
+            'status' => $newStatus,
             'id' => $invoiceId,
         ]);
 
-        if ($status === 'succeeded') {
+        if ($newStatus === 'paid') {
             $pdo->prepare('UPDATE invoices SET paid_at = CURRENT_TIMESTAMP WHERE id = :id')->execute(['id' => $invoiceId]);
         }
 
-        $this->log('invoice.balance_synced', $invoiceId, ['status' => $status, 'amount' => $amount]);
+        $this->recordLedgerEntry($invoiceId, $provider, $paymentData, $amount);
+        $this->log('invoice.balance_synced', $invoiceId, ['status' => $newStatus, 'amount' => $amount]);
     }
 
     private function fetchInvoice(int $invoiceId): ?array
@@ -343,6 +380,84 @@ class PaymentProcessingService
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row ?: null;
+    }
+
+    /**
+     * @param array<string, mixed> $invoice
+     * @param array<string, mixed> $options
+     */
+    private function resolveInvoiceAmount(array $invoice, array $options): float
+    {
+        if (isset($options['amount']) && is_numeric($options['amount'])) {
+            return (float) $options['amount'];
+        }
+
+        $balanceDue = isset($invoice['balance_due']) ? (float) $invoice['balance_due'] : 0.0;
+        if ($balanceDue > 0) {
+            return $balanceDue;
+        }
+
+        return (float) ($invoice['total'] ?? 0.0);
+    }
+
+    /**
+     * @param array<string, mixed> $paymentData
+     */
+    private function recordLedgerEntry(int $invoiceId, string $provider, array $paymentData, float $amount): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+
+        $transactionId = $paymentData['transaction_id'] ?? null;
+        if ($transactionId === null || $transactionId === '') {
+            return;
+        }
+
+        $invoice = $this->fetchInvoice($invoiceId);
+        if ($invoice === null) {
+            return;
+        }
+
+        $customerName = $this->getCustomerName((int) ($invoice['customer_id'] ?? 0));
+        $receiptUrl = $paymentData['receipt_url'] ?? null;
+
+        $description = sprintf(
+            'Payment received via %s. Transaction %s.',
+            strtoupper($provider),
+            $transactionId
+        );
+
+        if ($receiptUrl) {
+            $description .= ' Receipt: ' . $receiptUrl;
+        }
+
+        $entryService = new \App\Services\Financial\FinancialEntryService($this->connection, $this->audit);
+        $entryService->create([
+            'type' => 'income',
+            'category' => 'Invoice Payment',
+            'reference' => 'invoice-' . $invoiceId,
+            'purchase_order' => 'invoice',
+            'amount' => $amount,
+            'entry_date' => date('Y-m-d'),
+            'vendor' => $customerName ?: 'Customer',
+            'description' => $description,
+            'attachment_path' => $receiptUrl ?: null,
+            'idempotency_key' => 'invoice-payment-' . $invoiceId . '-' . $transactionId,
+        ], 0);
+    }
+
+    private function getCustomerName(int $customerId): ?string
+    {
+        if ($customerId === 0) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT CONCAT(first_name, " ", last_name) AS name FROM customers WHERE id = :id');
+        $stmt->execute(['id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? trim((string) ($row['name'] ?? '')) : null;
     }
 
     private function log(string $action, int $entityId, array $payload = []): void

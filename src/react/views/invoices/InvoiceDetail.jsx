@@ -152,9 +152,14 @@ export default function InvoiceDetail() {
 
   const lineItems = invoice.items || invoice.line_items || []
   const payments = invoice.payments || []
+  const payerAllocations = invoice.payer_allocations || []
   const customer = invoice.customer || null
   const vehicle = invoice.vehicle || null
   const serviceType = invoice.service_type || null
+  const payerRoleLabels = {
+    primary: 'Primary payer',
+    secondary: 'Secondary payer',
+  }
 
   return (
     <div className="space-y-6">
@@ -362,6 +367,21 @@ export default function InvoiceDetail() {
               <dt className="text-base font-medium text-gray-900">Total</dt>
               <dd className="text-base font-medium text-gray-900">{formatCurrency(invoice.total)}</dd>
             </div>
+            {payerAllocations.length > 0 ? (
+              <div className="pt-3 border-t space-y-2">
+                <dt className="text-sm font-medium text-gray-900">Split Billing</dt>
+                {payerAllocations.map((allocation) => {
+                  const label = payerRoleLabels[allocation.payer_role] || allocation.payer_role
+                  const nameSuffix = allocation.payer_name ? ` (${allocation.payer_name})` : ''
+                  return (
+                    <div key={allocation.id || allocation.payer_role} className="flex justify-between text-sm text-gray-600">
+                      <span>{`${label}${nameSuffix}`}</span>
+                      <span>{formatCurrency(allocation.allocated_amount)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
             {invoice.amount_paid ? (
               <>
                 <div className="flex justify-between">

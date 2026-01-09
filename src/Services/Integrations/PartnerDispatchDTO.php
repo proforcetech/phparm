@@ -5,6 +5,7 @@ namespace App\Services\Integrations;
 class PartnerDispatchDTO
 {
     public string $partner;
+    public ?string $protocol;
     public ?string $externalReference;
     public ?string $customerName;
     public ?string $customerPhone;
@@ -26,6 +27,7 @@ class PartnerDispatchDTO
      */
     public function __construct(
         string $partner,
+        ?string $protocol,
         ?string $externalReference,
         ?string $customerName,
         ?string $customerPhone,
@@ -40,6 +42,7 @@ class PartnerDispatchDTO
         array $metadata = []
     ) {
         $this->partner = $partner;
+        $this->protocol = $protocol;
         $this->externalReference = $externalReference;
         $this->customerName = $customerName;
         $this->customerPhone = $customerPhone;
@@ -61,6 +64,7 @@ class PartnerDispatchDTO
     {
         return [
             'partner' => $this->partner,
+            'protocol' => $this->protocol,
             'external_reference' => $this->externalReference,
             'customer' => [
                 'name' => $this->customerName,

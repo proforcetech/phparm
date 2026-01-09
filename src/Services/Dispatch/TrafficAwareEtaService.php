@@ -106,9 +106,10 @@ class TrafficAwareEtaService
      */
     public function getDriverCurrentLocation(int $driverProfileId): ?array
     {
+        $partitionClause = $this->getDriverLocationPartitionClause();
         $stmt = $this->connection->pdo()->prepare(
             'SELECT latitude, longitude, accuracy, speed, heading, recorded_at
-             FROM driver_locations
+             FROM driver_locations ' . $partitionClause . '
              WHERE driver_profile_id = :driver_id
              ORDER BY recorded_at DESC
              LIMIT 1'
@@ -168,6 +169,7 @@ class TrafficAwareEtaService
      */
     public function recordDriverLocation(int $driverProfileId, array $locationData): int
     {
+        $recordedAt = $locationData['recorded_at'] ?? (new DateTimeImmutable())->format('Y-m-d H:i:s');
         $insert = $this->connection->pdo()->prepare(
             'INSERT INTO driver_locations
                 (driver_profile_id, latitude, longitude, accuracy, altitude, speed, heading, recorded_at, source)
@@ -183,11 +185,86 @@ class TrafficAwareEtaService
             'altitude' => $locationData['altitude'] ?? null,
             'speed' => $locationData['speed'] ?? null,
             'heading' => $locationData['heading'] ?? null,
-            'recorded_at' => $locationData['recorded_at'] ?? (new DateTimeImmutable())->format('Y-m-d H:i:s'),
+            'recorded_at' => $recordedAt,
             'source' => $locationData['source'] ?? 'gps',
         ]);
 
-        return (int) $this->connection->pdo()->lastInsertId();
+        $locationId = (int) $this->connection->pdo()->lastInsertId();
+
+        $this->publishDriverLocationUpdate([
+            'id' => $locationId,
+            'driver_profile_id' => $driverProfileId,
+            'latitude' => (float) $locationData['latitude'],
+            'longitude' => (float) $locationData['longitude'],
+            'accuracy' => $locationData['accuracy'] ?? null,
+            'altitude' => $locationData['altitude'] ?? null,
+            'speed' => $locationData['speed'] ?? null,
+            'heading' => $locationData['heading'] ?? null,
+            'recorded_at' => $recordedAt,
+            'source' => $locationData['source'] ?? 'gps',
+        ]);
+
+        return $locationId;
+    }
+
+    private function publishDriverLocationUpdate(array $payload): void
+    {
+        $appId = env('PUSHER_APP_ID');
+        $key = env('PUSHER_KEY');
+        $secret = env('PUSHER_SECRET');
+
+        if (!$appId || !$key || !$secret) {
+            return;
+        }
+
+        $channel = env('PUSHER_DRIVER_LOCATION_CHANNEL', 'driver-location-updates');
+        $cluster = env('PUSHER_CLUSTER');
+        $scheme = env('PUSHER_SCHEME', 'https');
+        $host = env('PUSHER_HOST', $cluster ? "api-{$cluster}.pusher.com" : null);
+
+        if (!$host) {
+            return;
+        }
+
+        $port = (int) env('PUSHER_PORT', $scheme === 'https' ? 443 : 80);
+
+        $eventBody = [
+            'name' => 'driver_location_updated',
+            'channels' => [$channel],
+            'data' => json_encode($payload, JSON_UNESCAPED_SLASHES),
+        ];
+        $body = json_encode($eventBody, JSON_UNESCAPED_SLASHES);
+        if ($body === false) {
+            return;
+        }
+
+        $params = [
+            'auth_key' => $key,
+            'auth_timestamp' => time(),
+            'auth_version' => '1.0',
+            'body_md5' => md5($body),
+        ];
+        ksort($params);
+        $query = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+        $path = "/apps/{$appId}/events";
+        $signature = hash_hmac('sha256', "POST\n{$path}\n{$query}", $secret);
+        $url = "{$scheme}://{$host}:{$port}{$path}?{$query}&auth_signature={$signature}";
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 2,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $body,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($response === false || $httpCode >= 400) {
+            error_log(sprintf('Driver location broadcast failed (%s).', $httpCode));
+        }
     }
 
     private function fetchFromMappingApi(float $fromLat, float $fromLng, float $toLat, float $toLng): ?array
@@ -389,6 +466,11 @@ class TrafficAwareEtaService
         array $etaData
     ): void {
         // Could store for analytics/ML training later
+    }
+
+    private function getDriverLocationPartitionClause(): string
+    {
+        return DriverLocationPartitionResolver::recentPartitions(new DateTimeImmutable('now'), 1, 0);
     }
 
     private function httpGet(string $url): ?string
