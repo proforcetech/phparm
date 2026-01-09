@@ -430,7 +430,16 @@ class WorkorderController
             throw new InvalidArgumentException('diagram_points is required');
         }
 
-        $report = $this->evidence->createDamageReport($jobId, $points, $payload['notes'] ?? null, $user->id);
+        $report = $this->evidence->createDamageReport(
+            $jobId,
+            $points,
+            $payload['notes'] ?? null,
+            $user->id,
+            isset($payload['reported_at']) ? (string) $payload['reported_at'] : null,
+            isset($payload['latitude']) ? (float) $payload['latitude'] : null,
+            isset($payload['longitude']) ? (float) $payload['longitude'] : null,
+            isset($payload['location_accuracy_meters']) ? (float) $payload['location_accuracy_meters'] : null
+        );
 
         return $report->toArray();
     }

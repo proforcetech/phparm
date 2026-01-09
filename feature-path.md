@@ -70,10 +70,8 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 4. Dispatch & Recommendation Engine (/src/Services/Dispatch)
 
-[ ] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
 [x] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
 [x] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
-[ ] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
 [x] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
 [ ] Predictive ETA (Traffic-Aware): Integrate the Google Distance Matrix API into DispatchRecommendationService. Standard straight-line distance is often inaccurate in urban towing scenarios.
 [ ] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
@@ -82,14 +80,12 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 [ ] Compulsory Photo Evidence: To compete with Towbook, the DriverJobIntake.jsx must require "Pre-Tow" photos (4 corners of the vehicle + VIN/Odometer) before the "Hooked" status can be selected. This is the #1 defense against damage claims.
 
-[ ] Digital Damage Appraisal: A simple UI where drivers tap a car diagram to mark existing dents/scratches.
+[x] Digital Damage Appraisal: A simple UI where drivers tap a car diagram to mark existing dents/scratches.
 [x] Offline Idempotency: Since drivers lose signal frequently, the offlineQueue.js utility must be the primary driver for all status updates, ensuring signatures and photos sync once signal is restored without duplicating ledger entries.
 
 ## 6. Additional features for Towing/Roadside
 
 [x] In-App Chat with Dispatch: Move away from phone calls. The ChatWidget.jsx should be integrated directly into the job view so dispatchers can send gate codes or updated drop-off instructions silently.
-[ ] Turn-by-Turn Deep Linking: A "Navigate" button that passes coordinates directly to Waze, Google Maps, or Apple Maps.
-[ ] In-App Chat with Dispatch: Move away from phone calls. The ChatWidget.jsx should be integrated directly into the job view so dispatchers can send gate codes or updated drop-off instructions silently.
 [x] Turn-by-Turn Deep Linking: A "Navigate" button that passes coordinates directly to Waze, Google Maps, or Apple Maps.
 
 ## 7. Storage & Impound Management (/src/react/views/storage)
