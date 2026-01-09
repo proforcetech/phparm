@@ -42,6 +42,7 @@ return function (Router $router, array $config, $connection) {
         ),
         $authConfig
     );
+    $sessionManager = new \App\Support\Auth\UserSessionManager($connection);
 
     // Initialize JWT service for token generation
     $jwtConfig = $authConfig['jwt'] ?? [];
@@ -507,7 +508,8 @@ return function (Router $router, array $config, $connection) {
         $recaptchaVerifier,
         $totpService,
         $loginLimiter,
-        $rateLimitResponse
+        $rateLimitResponse,
+        $sessionManager
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -583,6 +585,13 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
 
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
+
         // Generate JWT tokens
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -603,7 +612,8 @@ return function (Router $router, array $config, $connection) {
         $recaptchaVerifier,
         $totpService,
         $loginLimiter,
-        $rateLimitResponse
+        $rateLimitResponse,
+        $sessionManager
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -680,6 +690,13 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
 
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
+
         // Generate JWT tokens
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -696,7 +713,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
+    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -728,6 +745,13 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
 
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
+
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
 
@@ -741,7 +765,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
+    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -773,6 +797,13 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
 
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -806,14 +837,72 @@ return function (Router $router, array $config, $connection) {
         return Response::json($result);
     })->middleware(Middleware::throttleStrict(10, 60));
 
-    $router->post('/api/auth/logout', function (Request $request) {
+    $router->post('/api/auth/logout', function (Request $request) use ($sessionManager) {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
+        }
+
+        if (isset($_SESSION['user_id'])) {
+            $sessionManager->revokeSessionBySessionId(
+                (int) $_SESSION['user_id'],
+                session_id(),
+                (int) $_SESSION['user_id']
+            );
         }
         session_destroy();
 
         return Response::json(['message' => 'Logged out successfully']);
     });
+
+    $router->get('/api/auth/sessions', function (Request $request) use ($sessionManager) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $currentSessionId = session_id();
+        $sessions = $sessionManager->listSessions($user->id);
+
+        $sessions = array_map(function (array $session) use ($currentSessionId) {
+            $session['is_current'] = ($session['session_id'] ?? '') === $currentSessionId;
+            return $session;
+        }, $sessions);
+
+        return Response::json(['sessions' => $sessions]);
+    })->middleware(Middleware::auth());
+
+    $router->delete('/api/auth/sessions/{sessionId:[0-9]+}', function (Request $request) use ($sessionManager) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        $sessionId = $request->getAttribute('sessionId');
+        if ($sessionId === null) {
+            return Response::badRequest('Session ID required');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $revoked = $sessionManager->revokeSessionById($user->id, (int) $sessionId, $user->id);
+        if ($revoked === null) {
+            return Response::notFound('Session not found');
+        }
+
+        if (($revoked['session_id'] ?? '') === session_id()) {
+            session_destroy();
+        }
+
+        return Response::json(['message' => 'Session revoked']);
+    })->middleware(Middleware::auth());
 
     $router->get('/api/auth/me', function (Request $request) {
         $user = $request->getAttribute('user');

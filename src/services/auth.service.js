@@ -113,4 +113,20 @@ export const authService = {
     const response = await api.get('/modules/accessible')
     return response.data
   },
+
+  /**
+   * List active sessions for current user
+   */
+  async listSessions() {
+    const response = await api.get('/auth/sessions')
+    return response.data
+  },
+
+  /**
+   * Revoke a session by ID
+   */
+  async revokeSession(sessionId) {
+    const response = await api.delete(`/auth/sessions/${sessionId}`)
+    return response.data
+  },
 }

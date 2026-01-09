@@ -9,12 +9,14 @@ use App\Support\Auth\JwtService;
 use App\Support\Auth\ModuleAccessService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Auth\UnauthorizedException;
+use App\Support\Auth\UserSessionManager;
 
 class Middleware
 {
     private static ?RateLimiter $rateLimiter = null;
     private static ?JwtService $jwtService = null;
     private static ?ModuleAccessService $moduleService = null;
+    private static ?UserSessionManager $sessionManager = null;
 
     /**
      * Get or create the default rate limiter instance.
@@ -100,6 +102,21 @@ class Middleware
     }
 
     /**
+     * Get or create the user session manager instance.
+     */
+    private static function getSessionManager(): UserSessionManager
+    {
+        if (self::$sessionManager === null) {
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            self::$sessionManager = new UserSessionManager($connection);
+        }
+        return self::$sessionManager;
+    }
+
+    /**
      * Require access to a specific module.
      *
      * This middleware checks:
@@ -161,6 +178,16 @@ class Middleware
 
             // Try session-based auth
             if (isset($_SESSION['user_id'])) {
+                $sessionManager = self::getSessionManager();
+                $sessionId = session_id();
+                $ipAddress = $request->getClientIp();
+                $userAgent = $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT');
+
+                if (!$sessionManager->ensureSessionActive((int) $_SESSION['user_id'], $sessionId, $ipAddress, $userAgent)) {
+                    session_destroy();
+                    throw new UnauthorizedException('Session has been revoked');
+                }
+
                 // In a real implementation, fetch user from database
                 $user = $_SESSION['user'] ?? null;
             }
