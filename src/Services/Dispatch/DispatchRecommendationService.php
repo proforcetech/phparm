@@ -10,6 +10,11 @@ use PDO;
 class DispatchRecommendationService
 {
     private const DISTANCE_WEIGHT = 0.30;
+    private const EQUIPMENT_WEIGHT = 0.23;
+    private const SHIFT_WEIGHT = 0.14;
+    private const ETA_WEIGHT = 0.13;
+    private const PERFORMANCE_WEIGHT = 0.10;
+    private const DEADHEAD_WEIGHT = 0.10;
     private const EQUIPMENT_WEIGHT = 0.25;
     private const SHIFT_WEIGHT = 0.10;
     private const ETA_WEIGHT = 0.15;
@@ -65,6 +70,7 @@ class DispatchRecommendationService
         $certificationsByDriver = $this->fetchVerifiedCertifications();
         $workloadByDriver = $this->fetchDriverWorkloads($referenceTime);
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
+        $activeDropoffsByDriver = $this->fetchActiveJobDropoffs();
         $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
 
         $suggestions = [];
@@ -148,6 +154,16 @@ class DispatchRecommendationService
             $performance = $performanceByDriver[$driverId] ?? null;
             $performanceScore = $this->scorePerformance($performance);
 
+            $activeDropoff = $activeDropoffsByDriver[$driverId] ?? null;
+            $deadheadDistanceKm = $activeDropoff
+                ? $this->calculateDistanceKm(
+                    $activeDropoff['dropoff_latitude'],
+                    $activeDropoff['dropoff_longitude'],
+                    $requirement['pickup_latitude'] ?? null,
+                    $requirement['pickup_longitude'] ?? null
+                )
+                : null;
+            $deadheadScore = $this->scoreDeadheadDistance($deadheadDistanceKm);
             // Get workload metrics
             $workload = $workloadByDriver[$driverId] ?? null;
             $workloadScore = $this->scoreWorkload($workload);
@@ -171,6 +187,7 @@ class DispatchRecommendationService
                 $shiftScore,
                 $etaScore,
                 $performanceScore,
+                $deadheadScore
                 $workloadScore
             );
 
@@ -182,6 +199,7 @@ class DispatchRecommendationService
                 $remainingHours,
                 $performance,
                 $headingScore,
+                $deadheadDistanceKm
                 $workload
             );
 
@@ -197,6 +215,8 @@ class DispatchRecommendationService
                 'equipment' => $equipmentResult['equipment'],
                 'equipment_compatible' => $equipmentResult['is_compatible'],
                 'remaining_shift_hours' => $remainingHours,
+                'deadhead_distance_km' => $deadheadDistanceKm,
+                'active_job_dropoff' => $activeDropoff,
                 'current_location' => $driverLocation['is_realtime'] ? [
                     'latitude' => $driverLocation['latitude'],
                     'longitude' => $driverLocation['longitude'],
@@ -221,6 +241,7 @@ class DispatchRecommendationService
                     'shift' => $shiftScore,
                     'eta' => $etaScore,
                     'performance' => $performanceScore,
+                    'deadhead' => $deadheadScore,
                     'workload' => $workloadScore,
                     'heading' => $headingScore,
                     'overall' => $overall,
@@ -248,6 +269,7 @@ class DispatchRecommendationService
                 'shift' => self::SHIFT_WEIGHT,
                 'eta' => self::ETA_WEIGHT,
                 'performance' => self::PERFORMANCE_WEIGHT,
+                'deadhead' => self::DEADHEAD_WEIGHT,
                 'workload' => self::WORKLOAD_WEIGHT,
             ],
         ];
@@ -263,6 +285,7 @@ class DispatchRecommendationService
         float $remainingHours,
         ?array $performance,
         ?float $headingScore,
+        ?float $deadheadDistanceKm
         ?array $workload
     ): array {
         $reasons = [];
@@ -303,6 +326,15 @@ class DispatchRecommendationService
                 'type' => 'heading',
                 'priority' => 'positive',
                 'text' => 'Already heading toward job site',
+            ];
+        }
+
+        if ($deadheadDistanceKm !== null) {
+            $priority = $deadheadDistanceKm <= 5 ? 'positive' : 'info';
+            $reasons[] = [
+                'type' => 'deadhead',
+                'priority' => $priority,
+                'text' => sprintf('Drop-off %.1f km from new pickup', $deadheadDistanceKm),
             ];
         }
 
@@ -504,6 +536,40 @@ class DispatchRecommendationService
         foreach ($rows as $row) {
             $driverId = (int)$row['driver_profile_id'];
             $byDriver[$driverId][] = $row['certification_code'];
+        }
+
+        return $byDriver;
+    }
+
+    /**
+     * Fetch active job drop-offs for drivers (accepted offers).
+     *
+     * @return array<int, array{dropoff_latitude: float, dropoff_longitude: float, job_reference: string|null, accepted_at: string|null}>
+     */
+    private function fetchActiveJobDropoffs(): array
+    {
+        $stmt = $this->connection->pdo()->query(
+            'SELECT driver_profile_id, job_reference, dropoff_latitude, dropoff_longitude, accepted_at
+             FROM driver_job_offers
+             WHERE status = \'accepted\'
+             AND dropoff_latitude IS NOT NULL
+             AND dropoff_longitude IS NOT NULL
+             ORDER BY accepted_at DESC, id DESC'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byDriver = [];
+        foreach ($rows as $row) {
+            $driverId = (int) $row['driver_profile_id'];
+            if (isset($byDriver[$driverId])) {
+                continue;
+            }
+            $byDriver[$driverId] = [
+                'dropoff_latitude' => (float) $row['dropoff_latitude'],
+                'dropoff_longitude' => (float) $row['dropoff_longitude'],
+                'job_reference' => $row['job_reference'] ?? null,
+                'accepted_at' => $row['accepted_at'] ?? null,
+            ];
         }
 
         return $byDriver;
@@ -901,6 +967,15 @@ class DispatchRecommendationService
         return round(1 / (1 + ($distanceKm / 50)), 4);
     }
 
+    private function scoreDeadheadDistance(?float $distanceKm): float
+    {
+        if ($distanceKm === null) {
+            return 0.5;
+        }
+
+        return round(1 / (1 + ($distanceKm / 30)), 4);
+    }
+
     private function calculateRemainingShiftHours(?array $shift, DateTimeImmutable $referenceTime): float
     {
         if ($shift === null) {
@@ -935,6 +1010,7 @@ class DispatchRecommendationService
         float $shiftScore,
         float $etaScore = 0.5,
         float $performanceScore = 0.5,
+        float $deadheadScore = 0.5
         float $workloadScore = 0.5
     ): float {
         return round(
@@ -943,6 +1019,7 @@ class DispatchRecommendationService
             + ($shiftScore * self::SHIFT_WEIGHT)
             + ($etaScore * self::ETA_WEIGHT)
             + ($performanceScore * self::PERFORMANCE_WEIGHT)
+            + ($deadheadScore * self::DEADHEAD_WEIGHT),
             + ($workloadScore * self::WORKLOAD_WEIGHT),
             4
         );

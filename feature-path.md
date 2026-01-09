@@ -74,7 +74,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [x] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
 [x] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
 [ ] Predictive ETA (Traffic-Aware): Integrate the Google Distance Matrix API into DispatchRecommendationService. Standard straight-line distance is often inaccurate in urban towing scenarios.
-[ ] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
+[x] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
 
 ## 5. Driver Experience (/src/react/views/driver & /src/Services/drive)
 
