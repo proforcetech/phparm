@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
@@ -21,6 +21,18 @@ const roleOptions = [
   { label: 'Roadside', value: 'roadside' },
   { label: 'CMS', value: 'cms' },
   { label: 'Customer', value: 'customer' },
+]
+
+const statusOptions = [
+  { label: 'All Statuses', value: 'all' },
+  { label: 'Active', value: 'active' },
+  { label: 'Inactive', value: 'inactive' },
+]
+
+const twoFactorOptions = [
+  { label: 'All 2FA', value: '' },
+  { label: '2FA Enabled', value: 'enabled' },
+  { label: '2FA Disabled', value: 'disabled' },
 ]
 
 const roleLabels = {
@@ -69,6 +81,7 @@ const formatDateTime = (dateString) => {
 
 export default function UsersList() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
 
   const [users, setUsers] = useState([])
@@ -79,7 +92,12 @@ export default function UsersList() {
   const [showReset2FAModal, setShowReset2FAModal] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [userToReset2FA, setUserToReset2FA] = useState(null)
-  const [filters, setFilters] = useState({ query: '', role: '' })
+  const [filters, setFilters] = useState({
+    query: '',
+    role: '',
+    status: 'active',
+    two_factor: '',
+  })
 
   const loadUsers = async (nextFilters = filters) => {
     setLoading(true)
@@ -94,9 +112,37 @@ export default function UsersList() {
     }
   }
 
+  const buildSearchParams = (nextFilters) => {
+    const params = new URLSearchParams()
+    Object.entries(nextFilters).forEach(([key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        params.set(key, value)
+      }
+    })
+    return params
+  }
+
+  const updateSearchParams = (nextFilters) => {
+    setSearchParams(buildSearchParams(nextFilters))
+  }
+
   useEffect(() => {
-    loadUsers()
-  }, [])
+    const nextFilters = {
+      query: searchParams.get('query') ?? '',
+      role: searchParams.get('role') ?? '',
+      status: searchParams.get('status') ?? 'active',
+      two_factor: searchParams.get('two_factor') ?? '',
+    }
+    const normalizedParams = buildSearchParams(nextFilters)
+
+    if (normalizedParams.toString() !== searchParams.toString()) {
+      setSearchParams(normalizedParams, { replace: true })
+      return
+    }
+
+    setFilters(nextFilters)
+    loadUsers(nextFilters)
+  }, [searchParams, setSearchParams])
 
   const confirmDelete = (user) => {
     setUserToDelete(user)
@@ -162,7 +208,7 @@ export default function UsersList() {
       </div>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <Input
@@ -170,8 +216,7 @@ export default function UsersList() {
               placeholder="Search by name, email, or ID..."
               onUpdateModelValue={(value) => {
                 const nextFilters = { ...filters, query: value }
-                setFilters(nextFilters)
-                loadUsers(nextFilters)
+                updateSearchParams(nextFilters)
               }}
             />
           </div>
@@ -182,8 +227,29 @@ export default function UsersList() {
               options={roleOptions}
               onUpdateModelValue={(value) => {
                 const nextFilters = { ...filters, role: value }
-                setFilters(nextFilters)
-                loadUsers(nextFilters)
+                updateSearchParams(nextFilters)
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <Select
+              modelValue={filters.status}
+              options={statusOptions}
+              onUpdateModelValue={(value) => {
+                const nextFilters = { ...filters, status: value }
+                updateSearchParams(nextFilters)
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">2FA</label>
+            <Select
+              modelValue={filters.two_factor}
+              options={twoFactorOptions}
+              onUpdateModelValue={(value) => {
+                const nextFilters = { ...filters, two_factor: value }
+                updateSearchParams(nextFilters)
               }}
             />
           </div>
