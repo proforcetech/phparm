@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import BarChart from '../../components/charts/BarChart'
 import LineChart from '../../components/charts/LineChart'
@@ -208,6 +209,16 @@ export default function Reports() {
         </div>
         <Button variant="secondary" onClick={exportReport}>Export CSV</Button>
       </div>
+
+      <Card className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Customer Retention</h2>
+          <p className="text-sm text-gray-600">Review customers without workorders in 6+ months and trigger campaigns.</p>
+        </div>
+        <Link to="/cp/reports/customer-retention">
+          <Button variant="secondary">View Retention Report</Button>
+        </Link>
+      </Card>
 
       <Card className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

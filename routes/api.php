@@ -4740,6 +4740,54 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    // Customer retention report routes
+    $customerRetentionWebhookConfig = $config['customer_retention']['webhooks'] ?? [];
+    $customerRetentionWebhooks = new WebhookDispatcher(
+        !empty($customerRetentionWebhookConfig['enabled']) ? ($customerRetentionWebhookConfig['endpoints'] ?? []) : [],
+        (string) ($customerRetentionWebhookConfig['secret'] ?? ''),
+        (int) ($customerRetentionWebhookConfig['timeout'] ?? 5),
+        $auditLogger
+    );
+
+    $customerRetentionController = new \App\Services\Customer\CustomerRetentionReportController(
+        new \App\Services\Customer\CustomerRetentionReportService(
+            new \App\Services\Customer\CustomerRepository($connection),
+            $customerRetentionWebhooks
+        ),
+        $gate
+    );
+
+    $router->group([Middleware::auth()], function (Router $router) use ($customerRetentionController) {
+        $router->get('/api/reports/customer-retention', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'months' => $request->queryParam('months', 6),
+                'limit' => $request->queryParam('limit', 50),
+                'offset' => $request->queryParam('offset', 0),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $customerRetentionController->index($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/customer-retention/export', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'months' => $request->queryParam('months', 6),
+                'format' => $request->queryParam('format', 'csv'),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $customerRetentionController->export($user, $params);
+            return Response::json($data);
+        });
+
+        $router->post('/api/reports/customer-retention/hooks', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $data = $customerRetentionController->dispatchCampaign($user, $request->body());
+            return Response::json($data);
+        });
+    });
+
     // Time Tracking routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
