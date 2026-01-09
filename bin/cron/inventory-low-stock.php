@@ -10,6 +10,7 @@ use App\Support\Notifications\NotificationDispatcher;
 use App\Support\Notifications\NotificationLogRepository;
 use App\Support\Notifications\TemplateEngine;
 use App\Support\SettingsRepository;
+use App\Services\User\UserRepository;
 
 $env = new Env(__DIR__ . '/../../.env');
 
@@ -38,16 +39,35 @@ $dispatcher = new NotificationDispatcher(
     new NotificationLogRepository($connection)
 );
 
-$recipient = $settings->get('notifications.inventory.recipient', $settings->get('shop.email', $env->get('NOTIFICATIONS_FROM_EMAIL')));
-$subject = $settings->get('notifications.inventory.subject', $env->get('INVENTORY_LOW_STOCK_SUBJECT', 'Low stock alert'));
+$recipientSetting = $settings->get('notifications.inventory.recipient');
+$recipientList = normalizeRecipients($recipientSetting);
 
-if (empty($recipient)) {
-    fwrite(STDERR, "No inventory alert recipient configured. Set notifications.inventory.recipient in settings or NOTIFICATIONS_FROM_EMAIL in .env.\n");
+if ($recipientList === []) {
+    $userRepository = new UserRepository($connection);
+    $managers = $userRepository->listByRole('manager');
+    foreach ($managers as $manager) {
+        if (!empty($manager->email)) {
+            $recipientList[] = $manager->email;
+        }
+    }
+}
+
+if ($recipientList === []) {
+    $fallbackRecipient = $settings->get('shop.email', $env->get('NOTIFICATIONS_FROM_EMAIL'));
+    $recipientList = normalizeRecipients($fallbackRecipient);
+}
+
+if ($recipientList === []) {
+    fwrite(STDERR, "No inventory alert recipients configured. Set notifications.inventory.recipient, add a manager user, or provide NOTIFICATIONS_FROM_EMAIL in .env.\n");
     exit(1);
 }
 
+$recipient = implode(', ', $recipientList);
+$subject = $settings->get('notifications.inventory.subject', $env->get('INVENTORY_LOW_STOCK_SUBJECT', 'Daily low stock summary'));
+
 $service = new InventoryLowStockService(
     new InventoryItemRepository($connection),
+    null,
     $dispatcher
 );
 
@@ -59,3 +79,25 @@ echo sprintf(
     $payload['total'] ?? 0,
     date('c')
 );
+
+/**
+ * @param mixed $value
+ * @return array<int, string>
+ */
+function normalizeRecipients($value): array
+{
+    if ($value === null) {
+        return [];
+    }
+
+    if (is_array($value)) {
+        $recipients = array_map('strval', $value);
+    } else {
+        $recipients = preg_split('/[;,]+/', (string) $value) ?: [];
+    }
+
+    $recipients = array_map('trim', $recipients);
+    $recipients = array_filter($recipients, static fn (string $recipient) => $recipient !== '');
+
+    return array_values(array_unique($recipients));
+}
