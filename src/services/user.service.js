@@ -40,6 +40,14 @@ export function require2FA(id, required) {
   return api.post(`/users/${id}/require-2fa`, { required }).then((r) => r.data)
 }
 
+export function bulkDeactivateUsers(userIds) {
+  return api.post('/users/bulk-deactivate', { user_ids: userIds }).then((r) => r.data)
+}
+
+export function bulkUpdateRole(userIds, role) {
+  return api.post('/users/bulk-role', { user_ids: userIds, role }).then((r) => r.data)
+}
+
 const userService = {
   listUsers,
   exportUsers,
@@ -50,7 +58,9 @@ const userService = {
   updateProfile,
   deleteUser,
   reset2FA,
-  require2FA
+  require2FA,
+  bulkDeactivateUsers,
+  bulkUpdateRole
 }
 
 export default userService
