@@ -49,9 +49,16 @@ class FinancialEntryService
     {
         $payload = $this->validate($payload);
 
+        if (!empty($payload['idempotency_key'])) {
+            $existing = $this->fetchByIdempotencyKey($payload['idempotency_key']);
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO financial_entries (type, category, reference, purchase_order, amount, entry_date, vendor, description, attachment_path) ' .
-            'VALUES (:type, :category, :reference, :purchase_order, :amount, :entry_date, :vendor, :description, :attachment_path)'
+            'INSERT INTO financial_entries (type, category, reference, purchase_order, amount, entry_date, vendor, description, attachment_path, idempotency_key) ' .
+            'VALUES (:type, :category, :reference, :purchase_order, :amount, :entry_date, :vendor, :description, :attachment_path, :idempotency_key)'
         );
         $stmt->execute([
             'type' => $payload['type'],
@@ -63,6 +70,7 @@ class FinancialEntryService
             'vendor' => $payload['vendor'],
             'description' => $payload['description'] ?? null,
             'attachment_path' => $payload['attachment_path'] ?? null,
+            'idempotency_key' => $payload['idempotency_key'] ?? null,
         ]);
 
         $entryId = (int) $this->connection->pdo()->lastInsertId();
@@ -285,6 +293,17 @@ class FinancialEntryService
         return $row ? new FinancialEntry($row) : null;
     }
 
+    private function fetchByIdempotencyKey(string $idempotencyKey): ?FinancialEntry
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM financial_entries WHERE idempotency_key = :idempotency_key LIMIT 1'
+        );
+        $stmt->execute(['idempotency_key' => $idempotencyKey]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? new FinancialEntry($row) : null;
+    }
+
     /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
@@ -297,6 +316,10 @@ class FinancialEntryService
             if (!isset($payload[$field]) || $payload[$field] === '') {
                 throw new InvalidArgumentException("Missing {$field}");
             }
+        }
+
+        if (!empty($payload['idempotency_key']) && strlen((string) $payload['idempotency_key']) > 120) {
+            throw new InvalidArgumentException('Idempotency key is too long');
         }
 
         if (!in_array($payload['type'], ['income', 'expense', 'purchase'], true)) {

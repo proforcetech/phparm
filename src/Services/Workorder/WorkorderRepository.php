@@ -7,6 +7,7 @@ use App\Models\Workorder;
 use App\Models\WorkorderJob;
 use App\Models\WorkorderItem;
 use App\Models\WorkorderStatusHistory;
+use App\Services\Workorder\WorkorderJobEvidenceService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -393,6 +394,42 @@ class WorkorderRepository
         }
 
         return $row ? new WorkorderJob($row) : null;
+    }
+
+    private function assertCheckpointEvidence(int $jobId, string $status): void
+    {
+        if ($status !== WorkorderJob::STATUS_HOOKED) {
+            return;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT checkpoint_type, COUNT(*) as total
+            FROM job_checkpoint_media
+            WHERE workorder_job_id = :job_id
+            GROUP BY checkpoint_type
+        SQL);
+        $stmt->execute(['job_id' => $jobId]);
+
+        $counts = array_fill_keys(WorkorderJobEvidenceService::CHECKPOINT_TYPES, 0);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $type = (string) $row['checkpoint_type'];
+            if (array_key_exists($type, $counts)) {
+                $counts[$type] = (int) $row['total'];
+            }
+        }
+
+        $missing = [];
+        foreach ($counts as $type => $total) {
+            if ($total < 1) {
+                $missing[] = ucwords(str_replace('_', ' ', $type));
+            }
+        }
+
+        if ($missing) {
+            throw new InvalidArgumentException(
+                'Hooked status requires photo evidence. Missing: ' . implode(', ', $missing) . '.'
+            );
+        }
     }
 
     public function assignJobTechnician(int $jobId, ?int $technicianId, ?int $actorId = null): ?WorkorderJob
