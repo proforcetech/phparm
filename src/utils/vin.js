@@ -15,7 +15,7 @@ const toNumber = (value) => {
 /**
  * Normalize VIN decoder responses to a consistent shape for UI consumption.
  * @param {Record<string, any>} result
- * @returns {{ vin: string|null, year: number|null, make: string|null, model: string|null, trim: string|null, engine: string|null, transmission: string|null, drive: string|null, fuel: string|null, bodyStyle: string|null, vehicleType: string|null, plantCountry: string|null, manufacturer: string|null }}
+ * @returns {{ vin: string|null, year: number|null, make: string|null, model: string|null, trim: string|null, engine: string|null, transmission: string|null, drive: string|null, fuel: string|null, bodyStyle: string|null, vehicleType: string|null, plantCountry: string|null, manufacturer: string|null, weightClass: string|null }}
  */
 export function normalizeVinData(result = {}) {
   const source = result.decoded || result.basic_info || result.vehicle || result || {}
@@ -34,5 +34,6 @@ export function normalizeVinData(result = {}) {
     vehicleType: cleanValue(source.vehicle_type ?? source.vehicleType ?? source.VehicleType),
     plantCountry: cleanValue(source.plant_country ?? source.plantCountry ?? source.PlantCountry),
     manufacturer: cleanValue(source.manufacturer ?? source.Manufacturer ?? source.Make),
+    weightClass: cleanValue(source.weight_class ?? source.weightClass ?? source.GVWR ?? source.WeightClass),
   }
 }
