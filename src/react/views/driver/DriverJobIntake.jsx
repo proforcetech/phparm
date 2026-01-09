@@ -16,9 +16,11 @@ const emptyVehicle = {
 }
 
 const checkpointTypes = [
-  { key: 'pre_load', label: 'Pre-load photo' },
-  { key: 'hookup', label: 'Hookup photo' },
-  { key: 'dropoff', label: 'Drop-off photo' },
+  { key: 'front_left', label: 'Front-left corner photo' },
+  { key: 'front_right', label: 'Front-right corner photo' },
+  { key: 'rear_left', label: 'Rear-left corner photo' },
+  { key: 'rear_right', label: 'Rear-right corner photo' },
+  { key: 'vin_odometer', label: 'VIN/Odometer photo' },
 ]
 
 const clampPoint = (value) => Math.min(1, Math.max(0, value))
@@ -207,7 +209,7 @@ export default function DriverJobIntake() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Driver Job Intake</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Capture VIN, log vehicle damage, and upload photo checkpoints before moving job status.
+          Capture VIN, log vehicle damage, and upload required photo evidence before moving job status.
         </p>
       </div>
 
@@ -309,7 +311,7 @@ export default function DriverJobIntake() {
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Photo Checkpoints</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Upload required pre-load, hookup, and drop-off photos to advance job status.
+          Upload all 4-corner photos plus a VIN/Odometer photo to unlock the Hooked status.
         </p>
 
         <div className="mt-4 space-y-4">

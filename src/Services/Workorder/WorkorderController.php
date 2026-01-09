@@ -583,7 +583,7 @@ class WorkorderController
             if ($job->status !== 'completed') {
                 $allCompleted = false;
             }
-            if ($job->status === 'in_progress') {
+            if (in_array($job->status, ['in_progress', 'hooked'], true)) {
                 $anyInProgress = true;
             }
         }

@@ -12,9 +12,11 @@ use RuntimeException;
 
 class WorkorderJobEvidenceService
 {
-    public const CHECKPOINT_PRE_LOAD = 'pre_load';
-    public const CHECKPOINT_HOOKUP = 'hookup';
-    public const CHECKPOINT_DROPOFF = 'dropoff';
+    public const CHECKPOINT_FRONT_LEFT = 'front_left';
+    public const CHECKPOINT_FRONT_RIGHT = 'front_right';
+    public const CHECKPOINT_REAR_LEFT = 'rear_left';
+    public const CHECKPOINT_REAR_RIGHT = 'rear_right';
+    public const CHECKPOINT_VIN_ODOMETER = 'vin_odometer';
 
     public const SIGNATURE_TYPES = [
         JobSignature::TYPE_AUTHORIZATION,
@@ -22,9 +24,11 @@ class WorkorderJobEvidenceService
     ];
 
     public const CHECKPOINT_TYPES = [
-        self::CHECKPOINT_PRE_LOAD,
-        self::CHECKPOINT_HOOKUP,
-        self::CHECKPOINT_DROPOFF,
+        self::CHECKPOINT_FRONT_LEFT,
+        self::CHECKPOINT_FRONT_RIGHT,
+        self::CHECKPOINT_REAR_LEFT,
+        self::CHECKPOINT_REAR_RIGHT,
+        self::CHECKPOINT_VIN_ODOMETER,
     ];
 
     private Connection $connection;

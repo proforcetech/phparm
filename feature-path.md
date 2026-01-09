@@ -78,7 +78,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 5. Driver Experience (/src/react/views/driver & /src/Services/drive)
 
-[ ] Compulsory Photo Evidence: To compete with Towbook, the DriverJobIntake.jsx must require "Pre-Tow" photos (4 corners of the vehicle + VIN/Odometer) before the "Hooked" status can be selected. This is the #1 defense against damage claims.
+[x] Compulsory Photo Evidence: To compete with Towbook, the DriverJobIntake.jsx must require "Pre-Tow" photos (4 corners of the vehicle + VIN/Odometer) before the "Hooked" status can be selected. This is the #1 defense against damage claims.
 
 [ ] Digital Damage Appraisal: A simple UI where drivers tap a car diagram to mark existing dents/scratches.
 [ ] Offline Idempotency: Since drivers lose signal frequently, the offlineQueue.js utility must be the primary driver for all status updates, ensuring signatures and photos sync once signal is restored without duplicating ledger entries.
