@@ -87,6 +87,18 @@ export const listPendingItems = async () => withStore('readonly', (store) => new
   request.onerror = () => reject(request.error)
 }))
 
+export const listFailedItems = async () => withStore('readonly', (store) => new Promise((resolve, reject) => {
+  const request = store.getAll()
+  request.onsuccess = () => {
+    const items = request.result || []
+    const failedItems = items
+      .filter((item) => item.status === 'failed')
+      .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
+    resolve(failedItems)
+  }
+  request.onerror = () => reject(request.error)
+}))
+
 export const getPendingCount = async () => withStore('readonly', (store) => new Promise((resolve, reject) => {
   const request = store.getAll()
   request.onsuccess = () => {
@@ -119,6 +131,22 @@ export const markItemFailed = async (id, errorMessage) => {
       item.status = 'failed'
       item.attempts = (item.attempts || 0) + 1
       item.lastError = errorMessage
+      item.updatedAt = new Date().toISOString()
+      store.put(item)
+    }
+  })
+  notify()
+}
+
+export const retryItem = async (id) => {
+  await withStore('readwrite', (store) => {
+    const request = store.get(id)
+    request.onsuccess = () => {
+      const item = request.result
+      if (!item) return
+      item.status = 'pending'
+      item.attempts = 0
+      item.lastError = null
       item.updatedAt = new Date().toISOString()
       store.put(item)
     }

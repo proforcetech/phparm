@@ -316,6 +316,7 @@ class InventoryStockOrderRepository
                     $description,
                     $quantityOrdered
                 ),
+                'idempotency_key' => $reference,
             ], $actorId ?? 0);
 
             $this->log('stock_order.received', $stockOrderId, $actorId, [
