@@ -15,6 +15,7 @@ class Middleware
     private static ?RateLimiter $rateLimiter = null;
     private static ?JwtService $jwtService = null;
     private static ?ModuleAccessService $moduleService = null;
+    private static ?Connection $activityConnection = null;
 
     /**
      * Get or create the default rate limiter instance.
@@ -89,6 +90,30 @@ class Middleware
             self::$moduleService = new ModuleAccessService($connection, $gate);
         }
         return self::$moduleService;
+    }
+
+    /**
+     * Get or create the connection for activity tracking.
+     */
+    private static function getActivityConnection(): Connection
+    {
+        if (self::$activityConnection === null) {
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            self::$activityConnection = new Connection($dbConfig);
+        }
+
+        return self::$activityConnection;
+    }
+
+    /**
+     * Update the user's last activity timestamp.
+     */
+    private static function recordUserActivity(int $userId): void
+    {
+        $connection = self::getActivityConnection();
+        $stmt = $connection->pdo()->prepare('UPDATE users SET last_activity_at = NOW() WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
     }
 
     /**
@@ -181,9 +206,15 @@ class Middleware
 
             // Store user in request
             if (is_array($user)) {
-                $request->setAttribute('user', new User($user));
+                $userModel = new User($user);
+                $request->setAttribute('user', $userModel);
             } else {
-                $request->setAttribute('user', $user);
+                $userModel = $user;
+                $request->setAttribute('user', $userModel);
+            }
+
+            if ($userModel instanceof User) {
+                self::recordUserActivity($userModel->id);
             }
 
             return $next($request);
