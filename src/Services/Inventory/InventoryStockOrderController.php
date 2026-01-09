@@ -90,7 +90,7 @@ class InventoryStockOrderController
     {
         $this->assertManageAccess($user);
 
-        $order = $this->repository->update($id, $data);
+        $order = $this->repository->update($id, $data, $user->id);
         if ($order === null) {
             throw new InvalidArgumentException('Stock order not found');
         }

@@ -19,7 +19,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 4. Inventory Enhancements
 
-[ ] Stock Order Lifecycle: The InventoryStockOrderRepository should be linked to the financial ledger. When a stock order is marked as "Received," it should automatically update the InventoryItem quantities and create a FinancialEntry for the accounts payable.
+[x] Stock Order Lifecycle: The InventoryStockOrderRepository should be linked to the financial ledger. When a stock order is marked as "Received," it should automatically update the InventoryItem quantities and create a FinancialEntry for the accounts payable.
 [ ] Automated Low-Stock Alerts: Utilize the inventory-low-stock.php cron job to send daily summaries to the manager, rather than just waiting for a manual check.
 
 ## 5. Advanced Reporting & KPIs

@@ -3,17 +3,31 @@
 namespace App\Services\Inventory;
 
 use App\Database\Connection;
+use App\Services\Financial\FinancialEntryService;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Models\InventoryStockOrder;
+use App\Support\Audit\AuditEntry;
+use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
 use PDO;
 
 class InventoryStockOrderRepository
 {
     private Connection $connection;
+    private FinancialEntryService $financialEntries;
+    private ?AuditLogger $auditLogger;
+    private ?MessagingNotificationService $messagingNotifications;
 
-    public function __construct(Connection $connection)
-    {
+    public function __construct(
+        Connection $connection,
+        ?FinancialEntryService $financialEntries = null,
+        ?AuditLogger $auditLogger = null,
+        ?MessagingNotificationService $messagingNotifications = null
+    ) {
         $this->connection = $connection;
+        $this->auditLogger = $auditLogger;
+        $this->financialEntries = $financialEntries ?? new FinancialEntryService($connection, $auditLogger);
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     public function find(int $id): ?InventoryStockOrder
@@ -130,7 +144,7 @@ class InventoryStockOrderRepository
     /**
      * @param array<string, mixed> $data
      */
-    public function update(int $id, array $data): ?InventoryStockOrder
+    public function update(int $id, array $data, ?int $actorId = null): ?InventoryStockOrder
     {
         $existing = $this->find($id);
         if ($existing === null) {
@@ -140,6 +154,14 @@ class InventoryStockOrderRepository
         if (isset($data['status']) && !in_array($data['status'], InventoryStockOrder::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid stock order status');
         }
+
+        $newStatus = $data['status'] ?? $existing->status;
+        $inventoryItemId = isset($data['inventory_item_id'])
+            ? (int) $data['inventory_item_id']
+            : $existing->inventory_item_id;
+        $quantityOrdered = (int) ($data['quantity_ordered'] ?? $existing->quantity_ordered);
+        $shouldReceive = $existing->status !== InventoryStockOrder::STATUS_RECEIVED
+            && $newStatus === InventoryStockOrder::STATUS_RECEIVED;
 
         $sql = "UPDATE inventory_stock_orders SET
                 inventory_item_id = :inventory_item_id,
@@ -154,20 +176,43 @@ class InventoryStockOrderRepository
                 updated_at = NOW()
             WHERE id = :id";
 
-        $this->connection->pdo()->prepare($sql)->execute([
+        $params = [
             'id' => $id,
-            'inventory_item_id' => isset($data['inventory_item_id'])
-                ? (int) $data['inventory_item_id']
-                : $existing->inventory_item_id,
+            'inventory_item_id' => $inventoryItemId,
             'sku' => $data['sku'] ?? $existing->sku,
             'description' => $data['description'] ?? $existing->description,
-            'quantity_ordered' => (int) ($data['quantity_ordered'] ?? $existing->quantity_ordered),
-            'status' => $data['status'] ?? $existing->status,
+            'quantity_ordered' => $quantityOrdered,
+            'status' => $newStatus,
             'expected_arrival_date' => $data['expected_arrival_date'] ?? $existing->expected_arrival_date,
             'notes' => $data['notes'] ?? $existing->notes,
             'vendor' => $data['vendor'] ?? $existing->vendor,
             'order_reference' => $data['order_reference'] ?? $existing->order_reference,
-        ]);
+        ];
+
+        if ($shouldReceive) {
+            $pdo = $this->connection->pdo();
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare($sql)->execute($params);
+                $this->applyReceiptSideEffects(
+                    $id,
+                    $inventoryItemId,
+                    $quantityOrdered,
+                    $params['vendor'],
+                    $params['description'],
+                    $params['order_reference'],
+                    $actorId
+                );
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $e;
+            }
+        } else {
+            $this->connection->pdo()->prepare($sql)->execute($params);
+        }
 
         return $this->find($id);
     }
@@ -229,5 +274,111 @@ class InventoryStockOrderRepository
         $row['quantity_ordered'] = (int) ($row['quantity_ordered'] ?? 0);
 
         return new InventoryStockOrder($row);
+    }
+
+    private function applyReceiptSideEffects(
+        int $stockOrderId,
+        ?int $inventoryItemId,
+        int $quantityOrdered,
+        ?string $vendor,
+        string $description,
+        ?string $orderReference,
+        ?int $actorId
+    ): void {
+        if ($inventoryItemId !== null) {
+            $this->incrementInventory($inventoryItemId, $quantityOrdered);
+        }
+
+        $reference = sprintf('stock_order:%d', $stockOrderId);
+        if (!$this->financialEntryExists($reference)) {
+            $itemDetails = $inventoryItemId !== null ? $this->fetchInventoryItemDetails($inventoryItemId) : [];
+            $vendorName = $vendor;
+            if ($vendorName === null || $vendorName === '') {
+                $vendorName = $itemDetails['vendor'] ?? null;
+            }
+            if ($vendorName === null || $vendorName === '') {
+                $vendorName = 'Unknown Vendor';
+            }
+            $unitCost = isset($itemDetails['cost']) ? (float) $itemDetails['cost'] : 0.0;
+            $amount = $unitCost * $quantityOrdered;
+            $purchaseOrder = $orderReference ?: sprintf('Stock Order #%d', $stockOrderId);
+
+            $entry = $this->financialEntries->create([
+                'type' => 'purchase',
+                'category' => 'Accounts Payable',
+                'reference' => $reference,
+                'purchase_order' => $purchaseOrder,
+                'amount' => $amount,
+                'entry_date' => date('Y-m-d'),
+                'vendor' => $vendorName,
+                'description' => sprintf(
+                    'Stock order received: %s (Qty %d)',
+                    $description,
+                    $quantityOrdered
+                ),
+            ], $actorId ?? 0);
+
+            $this->log('stock_order.received', $stockOrderId, $actorId, [
+                'inventory_item_id' => $inventoryItemId,
+                'quantity_received' => $quantityOrdered,
+                'financial_entry_id' => $entry->id ?? null,
+                'amount' => $amount,
+            ]);
+
+            $this->messagingNotifications?->dispatch('inventory.stock_order.received', [
+                'stock_order_id' => $stockOrderId,
+                'inventory_item_id' => $inventoryItemId,
+                'quantity_received' => $quantityOrdered,
+                'financial_entry_id' => $entry->id ?? null,
+                'actor_id' => $actorId,
+            ]);
+        }
+    }
+
+    private function incrementInventory(int $inventoryItemId, int $quantity): void
+    {
+        $sql = "UPDATE inventory_items SET
+                stock_quantity = stock_quantity + :quantity,
+                updated_at = NOW()
+            WHERE id = :id";
+
+        $this->connection->pdo()->prepare($sql)->execute([
+            'quantity' => $quantity,
+            'id' => $inventoryItemId,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchInventoryItemDetails(int $inventoryItemId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT cost, vendor FROM inventory_items WHERE id = :id'
+        );
+        $stmt->execute(['id' => $inventoryItemId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: [];
+    }
+
+    private function financialEntryExists(string $reference): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT 1 FROM financial_entries WHERE reference = :reference LIMIT 1'
+        );
+        $stmt->execute(['reference' => $reference]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
+    private function log(string $action, int $subjectId, ?int $actorId, array $context = []): void
+    {
+        if ($this->auditLogger === null) {
+            return;
+        }
+
+        $entry = new AuditEntry($action, 'inventory_stock_order', $subjectId, $actorId, $context);
+        $this->auditLogger->log($entry);
     }
 }
