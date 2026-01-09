@@ -135,7 +135,7 @@ class UserController
         }
 
         // Validate role
-        $validRoles = ['admin', 'manager', 'technician', 'customer'];
+        $validRoles = ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms', 'customer'];
         if (!in_array($data['role'], $validRoles, true)) {
             throw new InvalidArgumentException('Invalid role');
         }
@@ -240,7 +240,7 @@ class UserController
 
         // Validate role if provided
         if (isset($data['role'])) {
-            $validRoles = ['admin', 'manager', 'technician', 'customer'];
+            $validRoles = ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms', 'customer'];
             if (!in_array($data['role'], $validRoles, true)) {
                 throw new InvalidArgumentException('Invalid role');
             }

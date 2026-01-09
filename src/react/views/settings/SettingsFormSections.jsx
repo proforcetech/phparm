@@ -504,3 +504,50 @@ export function RejectionReasonsForm({ form, updateField }) {
     </Card>
   )
 }
+
+export function SecurityForm({ form, updateField, roleOptions = [] }) {
+  const selectedRoles = form.security.mandatoryTwoFactorRoles || []
+
+  const toggleRole = (role) => {
+    const next = selectedRoles.includes(role)
+      ? selectedRoles.filter((item) => item !== role)
+      : [...selectedRoles, role]
+
+    updateField(['security', 'mandatoryTwoFactorRoles'], next)
+  }
+
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold text-gray-900 mb-2">Security</h2>
+      <p className="text-sm text-gray-600">
+        Choose which staff roles must enroll in two-factor authentication before accessing the
+        application.
+      </p>
+      <div className="mt-4 space-y-3">
+        {roleOptions.length === 0 ? (
+          <p className="text-sm text-gray-500">No roles available to configure.</p>
+        ) : (
+          roleOptions.map((role) => (
+            <label
+              key={role.value}
+              className="flex items-start gap-3 rounded-lg border border-gray-200 px-4 py-3"
+            >
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 text-primary-600 border-gray-300 rounded"
+                checked={selectedRoles.includes(role.value)}
+                onChange={() => toggleRole(role.value)}
+              />
+              <div>
+                <p className="text-sm font-medium text-gray-900">{role.label}</p>
+                {role.description ? (
+                  <p className="text-xs text-gray-500">{role.description}</p>
+                ) : null}
+              </div>
+            </label>
+          ))
+        )}
+      </div>
+    </Card>
+  )
+}

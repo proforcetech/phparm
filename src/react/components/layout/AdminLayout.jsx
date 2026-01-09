@@ -4,6 +4,7 @@ import { Outlet } from 'react-router-dom'
 import ChatWidget from '../chat/ChatWidget'
 import Navbar from './Navbar'
 import Sidebar from './Sidebar'
+import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
 import { CmsPageProvider } from '../../stores/cmsPages'
 import { CmsMenuProvider } from '../../stores/cmsMenus'
 import { useAuthStore } from '../../stores/auth'
@@ -92,6 +93,7 @@ export default function AdminLayout({ children }) {
           </CmsPageProvider>
         </div>
       </div>
+      {user?.two_factor_setup_pending && !user?.two_factor_enabled ? <TwoFactorSetupWizard /> : null}
     </div>
   )
 }

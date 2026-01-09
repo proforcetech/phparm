@@ -7,12 +7,12 @@ use InvalidArgumentException;
 class RolePermissions
 {
     /**
-     * @var array<string, array{label: string, description: string, permissions: string[]}>
+     * @var array<string, array{label: string, description: string, permissions: string[], requires_2fa?: bool}>
      */
     private array $roles;
 
     /**
-     * @param array<string, array{label: string, description: string, permissions: string[]}> $roles
+     * @param array<string, array{label: string, description: string, permissions: string[], requires_2fa?: bool}> $roles
      */
     public function __construct(array $roles)
     {

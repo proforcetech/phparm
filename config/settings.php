@@ -224,6 +224,12 @@ return [
             'description' => 'Minimum acceptable reCAPTCHA score (0.0 - 1.0) before processing public forms.',
             'value' => 0.5,
         ],
+        'security.mandatory_2fa_roles' => [
+            'group' => 'security',
+            'type' => 'json',
+            'description' => 'Roles that must enroll in two-factor authentication before accessing the app.',
+            'value' => ['admin', 'dispatcher'],
+        ],
         'integrations.partstech.api_base' => [
             'group' => 'integrations',
             'type' => 'string',
