@@ -49,6 +49,12 @@ $jobs = [
         'schedule' => '0 8 * * *', // Daily at 8 AM
         'description' => 'Sends low stock inventory alerts',
     ],
+    'lien-notices' => [
+        'name' => 'Lien Notice Automation',
+        'script' => __DIR__ . '/storage-lien-notices.php',
+        'schedule' => '0 7 * * *', // Daily at 7 AM
+        'description' => 'Flags impound cases that have reached the lien notice threshold',
+    ],
     'cleanup' => [
         'name' => 'Data Cleanup',
         'script' => __DIR__ . '/data-cleanup.php',
