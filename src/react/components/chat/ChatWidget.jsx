@@ -64,49 +64,62 @@ export default function ChatWidget() {
   }
 
   const refreshThreads = useCallback(async () => {
-    const data = await messagingService.listThreads()
-    setThreads(data)
+    try {
+      const data = await messagingService.listThreads()
+      setThreads(data)
 
-    if (!selectedThreadId && data.length) {
-      setSelectedThreadId(data[0].id)
-      return data[0].id
+      if (!selectedThreadId && data.length) {
+        setSelectedThreadId(data[0].id)
+        return data[0].id
+      }
+
+      return selectedThreadId
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn('Rate limited on threads fetch, will retry on next poll')
+      }
+      return selectedThreadId
     }
-
-    return selectedThreadId
   }, [selectedThreadId])
 
   const refreshUnreadCounts = useCallback(async () => {
-    const data = await messagingService.unreadCounts()
-    const nextTotal = data.total || 0
-    setUnreadTotal(nextTotal)
+    try {
+      const data = await messagingService.unreadCounts()
+      const nextTotal = data.total || 0
+      setUnreadTotal(nextTotal)
 
-    if (Array.isArray(data.threads)) {
-      const lookup = new Map(data.threads.map((item) => [item.thread_id, item.unread_count]))
-      const previousLookup = unreadCountsRef.current
+      if (Array.isArray(data.threads)) {
+        const lookup = new Map(data.threads.map((item) => [item.thread_id, item.unread_count]))
+        const previousLookup = unreadCountsRef.current
 
-      if (previousLookup.size > 0) {
-        lookup.forEach((count, threadId) => {
-          const previousCount = previousLookup.get(threadId) ?? 0
-          if (count > previousCount && (!isOpen || threadId !== selectedThreadId)) {
-            const thread = threads.find((item) => item.id === threadId)
-            const label = thread ? threadLabel(thread) : `Thread #${threadId}`
-            const delta = count - previousCount
-            addChatNotification({
-              title: 'New chat message',
-              body: `${label} has ${delta} new message${delta > 1 ? 's' : ''}.`,
-              threadId,
-            })
-          }
-        })
+        if (previousLookup.size > 0) {
+          lookup.forEach((count, threadId) => {
+            const previousCount = previousLookup.get(threadId) ?? 0
+            if (count > previousCount && (!isOpen || threadId !== selectedThreadId)) {
+              const thread = threads.find((item) => item.id === threadId)
+              const label = thread ? threadLabel(thread) : `Thread #${threadId}`
+              const delta = count - previousCount
+              addChatNotification({
+                title: 'New chat message',
+                body: `${label} has ${delta} new message${delta > 1 ? 's' : ''}.`,
+                threadId,
+              })
+            }
+          })
+        }
+
+        unreadCountsRef.current = lookup
+        setThreads((prev) =>
+          prev.map((thread) => ({
+            ...thread,
+            unread_count: lookup.get(thread.id) ?? thread.unread_count ?? 0,
+          }))
+        )
       }
-
-      unreadCountsRef.current = lookup
-      setThreads((prev) =>
-        prev.map((thread) => ({
-          ...thread,
-          unread_count: lookup.get(thread.id) ?? thread.unread_count ?? 0,
-        }))
-      )
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn('Rate limited on unread counts fetch, will retry on next poll')
+      }
     }
   }, [addChatNotification, isOpen, selectedThreadId, threadLabel, threads])
 
@@ -116,15 +129,27 @@ export default function ChatWidget() {
       return
     }
 
-    const data = await messagingService.listMessages(threadId)
-    setMessages(data)
+    try {
+      const data = await messagingService.listMessages(threadId)
+      setMessages(data)
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn('Rate limited on messages fetch, will retry on next poll')
+      }
+    }
   }, [])
 
   const markRead = useCallback(
     async (threadId) => {
       if (!threadId) return
-      await messagingService.markRead(threadId)
-      await refreshUnreadCounts()
+      try {
+        await messagingService.markRead(threadId)
+        await refreshUnreadCounts()
+      } catch (error) {
+        if (error.response?.status === 429) {
+          console.warn('Rate limited on mark read, will retry on next poll')
+        }
+      }
     },
     [refreshUnreadCounts]
   )
