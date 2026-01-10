@@ -122,6 +122,7 @@ abstract class AbstractPartnerDispatchAdapter implements PartnerDispatchAdapterI
             'completed', 'complete' => 'completed',
             'cancelled', 'canceled' => 'cancelled',
             'accepted', 'accept' => 'accepted',
+            'declined', 'decline', 'rejected', 'reject' => 'declined',
             default => $normalized,
         };
     }
