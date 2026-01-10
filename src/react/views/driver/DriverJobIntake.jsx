@@ -111,6 +111,9 @@ export default function DriverJobIntake() {
   const [vinFile, setVinFile] = useState(null)
   const [vinText, setVinText] = useState('')
   const [vinStatus, setVinStatus] = useState('')
+  const [vinDecodedPayload, setVinDecodedPayload] = useState(null)
+  const [vinSaveStatus, setVinSaveStatus] = useState('')
+  const [vinSaveError, setVinSaveError] = useState('')
   const [vehicleData, setVehicleData] = useState(emptyVehicle)
   const [vinOverrides, setVinOverrides] = useState([])
   const [ocrLoading, setOcrLoading] = useState(false)
@@ -161,6 +164,7 @@ export default function DriverJobIntake() {
     try {
       const response = await decodeVin(vinValue)
       const normalized = normalizeVinData(response)
+      setVinDecodedPayload(response?.decoded ?? null)
       setVehicleData({
         vin: normalized.vin || vinValue,
         year: normalized.year,
@@ -173,7 +177,36 @@ export default function DriverJobIntake() {
       setVinStatus('Vehicle data populated from VIN decode.')
     } catch (error) {
       console.error('VIN decode failed', error)
+      setVinDecodedPayload(null)
       setVinStatus('VIN decoded, but vehicle data could not be retrieved.')
+    }
+  }
+
+  const saveVehicleIntake = async () => {
+    if (!canSubmitJob) {
+      setVinSaveError('Enter a workorder ID and job ID before saving vehicle intake.')
+      return
+    }
+
+    setVinSaveError('')
+    setVinSaveStatus('Saving vehicle intake...')
+
+    try {
+      await workorderService.saveJobVehicleIntake(Number(workorderId), Number(jobId), {
+        vin: vehicleData.vin || vinText || null,
+        vehicle_year: vehicleData.year,
+        vehicle_make: vehicleData.make || null,
+        vehicle_model: vehicleData.model || null,
+        vehicle_trim: vehicleData.trim || null,
+        vehicle_weight_class: vehicleData.weightClass || null,
+        vin_decoded: vinDecodedPayload,
+        vin_overrides: vinOverrides,
+      })
+      setVinSaveStatus('Vehicle intake saved for reporting.')
+    } catch (error) {
+      console.error('Vehicle intake save failed', error)
+      setVinSaveStatus('')
+      setVinSaveError('Unable to save vehicle intake.')
     }
   }
 
@@ -490,6 +523,14 @@ export default function DriverJobIntake() {
           ) : (
             <p className="mt-2 text-xs text-gray-500">Override entries will appear after manual edits.</p>
           )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={saveVehicleIntake} disabled={!canSubmitJob}>
+            Save Vehicle Intake
+          </Button>
+          {vinSaveStatus ? <span className="text-sm text-green-600">{vinSaveStatus}</span> : null}
+          {vinSaveError ? <span className="text-sm text-red-600">{vinSaveError}</span> : null}
         </div>
       </section>
 

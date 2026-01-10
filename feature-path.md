@@ -115,7 +115,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] Mobile Damage App: 4-photo minimum + car diagram marking.
 [ ] Automated Storage Ledger: Daily recurring fees with grace periods.
 [ ] Customer Tracking Link: Real-time map view for the stranded motorist.
-[ ] Integrated VIN Decoding: Reduce manual entry for technicians.
+[x] Integrated VIN Decoding: Reduce manual entry for technicians.
 [ ] Digital Dispatch Adapters: Full handshake with Agero/AAA/Geico portals.
 
 

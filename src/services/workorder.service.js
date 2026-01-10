@@ -230,6 +230,17 @@ export default {
   },
 
   /**
+   * Save vehicle intake details for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  saveJobVehicleIntake(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/vehicle-intake`, payload)
+  },
+
+  /**
    * Capture a job signature
    * @param {number} workorderId
    * @param {number} jobId
