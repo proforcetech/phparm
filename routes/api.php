@@ -3825,10 +3825,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $trackingLogs,
             $auditLogger
         );
+        $workorderTimeline = new \App\Services\Workorder\WorkorderTimelineService($connection);
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
             $workorderEvidence,
+            $workorderTimeline,
             $gate,
             $workorderMessagingNotifications
         );

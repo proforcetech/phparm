@@ -221,7 +221,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 [ ] Service Menu / Canned Jobs: While ServiceTypes exist, a "Canned Job" feature (bundling Parts + Labor + Fees into one quick-add item) is a must-have for speed (e.g., "Standard 5qt Oil Change"). Ref: Bundle files exist, so verify this UI is optimized for quick selection.
 
-[ ] Customer Communication Hub: MessagingService exists, but a unified "Timeline" view for the customer (seeing photos, approving estimates, chatting) is a "Nice to Have" that boosts trust.
+[x] Customer Communication Hub: MessagingService exists, but a unified "Timeline" view for the customer (seeing photos, approving estimates, chatting) is a "Nice to Have" that boosts trust.
 
 [ ] Digital Vehicle Inspections (DVI): InspectionReport exists. Ensure this supports video uploads, not just photos, as video has higher conversion rates for upsells.
 
