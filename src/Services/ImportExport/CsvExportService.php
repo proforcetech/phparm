@@ -88,13 +88,7 @@ class CsvExportService
         $handle = fopen('php://temp', 'r+');
         fputcsv($handle, array_keys($rows[0]));
         foreach ($rows as $row) {
-            fputcsv($handle, array_map(static function ($value) {
-                if ($value instanceof \DateTimeInterface) {
-                    return $value->format(DATE_ATOM);
-                }
-
-                return $value;
-            }, $row));
+            fputcsv($handle, array_map(fn ($value) => $this->escapeCsvValue($value), $row));
         }
 
         rewind($handle);
@@ -102,5 +96,23 @@ class CsvExportService
         fclose($handle);
 
         return $csv;
+    }
+
+    private function escapeCsvValue($value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            $value = $value->format(DATE_ATOM);
+        }
+
+        $stringValue = (string) $value;
+        if (preg_match('/^[=+\-@\t]/', $stringValue)) {
+            return "'" . $stringValue;
+        }
+
+        return $stringValue;
     }
 }

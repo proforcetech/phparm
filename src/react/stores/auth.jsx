@@ -316,7 +316,16 @@ export function AuthProvider({ children }) {
   const hasPermission = useCallback((permission) => {
     if (!user) return false
     if (user.role?.toLowerCase() === 'admin') return true
-    return user.permissions?.includes(permission)
+    const permissions = user.permissions ?? []
+    if (permissions.includes('*')) return true
+    if (permissions.includes(permission)) return true
+    return permissions.some((granted) => {
+      if (granted.endsWith('.*')) {
+        const prefix = granted.slice(0, -2)
+        return permission.startsWith(`${prefix}.`)
+      }
+      return false
+    })
   }, [user])
 
   const hasModule = useCallback((moduleName) => {

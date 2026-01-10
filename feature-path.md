@@ -123,7 +123,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 The current implementation appears to handle basic CRUD operations but may struggle as the inventory database grows into the thousands of items (common in auto shops).
 
-[ ] Optimize Search Queries (Backend):
+[x] Optimize Search Queries (Backend):
 
  Issue: The InventoryItemRepository likely uses LIKE %...% wildcard searches for SKUs and names. This prevents the database from efficiently using indexes, leading to full table scans.
 
@@ -131,7 +131,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemRepository.php
 
-[ ] Frontend Debouncing & Pagination:
+[x] Frontend Debouncing & Pagination:
 
  Issue: InventoryList.jsx may trigger API calls on every keystroke or filter change.
 
@@ -139,7 +139,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/react/views/inventory/InventoryList.jsx
 
-[ ] Eager Loading for Alerts:
+[x] Eager Loading for Alerts:
 
  Issue: The InventoryAlerts view likely polls for low stock.
 
@@ -149,7 +149,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 12. Inventory Security Enhancements
 
-[ ] Granular Permission Checks (RBAC):
+[x] Granular Permission Checks (RBAC):
 
  Issue: InventoryItemController.php might only check if a user is logged in.
 
@@ -163,7 +163,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemController.php
 
-[ ] Input Sanitization & Validation:
+[x] Input Sanitization & Validation:
 
  Issue: Importing inventory via CSV or bulk updates can be a vector for CSV Injection or malformed data.
 
@@ -228,8 +228,8 @@ The current implementation appears to handle basic CRUD operations but may strug
 ## 16. Additional Roadside & Towing Features
 
 [x] GOA (Gone On Arrival) Logic: Roadside jobs often cancel while en route. A specific workflow to bill a "GOA Fee" to the motor club or customer is essential.
-[ ] Map-Based Dispatch: Geofencing exists, but a visual "Drag and Drop" map board for dispatchers to assign calls to the nearest truck is a critical efficiency feature.
-[ ] Truck Checklists: Pre-trip/Post-trip inspection forms for the tow trucks themselves (DOT compliance).
+[x] Map-Based Dispatch: Geofencing exists, but a visual "Drag and Drop" map board for dispatchers to assign calls to the nearest truck is a critical efficiency feature.
+[x] Truck Checklists: Pre-trip/Post-trip inspection forms for the tow trucks themselves (DOT compliance).
 
 # Expansion of Features set into shop ERP
 

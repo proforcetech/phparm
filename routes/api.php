@@ -2294,10 +2294,15 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
+            $lowStockParam = $request->queryParam('low_stock');
+            $lowStockOnly = $lowStockParam === 'true' || $request->queryParam('low_stock_only') === 'true';
             $filters = [
                 'query' => $request->queryParam('query'),
                 'category' => $request->queryParam('category'),
-                'low_stock_only' => $request->queryParam('low_stock') === 'true',
+                'location' => $request->queryParam('location'),
+                'low_stock_only' => $lowStockOnly,
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
 
             $data = $inventoryController->index($user, $filters);
@@ -3825,12 +3830,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $trackingLogs,
             $auditLogger
         );
+        $dispatchAuditService = new \App\Services\Dispatch\DispatchAuditService($connection);
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
             $workorderEvidence,
             $gate,
-            $workorderMessagingNotifications
+            $workorderMessagingNotifications,
+            $dispatchAuditService
         );
 
         // Status-driven notification service
@@ -3842,7 +3849,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $connection,
             $trackingDispatcher,
             $workorderMessagingNotifications,
-            new \App\Services\Dispatch\DispatchAuditService($connection),
+            $dispatchAuditService,
             $notificationEventService
         );
         $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(
@@ -5147,6 +5154,104 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $data = $qcController->completeCheck($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Truck checklist templates & entries
+        $truckChecklistService = new \App\Services\Dispatch\TruckChecklistService($connection);
+        $truckChecklistController = new \App\Services\Dispatch\TruckChecklistController($truckChecklistService, $gate);
+
+        $router->get('/api/truck-checklists/templates', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'checklist_type' => $request->queryParam('checklist_type'),
+                'include_inactive' => $request->queryParam('include_inactive', false),
+            ];
+            $data = $truckChecklistController->listTemplates($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/templates/default', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->queryParam('checklist_type', '');
+            $data = $truckChecklistController->defaultTemplate($user, $type);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->showTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/truck-checklists/templates', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $data = $truckChecklistController->createTemplate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->updateTemplate($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->deleteTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/entries', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'checklist_type' => $request->queryParam('checklist_type'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $truckChecklistController->listEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/entries/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->showEntry($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/truck-checklists/entries', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $data = $truckChecklistController->createEntry($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver shift enforcement for checklists
+        $driverShiftService = new \App\Services\Dispatch\DriverShiftService($connection, $truckChecklistService);
+        $driverShiftController = new \App\Services\Dispatch\DriverShiftController($driverShiftService, $gate, $connection);
+
+        $router->get('/api/driver/shifts/active', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $data = $driverShiftController->active($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/driver/shifts/start', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $data = $driverShiftController->start($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/driver/shifts/{id}/end', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $driverShiftController->end($user, $id, $request->body());
             return Response::json($data);
         });
     });

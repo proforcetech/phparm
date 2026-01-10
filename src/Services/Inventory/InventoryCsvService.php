@@ -35,7 +35,7 @@ class InventoryCsvService
         do {
             $batch = $this->repository->list($filters, $limit, $offset);
             foreach ($batch as $item) {
-                fputcsv($stream, [
+                fputcsv($stream, array_map([$this, 'escapeCsvValue'], [
                     $item->name,
                     $item->description,
                     $item->sku,
@@ -49,7 +49,7 @@ class InventoryCsvService
                     $item->location,
                     $item->vendor,
                     $item->notes,
-                ]);
+                ]));
             }
 
             $offset += $limit;
@@ -99,6 +99,7 @@ class InventoryCsvService
                 $summary['errors'][] = [
                     'row' => $index + 2, // header row offset
                     'message' => $e->getMessage(),
+                    'data' => $this->mapRow($row, $headers),
                 ];
             }
         }
@@ -163,5 +164,23 @@ class InventoryCsvService
             'vendor',
             'notes',
         ];
+    }
+
+    private function escapeCsvValue($value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            $value = $value->format(DATE_ATOM);
+        }
+
+        $stringValue = (string) $value;
+        if (preg_match('/^[=+\-@\t]/', $stringValue)) {
+            return "'" . $stringValue;
+        }
+
+        return $stringValue;
     }
 }

@@ -105,7 +105,9 @@ CREATE TABLE inventory_items (
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
     vendor VARCHAR(160) NULL,
-    notes TEXT NULL
+    notes TEXT NULL,
+    FULLTEXT KEY idx_inventory_search (name, description),
+    INDEX idx_inventory_sku_prefix (sku(20))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_lookups (
