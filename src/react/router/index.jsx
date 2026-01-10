@@ -20,6 +20,9 @@ import WorkorderDetail from '../views/workorders/WorkorderDetail'
 import QCChecklist from '../views/workorders/QCChecklist'
 import DispatchView from '../views/dispatch/DispatchView'
 import DriverJobIntake from '../views/driver/DriverJobIntake'
+import TruckChecklistForm from '../views/driver/TruckChecklistForm'
+import TruckChecklistLogs from '../views/driver/TruckChecklistLogs'
+import TruckChecklistTemplates from '../views/driver/TruckChecklistTemplates'
 import BundleList from '../views/bundles/BundleList'
 import BundleForm from '../views/bundles/BundleForm'
 import AppointmentList from '../views/appointments/AppointmentList'
@@ -190,6 +193,9 @@ const protectedRoutes = [
   { path: '/cp/workorders/:id/qc-check', name: 'QCChecklist', auth: 'requiresAuth', element: <QCChecklist /> },
   { path: '/cp/dispatch', name: 'Dispatch', auth: 'requiresAuth', element: <DispatchView /> },
   { path: '/cp/driver/job-intake', name: 'DriverJobIntake', auth: 'requiresAuth', element: <DriverJobIntake /> },
+  { path: '/cp/driver/truck-checklists', name: 'TruckChecklists', auth: 'requiresAuth', element: <TruckChecklistForm /> },
+  { path: '/cp/driver/truck-checklists/logs', name: 'TruckChecklistLogs', auth: 'requiresAuth', element: <TruckChecklistLogs /> },
+  { path: '/cp/driver/truck-checklists/templates', name: 'TruckChecklistTemplates', auth: 'requiresAuth', element: <TruckChecklistTemplates /> },
   { path: '/cp/bundles', name: 'BundleList', auth: 'requiresAuth', element: <BundleList /> },
   { path: '/cp/bundles/create', name: 'BundleCreate', auth: 'requiresAuth', element: <BundleForm /> },
   { path: '/cp/bundles/:id/edit', name: 'BundleEdit', auth: 'requiresAuth', element: <BundleForm /> },

@@ -34,6 +34,7 @@ const statusOptions = [
   { value: 'parts_pending', label: 'Parts Pending' },
   { value: 'awaiting_authorization', label: 'Authorized' },
   { value: 'completed', label: 'Completed' },
+  { value: 'goa', label: 'GOA' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
@@ -62,6 +63,7 @@ const priorityOptions = [
 
 const formatStatus = (status) => {
   if (!status) return ''
+  if (status.toLowerCase() === 'goa') return 'GOA'
   return status
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -92,6 +94,7 @@ const getStatusVariant = (status) => {
     parts_pending: 'warning',
     awaiting_authorization: 'info',
     completed: 'success',
+    goa: 'danger',
     cancelled: 'danger',
   }
   return variants[status?.toLowerCase()] || 'default'

@@ -27,7 +27,34 @@ const adminMenuItems = [
       },
     ],
   },
-  { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon, moduleKey: 'towing' },
+  {
+    path: '/cp/dispatch',
+    label: 'Dispatch',
+    icon: TruckIcon,
+    moduleKey: 'towing',
+    children: [
+      {
+        path: '/cp/dispatch',
+        label: 'Dispatch Board',
+        icon: TruckIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists',
+        label: 'Truck Checklists',
+        icon: ClipboardDocumentCheckIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists/logs',
+        label: 'Checklist Logs',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists/templates',
+        label: 'Checklist Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
   {
     path: '/cp/storage/impound-intake',
     label: 'Storage',
@@ -126,6 +153,7 @@ const technicianMenuItems = [
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
   { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  { path: '/cp/driver/truck-checklists', label: 'Truck Checklists', icon: ClipboardDocumentCheckIcon },
 ]
 
 const customerMenuItems = [

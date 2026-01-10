@@ -4,6 +4,7 @@ namespace App\Services\Workorder;
 
 use App\Models\User;
 use App\Models\Workorder;
+use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
@@ -17,6 +18,7 @@ class WorkorderController
     private WorkorderTimelineService $timeline;
     private AccessGate $gate;
     private ?MessagingNotificationService $messagingNotifications;
+    private ?DispatchAuditService $dispatchAudit;
 
     public function __construct(
         WorkorderRepository $repository,
@@ -24,7 +26,8 @@ class WorkorderController
         WorkorderJobEvidenceService $evidence,
         WorkorderTimelineService $timeline,
         AccessGate $gate,
-        ?MessagingNotificationService $messagingNotifications = null
+        ?MessagingNotificationService $messagingNotifications = null,
+        ?DispatchAuditService $dispatchAudit = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
@@ -32,6 +35,7 @@ class WorkorderController
         $this->timeline = $timeline;
         $this->gate = $gate;
         $this->messagingNotifications = $messagingNotifications;
+        $this->dispatchAudit = $dispatchAudit;
     }
 
     /**
@@ -148,7 +152,12 @@ class WorkorderController
         }
 
         $before = $this->repository->find($id);
-        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
+
+        if ($status === Workorder::STATUS_GOA) {
+            $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
+        } else {
+            $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
+        }
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
@@ -194,6 +203,32 @@ class WorkorderController
             'actor_id' => $user->id,
             'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
+
+        if ($this->dispatchAudit !== null) {
+            $idempotencyKey = $this->dispatchAudit->generateIdempotencyKey(
+                'assignment',
+                'workorder',
+                $workorder->id,
+                $technicianId ?? 'unassigned'
+            );
+
+            $this->dispatchAudit->logEvent(
+                'dispatch.assignment_updated',
+                'workorder',
+                $workorder->id,
+                [
+                    'job_reference' => (string) $workorder->id,
+                    'driver_profile_id' => $recommendedDriver['driver_profile_id'] ?? null,
+                    'driver_user_id' => $technicianId ? (int) $technicianId : null,
+                    'previous_technician_id' => $before?->assigned_technician_id,
+                    'new_technician_id' => $technicianId ? (int) $technicianId : null,
+                    'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
+                    'result_status' => 'success',
+                ],
+                $idempotencyKey,
+                $user->id
+            );
+        }
 
         return $this->enrichWorkorder($workorder);
     }
@@ -632,6 +667,7 @@ class WorkorderController
             Workorder::STATUS_ON_HOLD => 'On Hold',
             Workorder::STATUS_COMPLETED => 'Completed',
             Workorder::STATUS_CANCELLED => 'Cancelled',
+            Workorder::STATUS_GOA => 'GOA',
             default => ucfirst($status),
         };
     }
@@ -644,13 +680,17 @@ class WorkorderController
         }
 
         $allCompleted = true;
+        $allGoa = true;
         $anyInProgress = false;
 
         foreach ($jobs as $job) {
-            if ($job->status !== 'completed') {
+            if (!in_array($job->status, ['completed', 'goa'], true)) {
                 $allCompleted = false;
             }
-            if (in_array($job->status, ['in_progress', 'hooked'], true)) {
+            if ($job->status !== 'goa') {
+                $allGoa = false;
+            }
+            if (in_array($job->status, ['in_progress', 'hooked', 'arrived'], true)) {
                 $anyInProgress = true;
             }
         }
@@ -661,7 +701,9 @@ class WorkorderController
         }
 
         // Auto-transition workorder status based on job statuses
-        if ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
+        if ($allGoa && $workorder->status !== Workorder::STATUS_GOA) {
+            $this->service->markGoneOnArrival($workorderId, ['notes' => 'All jobs marked GOA'], $actorId);
+        } elseif ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
             $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed', null);
         } elseif ($anyInProgress && $workorder->status === Workorder::STATUS_PENDING) {
             $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started', null);

@@ -10,6 +10,7 @@ class Workorder extends BaseModel
     public const STATUS_ON_HOLD = 'on_hold';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELLED = 'cancelled';
+    public const STATUS_GOA = 'goa';
 
     // Extended statuses for workflow automation
     public const STATUS_PARTS_PENDING = 'parts_pending';
@@ -32,6 +33,7 @@ class Workorder extends BaseModel
         self::STATUS_COMPLETED,
         self::STATUS_READY_FOR_PICKUP,
         self::STATUS_CANCELLED,
+        self::STATUS_GOA,
     ];
 
     public const ALLOWED_PRIORITIES = [
@@ -60,6 +62,8 @@ class Workorder extends BaseModel
     public float $discounts = 0.0;
     public float $shop_fee = 0.0;
     public float $hazmat_disposal_fee = 0.0;
+    public float $goa_fee = 0.0;
+    public ?string $goa_billing_party = null;
     public float $grand_total = 0.0;
     public ?string $internal_notes = null;
     public ?string $customer_notes = null;
@@ -87,6 +91,7 @@ class Workorder extends BaseModel
             self::STATUS_PENDING => [
                 self::STATUS_IN_PROGRESS,
                 self::STATUS_CANCELLED,
+                self::STATUS_GOA,
             ],
             // From in_progress: can pause, need parts, need authorization, require QC, complete, or cancel
             self::STATUS_IN_PROGRESS => [
@@ -96,29 +101,34 @@ class Workorder extends BaseModel
                 self::STATUS_QC_REQUIRED,
                 self::STATUS_COMPLETED,
                 self::STATUS_CANCELLED,
+                self::STATUS_GOA,
             ],
             // From on_hold: can resume or cancel
             self::STATUS_ON_HOLD => [
                 self::STATUS_IN_PROGRESS,
                 self::STATUS_CANCELLED,
+                self::STATUS_GOA,
             ],
             // From parts_pending: can resume when parts arrive or cancel
             self::STATUS_PARTS_PENDING => [
                 self::STATUS_IN_PROGRESS,
                 self::STATUS_ON_HOLD,
                 self::STATUS_CANCELLED,
+                self::STATUS_GOA,
             ],
             // From awaiting_authorization: can resume when authorized, hold, or cancel
             self::STATUS_AWAITING_AUTHORIZATION => [
                 self::STATUS_IN_PROGRESS,
                 self::STATUS_ON_HOLD,
                 self::STATUS_CANCELLED,
+                self::STATUS_GOA,
             ],
             // From qc_required: can pass QC to complete, fail back to in_progress, or cancel
             self::STATUS_QC_REQUIRED => [
                 self::STATUS_COMPLETED,
                 self::STATUS_IN_PROGRESS, // QC failed, needs rework
                 self::STATUS_CANCELLED,
+                self::STATUS_GOA,
             ],
             // From completed: can mark ready for pickup
             self::STATUS_COMPLETED => [
@@ -128,6 +138,7 @@ class Workorder extends BaseModel
             self::STATUS_READY_FOR_PICKUP => [],
             // Cancelled is terminal
             self::STATUS_CANCELLED => [],
+            self::STATUS_GOA => [],
         ];
 
         return in_array($newStatus, $transitions[$this->status] ?? [], true);
