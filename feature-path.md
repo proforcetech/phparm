@@ -229,7 +229,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 [ ] GOA (Gone On Arrival) Logic: Roadside jobs often cancel while en route. A specific workflow to bill a "GOA Fee" to the motor club or customer is essential.
 [ ] Map-Based Dispatch: Geofencing exists, but a visual "Drag and Drop" map board for dispatchers to assign calls to the nearest truck is a critical efficiency feature.
-[ ] Truck Checklists: Pre-trip/Post-trip inspection forms for the tow trucks themselves (DOT compliance).
+[x] Truck Checklists: Pre-trip/Post-trip inspection forms for the tow trucks themselves (DOT compliance).
 
 # Expansion of Features set into shop ERP
 

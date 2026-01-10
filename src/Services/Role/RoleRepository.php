@@ -286,6 +286,24 @@ class RoleRepository
                     'inspections.*' => 'All inspection permissions',
                 ]
             ],
+            'truck_checklists' => [
+                'label' => 'Truck Checklists',
+                'permissions' => [
+                    'truck_checklists.view' => 'View truck checklists',
+                    'truck_checklists.complete' => 'Complete truck checklists',
+                    'truck_checklists.manage' => 'Manage truck checklist templates',
+                    'truck_checklists.*' => 'All truck checklist permissions',
+                ]
+            ],
+            'driver_shifts' => [
+                'label' => 'Driver Shifts',
+                'permissions' => [
+                    'driver_shifts.view' => 'View driver shifts',
+                    'driver_shifts.start' => 'Start driver shifts',
+                    'driver_shifts.end' => 'End driver shifts',
+                    'driver_shifts.*' => 'All driver shift permissions',
+                ]
+            ],
             'time' => [
                 'label' => 'Time Tracking',
                 'permissions' => [
