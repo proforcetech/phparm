@@ -1,37 +1,52 @@
--- Partition driver_locations by month for faster dispatch queries.
--- Creates partitions from 12 months ago to 12 months in the future.
--- Note: This migration uses static partition definitions. For dynamic partitioning,
--- set up a scheduled task to add new partitions monthly.
+-- Partition driver_locations by month
+-- Note: We use the DELIMITER command so the PHP runner knows to split by //
 
+DELIMITER //
+
+-- 1. Adjust Primary Key (One chunk ending in //)
 ALTER TABLE driver_locations
     DROP PRIMARY KEY,
-    ADD PRIMARY KEY (id, recorded_at);
+    ADD PRIMARY KEY (id, recorded_at)
+//
 
-ALTER TABLE driver_locations PARTITION BY RANGE COLUMNS(recorded_at) (
-    PARTITION p2025_01 VALUES LESS THAN ('2025-02-01'),
-    PARTITION p2025_02 VALUES LESS THAN ('2025-03-01'),
-    PARTITION p2025_03 VALUES LESS THAN ('2025-04-01'),
-    PARTITION p2025_04 VALUES LESS THAN ('2025-05-01'),
-    PARTITION p2025_05 VALUES LESS THAN ('2025-06-01'),
-    PARTITION p2025_06 VALUES LESS THAN ('2025-07-01'),
-    PARTITION p2025_07 VALUES LESS THAN ('2025-08-01'),
-    PARTITION p2025_08 VALUES LESS THAN ('2025-09-01'),
-    PARTITION p2025_09 VALUES LESS THAN ('2025-10-01'),
-    PARTITION p2025_10 VALUES LESS THAN ('2025-11-01'),
-    PARTITION p2025_11 VALUES LESS THAN ('2025-12-01'),
-    PARTITION p2025_12 VALUES LESS THAN ('2026-01-01'),
-    PARTITION p2026_01 VALUES LESS THAN ('2026-02-01'),
-    PARTITION p2026_02 VALUES LESS THAN ('2026-03-01'),
-    PARTITION p2026_03 VALUES LESS THAN ('2026-04-01'),
-    PARTITION p2026_04 VALUES LESS THAN ('2026-05-01'),
-    PARTITION p2026_05 VALUES LESS THAN ('2026-06-01'),
-    PARTITION p2026_06 VALUES LESS THAN ('2026-07-01'),
-    PARTITION p2026_07 VALUES LESS THAN ('2026-08-01'),
-    PARTITION p2026_08 VALUES LESS THAN ('2026-09-01'),
-    PARTITION p2026_09 VALUES LESS THAN ('2026-10-01'),
-    PARTITION p2026_10 VALUES LESS THAN ('2026-11-01'),
-    PARTITION p2026_11 VALUES LESS THAN ('2026-12-01'),
-    PARTITION p2026_12 VALUES LESS THAN ('2027-01-01'),
-    PARTITION p2027_01 VALUES LESS THAN ('2027-02-01'),
-    PARTITION pmax VALUES LESS THAN (MAXVALUE)
-);
+DROP PROCEDURE IF EXISTS create_driver_locations_partitions
+//
+
+-- 2. Create the Procedure (The semicolon inside won't break it now)
+CREATE PROCEDURE create_driver_locations_partitions()
+BEGIN
+    DECLARE start_date DATE;
+    DECLARE end_date DATE;
+    DECLARE current_date_var DATE; 
+    
+    SET start_date = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 12 MONTH), '%Y-%m-01');
+    SET end_date = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 12 MONTH), '%Y-%m-01');
+    SET current_date_var = start_date;
+    
+    SET @sql = 'ALTER TABLE driver_locations PARTITION BY RANGE COLUMNS(recorded_at) (';
+
+    WHILE current_date_var < end_date DO
+        SET @partition_name = DATE_FORMAT(current_date_var, 'p%Y_%m');
+        SET @next_date = DATE_ADD(current_date_var, INTERVAL 1 MONTH);
+        
+        SET @sql = CONCAT(
+            @sql,
+            'PARTITION ', @partition_name, ' VALUES LESS THAN (''', DATE_FORMAT(@next_date, '%Y-%m-01'), '''),'
+        );
+        SET current_date_var = @next_date;
+    END WHILE;
+
+    SET @sql = CONCAT(@sql, 'PARTITION pmax VALUES LESS THAN (MAXVALUE))');
+    
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END
+//
+
+-- 3. Run and Cleanup
+CALL create_driver_locations_partitions()
+//
+
+DROP PROCEDURE create_driver_locations_partitions
+//
