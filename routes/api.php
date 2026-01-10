@@ -4049,6 +4049,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->post('/api/workorders/{id}/jobs/{jobId}/vehicle-intake', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->recordVehicleIntake($user, $id, $jobId, $request->body());
+            return Response::json($data);
+        });
+
         $router->post('/api/workorders/{id}/jobs/{jobId}/signature', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -6345,7 +6353,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     tow_agency,
                     hold_release_contact,
                     gate_fee,
-                    daily_rate
+                    daily_rate,
+                    vin,
+                    vehicle_year,
+                    vehicle_make,
+                    vehicle_model,
+                    vehicle_trim,
+                    vehicle_weight_class,
+                    vin_decoded_at
                 FROM impound_cases
             SQL;
             $params = [];
@@ -6399,11 +6414,47 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $dailyRate = (float) ($payload['daily_rate'] ?? 0);
             $impoundReason = $payload['impound_reason'] ?? null;
             $notes = $payload['notes'] ?? null;
+            $vin = trim((string) ($payload['vin'] ?? ''));
+            $vin = $vin !== '' ? $vin : null;
+            $vehicleYear = isset($payload['vehicle_year']) && $payload['vehicle_year'] !== '' ? (int) $payload['vehicle_year'] : null;
+            $vehicleMake = isset($payload['vehicle_make']) && $payload['vehicle_make'] !== '' ? (string) $payload['vehicle_make'] : null;
+            $vehicleModel = isset($payload['vehicle_model']) && $payload['vehicle_model'] !== '' ? (string) $payload['vehicle_model'] : null;
+            $vehicleTrim = isset($payload['vehicle_trim']) && $payload['vehicle_trim'] !== '' ? (string) $payload['vehicle_trim'] : null;
+            $vehicleWeightClass = isset($payload['vehicle_weight_class']) && $payload['vehicle_weight_class'] !== ''
+                ? (string) $payload['vehicle_weight_class']
+                : null;
+            $vinDecoded = $payload['vin_decoded'] ?? null;
+            $vinOverrides = $payload['vin_overrides'] ?? null;
+            $vinDecodedPayload = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+            $vinOverridesPayload = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+            $vinDecodedAt = $vinDecodedPayload !== null ? (new \DateTimeImmutable())->format('Y-m-d H:i:s') : null;
 
             $pdo = $connection->pdo();
             $insert = $pdo->prepare(
-                'INSERT INTO impound_cases (case_number, state_code, impound_date, status, auction_status, intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate, impound_reason, notes)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO impound_cases (
+                    case_number,
+                    state_code,
+                    impound_date,
+                    status,
+                    auction_status,
+                    intake_location,
+                    tow_agency,
+                    hold_release_contact,
+                    gate_fee,
+                    daily_rate,
+                    impound_reason,
+                    notes,
+                    vin,
+                    vehicle_year,
+                    vehicle_make,
+                    vehicle_model,
+                    vehicle_trim,
+                    vehicle_weight_class,
+                    vin_decoded,
+                    vin_decoded_at,
+                    vin_overrides
+                )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $insert->execute([
                 $caseNumber,
@@ -6418,13 +6469,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $dailyRate,
                 $impoundReason,
                 $notes,
+                $vin,
+                $vehicleYear,
+                $vehicleMake,
+                $vehicleModel,
+                $vehicleTrim,
+                $vehicleWeightClass,
+                $vinDecodedPayload,
+                $vinDecodedAt,
+                $vinOverridesPayload,
             ]);
             $insert->closeCursor();
 
             $id = (int) $pdo->lastInsertId();
             $row = $pdo->prepare(
                 'SELECT id, case_number, impound_date, state_code, status, status_updated_at, auction_status, auction_status_updated_at,
-                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate
+                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate,
+                        vin, vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_weight_class, vin_decoded_at
                  FROM impound_cases
                  WHERE id = ?'
             );
@@ -6466,8 +6527,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $dailyRate = array_key_exists('daily_rate', $payload) ? (float) $payload['daily_rate'] : (float) $existing['daily_rate'];
             $impoundReason = $payload['impound_reason'] ?? $existing['impound_reason'];
             $notes = $payload['notes'] ?? $existing['notes'];
-
+            $vin = array_key_exists('vin', $payload) ? trim((string) $payload['vin']) : ($existing['vin'] ?? null);
+            $vin = $vin === '' ? null : $vin;
+            $vehicleYear = array_key_exists('vehicle_year', $payload)
+                ? ($payload['vehicle_year'] !== '' ? (int) $payload['vehicle_year'] : null)
+                : ($existing['vehicle_year'] ?? null);
+            $vehicleMake = array_key_exists('vehicle_make', $payload)
+                ? (($payload['vehicle_make'] ?? '') !== '' ? (string) $payload['vehicle_make'] : null)
+                : ($existing['vehicle_make'] ?? null);
+            $vehicleModel = array_key_exists('vehicle_model', $payload)
+                ? (($payload['vehicle_model'] ?? '') !== '' ? (string) $payload['vehicle_model'] : null)
+                : ($existing['vehicle_model'] ?? null);
+            $vehicleTrim = array_key_exists('vehicle_trim', $payload)
+                ? (($payload['vehicle_trim'] ?? '') !== '' ? (string) $payload['vehicle_trim'] : null)
+                : ($existing['vehicle_trim'] ?? null);
+            $vehicleWeightClass = array_key_exists('vehicle_weight_class', $payload)
+                ? (($payload['vehicle_weight_class'] ?? '') !== '' ? (string) $payload['vehicle_weight_class'] : null)
+                : ($existing['vehicle_weight_class'] ?? null);
             $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $vinDecodedPayload = $existing['vin_decoded'] ?? null;
+            $vinOverridesPayload = $existing['vin_overrides'] ?? null;
+            $vinDecodedAt = $existing['vin_decoded_at'] ?? null;
+            if (array_key_exists('vin_decoded', $payload)) {
+                $vinDecoded = $payload['vin_decoded'] ?? null;
+                $vinDecodedPayload = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+                $vinDecodedAt = $vinDecodedPayload !== null ? $now : null;
+            }
+            if (array_key_exists('vin_overrides', $payload)) {
+                $vinOverrides = $payload['vin_overrides'] ?? null;
+                $vinOverridesPayload = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+            }
             $statusUpdatedAt = $existing['status_updated_at'];
             $auctionStatusUpdatedAt = $existing['auction_status_updated_at'];
 
@@ -6512,7 +6601,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $update = $pdo->prepare(
                 'UPDATE impound_cases
                  SET case_number = ?, state_code = ?, impound_date = ?, status = ?, status_updated_at = ?, auction_status = ?, auction_status_updated_at = ?,
-                     intake_location = ?, tow_agency = ?, hold_release_contact = ?, gate_fee = ?, daily_rate = ?, impound_reason = ?, notes = ?
+                     intake_location = ?, tow_agency = ?, hold_release_contact = ?, gate_fee = ?, daily_rate = ?, impound_reason = ?, notes = ?,
+                     vin = ?, vehicle_year = ?, vehicle_make = ?, vehicle_model = ?, vehicle_trim = ?, vehicle_weight_class = ?,
+                     vin_decoded = ?, vin_decoded_at = ?, vin_overrides = ?
                  WHERE id = ?'
             );
             $update->execute([
@@ -6530,13 +6621,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $dailyRate,
                 $impoundReason,
                 $notes,
+                $vin,
+                $vehicleYear,
+                $vehicleMake,
+                $vehicleModel,
+                $vehicleTrim,
+                $vehicleWeightClass,
+                $vinDecodedPayload,
+                $vinDecodedAt,
+                $vinOverridesPayload,
                 $id,
             ]);
             $update->closeCursor();
 
             $row = $pdo->prepare(
                 'SELECT id, case_number, impound_date, state_code, status, status_updated_at, auction_status, auction_status_updated_at,
-                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate
+                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate,
+                        vin, vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_weight_class, vin_decoded_at
                  FROM impound_cases
                  WHERE id = ?'
             );

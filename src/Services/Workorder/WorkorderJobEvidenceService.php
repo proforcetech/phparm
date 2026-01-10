@@ -302,6 +302,110 @@ class WorkorderJobEvidenceService
 
     /**
      * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function recordVehicleIntake(int $jobId, int $workorderId, array $payload, ?int $actorId = null): array
+    {
+        $vin = trim((string) ($payload['vin'] ?? ''));
+        $vin = $vin !== '' ? $vin : null;
+        $vehicleYear = isset($payload['vehicle_year']) && $payload['vehicle_year'] !== ''
+            ? (int) $payload['vehicle_year']
+            : null;
+        $vehicleMake = isset($payload['vehicle_make']) && $payload['vehicle_make'] !== ''
+            ? (string) $payload['vehicle_make']
+            : null;
+        $vehicleModel = isset($payload['vehicle_model']) && $payload['vehicle_model'] !== ''
+            ? (string) $payload['vehicle_model']
+            : null;
+        $vehicleTrim = isset($payload['vehicle_trim']) && $payload['vehicle_trim'] !== ''
+            ? (string) $payload['vehicle_trim']
+            : null;
+        $vehicleWeightClass = isset($payload['vehicle_weight_class']) && $payload['vehicle_weight_class'] !== ''
+            ? (string) $payload['vehicle_weight_class']
+            : null;
+        $vinDecoded = $payload['vin_decoded'] ?? null;
+        $vinOverrides = $payload['vin_overrides'] ?? null;
+        $encodedDecoded = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+        $encodedOverrides = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            INSERT INTO job_vehicle_intakes (
+                workorder_id,
+                workorder_job_id,
+                vin,
+                vehicle_year,
+                vehicle_make,
+                vehicle_model,
+                vehicle_trim,
+                vehicle_weight_class,
+                vin_decoded,
+                vin_overrides,
+                created_at,
+                updated_at
+            ) VALUES (
+                :workorder_id,
+                :job_id,
+                :vin,
+                :vehicle_year,
+                :vehicle_make,
+                :vehicle_model,
+                :vehicle_trim,
+                :vehicle_weight_class,
+                :vin_decoded,
+                :vin_overrides,
+                NOW(),
+                NOW()
+            )
+            ON DUPLICATE KEY UPDATE
+                vin = VALUES(vin),
+                vehicle_year = VALUES(vehicle_year),
+                vehicle_make = VALUES(vehicle_make),
+                vehicle_model = VALUES(vehicle_model),
+                vehicle_trim = VALUES(vehicle_trim),
+                vehicle_weight_class = VALUES(vehicle_weight_class),
+                vin_decoded = VALUES(vin_decoded),
+                vin_overrides = VALUES(vin_overrides),
+                updated_at = NOW()
+        SQL);
+
+        $stmt->execute([
+            'workorder_id' => $workorderId,
+            'job_id' => $jobId,
+            'vin' => $vin,
+            'vehicle_year' => $vehicleYear,
+            'vehicle_make' => $vehicleMake,
+            'vehicle_model' => $vehicleModel,
+            'vehicle_trim' => $vehicleTrim,
+            'vehicle_weight_class' => $vehicleWeightClass,
+            'vin_decoded' => $encodedDecoded,
+            'vin_overrides' => $encodedOverrides,
+        ]);
+
+        $this->log('workorder_job.vehicle_intake_saved', $jobId, $actorId, [
+            'vin' => $vin,
+            'vehicle_year' => $vehicleYear,
+            'vehicle_make' => $vehicleMake,
+            'vehicle_model' => $vehicleModel,
+            'vehicle_trim' => $vehicleTrim,
+            'vehicle_weight_class' => $vehicleWeightClass,
+        ]);
+
+        return [
+            'workorder_id' => $workorderId,
+            'workorder_job_id' => $jobId,
+            'vin' => $vin,
+            'vehicle_year' => $vehicleYear,
+            'vehicle_make' => $vehicleMake,
+            'vehicle_model' => $vehicleModel,
+            'vehicle_trim' => $vehicleTrim,
+            'vehicle_weight_class' => $vehicleWeightClass,
+            'vin_decoded' => $vinDecoded,
+            'vin_overrides' => $vinOverrides,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
      */
     public function captureSignature(int $jobId, array $payload, string $ipAddress, ?string $userAgent = null): JobSignature
     {

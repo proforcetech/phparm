@@ -500,6 +500,23 @@ class WorkorderController
     }
 
     /**
+     * POST /api/workorders/{id}/jobs/{jobId}/vehicle-intake
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function recordVehicleIntake(User $user, int $id, int $jobId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->recordVehicleIntake($jobId, $id, $payload, $user->id);
+    }
+
+    /**
      * POST /api/workorders/{id}/jobs/{jobId}/signature
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
