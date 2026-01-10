@@ -10,6 +10,7 @@ import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import estimateService from '../../../services/estimate.service'
 import customerService from '../../../services/customer.service'
+import bundleService from '../../../services/bundle.service'
 import { useToast } from '../../stores/toast'
 
 const statusOptions = [
@@ -44,6 +45,10 @@ export default function EstimateForm() {
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [bundles, setBundles] = useState([])
+  const [bundleLoading, setBundleLoading] = useState(false)
+  const [bundleSelection, setBundleSelection] = useState('')
+  const [addingBundle, setAddingBundle] = useState(false)
   const [form, setForm] = useState({
     customer_id: null,
     vehicle_id: null,
@@ -128,11 +133,28 @@ export default function EstimateForm() {
     }
   }, [error, id, navigate])
 
+  const loadBundles = useCallback(async () => {
+    setBundleLoading(true)
+    try {
+      const data = await bundleService.list({ active: 1 })
+      setBundles(Array.isArray(data) ? data : [])
+    } catch (bundleError) {
+      console.error('Failed to load bundles:', bundleError)
+      setBundles([])
+    } finally {
+      setBundleLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (isEditing) {
       loadEstimate()
     }
   }, [isEditing, loadEstimate])
+
+  useEffect(() => {
+    loadBundles()
+  }, [loadBundles])
 
   const addLineItem = () => {
     setForm((prev) => ({
@@ -165,6 +187,52 @@ export default function EstimateForm() {
         }
       }),
     }))
+  }
+
+  const addBundleItems = async () => {
+    if (!bundleSelection) return
+    setAddingBundle(true)
+    try {
+      const items = await bundleService.fetchItemsForEstimate(bundleSelection)
+      if (!Array.isArray(items) || items.length === 0) {
+        error('Selected bundle has no items.')
+        return
+      }
+
+      const typeLabel = (type) => {
+        if (!type) return ''
+        const normalized = type.toUpperCase()
+        if (normalized === 'LABOR') return 'Labor'
+        if (normalized === 'PART') return 'Part'
+        if (normalized === 'FEE') return 'Fee'
+        if (normalized === 'DISCOUNT') return 'Discount'
+        return type
+      }
+
+      const nextItems = items.map((item) => {
+        const prefix = typeLabel(item.type)
+        const description = prefix ? `${prefix}: ${item.description}` : item.description
+        const unitPrice = Number(item.unit_price) || 0
+        const adjustedPrice = item.type === 'DISCOUNT' ? -Math.abs(unitPrice) : unitPrice
+        return {
+          description,
+          quantity: Number(item.quantity) || 1,
+          unit_price: adjustedPrice,
+          notes: '',
+        }
+      })
+
+      setForm((prev) => ({
+        ...prev,
+        line_items: [...prev.line_items, ...nextItems],
+      }))
+      success('Bundle items added to estimate.')
+    } catch (bundleError) {
+      console.error('Failed to add bundle items:', bundleError)
+      error('Failed to add bundle items.')
+    } finally {
+      setAddingBundle(false)
+    }
   }
 
   const saveEstimate = async (event) => {
@@ -341,6 +409,44 @@ export default function EstimateForm() {
               <Card>
                 <div className="mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Line Items</h3>
+                </div>
+
+                <div className="mb-5 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div className="flex-1">
+                      <Select
+                        value={bundleSelection}
+                        label="Quick add from Service Menu"
+                        placeholder={bundleLoading ? 'Loading canned jobs...' : 'Select a canned job'}
+                        options={bundles.map((bundle) => ({
+                          value: bundle.id,
+                          label: bundle.service_type_name ? `${bundle.name} • ${bundle.service_type_name}` : bundle.name,
+                        }))}
+                        onChange={(event) => setBundleSelection(event.target.value)}
+                        disabled={bundleLoading}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Canned jobs bundle labor, parts, and fees for fast entry.
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate('/cp/bundles')}
+                        type="button"
+                      >
+                        Manage Canned Jobs
+                      </Button>
+                      <Button
+                        onClick={addBundleItems}
+                        type="button"
+                        disabled={!bundleSelection || addingBundle}
+                        loading={addingBundle}
+                      >
+                        {addingBundle ? 'Adding...' : 'Add Bundle'}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-4">

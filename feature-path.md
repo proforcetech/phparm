@@ -219,7 +219,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 15. In-Shop & Mobile Repairs Additional Features:
 
-[ ] Service Menu / Canned Jobs: While ServiceTypes exist, a "Canned Job" feature (bundling Parts + Labor + Fees into one quick-add item) is a must-have for speed (e.g., "Standard 5qt Oil Change"). Ref: Bundle files exist, so verify this UI is optimized for quick selection.
+[x] Service Menu / Canned Jobs: While ServiceTypes exist, a "Canned Job" feature (bundling Parts + Labor + Fees into one quick-add item) is a must-have for speed (e.g., "Standard 5qt Oil Change"). Ref: Bundle files exist, so verify this UI is optimized for quick selection.
 
 [x] Customer Communication Hub: MessagingService exists, but a unified "Timeline" view for the customer (seeing photos, approving estimates, chatting) is a "Nice to Have" that boosts trust.
 

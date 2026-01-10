@@ -17,6 +17,7 @@ import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
 import inventoryService from '../../../services/inventory.service'
+import bundleService from '../../../services/bundle.service'
 import PartsCart from '../inventory/PartsCart'
 import { useToast } from '../../stores/toast'
 
@@ -34,6 +35,7 @@ const createSubEstimateItem = () => ({
 const createSubEstimateJob = () => ({
   title: '',
   notes: '',
+  bundle_id: '',
   items: [createSubEstimateItem()],
 })
 
@@ -175,6 +177,8 @@ export default function WorkorderDetail() {
   const [timelineEvents, setTimelineEvents] = useState([])
   const [technicians, setTechnicians] = useState([])
   const [pullRequests, setPullRequests] = useState([])
+  const [bundles, setBundles] = useState([])
+  const [bundleLoading, setBundleLoading] = useState(false)
 
   const [showConvertModal, setShowConvertModal] = useState(false)
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -287,6 +291,19 @@ export default function WorkorderDetail() {
     }
   }, [])
 
+  const loadBundles = useCallback(async () => {
+    setBundleLoading(true)
+    try {
+      const data = await bundleService.list({ active: 1 })
+      setBundles(Array.isArray(data) ? data : [])
+    } catch (bundleError) {
+      console.error('Failed to load bundles:', bundleError)
+      setBundles([])
+    } finally {
+      setBundleLoading(false)
+    }
+  }, [])
+
   const loadPullRequests = useCallback(async () => {
     try {
       const response = await pullRequestService.getByWorkorder(id)
@@ -300,7 +317,8 @@ export default function WorkorderDetail() {
     loadWorkorder()
     loadTechnicians()
     loadPullRequests()
-  }, [loadPullRequests, loadTechnicians, loadWorkorder])
+    loadBundles()
+  }, [loadBundles, loadPullRequests, loadTechnicians, loadWorkorder])
 
   const updateStatus = async (status, notes = null) => {
     if (!workorder) return
@@ -498,7 +516,7 @@ export default function WorkorderDetail() {
 
   const onSubEstimateItemTypeChange = (jobIndex, itemIndex, value) => {
     updateSubEstimateItem(jobIndex, itemIndex, (item) => {
-      if (value === 'LABOR') {
+      if (value !== 'PART') {
         return {
           ...item,
           type: value,
@@ -509,6 +527,38 @@ export default function WorkorderDetail() {
       }
       return { ...item, type: value }
     })
+  }
+
+  const addBundleItemsToJob = async (jobIndex) => {
+    const bundleId = subEstimateForm.jobs[jobIndex]?.bundle_id
+    if (!bundleId) return
+
+    try {
+      const items = await bundleService.fetchItemsForEstimate(bundleId)
+      if (!Array.isArray(items) || items.length === 0) {
+        toastError('Selected canned job has no items.')
+        return
+      }
+
+      const nextItems = items.map((item) => ({
+        type: item.type || 'LABOR',
+        sku: '',
+        inventory_item_id: null,
+        description: item.description || '',
+        quantity: Number(item.quantity) || 1,
+        unit_price: item.type === 'DISCOUNT' ? -Math.abs(Number(item.unit_price) || 0) : Number(item.unit_price) || 0,
+        list_price: Number(item.list_price) || 0,
+        taxable: item.taxable !== false,
+      }))
+
+      updateSubEstimateJob(jobIndex, (current) => ({
+        ...current,
+        items: [...current.items, ...nextItems],
+      }))
+    } catch (bundleError) {
+      console.error('Failed to add bundle items to sub-estimate:', bundleError)
+      toastError('Failed to add canned job items.')
+    }
   }
 
   const lookupSubEstimateBySku = async (jobIndex, itemIndex) => {
@@ -1429,6 +1479,33 @@ export default function WorkorderDetail() {
                     onUpdateModelValue={(value) => updateSubEstimateJob(jobIndex, (current) => ({ ...current, notes: value }))}
                   />
 
+                  <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                      <div className="flex-1">
+                        <Select
+                          value={job.bundle_id}
+                          label="Quick add canned job"
+                          placeholder={bundleLoading ? 'Loading canned jobs...' : 'Select a canned job'}
+                          options={bundles.map((bundle) => ({
+                            value: bundle.id,
+                            label: bundle.service_type_name ? `${bundle.name} • ${bundle.service_type_name}` : bundle.name,
+                          }))}
+                          disabled={bundleLoading}
+                          onChange={(event) => updateSubEstimateJob(jobIndex, (current) => ({ ...current, bundle_id: event.target.value }))}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Add a preset bundle of parts, labor, and fees.</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addBundleItemsToJob(jobIndex)}
+                        disabled={!job.bundle_id}
+                      >
+                        Add Bundle Items
+                      </Button>
+                    </div>
+                  </div>
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h5 className="text-sm font-medium text-gray-700">Line Items</h5>
@@ -1455,6 +1532,8 @@ export default function WorkorderDetail() {
                               options={[
                                 { value: 'LABOR', label: 'Labor' },
                                 { value: 'PART', label: 'Part' },
+                                { value: 'FEE', label: 'Fee' },
+                                { value: 'DISCOUNT', label: 'Discount' },
                               ]}
                               required
                               onChange={(event) => onSubEstimateItemTypeChange(jobIndex, itemIndex, event.target.value)}
