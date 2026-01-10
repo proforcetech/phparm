@@ -393,6 +393,42 @@ class WorkorderController
     }
 
     /**
+     * POST /api/workorders/{id}/jobs/{jobId}/damage-photos
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function uploadJobDamagePhoto(User $user, int $id, int $jobId, array $file): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->storeDamagePhoto($jobId, $file, $user->id);
+    }
+
+    /**
+     * GET /api/workorders/{id}/jobs/{jobId}/damage-photos
+     * @return array<string, mixed>
+     */
+    public function damagePhotoStatus(User $user, int $id, int $jobId): array
+    {
+        $this->assertViewAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return [
+            'job_id' => $jobId,
+            'total' => $this->evidence->damagePhotoCount($jobId),
+        ];
+    }
+
+    /**
      * GET /api/workorders/{id}/jobs/{jobId}/checkpoints
      * @return array<string, mixed>
      */
@@ -461,6 +497,23 @@ class WorkorderController
             static fn($report) => $report->toArray(),
             $this->evidence->listDamageReports($jobId)
         );
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/vehicle-intake
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function recordVehicleIntake(User $user, int $id, int $jobId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->recordVehicleIntake($jobId, $id, $payload, $user->id);
     }
 
     /**

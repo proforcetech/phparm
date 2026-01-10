@@ -293,7 +293,7 @@ class FinancialEntryService
         return $row ? new FinancialEntry($row) : null;
     }
 
-    private function fetchByIdempotencyKey(string $idempotencyKey): ?FinancialEntry
+    public function fetchByIdempotencyKey(string $idempotencyKey): ?FinancialEntry
     {
         $stmt = $this->connection->pdo()->prepare(
             'SELECT * FROM financial_entries WHERE idempotency_key = :idempotency_key LIMIT 1'

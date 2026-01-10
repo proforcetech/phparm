@@ -430,6 +430,34 @@ class WorkorderRepository
                 'Hooked status requires photo evidence. Missing: ' . implode(', ', $missing) . '.'
             );
         }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_media WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $damagePhotoCount = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        if ($damagePhotoCount < WorkorderJobEvidenceService::DAMAGE_PHOTO_MINIMUM) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Hooked status requires at least %d damage photos. %d uploaded.',
+                    WorkorderJobEvidenceService::DAMAGE_PHOTO_MINIMUM,
+                    $damagePhotoCount
+                )
+            );
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_reports WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $damageReportCount = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        if ($damageReportCount < 1) {
+            throw new InvalidArgumentException(
+                'Hooked status requires a saved damage diagram report.'
+            );
+        }
     }
 
     public function assignJobTechnician(int $jobId, ?int $technicianId, ?int $actorId = null): ?WorkorderJob

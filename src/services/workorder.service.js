@@ -209,6 +209,31 @@ export default {
   },
 
   /**
+   * Upload a damage photo for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {File} file
+   * @returns {Promise}
+   */
+  uploadJobDamagePhoto(workorderId, jobId, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/damage-photos`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  /**
+   * Get damage photo summary for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @returns {Promise}
+   */
+  getJobDamagePhotoStatus(workorderId, jobId) {
+    return api.get(`/workorders/${workorderId}/jobs/${jobId}/damage-photos`)
+  },
+
+  /**
    * Create a damage report for a job
    * @param {number} workorderId
    * @param {number} jobId
@@ -227,6 +252,17 @@ export default {
    */
   getDamageReports(workorderId, jobId) {
     return api.get(`/workorders/${workorderId}/jobs/${jobId}/damage-reports`)
+  },
+
+  /**
+   * Save vehicle intake details for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  saveJobVehicleIntake(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/vehicle-intake`, payload)
   },
 
   /**
