@@ -442,15 +442,18 @@ class InventoryItemRepository
         }
 
         if (isset($filters['query']) && $filters['query'] !== '') {
-            $clauses[] = '(name LIKE :query OR sku LIKE :query)';
-            $bindings['query'] = $filters['query'] . '%';
+            $clauses[] = $this->buildSearchClause($filters['query'], $bindings, '');
         }
 
         if (!empty($filters['low_stock_only'])) {
-            $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
-            $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
-            if ($stockColumn !== null && $thresholdColumn !== null) {
-                $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+            if ($this->columnExists('is_low_stock')) {
+                $clauses[] = 'is_low_stock = 1';
+            } else {
+                $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
+                $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
+                if ($stockColumn !== null && $thresholdColumn !== null) {
+                    $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+                }
             }
 
             // Only include tracked items in low stock alerts
@@ -460,6 +463,42 @@ class InventoryItemRepository
         }
 
         return [$clauses, $bindings];
+    }
+
+    /**
+     * @param array<string, mixed> $bindings
+     */
+    private function buildSearchClause(string $query, array &$bindings, string $tableAlias = 'i'): string
+    {
+        $prefix = $tableAlias !== '' ? $tableAlias . '.' : '';
+        $bindings['fulltext'] = $this->buildFullTextQuery($query);
+        $bindings['sku_prefix'] = $query . '%';
+
+        $conditions = [];
+        $conditions[] = 'MATCH(' . $prefix . 'name, ' . $prefix . 'description) AGAINST (:fulltext IN BOOLEAN MODE)';
+        $conditions[] = $prefix . 'sku LIKE :sku_prefix';
+
+        if ($this->columnExists('manufacturer_part_number')) {
+            $bindings['mpn_prefix'] = $query . '%';
+            $conditions[] = $prefix . 'manufacturer_part_number LIKE :mpn_prefix';
+        }
+
+        return '(' . implode(' OR ', $conditions) . ')';
+    }
+
+    private function buildFullTextQuery(string $query): string
+    {
+        $tokens = preg_split('/\s+/', trim($query)) ?: [];
+        $terms = [];
+        foreach ($tokens as $token) {
+            $token = preg_replace('/[^\p{L}\p{N}_]+/u', '', $token) ?? '';
+            if ($token === '') {
+                continue;
+            }
+            $terms[] = $token . '*';
+        }
+
+        return $terms ? implode(' ', $terms) : $query;
     }
 
     /**
@@ -482,6 +521,7 @@ class InventoryItemRepository
         $row['manufacturer_part_number'] = $row['manufacturer_part_number'] ?? null;
         $row['markup'] = isset($row['markup']) && $row['markup'] !== null ? (float) $row['markup'] : null;
         $row['is_tracked'] = (bool) ($row['is_tracked'] ?? 1);
+        $row['is_low_stock'] = (bool) ($row['is_low_stock'] ?? 0);
 
         return new InventoryItem($row);
     }
@@ -496,17 +536,8 @@ class InventoryItemRepository
      */
     public function searchForParts(string $query, ?int $vehicleMasterId = null, int $limit = 20): array
     {
-        $bindings = ['query' => '%' . $query . '%'];
-
-        // Build search conditions for all searchable fields
-        $searchConditions = '(i.name LIKE :query OR i.sku LIKE :query OR i.description LIKE :query';
-
-        // Include manufacturer_part_number if column exists
-        if ($this->columnExists('manufacturer_part_number')) {
-            $searchConditions .= ' OR i.manufacturer_part_number LIKE :query';
-        }
-
-        $searchConditions .= ')';
+        $bindings = [];
+        $searchConditions = $this->buildSearchClause($query, $bindings);
 
         if ($vehicleMasterId !== null) {
             // Search only parts compatible with the specified vehicle
@@ -627,14 +658,8 @@ class InventoryItemRepository
      */
     public function searchWithCompatibility(string $query, int $vehicleMasterId, int $limit = 20): array
     {
-        $bindings = ['query' => '%' . $query . '%', 'vehicle_master_id' => $vehicleMasterId];
-
-        // Build search conditions
-        $searchConditions = '(i.name LIKE :query OR i.sku LIKE :query OR i.description LIKE :query';
-        if ($this->columnExists('manufacturer_part_number')) {
-            $searchConditions .= ' OR i.manufacturer_part_number LIKE :query';
-        }
-        $searchConditions .= ')';
+        $bindings = ['vehicle_master_id' => $vehicleMasterId];
+        $searchConditions = $this->buildSearchClause($query, $bindings);
 
         // Use LEFT JOIN to get all matching parts with compatibility flag
         $sql = 'SELECT i.*,
