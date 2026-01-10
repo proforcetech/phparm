@@ -4,6 +4,7 @@ namespace App\Services\Workorder;
 
 use App\Models\User;
 use App\Models\Workorder;
+use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
@@ -16,19 +17,22 @@ class WorkorderController
     private WorkorderJobEvidenceService $evidence;
     private AccessGate $gate;
     private ?MessagingNotificationService $messagingNotifications;
+    private ?DispatchAuditService $dispatchAudit;
 
     public function __construct(
         WorkorderRepository $repository,
         WorkorderService $service,
         WorkorderJobEvidenceService $evidence,
         AccessGate $gate,
-        ?MessagingNotificationService $messagingNotifications = null
+        ?MessagingNotificationService $messagingNotifications = null,
+        ?DispatchAuditService $dispatchAudit = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
         $this->evidence = $evidence;
         $this->gate = $gate;
         $this->messagingNotifications = $messagingNotifications;
+        $this->dispatchAudit = $dispatchAudit;
     }
 
     /**
@@ -191,6 +195,32 @@ class WorkorderController
             'actor_id' => $user->id,
             'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
+
+        if ($this->dispatchAudit !== null) {
+            $idempotencyKey = $this->dispatchAudit->generateIdempotencyKey(
+                'assignment',
+                'workorder',
+                $workorder->id,
+                $technicianId ?? 'unassigned'
+            );
+
+            $this->dispatchAudit->logEvent(
+                'dispatch.assignment_updated',
+                'workorder',
+                $workorder->id,
+                [
+                    'job_reference' => (string) $workorder->id,
+                    'driver_profile_id' => $recommendedDriver['driver_profile_id'] ?? null,
+                    'driver_user_id' => $technicianId ? (int) $technicianId : null,
+                    'previous_technician_id' => $before?->assigned_technician_id,
+                    'new_technician_id' => $technicianId ? (int) $technicianId : null,
+                    'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
+                    'result_status' => 'success',
+                ],
+                $idempotencyKey,
+                $user->id
+            );
+        }
 
         return $this->enrichWorkorder($workorder);
     }
