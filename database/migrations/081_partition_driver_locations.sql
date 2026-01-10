@@ -1,9 +1,9 @@
 -- Partition driver_locations by month
--- Note: We use the DELIMITER command so the PHP runner knows to split by //
+-- Note: Uses DELIMITER for multi-statement procedure
 
 DELIMITER //
 
--- 1. Adjust Primary Key (One chunk ending in //)
+-- 1. Adjust Primary Key
 ALTER TABLE driver_locations
     DROP PRIMARY KEY,
     ADD PRIMARY KEY (id, recorded_at)
