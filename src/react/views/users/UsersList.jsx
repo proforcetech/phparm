@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import Badge from '../../components/ui/Badge'
@@ -13,24 +11,9 @@ import Select from '../../components/ui/Select'
 import userService from '../../../services/user.service'
 import roleService from '../../../services/role.service'
 import { useToast } from '../../stores/toast.jsx'
+import { useAuthStore } from '../../stores/auth.jsx'
 
 const defaultRoleOptions = [{ label: 'All Roles', value: '' }]
-import { useAuthStore } from '../../stores/auth.jsx'
-import { useToast } from '../../stores/toast.jsx'
-
-const roleOptions = [
-  { label: 'All Roles', value: '' },
-  { label: 'Admin', value: 'admin' },
-  { label: 'Dispatcher', value: 'dispatcher' },
-  { label: 'Manager', value: 'manager' },
-  { label: 'Technician', value: 'technician' },
-  { label: 'Parts', value: 'parts' },
-  { label: 'Roadside', value: 'roadside' },
-  { label: 'CMS', value: 'cms' },
-  { label: 'Customer', value: 'customer' },
-]
-
-const bulkRoleOptions = roleOptions.filter((option) => option.value !== '')
 const statusOptions = [
   { label: 'All Statuses', value: 'all' },
   { label: 'Active', value: 'active' },
@@ -105,7 +88,6 @@ export default function UsersList() {
   const [showBulkRoleModal, setShowBulkRoleModal] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [userToReset2FA, setUserToReset2FA] = useState(null)
-  const [filters, setFilters] = useState({ query: '', role: '' })
   const [roleOptions, setRoleOptions] = useState(defaultRoleOptions)
   const [roleLabels, setRoleLabels] = useState({})
   const [selectedUserIds, setSelectedUserIds] = useState([])
@@ -119,6 +101,11 @@ export default function UsersList() {
     status: 'active',
     two_factor: '',
   })
+
+  const bulkRoleOptions = useMemo(
+    () => roleOptions.filter((option) => option.value !== ''),
+    [roleOptions]
+  )
 
   const loadUsers = async (nextFilters = filters) => {
     setLoading(true)
