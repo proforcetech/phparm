@@ -312,6 +312,7 @@ export default function NoticeGeneration() {
           </Link>
           <Link to="/cp/storage/auction-management">
             <Button variant="secondary">Auction Management</Button>
+          </Link>
           <Link to="/cp/storage/spot-checks">
             <Button variant="secondary">Inventory Spot-Checks</Button>
           </Link>
