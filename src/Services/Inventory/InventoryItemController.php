@@ -115,7 +115,15 @@ class InventoryItemController
     public function update(User $user, int $id, array $data): ?array
     {
         $this->assertManageAccess($user);
-        $this->gate->assert($user, 'inventory.update');
+        $this->assertEditAccess($user);
+
+        $existing = $this->repository->find($id);
+        if ($existing !== null && array_key_exists('stock_quantity', $data)) {
+            $incomingQuantity = (int) $data['stock_quantity'];
+            if ($incomingQuantity !== (int) $existing->stock_quantity) {
+                $this->assertAdjustAccess($user);
+            }
+        }
 
         $item = $this->repository->update($id, $data);
 
@@ -381,7 +389,23 @@ class InventoryItemController
 
     private function assertManageAccess(User $user): void
     {
-        $this->gate->assert($user, 'inventory.*');
+        $permissions = [
+            'inventory.*',
+            'inventory.create',
+            'inventory.edit',
+            'inventory.adjust',
+            'inventory.update',
+            'inventory.delete',
+            'inventory.import',
+        ];
+
+        foreach ($permissions as $permission) {
+            if ($this->gate->can($user, $permission)) {
+                return;
+            }
+        }
+
+        throw new UnauthorizedException('User lacks permission to manage inventory.');
     }
 
     private function assertViewAccess(User $user): void
@@ -391,5 +415,23 @@ class InventoryItemController
         }
 
         throw new UnauthorizedException('User lacks permission to view inventory.');
+    }
+
+    private function assertEditAccess(User $user): void
+    {
+        if ($this->gate->can($user, 'inventory.edit') || $this->gate->can($user, 'inventory.*')) {
+            return;
+        }
+
+        throw new UnauthorizedException('User lacks permission to edit inventory.');
+    }
+
+    private function assertAdjustAccess(User $user): void
+    {
+        if ($this->gate->can($user, 'inventory.adjust') || $this->gate->can($user, 'inventory.*')) {
+            return;
+        }
+
+        throw new UnauthorizedException('User lacks permission to adjust inventory.');
     }
 }

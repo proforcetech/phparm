@@ -7,9 +7,11 @@ import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Table from '../../components/ui/Table'
 import inventoryService from '../../../services/inventory.service'
+import { useAuthStore } from '../../stores/auth.jsx'
 
 export default function InventoryList() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [items, setItems] = useState([])
@@ -23,6 +25,11 @@ export default function InventoryList() {
   })
 
   const perPage = 10
+
+  const canCreate = hasPermission('inventory.create')
+  const canEdit = hasPermission('inventory.edit')
+  const canDelete = hasPermission('inventory.delete')
+  const canManageLookups = hasPermission('inventory.manage') || hasPermission('inventory.edit')
 
   const columns = useMemo(() => ([
     { key: 'name', label: 'Item' },
@@ -93,12 +100,14 @@ export default function InventoryList() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
           <p className="mt-1 text-sm text-gray-500">Search, filter, and manage stock</p>
         </div>
-        <Button onClick={() => navigate('/cp/inventory/create')}>
-          <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Add Item
-        </Button>
+        {canCreate ? (
+          <Button onClick={() => navigate('/cp/inventory/create')}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Item
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
@@ -179,14 +188,18 @@ export default function InventoryList() {
                   </div>
                 ),
               }}
-              renderActions={(row) => (
+              renderActions={canEdit || canDelete ? (row) => (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => navigate(`/cp/inventory/${row.id}/edit`)}>Edit</Button>
-                  <Button size="sm" variant="danger" loading={deletingId === row.id} onClick={() => confirmDelete(row.id)}>
-                    Delete
-                  </Button>
+                  {canEdit ? (
+                    <Button size="sm" variant="secondary" onClick={() => navigate(`/cp/inventory/${row.id}/edit`)}>Edit</Button>
+                  ) : null}
+                  {canDelete ? (
+                    <Button size="sm" variant="danger" loading={deletingId === row.id} onClick={() => confirmDelete(row.id)}>
+                      Delete
+                    </Button>
+                  ) : null}
                 </div>
-              )}
+              ) : undefined}
               renderEmpty={() => <p className="text-sm text-gray-500">No inventory items found for the current filters.</p>}
             />
 
@@ -207,14 +220,16 @@ export default function InventoryList() {
             Low stock alerting is enabled. Use the toggle above to triage items that need restocking.
           </div>
           <Button variant="secondary" onClick={() => navigate('/cp/inventory/alerts')}>View Alerts</Button>
-          <div className="pt-2 border-t border-gray-100 space-y-2">
-            <h4 className="text-sm font-semibold text-gray-900">Manage lists</h4>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" onClick={() => navigate('/cp/inventory/categories')}>Categories</Button>
-              <Button size="sm" variant="secondary" onClick={() => navigate('/cp/inventory/vendors')}>Vendors</Button>
-              <Button size="sm" variant="secondary" onClick={() => navigate('/cp/inventory/locations')}>Locations</Button>
+          {canManageLookups ? (
+            <div className="pt-2 border-t border-gray-100 space-y-2">
+              <h4 className="text-sm font-semibold text-gray-900">Manage lists</h4>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => navigate('/cp/inventory/categories')}>Categories</Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate('/cp/inventory/vendors')}>Vendors</Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate('/cp/inventory/locations')}>Locations</Button>
+              </div>
             </div>
-          </div>
+          ) : null}
         </Card>
       </div>
     </div>
