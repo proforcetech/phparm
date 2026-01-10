@@ -223,7 +223,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 [ ] Customer Communication Hub: MessagingService exists, but a unified "Timeline" view for the customer (seeing photos, approving estimates, chatting) is a "Nice to Have" that boosts trust.
 
-[ ] Digital Vehicle Inspections (DVI): InspectionReport exists. Ensure this supports video uploads, not just photos, as video has higher conversion rates for upsells.
+[x] Digital Vehicle Inspections (DVI): InspectionReport exists. Ensure this supports video uploads, not just photos, as video has higher conversion rates for upsells.
 
 ## 16. Additional Roadside & Towing Features
 

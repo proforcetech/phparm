@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from './ui/Button'
 
 const formatFileSize = (bytes) => {
@@ -13,7 +13,37 @@ const formatDuration = (seconds) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowedTypes = ['image', 'video'] }) {
+const bytesToMB = (bytes) => `${(bytes / (1024 * 1024)).toFixed(0)} MB`
+
+const DEFAULT_ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+]
+
+const mimeToExtension = (type) => {
+  if (type === 'video/quicktime') {
+    return 'mov'
+  }
+  return type.split('/')[1]
+}
+
+const extensionFromName = (name) => {
+  const parts = name.split('.')
+  return parts.length > 1 ? parts.pop().toLowerCase() : ''
+}
+
+export default function CameraCapture({
+  onCapture,
+  maxVideoDuration = 60,
+  allowedTypes = ['image', 'video'],
+  allowedMimeTypes = DEFAULT_ALLOWED_MIME_TYPES,
+  maxImageSizeBytes = 8 * 1024 * 1024,
+  maxVideoSizeBytes = 50 * 1024 * 1024,
+}) {
   const videoRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const streamRef = useRef(null)
@@ -27,8 +57,24 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
   const [facingMode, setFacingMode] = useState('environment') // 'environment' = back camera, 'user' = front camera
   const [cameraSupported, setCameraSupported] = useState(true)
   const [permissionDenied, setPermissionDenied] = useState(false)
+  const [validationError, setValidationError] = useState('')
 
   const recordingTimerRef = useRef(null)
+  const allowedExtensions = useMemo(() => {
+    const extensions = new Set()
+    allowedMimeTypes.forEach((type) => {
+      const extension = mimeToExtension(type)
+      if (extension) {
+        extensions.add(extension)
+      }
+      if (type === 'image/jpeg') {
+        extensions.add('jpg')
+      }
+    })
+    return Array.from(extensions)
+  }, [allowedMimeTypes])
+  const fileAccept = allowedMimeTypes.length ? allowedMimeTypes.join(',') : 'image/*,video/*'
+  const maxSizeText = `Photos up to ${bytesToMB(maxImageSizeBytes)} • Videos up to ${bytesToMB(maxVideoSizeBytes)}`
 
   // Check for camera support
   useEffect(() => {
@@ -82,6 +128,7 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
 
   const startCamera = useCallback(async () => {
     setCameraError('')
+    setValidationError('')
     setPermissionDenied(false)
 
     try {
@@ -138,6 +185,30 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
     }
   }, [cameraActive, stopCamera, startCamera])
 
+  const validateFile = useCallback((file) => {
+    const type = file.type.startsWith('video/') ? 'video' : 'image'
+    const extension = extensionFromName(file.name)
+
+    if (!allowedTypes.includes(type)) {
+      return { valid: false, message: `Only ${allowedTypes.join(' and ')} files are allowed.` }
+    }
+
+    if (file.type && !allowedMimeTypes.includes(file.type)) {
+      return { valid: false, message: 'Unsupported file format.' }
+    }
+
+    if (!file.type && extension && !allowedExtensions.includes(extension)) {
+      return { valid: false, message: 'Unsupported file format.' }
+    }
+
+    const maxBytes = type === 'video' ? maxVideoSizeBytes : maxImageSizeBytes
+    if (file.size > maxBytes) {
+      return { valid: false, message: `${type === 'video' ? 'Video' : 'Photo'} is too large.` }
+    }
+
+    return { valid: true, type }
+  }, [allowedExtensions, allowedMimeTypes, allowedTypes, maxImageSizeBytes, maxVideoSizeBytes])
+
   const capturePhoto = useCallback(() => {
     if (!videoRef.current || !cameraActive) return
 
@@ -152,6 +223,11 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
       if (blob) {
         const timestamp = Date.now()
         const file = new File([blob], `photo_${timestamp}.jpg`, { type: 'image/jpeg' })
+        const validation = validateFile(file)
+        if (!validation.valid) {
+          setValidationError(validation.message)
+          return
+        }
         const preview = URL.createObjectURL(blob)
 
         setCaptures((prev) => [...prev, {
@@ -163,7 +239,7 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
         }])
       }
     }, 'image/jpeg', 0.9)
-  }, [cameraActive])
+  }, [cameraActive, maxImageSizeBytes, maxVideoSizeBytes, allowedMimeTypes, allowedTypes, validateFile])
 
   const startRecording = useCallback(() => {
     if (!streamRef.current || !cameraActive) return
@@ -193,6 +269,11 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
         const timestamp = Date.now()
         const extension = options.mimeType.includes('mp4') ? 'mp4' : 'webm'
         const file = new File([blob], `video_${timestamp}.${extension}`, { type: options.mimeType })
+        const validation = validateFile(file)
+        if (!validation.valid) {
+          setValidationError(validation.message)
+          return
+        }
         const preview = URL.createObjectURL(blob)
 
         setCaptures((prev) => [...prev, {
@@ -211,7 +292,7 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
       console.error('Recording error:', err)
       setCameraError('Unable to start video recording.')
     }
-  }, [cameraActive, recordingTime])
+  }, [cameraActive, recordingTime, maxImageSizeBytes, maxVideoSizeBytes, allowedMimeTypes, allowedTypes, validateFile])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
@@ -232,16 +313,32 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
 
   const handleFileInput = useCallback((event) => {
     const files = Array.from(event.target.files || [])
-    const newCaptures = files.map((file) => ({
-      id: Date.now() + Math.random(),
-      type: file.type.startsWith('video/') ? 'video' : 'image',
-      file,
-      preview: URL.createObjectURL(file),
-      size: file.size,
-    }))
-    setCaptures((prev) => [...prev, ...newCaptures])
+    const newCaptures = []
+    let errorMessage = ''
+
+    files.forEach((file) => {
+      const validation = validateFile(file)
+      if (!validation.valid) {
+        errorMessage = validation.message
+        return
+      }
+      newCaptures.push({
+        id: Date.now() + Math.random(),
+        type: validation.type,
+        file,
+        preview: URL.createObjectURL(file),
+        size: file.size,
+      })
+    })
+
+    if (newCaptures.length) {
+      setCaptures((prev) => [...prev, ...newCaptures])
+      setValidationError('')
+    } else if (errorMessage) {
+      setValidationError(errorMessage)
+    }
     event.target.value = '' // Reset input
-  }, [])
+  }, [validateFile])
 
   return (
     <div className="space-y-4">
@@ -270,12 +367,13 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
                   <input
                     type="file"
                     multiple
-                    accept="image/*,video/*"
+                    accept={fileAccept}
                     onChange={handleFileInput}
                     className="hidden"
                   />
                 </label>
               </div>
+              <p className="text-xs text-gray-500">{maxSizeText}</p>
 
               {permissionDenied && (
                 <p className="text-sm text-amber-600 mt-2">
@@ -293,16 +391,20 @@ export default function CameraCapture({ onCapture, maxVideoDuration = 60, allowe
                 <input
                   type="file"
                   multiple
-                  accept="image/*,video/*"
+                  accept={fileAccept}
                   onChange={handleFileInput}
                   className="hidden"
                 />
               </label>
+              <p className="text-xs text-gray-500">{maxSizeText}</p>
             </div>
           )}
 
           {cameraError && (
             <p className="text-sm text-red-600 mt-2">{cameraError}</p>
+          )}
+          {validationError && (
+            <p className="text-sm text-red-600 mt-2">{validationError}</p>
           )}
         </div>
       ) : (

@@ -10,6 +10,18 @@ use RuntimeException;
 
 class InspectionController
 {
+    private const MAX_IMAGE_BYTES = 8388608;
+    private const MAX_VIDEO_BYTES = 52428800;
+    private const ALLOWED_MEDIA_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov', 'webm'];
+    private const ALLOWED_MEDIA_MIME_TYPES = [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'video/mp4',
+        'video/quicktime',
+        'video/webm',
+    ];
+
     private InspectionTemplateService $templates;
     private InspectionCompletionService $completion;
     private InspectionPortalService $portal;
@@ -198,11 +210,20 @@ class InspectionController
         }
 
         $mimeType = mime_content_type($file['tmp_name']) ?: 'application/octet-stream';
+        if (!in_array($mimeType, self::ALLOWED_MEDIA_MIME_TYPES, true)) {
+            throw new InvalidArgumentException('Unsupported media type');
+        }
+
         $type = str_starts_with($mimeType, 'video') ? 'video' : 'image';
         $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+        $sizeBytes = (int) ($file['size'] ?? 0);
 
-        $allowed = ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov', 'webm'];
-        if (!in_array($extension, $allowed, true)) {
+        $maxBytes = $type === 'video' ? self::MAX_VIDEO_BYTES : self::MAX_IMAGE_BYTES;
+        if ($sizeBytes > $maxBytes) {
+            throw new InvalidArgumentException('Media file exceeds size limit');
+        }
+
+        if (!in_array($extension, self::ALLOWED_MEDIA_EXTENSIONS, true)) {
             throw new InvalidArgumentException('Unsupported media type');
         }
 
