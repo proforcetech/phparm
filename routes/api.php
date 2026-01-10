@@ -4243,7 +4243,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController, $trackingService) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController, $trackingService, $authService, $connection, $authConfig) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -5399,7 +5399,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Financial routes (Admin/Manager only)
-    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate, $settingsRepository) {
 
         $financialController = new \App\Services\Financial\FinancialController(
             new \App\Services\Financial\FinancialEntryService($connection),
