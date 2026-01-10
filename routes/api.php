@@ -3364,10 +3364,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
-    $router->get('/track/{token}', function (Request $request) use ($connection) {
+    $router->get('/api/track/{token}', function (Request $request) use ($connection) {
         $trackingService = new \App\Services\Tracking\TrackingService($connection);
-        $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
-        return Response::json($data);
+        try {
+            $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
+            return Response::json($data);
+        } catch (\RuntimeException $exception) {
+            return Response::json(['error' => $exception->getMessage()], 410);
+        } catch (\InvalidArgumentException $exception) {
+            return Response::notFound($exception->getMessage());
+        }
     });
 
     // Public estimate rejection reasons
@@ -4002,6 +4008,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
+        $router->post('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $file = $request->file('file');
+            $data = $workorderController->uploadJobDamagePhoto($user, $id, $jobId, is_array($file) ? $file : []);
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->damagePhotoStatus($user, $id, $jobId);
+            return Response::json($data);
+        });
+
         $router->get('/api/workorders/{id}/jobs/{jobId}/checkpoints', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -4132,6 +4155,31 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate
     );
 
+    $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+    $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+    $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+    $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+        $trackingNotificationConfig,
+        $trackingTemplateEngine,
+        $trackingLogs,
+        $auditLogger
+    );
+    $trackingMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+        $connection,
+        new \App\Services\Messaging\MessagingService($connection)
+    );
+    $trackingNotificationEvents = new \App\Services\Notification\NotificationEventService(
+        $connection,
+        $trackingDispatcher
+    );
+    $trackingService = new \App\Services\Tracking\TrackingService(
+        $connection,
+        $trackingDispatcher,
+        $trackingMessagingNotifications,
+        new \App\Services\Dispatch\DispatchAuditService($connection),
+        $trackingNotificationEvents
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -4146,7 +4194,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController, $trackingService) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -4492,10 +4540,25 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
-        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController) {
+        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController, $trackingService) {
             $user = $request->getAttribute('user');
             $offerId = (int) $request->getAttribute('id');
             $data = $driverDispatchController->acceptOffer($user, $offerId);
+            $jobReference = $data['job_reference'] ?? null;
+            $jobType = $data['job_type'] ?? null;
+
+            if (is_string($jobReference) || is_numeric($jobReference)) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                try {
+                    if ($jobType === 'workorder') {
+                        $trackingService->sendTrackingLinkForWorkorder((int) $jobReference, $baseUrl, $user?->id);
+                    } elseif ($jobType === 'workorder_job') {
+                        $trackingService->sendTrackingLinkForJob((int) $jobReference, $baseUrl, $user?->id);
+                    }
+                } catch (\Throwable $exception) {
+                    error_log('Dispatch tracking link send failed: ' . $exception->getMessage());
+                }
+            }
             return Response::json($data);
         });
 
@@ -5697,6 +5760,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $createFinancialEntry = function (
                 int $caseId,
+                int $feeId,
                 string $caseNumber,
                 string $feeType,
                 string $feeDate,
@@ -5706,8 +5770,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     return;
                 }
 
-                $idempotency = sprintf('storage-fee-%d-%s-%s', $caseId, strtolower(str_replace(' ', '-', $feeType)), $feeDate);
-                $idempotency = substr($idempotency, 0, 120);
+                $idempotency = $feeId > 0 ? sprintf('storage-fee-%d', $feeId) : '';
 
                 $financialEntryService->create([
                     'type' => 'income',
@@ -5718,7 +5781,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     'entry_date' => $feeDate,
                     'vendor' => 'Impound Storage',
                     'description' => sprintf('%s for %s', $feeType, $caseNumber),
-                    'idempotency_key' => $idempotency,
+                    'idempotency_key' => $idempotency ?: null,
                 ], $user->id);
                 $createdFinancial += 1;
             };
@@ -5768,10 +5831,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                             'posted',
                         ]);
                         $createdFees += 1;
-                        $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
                     } elseif (!empty($existingFees[$caseId]['Gate Fee'])) {
                         foreach ($existingFees[$caseId]['Gate Fee'] as $feeDate => $fee) {
-                            $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
+                            $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
                         }
                     }
 
@@ -5787,10 +5851,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                                 'posted',
                             ]);
                             $createdFees += 1;
-                            $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
+                            $feeId = (int) $pdo->lastInsertId();
+                            $createFinancialEntry($caseId, $feeId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
                         } elseif (!empty($existingFees[$caseId]['After Hours Fee'])) {
                             foreach ($existingFees[$caseId]['After Hours Fee'] as $feeDate => $fee) {
-                                $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
+                                $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
                             }
                         }
                     }
@@ -5799,7 +5864,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                         $feeDate = $startAt->modify(sprintf('+%d days', $day))->format('Y-m-d');
                         $existingDaily = $existingFees[$caseId]['Daily Storage'][$feeDate] ?? null;
                         if ($existingDaily) {
-                            $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
+                            $createFinancialEntry($caseId, (int) $existingDaily['id'], $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
                             continue;
                         }
 
@@ -5822,7 +5887,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                             'posted',
                         ]);
                         $createdFees += 1;
-                        $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
                     }
                 }
 
@@ -5836,6 +5902,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         $router->post('/api/storage/fees', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
             $payload = $request->body();
             $caseNumber = trim((string) ($payload['case_number'] ?? ''));
             $feeDate = trim((string) ($payload['fee_date'] ?? ''));
@@ -5877,11 +5944,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $fee = $row->fetch(\PDO::FETCH_ASSOC);
             $row->closeCursor();
 
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
             return Response::created($fee);
         });
 
         $router->put('/api/storage/fees/{id}', function (Request $request) use ($connection) {
             $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
             $payload = $request->body();
             $pdo = $connection->pdo();
 
@@ -5947,19 +6043,61 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $fee = $row->fetch(\PDO::FETCH_ASSOC);
             $row->closeCursor();
 
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
             return Response::json($fee);
         });
 
         $router->delete('/api/storage/fees/{id}', function (Request $request) use ($connection) {
             $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
             $pdo = $connection->pdo();
+            $existingStmt = $pdo->prepare('SELECT id FROM storage_fees WHERE id = ?');
+            $existingStmt->execute([$id]);
+            $feeId = $existingStmt->fetchColumn();
+            $existingStmt->closeCursor();
+
+            if (!$feeId) {
+                return Response::notFound('Storage fee not found.');
+            }
+
             $stmt = $pdo->prepare('DELETE FROM storage_fees WHERE id = ?');
             $stmt->execute([$id]);
-            $deleted = $stmt->rowCount() > 0;
             $stmt->closeCursor();
 
-            if (!$deleted) {
-                return Response::notFound('Storage fee not found.');
+            if ($user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $feeId);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                if ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
             }
 
             return Response::noContent();

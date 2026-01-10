@@ -14,6 +14,7 @@ use RuntimeException;
 class TrackingService
 {
     private const ARRIVAL_RADIUS_METERS = 152.4;
+    private const DEFAULT_EXPIRY_HOURS = 6;
 
     private Connection $connection;
     private ?NotificationDispatcher $notifications;
@@ -46,6 +47,8 @@ class TrackingService
             ->execute(['job_id' => $jobId]);
 
         $token = $this->generateToken();
+
+        $expiresAt = $this->normalizeExpiry($expiresAt);
 
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             INSERT INTO job_tracking_links (token, job_id, expires_at, created_at, updated_at)
@@ -85,6 +88,7 @@ class TrackingService
         }
 
         if ($this->isExpired($link['expires_at'] ?? null)) {
+            $this->revokeLink($token);
             throw new RuntimeException('This tracking link has expired.');
         }
 
@@ -195,6 +199,19 @@ class TrackingService
         }
 
         return $link;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function sendTrackingLinkForWorkorder(int $workorderId, string $baseUrl, ?int $actorId = null): ?array
+    {
+        $jobId = $this->resolveDispatchJobId($workorderId);
+        if ($jobId === null) {
+            return null;
+        }
+
+        return $this->sendTrackingLinkForJob($jobId, $baseUrl, $actorId);
     }
 
     private function generateToken(): string
@@ -528,6 +545,51 @@ class TrackingService
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
         return $row ? (int) $row['id'] : null;
+    }
+
+    private function normalizeExpiry(?string $expiresAt): ?string
+    {
+        if ($expiresAt !== null && $expiresAt !== '') {
+            return $expiresAt;
+        }
+
+        $expiresAt = (new \DateTimeImmutable())
+            ->modify('+' . self::DEFAULT_EXPIRY_HOURS . ' hours')
+            ->format('Y-m-d H:i:s');
+
+        return $expiresAt;
+    }
+
+    private function resolveDispatchJobId(int $workorderId): ?int
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT id
+            FROM workorder_jobs
+            WHERE workorder_id = :workorder_id
+              AND status != :completed_status
+            ORDER BY
+                CASE status
+                    WHEN :in_progress_status THEN 1
+                    WHEN :pending_status THEN 2
+                    WHEN :arrived_status THEN 3
+                    WHEN :hooked_status THEN 4
+                    ELSE 5
+                END,
+                position ASC,
+                id ASC
+            LIMIT 1
+        SQL);
+        $stmt->execute([
+            'workorder_id' => $workorderId,
+            'completed_status' => WorkorderJob::STATUS_COMPLETED,
+            'in_progress_status' => WorkorderJob::STATUS_IN_PROGRESS,
+            'pending_status' => WorkorderJob::STATUS_PENDING,
+            'arrived_status' => WorkorderJob::STATUS_ARRIVED,
+            'hooked_status' => WorkorderJob::STATUS_HOOKED,
+        ]);
+        $jobId = $stmt->fetchColumn();
+
+        return $jobId !== false ? (int) $jobId : null;
     }
 
     private function calculateDistanceMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
