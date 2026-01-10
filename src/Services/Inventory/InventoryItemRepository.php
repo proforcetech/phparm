@@ -33,6 +33,11 @@ class InventoryItemRepository
         $this->validator = $validator ?? new InventoryItemValidator();
     }
 
+    public function getConnection(): Connection
+    {
+        return $this->connection;
+    }
+
     /**
      * Check if the is_tracked column exists (for backwards compatibility)
      */

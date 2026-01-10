@@ -6,10 +6,12 @@ use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use App\Services\Inventory\InventoryLowStockService;
+use App\Services\Inventory\InventoryTransactionRepository;
 
 class InventoryItemController
 {
     private InventoryItemRepository $repository;
+    private InventoryTransactionRepository $transactionRepository;
     private AccessGate $gate;
     private InventoryCsvService $csvService;
     private InventoryLowStockService $lowStockService;
@@ -18,13 +20,15 @@ class InventoryItemController
         InventoryItemRepository $repository,
         AccessGate $gate,
         ?InventoryCsvService $csvService = null,
-        ?InventoryLowStockService $lowStockService = null
+        ?InventoryLowStockService $lowStockService = null,
+        ?InventoryTransactionRepository $transactionRepository = null
     )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->csvService = $csvService ?? new InventoryCsvService($repository);
         $this->lowStockService = $lowStockService ?? new InventoryLowStockService($repository);
+        $this->transactionRepository = $transactionRepository ?? new InventoryTransactionRepository($repository->getConnection());
     }
 
     /**
@@ -95,6 +99,19 @@ class InventoryItemController
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function transactions(User $user, int $id, array $params = []): array
+    {
+        $this->assertViewAccess($user);
+
+        $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 50;
+        $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
+
+        return $this->transactionRepository->listByItem($id, $limit, $offset);
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
@@ -118,6 +135,7 @@ class InventoryItemController
         $this->assertEditAccess($user);
 
         $existing = $this->repository->find($id);
+        $incomingQuantity = null;
         if ($existing !== null && array_key_exists('stock_quantity', $data)) {
             $incomingQuantity = (int) $data['stock_quantity'];
             if ($incomingQuantity !== (int) $existing->stock_quantity) {
@@ -126,6 +144,20 @@ class InventoryItemController
         }
 
         $item = $this->repository->update($id, $data);
+
+        if ($existing !== null && $incomingQuantity !== null && $item !== null) {
+            if ($incomingQuantity !== (int) $existing->stock_quantity) {
+                $this->transactionRepository->record(
+                    $id,
+                    (int) $existing->stock_quantity,
+                    (int) $item->stock_quantity,
+                    'manual_adjustment',
+                    null,
+                    $data['adjustment_reason'] ?? 'Manual adjustment',
+                    $user->id
+                );
+            }
+        }
 
         return $item?->toArray();
     }
