@@ -131,7 +131,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemRepository.php
 
-[ ] Frontend Debouncing & Pagination:
+[x] Frontend Debouncing & Pagination:
 
  Issue: InventoryList.jsx may trigger API calls on every keystroke or filter change.
 
