@@ -1027,6 +1027,19 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Logged out successfully']);
     });
 
+    $buildImpersonationPayload = function (): ?array {
+        if (!isset($_SESSION['impersonation']['impersonator'], $_SESSION['impersonation']['impersonated'])) {
+            return null;
+        }
+
+        return [
+            'active' => true,
+            'impersonator' => $_SESSION['impersonation']['impersonator'],
+            'impersonated' => $_SESSION['impersonation']['impersonated'],
+            'started_at' => $_SESSION['impersonation']['started_at'] ?? null,
+        ];
+    };
+
     $router->get('/api/auth/sessions', function (Request $request) use ($sessionManager) {
         $user = $request->getAttribute('user');
 
@@ -1034,7 +1047,6 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Not authenticated');
         }
 
-    $buildImpersonationPayload = function (): ?array {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
@@ -1051,19 +1063,6 @@ return function (Router $router, array $config, $connection) {
     })->middleware(Middleware::auth());
 
     $router->delete('/api/auth/sessions/{sessionId:[0-9]+}', function (Request $request) use ($sessionManager) {
-        if (!isset($_SESSION['impersonation']['impersonator'], $_SESSION['impersonation']['impersonated'])) {
-            return null;
-        }
-
-        return [
-            'active' => true,
-            'impersonator' => $_SESSION['impersonation']['impersonator'],
-            'impersonated' => $_SESSION['impersonation']['impersonated'],
-            'started_at' => $_SESSION['impersonation']['started_at'] ?? null,
-        ];
-    };
-
-    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
@@ -1073,17 +1072,6 @@ return function (Router $router, array $config, $connection) {
         $sessionId = $request->getAttribute('sessionId');
         if ($sessionId === null) {
             return Response::badRequest('Session ID required');
-        return Response::json([
-            'user' => $user->toArray(),
-            'impersonation' => $buildImpersonationPayload(),
-        ]);
-    })->middleware(Middleware::auth());
-
-    $router->post('/api/auth/impersonate', function (Request $request) use ($authService, $buildImpersonationPayload) {
-        $user = $request->getAttribute('user');
-
-        if (!$user) {
-            return Response::unauthorized('Not authenticated');
         }
 
         if (session_status() === PHP_SESSION_NONE) {
@@ -1102,7 +1090,30 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Session revoked']);
     })->middleware(Middleware::auth());
 
-    $router->get('/api/auth/me', function (Request $request) {
+    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'impersonation' => $buildImpersonationPayload(),
+        ]);
+    })->middleware(Middleware::auth());
+
+    $router->post('/api/auth/impersonate', function (Request $request) use ($authService, $buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $impersonator = $user;
         if (isset($_SESSION['impersonation']['impersonator'])) {
             $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
@@ -4161,7 +4172,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         new \App\Services\User\UserRepository($connection),
         $gate,
         $totpService,
-        $rolePermissions
+        $rolePermissions,
         new \App\Services\ImportExport\CsvExportService($connection)
     );
 
@@ -4350,6 +4361,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 ],
                 $csv
             );
+        });
+
         $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $data = $userController->bulkDeactivate($user, $request->body());
@@ -6241,10 +6254,6 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/storage/notices', function (Request $request) use ($connection) {
             $status = $request->queryParam('status');
-        $router->get('/api/storage/impound-cases', function (Request $request) use ($connection) {
-            $search = trim((string) $request->queryParam('search', ''));
-            $status = trim((string) $request->queryParam('status', ''));
-            $auctionStatus = trim((string) $request->queryParam('auction_status', ''));
             $pdo = $connection->pdo();
 
             $sql = <<<SQL
@@ -6477,6 +6486,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
 
             return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
+        });
+
+        $router->get('/api/storage/impound-cases', function (Request $request) use ($connection) {
+            $pdo = $connection->pdo();
+            $search = trim((string) $request->query('search', ''));
+            $status = trim((string) $request->query('status', ''));
+            $auctionStatus = trim((string) $request->query('auction_status', ''));
+
+            $sql = <<<SQL
+                SELECT
                     id,
                     case_number,
                     impound_date,
