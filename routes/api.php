@@ -3364,10 +3364,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
-    $router->get('/track/{token}', function (Request $request) use ($connection) {
+    $router->get('/api/track/{token}', function (Request $request) use ($connection) {
         $trackingService = new \App\Services\Tracking\TrackingService($connection);
-        $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
-        return Response::json($data);
+        try {
+            $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
+            return Response::json($data);
+        } catch (\RuntimeException $exception) {
+            return Response::json(['error' => $exception->getMessage()], 410);
+        } catch (\InvalidArgumentException $exception) {
+            return Response::notFound($exception->getMessage());
+        }
     });
 
     // Public estimate rejection reasons
@@ -4124,6 +4130,31 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate
     );
 
+    $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+    $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+    $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+    $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+        $trackingNotificationConfig,
+        $trackingTemplateEngine,
+        $trackingLogs,
+        $auditLogger
+    );
+    $trackingMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+        $connection,
+        new \App\Services\Messaging\MessagingService($connection)
+    );
+    $trackingNotificationEvents = new \App\Services\Notification\NotificationEventService(
+        $connection,
+        $trackingDispatcher
+    );
+    $trackingService = new \App\Services\Tracking\TrackingService(
+        $connection,
+        $trackingDispatcher,
+        $trackingMessagingNotifications,
+        new \App\Services\Dispatch\DispatchAuditService($connection),
+        $trackingNotificationEvents
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -4138,7 +4169,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController, $trackingService) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -4484,10 +4515,25 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
-        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController) {
+        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController, $trackingService) {
             $user = $request->getAttribute('user');
             $offerId = (int) $request->getAttribute('id');
             $data = $driverDispatchController->acceptOffer($user, $offerId);
+            $jobReference = $data['job_reference'] ?? null;
+            $jobType = $data['job_type'] ?? null;
+
+            if (is_string($jobReference) || is_numeric($jobReference)) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                try {
+                    if ($jobType === 'workorder') {
+                        $trackingService->sendTrackingLinkForWorkorder((int) $jobReference, $baseUrl, $user?->id);
+                    } elseif ($jobType === 'workorder_job') {
+                        $trackingService->sendTrackingLinkForJob((int) $jobReference, $baseUrl, $user?->id);
+                    }
+                } catch (\Throwable $exception) {
+                    error_log('Dispatch tracking link send failed: ' . $exception->getMessage());
+                }
+            }
             return Response::json($data);
         });
 
