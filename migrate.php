@@ -93,16 +93,31 @@ try {
                 throw new RuntimeException("Unable to read migration file: {$migrationName}");
             }
             
-            // FIX 1: Use preg_match_all instead of preg_split.
-            // This regex matches "anything that isn't a semicolon" OR "quoted strings" linearly.
-            // It avoids the catastrophic backtracking of the previous lookahead regex.
-            $pcreResult = preg_match_all('/((?:[^;\'"]+|(?:\'(?:\\\\.|[^\'])*\')|(?:"(?:\\\\.|[^"])*"))+)/', $sql, $matches);
-            
-            if ($pcreResult === false) {
-                throw new RuntimeException("Unable to parse migration file (Regex Error): {$migrationName}");
+// [NEW CODE START]
+            // 1. Check if the file uses a custom DELIMITER (e.g., //)
+            $delimiter = ';';
+            if (preg_match('/^DELIMITER\s+(\S+)/m', $sql, $match)) {
+                $delimiter = $match[1];
             }
-            
-            $statements = $matches[0];
+
+            // 2. Remove "DELIMITER //" lines (MySQL doesn't understand them, they are for the parser)
+            $cleanSql = preg_replace('/^DELIMITER\s+\S+\s*$/m', '', $sql);
+
+            $statements = [];
+
+            if ($delimiter === ';') {
+                // Standard Mode: Use your existing regex for semicolons (handles quotes correctly)
+                $pcreResult = preg_match_all('/((?:[^;\'"]+|(?:\'(?:\\\\.|[^\'])*\')|(?:"(?:\\\\.|[^"])*"))+)/', $cleanSql, $matches);
+                if ($pcreResult === false) {
+                    throw new RuntimeException("Unable to parse migration file (Regex Error): {$migrationName}");
+                }
+                $statements = $matches[0];
+            } else {
+                // Custom Delimiter Mode: Simple explode
+                // (Regex for dynamic delimiters is complex, simple explode usually suffices for migration files)
+                $statements = explode($delimiter, $cleanSql);
+            }
+            // [NEW CODE END]
             
             foreach ($statements as $statement) {
                 // FIX 2: Strip comments before checking for empty statements.
