@@ -119,6 +119,26 @@ CREATE TABLE inventory_lookups (
     INDEX idx_inventory_lookups_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE inventory_transactions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    quantity_before INT NOT NULL,
+    quantity_after INT NOT NULL,
+    quantity_change INT NOT NULL,
+    source VARCHAR(60) NOT NULL,
+    reference VARCHAR(120) NULL,
+    reason VARCHAR(255) NULL,
+    created_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_transactions_item (inventory_item_id),
+    INDEX idx_inventory_transactions_source (source),
+    INDEX idx_inventory_transactions_reference (reference),
+    CONSTRAINT fk_inventory_transactions_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_transactions_user FOREIGN KEY (created_by)
+        REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE estimates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,

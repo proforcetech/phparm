@@ -7,6 +7,7 @@ use App\Models\InventoryPullRequest;
 use App\Support\Audit\AuditLogger;
 use App\Support\Audit\AuditEntry;
 use App\Services\Messaging\MessagingNotificationService;
+use App\Services\Inventory\InventoryTransactionRepository;
 use InvalidArgumentException;
 use PDO;
 
@@ -15,6 +16,7 @@ class InventoryPullRequestRepository
     private Connection $connection;
     private AuditLogger $auditLogger;
     private ?MessagingNotificationService $messagingNotifications;
+    private InventoryTransactionRepository $transactionRepository;
 
     public function __construct(
         Connection $connection,
@@ -24,6 +26,7 @@ class InventoryPullRequestRepository
         $this->connection = $connection;
         $this->auditLogger = $auditLogger;
         $this->messagingNotifications = $messagingNotifications;
+        $this->transactionRepository = new InventoryTransactionRepository($connection);
     }
 
     public function find(int $id): ?InventoryPullRequest
@@ -354,7 +357,7 @@ class InventoryPullRequestRepository
 
         // Deduct from inventory if linked to inventory item
         if ($request->inventory_item_id) {
-            $this->deductFromInventory($request->inventory_item_id, $quantityFulfilled);
+            $this->deductFromInventory($request->inventory_item_id, $quantityFulfilled, $id, $actorId);
         }
 
         $this->log('pull_request.pulled', $id, $actorId, [
@@ -542,8 +545,14 @@ class InventoryPullRequestRepository
     /**
      * Deduct quantity from inventory
      */
-    private function deductFromInventory(int $itemId, int $quantity): void
+    private function deductFromInventory(int $itemId, int $quantity, int $pullRequestId, ?int $actorId): void
     {
+        $beforeStmt = $this->connection->pdo()->prepare(
+            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+        );
+        $beforeStmt->execute(['id' => $itemId]);
+        $quantityBefore = (int) ($beforeStmt->fetchColumn() ?? 0);
+
         $sql = "UPDATE inventory_items SET
                 stock_quantity = GREATEST(0, stock_quantity - :quantity),
                 updated_at = NOW()
@@ -553,6 +562,22 @@ class InventoryPullRequestRepository
             'quantity' => $quantity,
             'id' => $itemId,
         ]);
+
+        $afterStmt = $this->connection->pdo()->prepare(
+            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+        );
+        $afterStmt->execute(['id' => $itemId]);
+        $quantityAfter = (int) ($afterStmt->fetchColumn() ?? $quantityBefore);
+
+        $this->transactionRepository->record(
+            $itemId,
+            $quantityBefore,
+            $quantityAfter,
+            'pull_request',
+            sprintf('pull_request:%d', $pullRequestId),
+            'Inventory pull request fulfillment',
+            $actorId
+        );
     }
 
     /**

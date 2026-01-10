@@ -16,6 +16,11 @@ export default {
     return response.data
   },
 
+  async getTransactions(id, params = {}) {
+    const response = await api.get(`/inventory/${id}/transactions`, { params })
+    return response.data
+  },
+
   async create(payload) {
     const response = await api.post('/inventory', payload)
     return response.data

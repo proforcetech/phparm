@@ -2397,6 +2397,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/inventory/{id}/transactions', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $params = [
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $inventoryController->transactions($user, $id, $params);
+            return Response::json($data);
+        });
+
         $router->get('/api/inventory/{id}', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');

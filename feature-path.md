@@ -179,7 +179,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Workflow: When an item with a core is sold, the system should automatically track that a "Core Return" is expected from the customer, and subsequently from the shop to the vendor.
 
-[ ] Transaction Audit Log (Ledger):
+[x] Transaction Audit Log (Ledger):
 
  Gap: Changing quantity from 10 to 5 without context is dangerous.
 
