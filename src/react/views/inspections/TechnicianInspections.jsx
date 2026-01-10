@@ -10,6 +10,16 @@ import inspectionService from '../../../services/inspection.service'
 import { enqueueItem, saveDraft, getDraft, deleteDraft } from '../../utils/offlineQueue'
 
 const DRAFT_KEY = 'inspection_draft'
+const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
+const MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+]
 
 export default function TechnicianInspections() {
   const navigate = useNavigate()
@@ -472,7 +482,13 @@ export default function TechnicianInspections() {
             Capture photos or videos of mechanical failures to increase estimate approval rates.
             High-resolution visual proof significantly helps customers understand repair needs.
           </p>
-          <CameraCapture onCapture={handleMediaCapture} maxVideoDuration={120} />
+          <CameraCapture
+            onCapture={handleMediaCapture}
+            maxVideoDuration={120}
+            maxImageSizeBytes={MAX_IMAGE_SIZE_BYTES}
+            maxVideoSizeBytes={MAX_VIDEO_SIZE_BYTES}
+            allowedMimeTypes={ALLOWED_MIME_TYPES}
+          />
         </div>
 
         <div className="flex space-x-2">
