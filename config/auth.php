@@ -35,6 +35,8 @@ return [
                 'dispatch.*',
                 'roadside.*',
                 'messages.*',
+                'truck_checklists.view',
+                'driver_shifts.view',
             ],
         ],
         'manager' => [
@@ -47,6 +49,7 @@ return [
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
                 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*', 'messages.*',
                 'roadside.*', 'dispatch.*',
+                'truck_checklists.*', 'driver_shifts.*',
                 // Full CMS access (matches admin for CMS operations)
                 'cms.*'
             ],
@@ -68,6 +71,8 @@ return [
                 'cms.dashboard.view',
                 'cms.templates.view', 'messages.*',
                 'dispatch.offers.view', 'dispatch.offers.accept', 'dispatch.tokens.manage',
+                'truck_checklists.view', 'truck_checklists.complete',
+                'driver_shifts.view', 'driver_shifts.start', 'driver_shifts.end',
             ],
         ],
         'parts' => [
@@ -86,6 +91,8 @@ return [
             'permissions' => [
                 'roadside.*',
                 'dispatch.*',
+                'truck_checklists.view',
+                'driver_shifts.view',
             ],
         ],
         'cms' => [
