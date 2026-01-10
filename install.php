@@ -218,7 +218,7 @@ function create_admin_user($pdo, $name, $email, $password) {
     } else {
         // Insert new user
         $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, active, email_verified, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, NOW(), NOW())");
-        $stmt->execute([$name, $hashedPassword]);
+        $stmt->execute([$name, $email, $hashedPassword]);
         return ['action' => 'created', 'id' => $pdo->lastInsertId()];
     }
 }
