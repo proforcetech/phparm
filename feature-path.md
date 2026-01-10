@@ -139,7 +139,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/react/views/inventory/InventoryList.jsx
 
-[ ] Eager Loading for Alerts:
+[x] Eager Loading for Alerts:
 
  Issue: The InventoryAlerts view likely polls for low stock.
 

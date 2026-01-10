@@ -447,10 +447,14 @@ class InventoryItemRepository
         }
 
         if (!empty($filters['low_stock_only'])) {
-            $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
-            $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
-            if ($stockColumn !== null && $thresholdColumn !== null) {
-                $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+            if ($this->columnExists('is_low_stock')) {
+                $clauses[] = 'is_low_stock = 1';
+            } else {
+                $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
+                $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
+                if ($stockColumn !== null && $thresholdColumn !== null) {
+                    $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+                }
             }
 
             // Only include tracked items in low stock alerts
@@ -482,6 +486,7 @@ class InventoryItemRepository
         $row['manufacturer_part_number'] = $row['manufacturer_part_number'] ?? null;
         $row['markup'] = isset($row['markup']) && $row['markup'] !== null ? (float) $row['markup'] : null;
         $row['is_tracked'] = (bool) ($row['is_tracked'] ?? 1);
+        $row['is_low_stock'] = (bool) ($row['is_low_stock'] ?? 0);
 
         return new InventoryItem($row);
     }
