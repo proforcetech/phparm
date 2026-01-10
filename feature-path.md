@@ -163,7 +163,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemController.php
 
-[ ] Input Sanitization & Validation:
+[x] Input Sanitization & Validation:
 
  Issue: Importing inventory via CSV or bulk updates can be a vector for CSV Injection or malformed data.
 
