@@ -3825,12 +3825,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $trackingLogs,
             $auditLogger
         );
+        $dispatchAuditService = new \App\Services\Dispatch\DispatchAuditService($connection);
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
             $workorderEvidence,
             $gate,
-            $workorderMessagingNotifications
+            $workorderMessagingNotifications,
+            $dispatchAuditService
         );
 
         // Status-driven notification service
@@ -3842,7 +3844,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $connection,
             $trackingDispatcher,
             $workorderMessagingNotifications,
-            new \App\Services\Dispatch\DispatchAuditService($connection),
+            $dispatchAuditService,
             $notificationEventService
         );
         $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(

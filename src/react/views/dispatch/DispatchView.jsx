@@ -21,6 +21,7 @@ import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
+import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import dispatchService from '../../../services/dispatch.service'
 import workorderService from '../../../services/workorder.service'
@@ -150,6 +151,9 @@ export default function DispatchView() {
   const [scoringWeights, setScoringWeights] = useState(null)
   const [excludedDrivers, setExcludedDrivers] = useState([])
   const [realtimeStatus, setRealtimeStatus] = useState('disabled')
+  const [draggingDriverId, setDraggingDriverId] = useState(null)
+  const [pendingAssignment, setPendingAssignment] = useState(null)
+  const [dropTargetId, setDropTargetId] = useState(null)
 
   // Waterfall state
   const [waterfallMode, setWaterfallMode] = useState(false)
@@ -441,6 +445,138 @@ export default function DispatchView() {
     ]
   }, [requirement])
 
+  const callPoints = useMemo(() => {
+    if (!requirement?.pickup_latitude || !requirement?.pickup_longitude) {
+      return []
+    }
+
+    const label =
+      requirement.dispatch_reference ||
+      requirement.job_reference ||
+      (dispatchRequirementId ? `Call ${dispatchRequirementId}` : 'Dispatch Call')
+
+    return [
+      {
+        id: requirement.id ?? dispatchRequirementId ?? 'dispatch-call',
+        label,
+        latitude: Number(requirement.pickup_latitude),
+        longitude: Number(requirement.pickup_longitude),
+        address: requirement.pickup_address || null,
+      },
+    ]
+  }, [dispatchRequirementId, requirement])
+
+  const truckPoints = useMemo(
+    () =>
+      suggestions
+        .filter(
+          (suggestion) =>
+            suggestion.current_location?.latitude && suggestion.current_location?.longitude
+        )
+        .map((suggestion, index) => ({
+          id: suggestion.driver_profile_id,
+          driver_user_id: suggestion.driver_user_id,
+          label: suggestion.driver_name,
+          index,
+          latitude: Number(suggestion.current_location.latitude),
+          longitude: Number(suggestion.current_location.longitude),
+          suggestion,
+        })),
+    [suggestions]
+  )
+
+  const unlocatedTrucks = useMemo(
+    () =>
+      suggestions.filter(
+        (suggestion) =>
+          !suggestion.current_location?.latitude || !suggestion.current_location?.longitude
+      ),
+    [suggestions]
+  )
+
+  const mapBounds = useMemo(() => {
+    const points = [...callPoints, ...truckPoints]
+    if (points.length === 0) return null
+
+    const latitudes = points.map((point) => point.latitude)
+    const longitudes = points.map((point) => point.longitude)
+    const minLat = Math.min(...latitudes)
+    const maxLat = Math.max(...latitudes)
+    const minLng = Math.min(...longitudes)
+    const maxLng = Math.max(...longitudes)
+
+    return {
+      minLat,
+      maxLat,
+      minLng,
+      maxLng,
+    }
+  }, [callPoints, truckPoints])
+
+  const getPointPosition = useCallback(
+    (point) => {
+      if (!mapBounds) {
+        return { left: '50%', top: '50%' }
+      }
+
+      const latRange = mapBounds.maxLat - mapBounds.minLat || 0.01
+      const lngRange = mapBounds.maxLng - mapBounds.minLng || 0.01
+
+      const x = ((point.longitude - mapBounds.minLng) / lngRange) * 100
+      const y = 100 - ((point.latitude - mapBounds.minLat) / latRange) * 100
+      const clamp = (value) => Math.max(5, Math.min(95, value))
+
+      return {
+        left: `${clamp(x)}%`,
+        top: `${clamp(y)}%`,
+      }
+    },
+    [mapBounds]
+  )
+
+  const handleTruckDragStart = (event, suggestion) => {
+    event.dataTransfer.setData('text/plain', String(suggestion.driver_profile_id))
+    event.dataTransfer.effectAllowed = 'move'
+    setDraggingDriverId(suggestion.driver_profile_id)
+  }
+
+  const handleTruckDragEnd = () => {
+    setDraggingDriverId(null)
+  }
+
+  const handleCallDrop = (event, call) => {
+    event.preventDefault()
+    const driverId = event.dataTransfer.getData('text/plain')
+    const suggestion = suggestions.find(
+      (item) => String(item.driver_profile_id) === String(driverId)
+    )
+    if (!suggestion) {
+      toastError('Unable to locate the dragged driver.')
+      return
+    }
+
+    setPendingAssignment({ call, suggestion })
+    setDropTargetId(null)
+  }
+
+  const handleConfirmAssignment = async () => {
+    if (!pendingAssignment) return
+    if (!workorderId) {
+      toastError('Enter a workorder ID before assigning a driver.')
+      return
+    }
+
+    await handleAssign(pendingAssignment.suggestion)
+    setPendingAssignment(null)
+  }
+
+  const getInitials = (name = '') => {
+    const parts = name.trim().split(/\s+/).filter(Boolean)
+    if (parts.length === 0) return 'TR'
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -539,6 +675,152 @@ export default function DispatchView() {
           </div>
         </Card>
       ) : null}
+
+      <Card title="Map-Based Dispatch">
+        <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+          <div className="relative h-80 rounded-lg border border-gray-200 bg-slate-50 overflow-hidden">
+            {callPoints.length === 0 && truckPoints.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-sm text-gray-400">
+                <MapPinIcon className="h-10 w-10 mb-2" />
+                <p>Map is ready for calls and trucks.</p>
+                <p className="text-xs">Load suggestions to plot live positions.</p>
+              </div>
+            ) : null}
+            <div className="absolute inset-0">
+              {callPoints.map((call) => (
+                <div
+                  key={call.id}
+                  className={`absolute flex items-center gap-2 px-2 py-1 rounded-full text-xs font-semibold bg-rose-600 text-white shadow ${
+                    dropTargetId === call.id ? 'ring-2 ring-rose-300 ring-offset-2' : ''
+                  }`}
+                  style={getPointPosition(call)}
+                  role="button"
+                  tabIndex={0}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }}
+                  onDragEnter={() => setDropTargetId(call.id)}
+                  onDragLeave={() => setDropTargetId(null)}
+                  onDrop={(event) => handleCallDrop(event, call)}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-rose-600 text-[10px] font-bold">
+                    C
+                  </span>
+                  <span>{call.label}</span>
+                </div>
+              ))}
+
+              {truckPoints.map((truck) => (
+                <div
+                  key={truck.id}
+                  draggable
+                  onDragStart={(event) => handleTruckDragStart(event, truck.suggestion)}
+                  onDragEnd={handleTruckDragEnd}
+                  className={`absolute flex items-center gap-2 px-2 py-1 rounded-full text-xs font-semibold border shadow cursor-grab ${
+                    draggingDriverId === truck.id
+                      ? 'bg-blue-100 border-blue-300 text-blue-700'
+                      : 'bg-white border-blue-200 text-blue-700'
+                  }`}
+                  style={getPointPosition(truck)}
+                  title={`Truck: ${truck.label}`}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                    {getInitials(truck.label)}
+                  </span>
+                  <span className="hidden sm:inline">{truck.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="absolute bottom-3 left-3 rounded-md bg-white/90 border border-gray-200 px-3 py-2 text-xs text-gray-600">
+              <p className="font-semibold text-gray-700">Legend</p>
+              <p>
+                <span className="inline-block h-2 w-2 rounded-full bg-rose-600 mr-1" />
+                Calls
+              </p>
+              <p>
+                <span className="inline-block h-2 w-2 rounded-full bg-blue-600 mr-1" />
+                Available trucks (drag to assign)
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 text-sm">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Calls</p>
+              {callPoints.length > 0 ? (
+                <div className="mt-2 space-y-2">
+                  {callPoints.map((call) => (
+                    <div
+                      key={`call-${call.id}`}
+                      onDragOver={(event) => {
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                      }}
+                      onDragEnter={() => setDropTargetId(call.id)}
+                      onDragLeave={() => setDropTargetId(null)}
+                      onDrop={(event) => handleCallDrop(event, call)}
+                      className={`rounded-md border px-3 py-2 ${
+                        dropTargetId === call.id ? 'border-rose-400 bg-rose-50' : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{call.label}</span>
+                        <Badge variant="danger">Waiting</Badge>
+                      </div>
+                      {call.address ? (
+                        <p className="text-xs text-gray-500 mt-1">{call.address}</p>
+                      ) : null}
+                      <p className="text-xs text-gray-400 mt-1">
+                        Drag a truck here to confirm assignment.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-400">
+                  Load a dispatch requirement to plot a call location.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs uppercase text-gray-400">Available Trucks</p>
+              <div className="mt-2 space-y-2">
+                {suggestions.length === 0 ? (
+                  <p className="text-xs text-gray-400">Fetch suggestions to list nearby trucks.</p>
+                ) : (
+                  suggestions.map((suggestion) => (
+                    <div
+                      key={`truck-${suggestion.driver_profile_id}`}
+                      draggable
+                      onDragStart={(event) => handleTruckDragStart(event, suggestion)}
+                      onDragEnd={handleTruckDragEnd}
+                      className="rounded-md border border-gray-200 bg-white px-3 py-2 flex items-center justify-between cursor-grab"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900">{suggestion.driver_name}</p>
+                        <p className="text-xs text-gray-500">
+                          {suggestion.current_location ? 'Live GPS available' : 'No GPS fix'}
+                        </p>
+                      </div>
+                      <Badge variant={suggestion.current_location ? 'info' : 'warning'}>
+                        {suggestion.current_location ? 'Live' : 'Offline'}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+                {unlocatedTrucks.length > 0 ? (
+                  <p className="text-xs text-gray-400">
+                    {unlocatedTrucks.length} truck(s) missing location data.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* Excluded Drivers Info */}
       {excludedDrivers.length > 0 && (
@@ -742,6 +1024,56 @@ export default function DispatchView() {
           })}
         </div>
       </Card>
+
+      <Modal
+        open={!!pendingAssignment}
+        onClose={() => setPendingAssignment(null)}
+        title="Confirm Dispatch Assignment"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPendingAssignment(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmAssignment}
+              disabled={assigningId === pendingAssignment?.suggestion?.driver_profile_id}
+            >
+              {assigningId === pendingAssignment?.suggestion?.driver_profile_id
+                ? 'Assigning...'
+                : 'Confirm Assignment'}
+            </Button>
+          </div>
+        }
+      >
+        {pendingAssignment ? (
+          <div className="space-y-3 text-sm">
+            <p className="text-gray-600">
+              Confirm assigning <span className="font-semibold">{pendingAssignment.suggestion.driver_name}</span> to{' '}
+              <span className="font-semibold">{pendingAssignment.call.label}</span>.
+            </p>
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase text-gray-400">Truck</span>
+                <span className="font-medium">{pendingAssignment.suggestion.driver_email}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase text-gray-400">Workorder</span>
+                <span className="font-medium">{workorderId || 'Missing'}</span>
+              </div>
+              {pendingAssignment.call.address ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase text-gray-400">Pickup</span>
+                  <span className="font-medium">{pendingAssignment.call.address}</span>
+                </div>
+              ) : null}
+            </div>
+            {!workorderId ? (
+              <Alert variant="warning" message="Enter a workorder ID before confirming the assignment." />
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }
