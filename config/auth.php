@@ -76,6 +76,8 @@ return [
             'requires_2fa' => false,
             'permissions' => [
                 'inventory.view',
+                'inventory.edit',
+                'inventory.adjust',
                 'inventory.*',
             ],
         ],

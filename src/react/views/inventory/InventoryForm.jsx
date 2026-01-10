@@ -8,6 +8,7 @@ import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import inventoryMetaService from '../../../services/inventory-meta.service'
 import inventoryService from '../../../services/inventory.service'
+import { useAuthStore } from '../../stores/auth.jsx'
 
 const emptyForm = {
   name: '',
@@ -38,6 +39,7 @@ const calculateSalePrice = (costValue, markupValue) => {
 export default function InventoryForm() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const { hasPermission } = useAuthStore()
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
@@ -54,6 +56,11 @@ export default function InventoryForm() {
   const isInitializing = useRef(true)
 
   const isEditing = Boolean(id)
+  const canCreate = hasPermission('inventory.create')
+  const canEdit = hasPermission('inventory.edit')
+  const canAdjust = hasPermission('inventory.adjust')
+  const canSave = isEditing ? canEdit : canCreate
+  const canAdjustStock = !isEditing || canAdjust
 
   const goBack = () => navigate('/cp/inventory')
 
@@ -123,6 +130,10 @@ export default function InventoryForm() {
 
   const save = async (event) => {
     event.preventDefault()
+    if (!canSave) {
+      setError('You do not have permission to save inventory items.')
+      return
+    }
     setSaving(true)
     setError('')
     setSuccess('')
@@ -260,6 +271,8 @@ export default function InventoryForm() {
                 type="number"
                 min="0"
                 placeholder="50"
+                disabled={!canAdjustStock}
+                helperText={!canAdjustStock ? 'You do not have permission to adjust stock quantities.' : ''}
                 onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, stock_quantity: Number(value) }))}
               />
             </div>
@@ -323,12 +336,15 @@ export default function InventoryForm() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm text-gray-600">Fields marked with * are required. Pricing and stock will sync to alerts.</p>
+              {!canSave ? <p className="text-sm text-red-600">You do not have permission to save inventory items.</p> : null}
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
               {success ? <p className="text-sm text-green-600">{success}</p> : null}
             </div>
             <div className="flex gap-3">
               <Button type="button" variant="secondary" onClick={goBack}>Cancel</Button>
-              <Button type="submit" loading={saving}>{isEditing ? 'Update item' : 'Create item'}</Button>
+              {canSave ? (
+                <Button type="submit" loading={saving}>{isEditing ? 'Update item' : 'Create item'}</Button>
+              ) : null}
             </div>
           </div>
         </form>

@@ -269,7 +269,9 @@ class RoleRepository
                 'permissions' => [
                     'inventory.view' => 'View inventory',
                     'inventory.create' => 'Create inventory items',
-                    'inventory.update' => 'Update inventory',
+                    'inventory.edit' => 'Edit inventory items',
+                    'inventory.adjust' => 'Adjust inventory stock quantities',
+                    'inventory.update' => 'Update inventory (legacy)',
                     'inventory.delete' => 'Delete inventory items',
                     'inventory.*' => 'All inventory permissions',
                 ]

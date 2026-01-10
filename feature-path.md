@@ -149,7 +149,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 12. Inventory Security Enhancements
 
-[ ] Granular Permission Checks (RBAC):
+[x] Granular Permission Checks (RBAC):
 
  Issue: InventoryItemController.php might only check if a user is logged in.
 
