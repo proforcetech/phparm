@@ -40,34 +40,69 @@ try {
     echo "✗ Error: " . $e->getMessage() . "\n";
 }
 
-// Test 2: LIKE query (as used in search)
-echo "\n2. LIKE Query Test (simulating search):\n";
+// Test 2: Optimized search query (full-text + SKU prefix)
+echo "\n2. Optimized Search Query Test (FULLTEXT + SKU prefix):\n";
 try {
     $stmt = $connection->pdo()->prepare("
         SELECT id, name, sku, description
         FROM inventory_items
-        WHERE name LIKE :query
-           OR sku LIKE :query
-           OR description LIKE :query
+        WHERE MATCH(name, description) AGAINST (:fulltext IN BOOLEAN MODE)
+           OR sku LIKE :sku_prefix
         LIMIT 10
     ");
-    $stmt->execute(['query' => "%{$searchQuery}%"]);
+    $stmt->execute([
+        'fulltext' => $searchQuery . '*',
+        'sku_prefix' => $searchQuery . '%',
+    ]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($results)) {
-        echo "✓ Found " . count($results) . " item(s) with LIKE query:\n";
+        echo "✓ Found " . count($results) . " item(s) with optimized search:\n";
         foreach ($results as $result) {
             echo "  - ID: {$result['id']}, SKU: {$result['sku']}, Name: {$result['name']}\n";
         }
     } else {
-        echo "✗ No items found with LIKE query\n";
+        echo "✗ No items found with optimized search\n";
     }
 } catch (Exception $e) {
     echo "✗ Error: " . $e->getMessage() . "\n";
 }
 
-// Test 3: Repository searchForParts method
-echo "\n3. Repository searchForParts Method Test:\n";
+// Test 3: Explain query plan for optimized search
+echo "\n3. Query Plan Validation (EXPLAIN):\n";
+try {
+    $stmt = $connection->pdo()->prepare("
+        EXPLAIN
+        SELECT id, name, sku, description
+        FROM inventory_items
+        WHERE MATCH(name, description) AGAINST (:fulltext IN BOOLEAN MODE)
+           OR sku LIKE :sku_prefix
+        LIMIT 10
+    ");
+    $stmt->execute([
+        'fulltext' => $searchQuery . '*',
+        'sku_prefix' => $searchQuery . '%',
+    ]);
+    $plans = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($plans)) {
+        echo "✓ Query plan details:\n";
+        foreach ($plans as $plan) {
+            $table = $plan['table'] ?? 'n/a';
+            $type = $plan['type'] ?? 'n/a';
+            $key = $plan['key'] ?? 'n/a';
+            $rows = $plan['rows'] ?? 'n/a';
+            echo "  - Table: {$table}, Type: {$type}, Key: {$key}, Rows: {$rows}\n";
+        }
+    } else {
+        echo "✗ No query plan returned\n";
+    }
+} catch (Exception $e) {
+    echo "✗ Error: " . $e->getMessage() . "\n";
+}
+
+// Test 4: Repository searchForParts method
+echo "\n4. Repository searchForParts Method Test:\n";
 try {
     $items = $repository->searchForParts($searchQuery, null, 10);
 
@@ -85,8 +120,8 @@ try {
     echo "  Stack trace: " . $e->getTraceAsString() . "\n";
 }
 
-// Test 4: Check for manufacturer_part_number column
-echo "\n4. Database Schema Check:\n";
+// Test 5: Check for manufacturer_part_number column
+echo "\n5. Database Schema Check:\n";
 try {
     $stmt = $connection->pdo()->query("SHOW COLUMNS FROM inventory_items");
     $columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -99,8 +134,8 @@ try {
     echo "✗ Error: " . $e->getMessage() . "\n";
 }
 
-// Test 5: Check for any whitespace or encoding issues
-echo "\n5. Data Quality Check:\n";
+// Test 6: Check for any whitespace or encoding issues
+echo "\n6. Data Quality Check:\n";
 try {
     $stmt = $connection->pdo()->prepare("
         SELECT sku, LENGTH(sku) as len, HEX(sku) as hex_value
