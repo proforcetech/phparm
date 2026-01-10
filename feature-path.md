@@ -116,7 +116,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] Automated Storage Ledger: Daily recurring fees with grace periods.
 [ ] Customer Tracking Link: Real-time map view for the stranded motorist.
 [ ] Integrated VIN Decoding: Reduce manual entry for technicians.
-[ ] Digital Dispatch Adapters: Full handshake with Agero/AAA/Geico portals.
+[x] Digital Dispatch Adapters: Full handshake with Agero/AAA/Geico portals.
 
 
 ## 11. Inventory Performance Enhancements

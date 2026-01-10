@@ -98,6 +98,11 @@ class AgeroPartnerDispatchAdapter extends AbstractPartnerDispatchAdapter
         $protocol = $dispatch['protocol'] ?? PartnerDispatchProtocol::DIGITAL_DISPATCH;
         $normalizedStatus = $this->normalizeStatus($status);
         $context['status'] = $normalizedStatus;
+        $acceptanceFlag = match ($normalizedStatus) {
+            'accepted' => true,
+            'declined' => false,
+            default => null,
+        };
 
         $base = $this->baseStatusPayload($dispatch, $context);
         $payload = match ($protocol) {
@@ -106,7 +111,7 @@ class AgeroPartnerDispatchAdapter extends AbstractPartnerDispatchAdapter
                 'case_number' => $dispatch['external_reference'] ?? $dispatch['dispatch_reference'] ?? null,
                 'dispatch_reference' => $dispatch['dispatch_reference'] ?? null,
                 'status' => $normalizedStatus,
-                'accepted' => $normalizedStatus === 'accepted',
+                'accepted' => $acceptanceFlag,
                 'timestamp' => $base['occurred_at'],
                 'provider' => $base['provider'],
                 'notes' => $base['notes'],
@@ -115,6 +120,7 @@ class AgeroPartnerDispatchAdapter extends AbstractPartnerDispatchAdapter
                 'protocol' => PartnerDispatchProtocol::DIGITAL_DISPATCH,
                 'dispatch_id' => $dispatch['external_reference'] ?? $dispatch['dispatch_reference'] ?? null,
                 'status' => $normalizedStatus,
+                'accepted' => $acceptanceFlag,
                 'updated_at' => $base['occurred_at'],
                 'provider' => $base['provider'],
                 'notes' => $base['notes'],

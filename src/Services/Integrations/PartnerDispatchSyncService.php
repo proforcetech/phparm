@@ -93,6 +93,64 @@ class PartnerDispatchSyncService
      * @param array<string, mixed> $context
      * @return array<string, mixed>
      */
+    public function declineDispatch(
+        string $partner,
+        string $dispatchReference,
+        array $context = [],
+        ?int $actorId = null
+    ): array {
+        $dispatch = $this->fetchDispatch($partner, $dispatchReference);
+        $adapter = $this->requireAdapter($partner);
+        $protocol = $this->resolveProtocol($dispatch, $context);
+        $context['status'] = 'declined';
+
+        $payload = $adapter->buildStatusPayload($dispatch, 'declined', $context);
+        try {
+            $result = $this->sendToPartner($partner, $protocol, 'decline', $payload);
+        } catch (RuntimeException $exception) {
+            $this->updateDispatchSyncState(
+                $dispatch['id'],
+                [
+                    'sync_attempts' => $this->retryAttemptsFor($partner),
+                    'sync_error' => $exception->getMessage(),
+                ]
+            );
+            throw $exception;
+        }
+
+        $partnerStatus = $payload['status'] ?? 'declined';
+        $this->updateDispatchSyncState(
+            $dispatch['id'],
+            [
+                'accepted_at' => null,
+                'accepted_by' => $actorId,
+                'last_partner_status' => $partnerStatus,
+                'sync_attempts' => $result['attempts'],
+                'sync_error' => null,
+                'last_synced_at' => date('Y-m-d H:i:s'),
+            ]
+        );
+
+        $this->logAudit('integration.partner_dispatch.declined', (int) $dispatch['id'], [
+            'partner' => $partner,
+            'protocol' => $protocol,
+            'dispatch_reference' => $dispatch['dispatch_reference'],
+            'external_reference' => $dispatch['external_reference'],
+            'attempts' => $result['attempts'],
+        ]);
+
+        return [
+            'status' => 'declined',
+            'dispatch_reference' => $dispatch['dispatch_reference'],
+            'protocol' => $protocol,
+            'attempts' => $result['attempts'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     * @return array<string, mixed>
+     */
     public function syncStatus(
         string $partner,
         string $dispatchReference,
@@ -117,10 +175,11 @@ class PartnerDispatchSyncService
             throw $exception;
         }
 
+        $partnerStatus = $payload['status'] ?? $status;
         $this->updateDispatchSyncState(
             $dispatch['id'],
             [
-                'last_partner_status' => $status,
+                'last_partner_status' => $partnerStatus,
                 'sync_attempts' => $result['attempts'],
                 'sync_error' => null,
                 'last_synced_at' => date('Y-m-d H:i:s'),
@@ -132,12 +191,67 @@ class PartnerDispatchSyncService
             'protocol' => $protocol,
             'dispatch_reference' => $dispatch['dispatch_reference'],
             'external_reference' => $dispatch['external_reference'],
-            'status' => $status,
+            'status' => $partnerStatus,
             'attempts' => $result['attempts'],
         ]);
 
         return [
             'status' => 'synced',
+            'dispatch_reference' => $dispatch['dispatch_reference'],
+            'protocol' => $protocol,
+            'attempts' => $result['attempts'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     * @return array<string, mixed>
+     */
+    public function cancelDispatch(
+        string $partner,
+        string $dispatchReference,
+        array $context = []
+    ): array {
+        $dispatch = $this->fetchDispatch($partner, $dispatchReference);
+        $adapter = $this->requireAdapter($partner);
+        $protocol = $this->resolveProtocol($dispatch, $context);
+        $context['status'] = 'cancelled';
+
+        $payload = $adapter->buildStatusPayload($dispatch, 'cancelled', $context);
+        try {
+            $result = $this->sendToPartner($partner, $protocol, 'cancel', $payload);
+        } catch (RuntimeException $exception) {
+            $this->updateDispatchSyncState(
+                $dispatch['id'],
+                [
+                    'sync_attempts' => $this->retryAttemptsFor($partner),
+                    'sync_error' => $exception->getMessage(),
+                ]
+            );
+            throw $exception;
+        }
+
+        $partnerStatus = $payload['status'] ?? 'cancelled';
+        $this->updateDispatchSyncState(
+            $dispatch['id'],
+            [
+                'last_partner_status' => $partnerStatus,
+                'sync_attempts' => $result['attempts'],
+                'sync_error' => null,
+                'last_synced_at' => date('Y-m-d H:i:s'),
+            ]
+        );
+
+        $this->logAudit('integration.partner_dispatch.cancelled', (int) $dispatch['id'], [
+            'partner' => $partner,
+            'protocol' => $protocol,
+            'dispatch_reference' => $dispatch['dispatch_reference'],
+            'external_reference' => $dispatch['external_reference'],
+            'attempts' => $result['attempts'],
+        ]);
+
+        return [
+            'status' => 'cancelled',
             'dispatch_reference' => $dispatch['dispatch_reference'],
             'protocol' => $protocol,
             'attempts' => $result['attempts'],
@@ -235,11 +349,31 @@ class PartnerDispatchSyncService
 
         $lastError = null;
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            $startedAt = microtime(true);
             try {
                 $this->post($endpoint, $body, $headers, $timeout);
+                $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+                $this->logAudit('integration.partner_dispatch.monitor', null, [
+                    'partner' => $partner,
+                    'protocol' => $protocol,
+                    'action' => $action,
+                    'attempt' => $attempt,
+                    'duration_ms' => $durationMs,
+                    'success' => true,
+                ]);
                 return ['attempts' => $attempt, 'status' => 'sent'];
             } catch (RuntimeException $exception) {
                 $lastError = $exception;
+                $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+                $this->logAudit('integration.partner_dispatch.monitor', null, [
+                    'partner' => $partner,
+                    'protocol' => $protocol,
+                    'action' => $action,
+                    'attempt' => $attempt,
+                    'duration_ms' => $durationMs,
+                    'success' => false,
+                    'error' => $exception->getMessage(),
+                ]);
                 $this->logAudit('integration.partner_dispatch.retry', null, [
                     'partner' => $partner,
                     'protocol' => $protocol,
@@ -275,6 +409,9 @@ class PartnerDispatchSyncService
     {
         $partnerConfig = $this->config['partners'][$partner]['protocols'][$protocol] ?? null;
         $endpoint = $partnerConfig[$action . '_endpoint'] ?? '';
+        if (($endpoint === '' || $endpoint === null) && in_array($action, ['decline', 'cancel'], true)) {
+            $endpoint = $partnerConfig['status_endpoint'] ?? '';
+        }
         if (!is_string($endpoint) || $endpoint === '') {
             throw new InvalidArgumentException('Partner dispatch endpoint is not configured.');
         }
