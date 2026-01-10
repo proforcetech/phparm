@@ -201,7 +201,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 14. Additional Inventory Features
 
-[ ] Barcode / QR Code Integration:
+[x] Barcode / QR Code Integration:
 
  Feature: Allow the frontend (InventoryList.jsx) to accept input from a USB barcode scanner or use the device camera to scan a VIN or UPC to instantly find the part.
 
