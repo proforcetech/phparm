@@ -16,12 +16,15 @@ class UserController
     private AccessGate $gate;
     private TotpService $totpService;
     private RolePermissions $roles;
-
-    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService, RolePermissions $roles)
     private CsvExportService $csvExportService;
 
-    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService, CsvExportService $csvExportService)
-    {
+    public function __construct(
+        UserRepository $repository,
+        AccessGate $gate,
+        TotpService $totpService,
+        RolePermissions $roles,
+        CsvExportService $csvExportService
+    ) {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->totpService = $totpService;
