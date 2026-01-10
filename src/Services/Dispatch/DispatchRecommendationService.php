@@ -9,22 +9,18 @@ use PDO;
 
 class DispatchRecommendationService
 {
-    private const DISTANCE_WEIGHT = 0.30;
-    private const EQUIPMENT_WEIGHT = 0.23;
-    private const SHIFT_WEIGHT = 0.14;
+    private const DISTANCE_WEIGHT = 0.25;
+    private const EQUIPMENT_WEIGHT = 0.20;
+    private const SHIFT_WEIGHT = 0.12;
     private const ETA_WEIGHT = 0.13;
     private const PERFORMANCE_WEIGHT = 0.10;
     private const DEADHEAD_WEIGHT = 0.10;
-    private const EQUIPMENT_WEIGHT = 0.25;
-    private const SHIFT_WEIGHT = 0.10;
-    private const ETA_WEIGHT = 0.15;
-    private const PERFORMANCE_WEIGHT = 0.10;
+    private const WORKLOAD_WEIGHT = 0.10;
     private const EQUIPMENT_REQUIREMENT_CLASS_MAP = [
         'awd' => ['flatbed', 'low-profile'],
         'all_wheel_drive' => ['flatbed', 'low-profile'],
         'low_clearance' => ['flatbed', 'low-profile'],
     ];
-    private const WORKLOAD_WEIGHT = 0.10;
 
     private Connection $connection;
     private ?TrafficAwareEtaService $etaService;
@@ -187,7 +183,7 @@ class DispatchRecommendationService
                 $shiftScore,
                 $etaScore,
                 $performanceScore,
-                $deadheadScore
+                $deadheadScore,
                 $workloadScore
             );
 
@@ -199,7 +195,7 @@ class DispatchRecommendationService
                 $remainingHours,
                 $performance,
                 $headingScore,
-                $deadheadDistanceKm
+                $deadheadDistanceKm,
                 $workload
             );
 
@@ -285,7 +281,7 @@ class DispatchRecommendationService
         float $remainingHours,
         ?array $performance,
         ?float $headingScore,
-        ?float $deadheadDistanceKm
+        ?float $deadheadDistanceKm,
         ?array $workload
     ): array {
         $reasons = [];
@@ -1010,7 +1006,7 @@ class DispatchRecommendationService
         float $shiftScore,
         float $etaScore = 0.5,
         float $performanceScore = 0.5,
-        float $deadheadScore = 0.5
+        float $deadheadScore = 0.5,
         float $workloadScore = 0.5
     ): float {
         return round(
@@ -1019,7 +1015,7 @@ class DispatchRecommendationService
             + ($shiftScore * self::SHIFT_WEIGHT)
             + ($etaScore * self::ETA_WEIGHT)
             + ($performanceScore * self::PERFORMANCE_WEIGHT)
-            + ($deadheadScore * self::DEADHEAD_WEIGHT),
+            + ($deadheadScore * self::DEADHEAD_WEIGHT)
             + ($workloadScore * self::WORKLOAD_WEIGHT),
             4
         );
