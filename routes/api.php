@@ -5706,6 +5706,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $createFinancialEntry = function (
                 int $caseId,
+                int $feeId,
                 string $caseNumber,
                 string $feeType,
                 string $feeDate,
@@ -5715,8 +5716,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     return;
                 }
 
-                $idempotency = sprintf('storage-fee-%d-%s-%s', $caseId, strtolower(str_replace(' ', '-', $feeType)), $feeDate);
-                $idempotency = substr($idempotency, 0, 120);
+                $idempotency = $feeId > 0 ? sprintf('storage-fee-%d', $feeId) : '';
 
                 $financialEntryService->create([
                     'type' => 'income',
@@ -5727,7 +5727,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     'entry_date' => $feeDate,
                     'vendor' => 'Impound Storage',
                     'description' => sprintf('%s for %s', $feeType, $caseNumber),
-                    'idempotency_key' => $idempotency,
+                    'idempotency_key' => $idempotency ?: null,
                 ], $user->id);
                 $createdFinancial += 1;
             };
@@ -5777,10 +5777,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                             'posted',
                         ]);
                         $createdFees += 1;
-                        $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
                     } elseif (!empty($existingFees[$caseId]['Gate Fee'])) {
                         foreach ($existingFees[$caseId]['Gate Fee'] as $feeDate => $fee) {
-                            $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
+                            $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
                         }
                     }
 
@@ -5796,10 +5797,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                                 'posted',
                             ]);
                             $createdFees += 1;
-                            $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
+                            $feeId = (int) $pdo->lastInsertId();
+                            $createFinancialEntry($caseId, $feeId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
                         } elseif (!empty($existingFees[$caseId]['After Hours Fee'])) {
                             foreach ($existingFees[$caseId]['After Hours Fee'] as $feeDate => $fee) {
-                                $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
+                                $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
                             }
                         }
                     }
@@ -5808,7 +5810,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                         $feeDate = $startAt->modify(sprintf('+%d days', $day))->format('Y-m-d');
                         $existingDaily = $existingFees[$caseId]['Daily Storage'][$feeDate] ?? null;
                         if ($existingDaily) {
-                            $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
+                            $createFinancialEntry($caseId, (int) $existingDaily['id'], $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
                             continue;
                         }
 
@@ -5831,7 +5833,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                             'posted',
                         ]);
                         $createdFees += 1;
-                        $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
                     }
                 }
 
@@ -5845,6 +5848,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         $router->post('/api/storage/fees', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
             $payload = $request->body();
             $caseNumber = trim((string) ($payload['case_number'] ?? ''));
             $feeDate = trim((string) ($payload['fee_date'] ?? ''));
@@ -5886,11 +5890,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $fee = $row->fetch(\PDO::FETCH_ASSOC);
             $row->closeCursor();
 
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
             return Response::created($fee);
         });
 
         $router->put('/api/storage/fees/{id}', function (Request $request) use ($connection) {
             $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
             $payload = $request->body();
             $pdo = $connection->pdo();
 
@@ -5956,19 +5989,61 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $fee = $row->fetch(\PDO::FETCH_ASSOC);
             $row->closeCursor();
 
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
             return Response::json($fee);
         });
 
         $router->delete('/api/storage/fees/{id}', function (Request $request) use ($connection) {
             $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
             $pdo = $connection->pdo();
+            $existingStmt = $pdo->prepare('SELECT id FROM storage_fees WHERE id = ?');
+            $existingStmt->execute([$id]);
+            $feeId = $existingStmt->fetchColumn();
+            $existingStmt->closeCursor();
+
+            if (!$feeId) {
+                return Response::notFound('Storage fee not found.');
+            }
+
             $stmt = $pdo->prepare('DELETE FROM storage_fees WHERE id = ?');
             $stmt->execute([$id]);
-            $deleted = $stmt->rowCount() > 0;
             $stmt->closeCursor();
 
-            if (!$deleted) {
-                return Response::notFound('Storage fee not found.');
+            if ($user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $feeId);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                if ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
             }
 
             return Response::noContent();
