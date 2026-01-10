@@ -123,7 +123,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 The current implementation appears to handle basic CRUD operations but may struggle as the inventory database grows into the thousands of items (common in auto shops).
 
-[ ] Optimize Search Queries (Backend):
+[x] Optimize Search Queries (Backend):
 
  Issue: The InventoryItemRepository likely uses LIKE %...% wildcard searches for SKUs and names. This prevents the database from efficiently using indexes, leading to full table scans.
 
