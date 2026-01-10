@@ -213,7 +213,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: Link this to the cp/inventory/alerts page so unpaid warranty claims are highlighted.
 
-[ ] Stock Forecasting:
+[x] Stock Forecasting:
 
  Feature: Use historical usage data (from Workorders) to suggest "Reorder Points" dynamically. If you sell 10 oil filters a week, the system should suggest a min-stock of 15, rather than a static number set by a human.
 

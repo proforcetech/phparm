@@ -53,6 +53,7 @@ export default function InventoryList() {
     { key: 'name', label: 'Item' },
     { key: 'category', label: 'Category' },
     { key: 'stock_quantity', label: 'Stock' },
+    { key: 'forecast', label: 'Forecast' },
     { key: 'pricing', label: 'Pricing' },
     { key: 'reorder_quantity', label: 'Reorder' },
   ]), [])
@@ -355,6 +356,22 @@ export default function InventoryList() {
                       <span className="font-semibold">Price:</span> ${Number(row.sale_price).toFixed(2)}
                     </div>
                     <div className="text-xs text-gray-500">Markup: {row.markup ?? '—'}%</div>
+                  </div>
+                ),
+                forecast: ({ row }) => (
+                  <div className="text-sm text-gray-800">
+                    <div>
+                      <span className="font-semibold">Usage:</span>{' '}
+                      {Number(row.usage_rate_30d || 0).toFixed(2)} / day
+                    </div>
+                    <div>
+                      <span className="font-semibold">Suggested ROP:</span>{' '}
+                      {row.suggested_reorder_point ?? '—'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Effective: {row.effective_reorder_point ?? row.suggested_reorder_point ?? '—'}
+                      {row.reorder_point_override !== null ? ' (override)' : ''}
+                    </div>
                   </div>
                 ),
                 reorder_quantity: ({ row }) => (

@@ -100,6 +100,10 @@ CREATE TABLE inventory_items (
     stock_quantity INT DEFAULT 0,
     low_stock_threshold INT DEFAULT 0,
     reorder_quantity INT DEFAULT 0,
+    reorder_point_override INT NULL,
+    reorder_point_override_reason VARCHAR(255) NULL,
+    reorder_point_override_updated_at TIMESTAMP NULL,
+    reorder_point_override_updated_by INT UNSIGNED NULL,
     cost DECIMAL(12,2) DEFAULT 0,
     sale_price DECIMAL(12,2) DEFAULT 0,
     markup DECIMAL(6,2) NULL,
@@ -108,7 +112,24 @@ CREATE TABLE inventory_items (
     vendor VARCHAR(160) NULL,
     notes TEXT NULL,
     FULLTEXT KEY idx_inventory_search (name, description),
-    INDEX idx_inventory_sku_prefix (sku(20))
+    INDEX idx_inventory_sku_prefix (sku(20)),
+    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_reorder_history_item (inventory_item_id),
+    INDEX idx_inventory_reorder_history_user (changed_by),
+    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
+        REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_lookups (
