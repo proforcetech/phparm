@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     sale_price DECIMAL(12,2) DEFAULT 0,
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
+    bin_location VARCHAR(160) NULL,
     vendor VARCHAR(160) NULL,
     notes TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

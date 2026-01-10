@@ -104,6 +104,7 @@ CREATE TABLE inventory_items (
     sale_price DECIMAL(12,2) DEFAULT 0,
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
+    bin_location VARCHAR(160) NULL,
     vendor VARCHAR(160) NULL,
     notes TEXT NULL,
     FULLTEXT KEY idx_inventory_search (name, description),

@@ -261,6 +261,7 @@ class InventoryItemRepository
             'list_price' => $this->resolveColumn('list_price'),
             'markup' => 'markup',
             'location' => 'location',
+            'bin_location' => 'bin_location',
             'vendor' => 'vendor',
             'notes' => 'notes',
         ];
@@ -320,6 +321,7 @@ class InventoryItemRepository
             'list_price' => $this->resolveColumn('list_price'),
             'markup' => 'markup',
             'location' => 'location',
+            'bin_location' => 'bin_location',
             'vendor' => 'vendor',
             'notes' => 'notes',
         ];

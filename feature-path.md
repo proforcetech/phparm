@@ -193,7 +193,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemRepository.php (Update methods should write to this log).
 
-[ ] Bin Locations / Aisle Mapping:
+[x] Bin Locations / Aisle Mapping:
 
  Gap: Knowing you have 5 filters is useless if you don't know where they are.
 
