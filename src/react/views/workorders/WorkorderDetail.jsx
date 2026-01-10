@@ -12,6 +12,7 @@ import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import ChatWidget from '../../components/chat/ChatWidget'
+import Timeline from '../../components/Timeline'
 import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
@@ -171,7 +172,7 @@ export default function WorkorderDetail() {
   const [workorder, setWorkorder] = useState(null)
   const [jobs, setJobs] = useState([])
   const [subEstimates, setSubEstimates] = useState([])
-  const [statusHistory, setStatusHistory] = useState([])
+  const [timelineEvents, setTimelineEvents] = useState([])
   const [technicians, setTechnicians] = useState([])
   const [pullRequests, setPullRequests] = useState([])
 
@@ -248,6 +249,15 @@ export default function WorkorderDetail() {
     return tech?.name || `Tech #${techId}`
   }, [technicians])
 
+  const loadTimeline = useCallback(async () => {
+    try {
+      const response = await workorderService.getTimeline(id)
+      setTimelineEvents(response.data?.timeline || [])
+    } catch (timelineError) {
+      console.error('Failed to load timeline:', timelineError)
+    }
+  }, [id])
+
   const loadWorkorder = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
@@ -257,16 +267,16 @@ export default function WorkorderDetail() {
       setWorkorder(data)
       setJobs(data.jobs || [])
       setSubEstimates(data.sub_estimates || [])
-      setStatusHistory(data.status_history || [])
       setPriorityForm({ priority: data.priority || 'normal' })
       setAssignForm({ technician_id: data.assigned_technician_id || '' })
+      loadTimeline()
     } catch (fetchError) {
       console.error('Failed to load workorder:', fetchError)
       setLoadError(fetchError.response?.data?.message || 'Failed to load workorder')
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, loadTimeline])
 
   const loadTechnicians = useCallback(async () => {
     try {
@@ -1189,53 +1199,9 @@ export default function WorkorderDetail() {
 
           <Card>
             <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Status History</h3>
+              <h3 className="text-lg font-medium text-gray-900">Customer Communication Hub</h3>
             </div>
-
-            {statusHistory.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">No status changes yet</div>
-            ) : (
-              <div className="flow-root">
-                <ul role="list" className="-mb-8">
-                  {statusHistory.map((event, idx) => (
-                    <li key={event.id}>
-                      <div className="relative pb-8">
-                        {idx !== statusHistory.length - 1 ? (
-                          <span
-                            className="absolute left-4 top-4 -ml-px h-full w-0.5 bg-gray-200"
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                        <div className="relative flex space-x-3">
-                          <div>
-                            <span
-                              className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${getTimelineIconBg(event.new_status)}`}
-                            >
-                              <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                              </svg>
-                            </span>
-                          </div>
-                          <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
-                            <div>
-                              <p className="text-sm text-gray-500">
-                                Changed to <span className="font-medium text-gray-900">{formatStatus(event.new_status)}</span>
-                              </p>
-                              {event.notes ? (
-                                <p className="text-xs text-gray-400 mt-0.5">{event.notes}</p>
-                              ) : null}
-                            </div>
-                            <div className="whitespace-nowrap text-right text-sm text-gray-500">
-                              {formatDateTime(event.created_at)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <Timeline events={timelineEvents} />
           </Card>
         </div>
       </div>

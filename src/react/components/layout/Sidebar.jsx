@@ -158,6 +158,7 @@ const technicianMenuItems = [
 
 const customerMenuItems = [
   { path: '/portal', label: 'Dashboard', icon: HomeIcon },
+  { path: '/portal/workorders', label: 'Communication Hub', icon: DocumentTextIcon },
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },

@@ -104,6 +104,8 @@ import CustomerWarrantyClaims from '../views/customer-portal/WarrantyClaims'
 import CustomerWarrantyClaimDetail from '../views/customer-portal/WarrantyClaimDetail'
 import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
+import CustomerWorkorders from '../views/customer-portal/Workorders'
+import CustomerWorkorderTimeline from '../views/customer-portal/WorkorderTimeline'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
@@ -273,6 +275,8 @@ const protectedRoutes = [
   { path: '/portal/warranty-claims/:id', name: 'CustomerWarrantyClaimDetail', auth: 'requiresAuth', element: <CustomerWarrantyClaimDetail /> },
   { path: '/portal/vehicles', name: 'CustomerVehicles', auth: 'requiresAuth', element: <CustomerVehicles /> },
   { path: '/portal/profile', name: 'CustomerProfile', auth: 'requiresAuth', element: <CustomerProfile /> },
+  { path: '/portal/workorders', name: 'CustomerWorkorders', auth: 'requiresAuth', element: <CustomerWorkorders /> },
+  { path: '/portal/workorders/:id', name: 'CustomerWorkorderTimeline', auth: 'requiresAuth', element: <CustomerWorkorderTimeline /> },
 ]
 
 const settingsRoutes = [

@@ -26,6 +26,11 @@ export const portalService = {
     return response.data
   },
 
+  async getWorkorders(params = {}) {
+    const response = await api.get('/workorders', { params })
+    return response.data
+  },
+
   async getInvoiceById(id) {
     const response = await api.get(`/invoices/${id}`)
     return response.data

@@ -15,6 +15,7 @@ class WorkorderController
     private WorkorderRepository $repository;
     private WorkorderService $service;
     private WorkorderJobEvidenceService $evidence;
+    private WorkorderTimelineService $timeline;
     private AccessGate $gate;
     private ?MessagingNotificationService $messagingNotifications;
     private ?DispatchAuditService $dispatchAudit;
@@ -23,6 +24,7 @@ class WorkorderController
         WorkorderRepository $repository,
         WorkorderService $service,
         WorkorderJobEvidenceService $evidence,
+        WorkorderTimelineService $timeline,
         AccessGate $gate,
         ?MessagingNotificationService $messagingNotifications = null,
         ?DispatchAuditService $dispatchAudit = null
@@ -30,6 +32,7 @@ class WorkorderController
         $this->repository = $repository;
         $this->service = $service;
         $this->evidence = $evidence;
+        $this->timeline = $timeline;
         $this->gate = $gate;
         $this->messagingNotifications = $messagingNotifications;
         $this->dispatchAudit = $dispatchAudit;
@@ -340,12 +343,14 @@ class WorkorderController
             throw new InvalidArgumentException('Workorder not found');
         }
 
-        $history = $this->repository->getStatusHistory($id);
-        $subEstimates = $this->service->getSubEstimates($id);
+        if ($user->role === 'customer' && $user->customer_id !== null && $workorder->customer_id !== $user->customer_id) {
+            throw new UnauthorizedException('Cannot view another customer\'s workorder.');
+        }
+
+        $timeline = $this->timeline->build($id, $user->role === 'customer');
 
         return [
-            'status_history' => array_map(fn($h) => $h->toArray(), $history),
-            'sub_estimates' => array_map(fn($e) => $e->toArray(), $subEstimates),
+            'timeline' => $timeline,
         ];
     }
 
