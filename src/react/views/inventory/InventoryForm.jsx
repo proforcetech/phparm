@@ -15,6 +15,7 @@ const emptyForm = {
   sku: '',
   category: '',
   location: '',
+  bin_location: '',
   vendor: '',
   reorder_quantity: 0,
   stock_quantity: 0,
@@ -228,6 +229,15 @@ export default function InventoryForm() {
               {!lookupsLoading.locations && lookupError.locations ? (
                 <p className="mt-1 text-xs text-red-600">{lookupError.locations}</p>
               ) : null}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Bin location</label>
+              <Input
+                modelValue={form.bin_location}
+                placeholder="Aisle 1, Shelf B"
+                helperText="Format: Aisle 1, Shelf B"
+                onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, bin_location: value }))}
+              />
             </div>
             <div>
               <div className="flex items-center justify-between text-sm font-medium text-gray-700">

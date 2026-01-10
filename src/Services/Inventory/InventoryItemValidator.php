@@ -38,6 +38,16 @@ class InventoryItemValidator
             $notes = null;
         }
 
+        $binLocation = isset($data['bin_location']) && $data['bin_location'] !== ''
+            ? $this->sanitizeText((string) $data['bin_location'], 160, 'Bin location')
+            : null;
+        if ($binLocation === '') {
+            $binLocation = null;
+        }
+        if ($binLocation !== null) {
+            $this->validateBinLocationFormat($binLocation);
+        }
+
         $sku = isset($data['sku']) && $data['sku'] !== '' ? $this->sanitize((string) $data['sku'], 120, 'SKU') : null;
         if ($sku !== null && !preg_match('/^[A-Za-z0-9]+$/', $sku)) {
             throw new InvalidArgumentException('SKU must be alphanumeric.');
@@ -62,6 +72,7 @@ class InventoryItemValidator
             'location' => isset($data['location']) && $data['location'] !== ''
                 ? $this->sanitize((string) $data['location'], 160, 'Location')
                 : null,
+            'bin_location' => $binLocation,
             'vendor' => isset($data['vendor']) && $data['vendor'] !== ''
                 ? $this->sanitize((string) $data['vendor'], 160, 'Vendor')
                 : null,
@@ -157,5 +168,12 @@ class InventoryItemValidator
         }
 
         return round((($salePrice - $cost) / $cost) * 100, 2);
+    }
+
+    private function validateBinLocationFormat(string $value): void
+    {
+        if (!preg_match('/^Aisle\\s+[A-Za-z0-9-]+(?:\\s*,\\s*(?:Shelf|Bin)\\s+[A-Za-z0-9-]+)?$/i', $value)) {
+            throw new InvalidArgumentException('Bin location must use format "Aisle 1, Shelf B".');
+        }
     }
 }

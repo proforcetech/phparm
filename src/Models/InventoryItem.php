@@ -19,6 +19,7 @@ class InventoryItem extends BaseModel
     public float $list_price = 0.0;
     public ?float $markup = null;
     public ?string $location = null;
+    public ?string $bin_location = null;
     public ?string $vendor = null;
     public ?string $notes = null;
     public bool $is_tracked = true;

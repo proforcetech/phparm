@@ -175,6 +175,7 @@ export default function InventoryList() {
                   <div>
                     <div className="font-semibold text-gray-900">{row.name}</div>
                     <p className="text-xs text-gray-500">SKU: {row.sku || '—'}</p>
+                    <p className="text-xs text-gray-500">Bin: {row.bin_location || '—'}</p>
                   </div>
                 ),
                 stock_quantity: ({ row }) => (
