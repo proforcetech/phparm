@@ -15,6 +15,12 @@ export default function InventoryList() {
   const [items, setItems] = useState([])
   const [page, setPage] = useState(1)
   const [hasNextPage, setHasNextPage] = useState(false)
+  const [pendingFilters, setPendingFilters] = useState({
+    query: '',
+    category: '',
+    location: '',
+    low_stock_only: false,
+  })
   const [filters, setFilters] = useState({
     query: '',
     category: '',
@@ -23,6 +29,7 @@ export default function InventoryList() {
   })
 
   const perPage = 10
+  const debounceDelay = 400
 
   const columns = useMemo(() => ([
     { key: 'name', label: 'Item' },
@@ -36,7 +43,7 @@ export default function InventoryList() {
     setLoading(true)
     try {
       const params = {
-        limit: perPage,
+        limit: perPage + 1,
         offset: (page - 1) * perPage,
       }
 
@@ -49,20 +56,28 @@ export default function InventoryList() {
         ...item,
         severity: item.stock_quantity === 0 ? 'out' : item.stock_quantity <= item.low_stock_threshold ? 'low' : 'ok',
       }))
-      setItems(normalized)
-      setHasNextPage(normalized.length === perPage)
+      setItems(normalized.slice(0, perPage))
+      setHasNextPage(normalized.length > perPage)
     } finally {
       setLoading(false)
     }
-  }, [filters, page])
+  }, [filters, page, perPage])
 
   useEffect(() => {
     loadItems()
   }, [loadItems])
 
-  const refresh = (nextFilters) => {
-    setPage(1)
-    setFilters((prev) => ({ ...prev, ...nextFilters }))
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setPage(1)
+      setFilters(pendingFilters)
+    }, debounceDelay)
+
+    return () => window.clearTimeout(timeout)
+  }, [pendingFilters, debounceDelay])
+
+  const updateFilters = (nextFilters) => {
+    setPendingFilters((prev) => ({ ...prev, ...nextFilters }))
   }
 
   const nextPage = () => {
@@ -108,34 +123,34 @@ export default function InventoryList() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Search</label>
                 <Input
-                  modelValue={filters.query}
+                  modelValue={pendingFilters.query}
                   placeholder="Name or SKU"
-                  onUpdateModelValue={(value) => refresh({ query: value })}
+                  onUpdateModelValue={(value) => updateFilters({ query: value })}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Category</label>
                 <Input
-                  modelValue={filters.category}
+                  modelValue={pendingFilters.category}
                   placeholder="Brakes"
-                  onUpdateModelValue={(value) => refresh({ category: value })}
+                  onUpdateModelValue={(value) => updateFilters({ category: value })}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Location</label>
                 <Input
-                  modelValue={filters.location}
+                  modelValue={pendingFilters.location}
                   placeholder="Aisle 3"
-                  onUpdateModelValue={(value) => refresh({ location: value })}
+                  onUpdateModelValue={(value) => updateFilters({ location: value })}
                 />
               </div>
               <div className="flex items-end gap-2">
                 <input
                   id="lowStockOnly"
-                  checked={filters.low_stock_only}
+                  checked={pendingFilters.low_stock_only}
                   type="checkbox"
                   className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  onChange={(event) => refresh({ low_stock_only: event.target.checked })}
+                  onChange={(event) => updateFilters({ low_stock_only: event.target.checked })}
                 />
                 <label htmlFor="lowStockOnly" className="text-sm text-gray-700">Show low stock only</label>
               </div>

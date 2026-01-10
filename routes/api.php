@@ -2294,10 +2294,15 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
+            $lowStockParam = $request->queryParam('low_stock');
+            $lowStockOnly = $lowStockParam === 'true' || $request->queryParam('low_stock_only') === 'true';
             $filters = [
                 'query' => $request->queryParam('query'),
                 'category' => $request->queryParam('category'),
-                'low_stock_only' => $request->queryParam('low_stock') === 'true',
+                'location' => $request->queryParam('location'),
+                'low_stock_only' => $lowStockOnly,
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
 
             $data = $inventoryController->index($user, $filters);
