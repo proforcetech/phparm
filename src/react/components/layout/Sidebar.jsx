@@ -27,6 +27,7 @@ const adminMenuItems = [
       },
     ],
   },
+  { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
   {
     path: '/cp/dispatch',
     label: 'Dispatch',

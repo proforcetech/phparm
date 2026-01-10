@@ -205,11 +205,11 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Feature: Allow the frontend (InventoryList.jsx) to accept input from a USB barcode scanner or use the device camera to scan a VIN or UPC to instantly find the part.
 
-[ ] Vendor Warranty Claims Workflow:
+[x] Vendor Warranty Claims Workflow:
 
  Feature: A dedicated view to manage "Defective" inventory.
 
- Status flow: Defective Detected -> RMA Requested -> Shipped to Vendor -> Credit Received.
+ Status flow: Defective -> RMA Requested -> Shipped -> Credit Received.
 
  Ref: Link this to the cp/inventory/alerts page so unpaid warranty claims are highlighted.
 

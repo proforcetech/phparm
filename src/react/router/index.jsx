@@ -48,6 +48,7 @@ import InventoryForm from '../views/inventory/InventoryForm'
 import InventoryAlerts from '../views/inventory/InventoryAlerts'
 import InventoryStockOrders from '../views/inventory/InventoryStockOrders'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
+import WarrantyClaims from '../views/warranty/WarrantyClaims'
 import ImpoundIntake from '../views/storage/ImpoundIntake'
 import StorageFeeLedger from '../views/storage/StorageFeeLedger'
 import NoticeGeneration from '../views/storage/NoticeGeneration'
@@ -225,6 +226,7 @@ const protectedRoutes = [
   { path: '/cp/inventory/alerts', name: 'InventoryAlerts', auth: 'requiresAuth', element: <InventoryAlerts /> },
   { path: '/cp/inventory/stock-orders', name: 'InventoryStockOrders', auth: 'requiresAuth', element: <InventoryStockOrders /> },
   { path: '/cp/inventory/pull-requests', name: 'InventoryPullRequests', auth: 'requiresAuth', element: <InventoryPullRequests /> },
+  { path: '/cp/warranty', name: 'WarrantyClaims', auth: 'requiresAuth', element: <WarrantyClaims /> },
   { path: '/cp/storage/impound-intake', name: 'ImpoundIntake', auth: 'requiresAuth', element: <ImpoundIntake /> },
   { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
   { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },
