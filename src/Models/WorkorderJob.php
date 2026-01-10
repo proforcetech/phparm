@@ -9,6 +9,7 @@ class WorkorderJob extends BaseModel
     public const STATUS_HOOKED = 'hooked';
     public const STATUS_ARRIVED = 'arrived';
     public const STATUS_COMPLETED = 'completed';
+    public const STATUS_GOA = 'goa';
 
     public const ALLOWED_STATUSES = [
         self::STATUS_PENDING,
@@ -16,6 +17,7 @@ class WorkorderJob extends BaseModel
         self::STATUS_HOOKED,
         self::STATUS_ARRIVED,
         self::STATUS_COMPLETED,
+        self::STATUS_GOA,
     ];
 
     public int $id;

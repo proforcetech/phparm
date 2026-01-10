@@ -420,7 +420,7 @@ class TrackingService
 
     private function checkForArrival(array $job, array $position): void
     {
-        if (($job['status'] ?? null) === WorkorderJob::STATUS_COMPLETED) {
+        if (in_array(($job['status'] ?? null), [WorkorderJob::STATUS_COMPLETED, WorkorderJob::STATUS_GOA], true)) {
             return;
         }
 
@@ -566,7 +566,7 @@ class TrackingService
             SELECT id
             FROM workorder_jobs
             WHERE workorder_id = :workorder_id
-              AND status != :completed_status
+              AND status NOT IN (:completed_status, :goa_status)
             ORDER BY
                 CASE status
                     WHEN :in_progress_status THEN 1
@@ -582,6 +582,7 @@ class TrackingService
         $stmt->execute([
             'workorder_id' => $workorderId,
             'completed_status' => WorkorderJob::STATUS_COMPLETED,
+            'goa_status' => WorkorderJob::STATUS_GOA,
             'in_progress_status' => WorkorderJob::STATUS_IN_PROGRESS,
             'pending_status' => WorkorderJob::STATUS_PENDING,
             'arrived_status' => WorkorderJob::STATUS_ARRIVED,

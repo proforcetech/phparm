@@ -237,6 +237,9 @@ class WorkorderRepository
         if ($status === Workorder::STATUS_COMPLETED) {
             $updateFields[] = 'completed_at = NOW()';
         }
+        if ($status === Workorder::STATUS_GOA) {
+            $updateFields[] = 'completed_at = NOW()';
+        }
 
         $stmt = $pdo->prepare('UPDATE workorders SET ' . implode(', ', $updateFields) . ' WHERE id = :id');
         $stmt->execute($params);
@@ -252,6 +255,22 @@ class WorkorderRepository
         ]);
 
         return $workorder;
+    }
+
+    public function updateGoaDetails(int $id, float $goaFee, ?string $billingParty): void
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            UPDATE workorders
+            SET goa_fee = :goa_fee,
+                goa_billing_party = :goa_billing_party,
+                updated_at = NOW()
+            WHERE id = :id
+        SQL);
+        $stmt->execute([
+            'goa_fee' => $goaFee,
+            'goa_billing_party' => $billingParty,
+            'id' => $id,
+        ]);
     }
 
     public function assignTechnician(
@@ -374,6 +393,9 @@ class WorkorderRepository
         }
 
         if ($status === WorkorderJob::STATUS_COMPLETED) {
+            $updateFields[] = 'completed_at = NOW()';
+        }
+        if ($status === WorkorderJob::STATUS_GOA) {
             $updateFields[] = 'completed_at = NOW()';
         }
 
@@ -576,6 +598,8 @@ class WorkorderRepository
             'discounts' => (float) ($row['discounts'] ?? 0),
             'shop_fee' => (float) ($row['shop_fee'] ?? 0),
             'hazmat_disposal_fee' => (float) ($row['hazmat_disposal_fee'] ?? 0),
+            'goa_fee' => (float) ($row['goa_fee'] ?? 0),
+            'goa_billing_party' => $row['goa_billing_party'] ?? null,
             'grand_total' => (float) ($row['grand_total'] ?? 0),
             'internal_notes' => $row['internal_notes'] ?? null,
             'customer_notes' => $row['customer_notes'] ?? null,
