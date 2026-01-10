@@ -1,23 +1,28 @@
--- 1. Adjust the Primary Key (Required for partitioning)
--- WARNING: This is a heavy blocking operation on large tables.
+-- Partition driver_locations by month
+-- Note: We use the DELIMITER command so the PHP runner knows to split by //
+
+DELIMITER //
+
+-- 1. Adjust Primary Key (One chunk ending in //)
 ALTER TABLE driver_locations
     DROP PRIMARY KEY,
-    ADD PRIMARY KEY (id, recorded_at);
+    ADD PRIMARY KEY (id, recorded_at)
+//
 
-DROP PROCEDURE IF EXISTS create_driver_locations_partitions;
+DROP PROCEDURE IF EXISTS create_driver_locations_partitions
+//
 
--- 2. Create the procedure (DELIMITER lines removed)
+-- 2. Create the Procedure (The semicolon inside won't break it now)
 CREATE PROCEDURE create_driver_locations_partitions()
 BEGIN
     DECLARE start_date DATE;
     DECLARE end_date DATE;
-    DECLARE current_date_var DATE; -- Renamed to avoid reserved word conflicts
+    DECLARE current_date_var DATE; 
     
     SET start_date = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 12 MONTH), '%Y-%m-01');
     SET end_date = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 12 MONTH), '%Y-%m-01');
     SET current_date_var = start_date;
     
-    -- Initialize the ALTER statement
     SET @sql = 'ALTER TABLE driver_locations PARTITION BY RANGE COLUMNS(recorded_at) (';
 
     WHILE current_date_var < end_date DO
@@ -31,14 +36,17 @@ BEGIN
         SET current_date_var = @next_date;
     END WHILE;
 
-    -- Add the catch-all partition and execute
     SET @sql = CONCAT(@sql, 'PARTITION pmax VALUES LESS THAN (MAXVALUE))');
     
     PREPARE stmt FROM @sql;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
-END;
+END
+//
 
 -- 3. Run and Cleanup
-CALL create_driver_locations_partitions();
-DROP PROCEDURE create_driver_locations_partitions;
+CALL create_driver_locations_partitions()
+//
+
+DROP PROCEDURE create_driver_locations_partitions
+//
