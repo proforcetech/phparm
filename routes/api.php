@@ -678,7 +678,8 @@ return function (Router $router, array $config, $connection) {
         $totpService,
         $loginLimiter,
         $rateLimitResponse,
-        $sessionManager
+        $sessionManager,
+        $enforceMandatoryTwoFactorSetup
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -783,7 +784,8 @@ return function (Router $router, array $config, $connection) {
         $totpService,
         $loginLimiter,
         $rateLimitResponse,
-        $sessionManager
+        $sessionManager,
+        $enforceMandatoryTwoFactorSetup
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
