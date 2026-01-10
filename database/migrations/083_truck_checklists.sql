@@ -43,18 +43,42 @@ CREATE TABLE IF NOT EXISTS truck_checklist_entries (
     INDEX idx_tce_shift (driver_shift_id),
     INDEX idx_tce_type (checklist_type),
     INDEX idx_tce_completed_at (completed_at),
-    FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE
+    INDEX idx_tce_template (template_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Add foreign keys separately (allows graceful handling if tables don't exist)
-SET @has_driver_profiles = (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'driver_profiles');
-SET @has_driver_shifts = (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'driver_shifts');
+-- Add foreign keys separately using conditional logic
+SET @has_fk_tce_template := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'truck_checklist_entries' AND constraint_name = 'fk_tce_template'
+);
+SET @fk_tce_template_sql := IF(@has_fk_tce_template = 0,
+    'ALTER TABLE truck_checklist_entries ADD CONSTRAINT fk_tce_template FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE',
+    'SELECT 1');
+PREPARE fk_tce_template_stmt FROM @fk_tce_template_sql;
+EXECUTE fk_tce_template_stmt;
+DEALLOCATE PREPARE fk_tce_template_stmt;
 
-ALTER TABLE truck_checklist_entries
-    ADD CONSTRAINT fk_tce_driver_profile FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles(id) ON DELETE CASCADE;
+SET @has_fk_tce_driver_profile := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'truck_checklist_entries' AND constraint_name = 'fk_tce_driver_profile'
+);
+SET @fk_tce_driver_profile_sql := IF(@has_fk_tce_driver_profile = 0,
+    'ALTER TABLE truck_checklist_entries ADD CONSTRAINT fk_tce_driver_profile FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles(id) ON DELETE CASCADE',
+    'SELECT 1');
+PREPARE fk_tce_driver_profile_stmt FROM @fk_tce_driver_profile_sql;
+EXECUTE fk_tce_driver_profile_stmt;
+DEALLOCATE PREPARE fk_tce_driver_profile_stmt;
 
-ALTER TABLE truck_checklist_entries
-    ADD CONSTRAINT fk_tce_driver_shift FOREIGN KEY (driver_shift_id) REFERENCES driver_shifts(id) ON DELETE SET NULL;
+SET @has_fk_tce_driver_shift := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'truck_checklist_entries' AND constraint_name = 'fk_tce_driver_shift'
+);
+SET @fk_tce_driver_shift_sql := IF(@has_fk_tce_driver_shift = 0,
+    'ALTER TABLE truck_checklist_entries ADD CONSTRAINT fk_tce_driver_shift FOREIGN KEY (driver_shift_id) REFERENCES driver_shifts(id) ON DELETE SET NULL',
+    'SELECT 1');
+PREPARE fk_tce_driver_shift_stmt FROM @fk_tce_driver_shift_sql;
+EXECUTE fk_tce_driver_shift_stmt;
+DEALLOCATE PREPARE fk_tce_driver_shift_stmt;
 
 CREATE TABLE IF NOT EXISTS truck_checklist_entry_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
