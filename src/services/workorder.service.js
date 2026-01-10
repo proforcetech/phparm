@@ -51,13 +51,15 @@ export default {
    * @returns {Promise}
    */
   updateStatus(id, status, notes = null, options = {}) {
-    const { allowQueue = true, clientEventId = null } = options
+    const { allowQueue = true, clientEventId = null, payload = {} } = options
+    const requestPayload = {
+      status,
+      notes,
+      client_event_id: clientEventId,
+      ...payload,
+    }
     if (!allowQueue) {
-      return api.patch(`/workorders/${id}/status`, {
-        status,
-        notes,
-        client_event_id: clientEventId,
-      })
+      return api.patch(`/workorders/${id}/status`, requestPayload)
     }
 
     const eventId = clientEventId || crypto.randomUUID()
@@ -66,6 +68,7 @@ export default {
       status,
       notes,
       clientEventId: eventId,
+      payload,
     })
 
     if (typeof navigator !== 'undefined' && navigator.onLine) {

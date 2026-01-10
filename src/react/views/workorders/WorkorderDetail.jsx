@@ -43,8 +43,14 @@ const priorityOptions = [
   { value: 'low', label: 'Low' },
 ]
 
+const goaBillingOptions = [
+  { value: 'customer', label: 'Customer' },
+  { value: 'motor_club', label: 'Motor Club' },
+]
+
 const formatStatus = (status) => {
   if (!status) return ''
+  if (status.toLowerCase() === 'goa') return 'GOA'
   return status
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -93,6 +99,7 @@ const getStatusVariant = (status) => {
     in_progress: 'info',
     on_hold: 'warning',
     completed: 'success',
+    goa: 'danger',
     cancelled: 'danger',
   }
   return variants[status?.toLowerCase()] || 'default'
@@ -104,6 +111,7 @@ const getJobStatusVariant = (status) => {
     in_progress: 'info',
     hooked: 'info',
     completed: 'success',
+    goa: 'danger',
   }
   return variants[status?.toLowerCase()] || 'default'
 }
@@ -147,6 +155,7 @@ const getTimelineIconBg = (status) => {
     in_progress: 'bg-blue-500',
     on_hold: 'bg-yellow-500',
     completed: 'bg-green-500',
+    goa: 'bg-red-500',
     cancelled: 'bg-red-500',
   }
   return colors[status] || 'bg-gray-400'
@@ -172,6 +181,7 @@ export default function WorkorderDetail() {
   const [showPriorityModal, setShowPriorityModal] = useState(false)
   const [showSubEstimateModal, setShowSubEstimateModal] = useState(false)
   const [showPullRequestModal, setShowPullRequestModal] = useState(false)
+  const [showGoaModal, setShowGoaModal] = useState(false)
   const [selectedJob, setSelectedJob] = useState(null)
 
   const [converting, setConverting] = useState(false)
@@ -179,6 +189,7 @@ export default function WorkorderDetail() {
   const [updatingPriority, setUpdatingPriority] = useState(false)
   const [creatingSubEstimate, setCreatingSubEstimate] = useState(false)
   const [creatingPullRequest, setCreatingPullRequest] = useState(false)
+  const [markingGoa, setMarkingGoa] = useState(false)
 
   const [convertForm, setConvertForm] = useState({ due_date: '' })
   const [assignForm, setAssignForm] = useState({ technician_id: '' })
@@ -196,13 +207,18 @@ export default function WorkorderDetail() {
     workorder_job_id: '',
     notes: '',
   })
+  const [goaForm, setGoaForm] = useState({
+    goa_fee: 0,
+    goa_billing_party: 'customer',
+    notes: '',
+  })
   const [subEstimateForm, setSubEstimateForm] = useState({
     tax_rate: 0,
     jobs: [createSubEstimateJob()],
   })
 
   const completedJobsCount = useMemo(() => {
-    return jobs.filter((job) => job.status === 'completed').length
+    return jobs.filter((job) => ['completed', 'goa'].includes(job.status)).length
   }, [jobs])
 
   const isSubEstimateValid = useMemo(() => {
@@ -304,6 +320,37 @@ export default function WorkorderDetail() {
     setSelectedJob(job)
     setJobAssignForm({ technician_id: job.technician_id || '' })
     setShowJobAssign(true)
+  }
+
+  const openGoaModal = () => {
+    if (!workorder) return
+    setGoaForm({
+      goa_fee: workorder.goa_fee ?? workorder.call_out_fee ?? 0,
+      goa_billing_party: workorder.goa_billing_party || 'customer',
+      notes: '',
+    })
+    setShowGoaModal(true)
+  }
+
+  const markGoa = async () => {
+    if (!workorder) return
+    setMarkingGoa(true)
+    try {
+      await workorderService.updateStatus(workorder.id, 'goa', goaForm.notes || 'Marked GOA', {
+        payload: {
+          goa_fee: Number(goaForm.goa_fee) || 0,
+          goa_billing_party: goaForm.goa_billing_party,
+        },
+      })
+      success('Workorder marked GOA')
+      setShowGoaModal(false)
+      loadWorkorder()
+    } catch (err) {
+      console.error('Failed to mark GOA:', err)
+      toastError(err.response?.data?.error || 'Failed to mark workorder GOA')
+    } finally {
+      setMarkingGoa(false)
+    }
   }
 
   const confirmJobAssign = async () => {
@@ -747,12 +794,17 @@ export default function WorkorderDetail() {
               Mark Complete
             </Button>
           ) : null}
-          {workorder.status === 'completed' ? (
+          {['completed', 'goa'].includes(workorder.status) ? (
             <Button onClick={() => setShowConvertModal(true)}>
               <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               Convert to Invoice
+            </Button>
+          ) : null}
+          {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
+            <Button variant="danger" onClick={openGoaModal}>
+              Mark GOA
             </Button>
           ) : null}
           {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
@@ -951,6 +1003,15 @@ export default function WorkorderDetail() {
                             onClick={() => updateJobStatus(job.id, 'in_progress')}
                           >
                             Reopen
+                          </Button>
+                        ) : null}
+                        {['pending', 'in_progress', 'arrived'].includes(job.status) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateJobStatus(job.id, 'goa')}
+                          >
+                            Mark GOA
                           </Button>
                         ) : null}
                       </div>
@@ -1189,7 +1250,9 @@ export default function WorkorderDetail() {
               Convert workorder #{workorder?.number} to an invoice?
             </p>
             <Alert variant="info">
-              This will create an invoice with all completed work from this workorder.
+              {workorder?.status === 'goa'
+                ? 'This will create an invoice for the GOA fee only.'
+                : 'This will create an invoice with all completed work from this workorder.'}
             </Alert>
             <div>
               <label className="block text-sm font-medium text-gray-700">Due Date (Optional)</label>
@@ -1207,6 +1270,57 @@ export default function WorkorderDetail() {
             <Button variant="outline" onClick={() => setShowConvertModal(false)}>Cancel</Button>
             <Button onClick={confirmConvert} disabled={converting} loading={converting}>
               {converting ? 'Converting...' : 'Convert to Invoice'}
+            </Button>
+          </div>
+        )}
+      />
+
+      <Modal
+        open={showGoaModal}
+        onClose={() => setShowGoaModal(false)}
+        title="Mark Gone On Arrival (GOA)"
+        content={(
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Record the GOA fee and billing party before closing this workorder.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">GOA Fee</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                className="mt-1"
+                value={goaForm.goa_fee}
+                onUpdateModelValue={(value) => setGoaForm((prev) => ({ ...prev, goa_fee: value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Bill To</label>
+              <Select
+                value={goaForm.goa_billing_party}
+                options={goaBillingOptions}
+                className="mt-1"
+                onChange={(event) =>
+                  setGoaForm((prev) => ({ ...prev, goa_billing_party: event.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Notes (Optional)</label>
+              <Textarea
+                rows={3}
+                modelValue={goaForm.notes}
+                onUpdateModelValue={(value) => setGoaForm((prev) => ({ ...prev, notes: value }))}
+              />
+            </div>
+          </div>
+        )}
+        footer={(
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowGoaModal(false)}>Cancel</Button>
+            <Button variant="danger" onClick={markGoa} loading={markingGoa} disabled={markingGoa}>
+              {markingGoa ? 'Marking...' : 'Mark GOA'}
             </Button>
           </div>
         )}

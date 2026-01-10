@@ -145,7 +145,12 @@ class WorkorderController
         }
 
         $before = $this->repository->find($id);
-        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
+
+        if ($status === Workorder::STATUS_GOA) {
+            $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
+        } else {
+            $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
+        }
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
@@ -627,6 +632,7 @@ class WorkorderController
             Workorder::STATUS_ON_HOLD => 'On Hold',
             Workorder::STATUS_COMPLETED => 'Completed',
             Workorder::STATUS_CANCELLED => 'Cancelled',
+            Workorder::STATUS_GOA => 'GOA',
             default => ucfirst($status),
         };
     }
@@ -639,13 +645,17 @@ class WorkorderController
         }
 
         $allCompleted = true;
+        $allGoa = true;
         $anyInProgress = false;
 
         foreach ($jobs as $job) {
-            if ($job->status !== 'completed') {
+            if (!in_array($job->status, ['completed', 'goa'], true)) {
                 $allCompleted = false;
             }
-            if (in_array($job->status, ['in_progress', 'hooked'], true)) {
+            if ($job->status !== 'goa') {
+                $allGoa = false;
+            }
+            if (in_array($job->status, ['in_progress', 'hooked', 'arrived'], true)) {
                 $anyInProgress = true;
             }
         }
@@ -656,7 +666,9 @@ class WorkorderController
         }
 
         // Auto-transition workorder status based on job statuses
-        if ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
+        if ($allGoa && $workorder->status !== Workorder::STATUS_GOA) {
+            $this->service->markGoneOnArrival($workorderId, ['notes' => 'All jobs marked GOA'], $actorId);
+        } elseif ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
             $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed', null);
         } elseif ($anyInProgress && $workorder->status === Workorder::STATUS_PENDING) {
             $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started', null);
