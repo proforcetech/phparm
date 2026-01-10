@@ -17,6 +17,11 @@ const emptyForm = {
   location: '',
   vendor: '',
   reorder_quantity: 0,
+  reorder_point_override: null,
+  reorder_point_override_reason: '',
+  usage_rate_30d: 0,
+  suggested_reorder_point: 0,
+  effective_reorder_point: 0,
   stock_quantity: 0,
   low_stock_threshold: 0,
   markup: null,
@@ -59,6 +64,7 @@ export default function InventoryForm() {
   const canCreate = hasPermission('inventory.create')
   const canEdit = hasPermission('inventory.edit')
   const canAdjust = hasPermission('inventory.adjust')
+  const canManageOverrides = hasPermission('inventory.manage')
   const canSave = isEditing ? canEdit : canCreate
   const canAdjustStock = !isEditing || canAdjust
 
@@ -139,6 +145,10 @@ export default function InventoryForm() {
     setSuccess('')
     try {
       const payload = { ...form }
+      if (!canManageOverrides) {
+        delete payload.reorder_point_override
+        delete payload.reorder_point_override_reason
+      }
       if (isEditing && id) {
         await inventoryService.update(id, payload)
         setSuccess('Inventory item updated.')
@@ -261,6 +271,56 @@ export default function InventoryForm() {
                 onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, reorder_quantity: Number(value) }))}
               />
             </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Stock forecasting</h3>
+                <p className="text-xs text-slate-500">Based on workorders completed in the last 30 days.</p>
+              </div>
+              <div className="text-sm text-slate-700">
+                <div>
+                  <span className="font-semibold">Usage rate:</span>{' '}
+                  {Number(form.usage_rate_30d || 0).toFixed(2)} / day
+                </div>
+                <div>
+                  <span className="font-semibold">Suggested reorder point:</span>{' '}
+                  {form.suggested_reorder_point ?? 0}
+                </div>
+                <div className="text-xs text-slate-500">
+                  Effective reorder point:{' '}
+                  {form.effective_reorder_point ?? form.suggested_reorder_point ?? 0}
+                  {form.reorder_point_override !== null ? ' (override)' : ''}
+                </div>
+              </div>
+            </div>
+
+            {canManageOverrides ? (
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Manager override</label>
+                  <Input
+                    modelValue={form.reorder_point_override ?? ''}
+                    type="number"
+                    min="0"
+                    placeholder="Leave blank to use suggested"
+                    onUpdateModelValue={(value) => setForm((prev) => ({
+                      ...prev,
+                      reorder_point_override: value === '' ? null : Number(value)
+                    }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Override reason</label>
+                  <Input
+                    modelValue={form.reorder_point_override_reason || ''}
+                    placeholder="Optional reason for audit trail"
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, reorder_point_override_reason: value }))}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

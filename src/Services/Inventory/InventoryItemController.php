@@ -117,6 +117,10 @@ class InventoryItemController
         $this->assertManageAccess($user);
         $this->assertEditAccess($user);
 
+        if (array_key_exists('reorder_point_override', $data) || array_key_exists('reorder_point_override_reason', $data)) {
+            $this->gate->assert($user, 'inventory.manage');
+        }
+
         $existing = $this->repository->find($id);
         if ($existing !== null && array_key_exists('stock_quantity', $data)) {
             $incomingQuantity = (int) $data['stock_quantity'];
@@ -125,7 +129,7 @@ class InventoryItemController
             }
         }
 
-        $item = $this->repository->update($id, $data);
+        $item = $this->repository->update($id, $data, $user->id);
 
         return $item?->toArray();
     }

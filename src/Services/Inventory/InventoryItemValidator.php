@@ -56,6 +56,10 @@ class InventoryItemValidator
             'stock_quantity' => $this->parseIntField($data['stock_quantity'] ?? null, 'Stock quantity'),
             'low_stock_threshold' => $this->parseIntField($data['low_stock_threshold'] ?? null, 'Low stock threshold'),
             'reorder_quantity' => $this->parseIntField($data['reorder_quantity'] ?? null, 'Reorder quantity'),
+            'reorder_point_override' => $this->parseNullableIntField($data['reorder_point_override'] ?? null, 'Reorder point override'),
+            'reorder_point_override_reason' => isset($data['reorder_point_override_reason']) && $data['reorder_point_override_reason'] !== ''
+                ? $this->sanitizeText((string) $data['reorder_point_override_reason'], 255, 'Reorder point override reason')
+                : null,
             'cost' => $this->parseFloatField($data['cost'] ?? null, 'Cost'),
             'sale_price' => $this->parseFloatField($data['sale_price'] ?? null, 'Sale price'),
             'list_price' => $this->parseFloatField($data['list_price'] ?? null, 'List price'),
@@ -71,6 +75,10 @@ class InventoryItemValidator
 
         if ($normalized['sale_price'] < $normalized['cost']) {
             throw new InvalidArgumentException('Sale price cannot be lower than cost.');
+        }
+
+        if ($normalized['reorder_point_override_reason'] === '') {
+            $normalized['reorder_point_override_reason'] = null;
         }
 
         $normalized['markup'] = isset($data['markup']) && $data['markup'] !== ''
@@ -130,6 +138,24 @@ class InventoryItemValidator
         }
 
         return $filtered;
+    }
+
+    private function parseNullableIntField($value, string $label): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $filtered = filter_var($value, FILTER_VALIDATE_INT);
+        if ($filtered === false) {
+            throw new InvalidArgumentException("{$label} must be a whole number.");
+        }
+
+        if ($filtered < 0) {
+            throw new InvalidArgumentException("{$label} cannot be negative.");
+        }
+
+        return (int) $filtered;
     }
 
     private function parseFloatField($value, string $label): float

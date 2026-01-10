@@ -9,6 +9,9 @@ use PDO;
 
 class InventoryItemRepository
 {
+    private const FORECAST_WINDOW_DAYS = 30;
+    private const FORECAST_LEAD_TIME_DAYS = 14;
+
     private Connection $connection;
     private InventoryItemValidator $validator;
     private ?bool $hasIsTrackedColumn = null;
@@ -101,6 +104,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$id] = $item;
 
         return $item;
@@ -123,6 +127,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$item->id] = $item;
 
         return $item;
@@ -160,6 +165,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$item->id] = $item;
 
         return $item;
@@ -251,6 +257,8 @@ class InventoryItemRepository
             'stock_quantity' => $this->resolveColumn('stock_quantity', 'quantity'),
             'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
             'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
+            'reorder_point_override' => $this->resolveColumn('reorder_point_override'),
+            'reorder_point_override_reason' => $this->resolveColumn('reorder_point_override_reason'),
             'cost' => 'cost',
             'sale_price' => $this->resolveColumn('sale_price', 'price'),
             'list_price' => $this->resolveColumn('list_price'),
@@ -293,7 +301,7 @@ class InventoryItemRepository
     /**
      * @param array<string, mixed> $data
      */
-    public function update(int $id, array $data): ?InventoryItem
+    public function update(int $id, array $data, ?int $actorId = null): ?InventoryItem
     {
         $existing = $this->find($id);
         if ($existing === null) {
@@ -301,6 +309,8 @@ class InventoryItemRepository
         }
 
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
+        $overrideChanged = $payload['reorder_point_override'] !== $existing->reorder_point_override
+            || $payload['reorder_point_override_reason'] !== $existing->reorder_point_override_reason;
         $columnMap = [
             'name' => 'name',
             'description' => 'description',
@@ -310,6 +320,8 @@ class InventoryItemRepository
             'stock_quantity' => $this->resolveColumn('stock_quantity', 'quantity'),
             'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
             'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
+            'reorder_point_override' => $this->resolveColumn('reorder_point_override'),
+            'reorder_point_override_reason' => $this->resolveColumn('reorder_point_override_reason'),
             'cost' => 'cost',
             'sale_price' => $this->resolveColumn('sale_price', 'price'),
             'list_price' => $this->resolveColumn('list_price'),
@@ -335,10 +347,31 @@ class InventoryItemRepository
             $params['is_tracked'] = isset($payload['is_tracked']) ? (int) (bool) $payload['is_tracked'] : 1;
         }
 
+        if ($overrideChanged) {
+            if ($this->columnExists('reorder_point_override_updated_at')) {
+                $setClauses[] = 'reorder_point_override_updated_at = NOW()';
+            }
+            if ($this->columnExists('reorder_point_override_updated_by')) {
+                $setClauses[] = 'reorder_point_override_updated_by = :reorder_point_override_updated_by';
+                $params['reorder_point_override_updated_by'] = $actorId;
+            }
+        }
+
         $sql = 'UPDATE inventory_items SET ' . implode(', ', $setClauses) . ' WHERE id = :id';
         $this->connection->pdo()->prepare($sql)->execute($params);
 
+        if ($overrideChanged && $actorId !== null) {
+            $this->logReorderPointOverrideChange(
+                $id,
+                $existing->reorder_point_override,
+                $payload['reorder_point_override'],
+                $payload['reorder_point_override_reason'],
+                $actorId
+            );
+        }
+
         $item = new InventoryItem(array_merge($payload, ['id' => $id]));
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$id] = $item;
         $this->listCache = [];
 
@@ -387,6 +420,7 @@ class InventoryItemRepository
             $this->cache[$item->id] = $item;
         }
 
+        $this->attachForecasting($results);
         $this->listCache[$cacheKey] = $results;
 
         return $results;
@@ -513,6 +547,14 @@ class InventoryItemRepository
             ? (int) $row['low_stock_threshold']
             : (int) ($row['reorder_threshold'] ?? 0);
         $row['reorder_quantity'] = (int) ($row['reorder_quantity'] ?? 0);
+        $row['reorder_point_override'] = array_key_exists('reorder_point_override', $row)
+            ? ($row['reorder_point_override'] !== null ? (int) $row['reorder_point_override'] : null)
+            : null;
+        $row['reorder_point_override_reason'] = $row['reorder_point_override_reason'] ?? null;
+        $row['reorder_point_override_updated_at'] = $row['reorder_point_override_updated_at'] ?? null;
+        $row['reorder_point_override_updated_by'] = isset($row['reorder_point_override_updated_by'])
+            ? (int) $row['reorder_point_override_updated_by']
+            : null;
         $row['cost'] = (float) ($row['cost'] ?? 0);
         $row['sale_price'] = isset($row['sale_price'])
             ? (float) $row['sale_price']
@@ -524,6 +566,100 @@ class InventoryItemRepository
         $row['is_low_stock'] = (bool) ($row['is_low_stock'] ?? 0);
 
         return new InventoryItem($row);
+    }
+
+    /**
+     * @param array<int, InventoryItem> $items
+     */
+    private function attachForecasting(array $items): void
+    {
+        if (!$items) {
+            return;
+        }
+
+        $ids = array_map(static fn (InventoryItem $item) => $item->id, $items);
+        $usageTotals = $this->getUsageTotals($ids);
+        foreach ($items as $item) {
+            $this->applyForecasting($item, $usageTotals);
+        }
+    }
+
+    /**
+     * @param array<int, int> $inventoryIds
+     * @return array<int, float>
+     */
+    private function getUsageTotals(array $inventoryIds): array
+    {
+        if ($inventoryIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($inventoryIds), '?'));
+        $startDate = (new \DateTimeImmutable('-' . self::FORECAST_WINDOW_DAYS . ' days'))->format('Y-m-d H:i:s');
+
+        $sql = "SELECT wi.inventory_item_id, SUM(wi.quantity) AS usage_quantity
+                FROM workorder_items wi
+                INNER JOIN workorder_jobs wj ON wi.workorder_job_id = wj.id
+                INNER JOIN workorders w ON wj.workorder_id = w.id
+                WHERE wi.inventory_item_id IN ({$placeholders})
+                  AND w.status = ?
+                  AND w.completed_at IS NOT NULL
+                  AND w.completed_at >= ?
+                GROUP BY wi.inventory_item_id";
+        $params = array_merge($inventoryIds, ['completed', $startDate]);
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        $totals = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $inventoryId = (int) $row['inventory_item_id'];
+            $totals[$inventoryId] = (float) $row['usage_quantity'];
+        }
+
+        return $totals;
+    }
+
+    /**
+     * @param array<int, float> $usageTotals
+     */
+    private function applyForecasting(InventoryItem $item, array $usageTotals): void
+    {
+        $usageQuantity = $usageTotals[$item->id] ?? 0.0;
+        $usageRate = self::FORECAST_WINDOW_DAYS > 0
+            ? $usageQuantity / self::FORECAST_WINDOW_DAYS
+            : 0.0;
+
+        $suggested = (int) ceil($usageRate * self::FORECAST_LEAD_TIME_DAYS);
+        if ($suggested < $item->low_stock_threshold) {
+            $suggested = $item->low_stock_threshold;
+        }
+
+        $item->usage_rate_30d = round($usageRate, 2);
+        $item->suggested_reorder_point = $suggested;
+        $item->effective_reorder_point = $item->reorder_point_override !== null
+            ? (int) $item->reorder_point_override
+            : $suggested;
+        $item->reorder_point_source = $item->reorder_point_override !== null ? 'override' : 'suggested';
+    }
+
+    private function logReorderPointOverrideChange(
+        int $inventoryItemId,
+        ?int $previousOverride,
+        ?int $newOverride,
+        ?string $reason,
+        int $actorId
+    ): void {
+        $sql = 'INSERT INTO inventory_reorder_point_history
+                (inventory_item_id, previous_override, new_override, reason, changed_by, created_at)
+                VALUES
+                (:inventory_item_id, :previous_override, :new_override, :reason, :changed_by, NOW())';
+        $this->connection->pdo()->prepare($sql)->execute([
+            'inventory_item_id' => $inventoryItemId,
+            'previous_override' => $previousOverride,
+            'new_override' => $newOverride,
+            'reason' => $reason,
+            'changed_by' => $actorId,
+        ]);
     }
 
     /**
