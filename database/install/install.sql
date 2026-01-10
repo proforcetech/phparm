@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS vehicle_master (
 CREATE TABLE IF NOT EXISTS customer_vehicles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
-    vehicle_master_id UNSIGNED INT NULL,
+    vehicle_master_id INT UNSIGNED NULL,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
     model VARCHAR(120) NOT NULL,
