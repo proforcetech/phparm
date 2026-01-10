@@ -25,6 +25,13 @@ const checkpointTypes = [
   { key: 'vin_odometer', label: 'VIN/Odometer photo' },
 ]
 
+const damagePhotoSlots = [
+  { key: 'damage_1', label: 'Damage photo 1' },
+  { key: 'damage_2', label: 'Damage photo 2' },
+  { key: 'damage_3', label: 'Damage photo 3' },
+  { key: 'damage_4', label: 'Damage photo 4' },
+]
+
 const clampPoint = (value) => Math.min(1, Math.max(0, value))
 const formatReportedAt = (date) => date.toISOString().replace('T', ' ').replace('Z', '')
 const isMobileDevice = () =>
@@ -121,11 +128,15 @@ export default function DriverJobIntake() {
   const [damageLocation, setDamageLocation] = useState(null)
   const [damageLocationStatus, setDamageLocationStatus] = useState('')
   const [damageLocationLoading, setDamageLocationLoading] = useState(false)
+  const [damagePhotoFiles, setDamagePhotoFiles] = useState({})
+  const [damagePhotoCount, setDamagePhotoCount] = useState(0)
+  const [damagePhotoMessage, setDamagePhotoMessage] = useState('')
   const [checkpointFiles, setCheckpointFiles] = useState({})
   const [checkpointStatus, setCheckpointStatus] = useState(null)
   const [checkpointMessage, setCheckpointMessage] = useState('')
 
   const canSubmitJob = workorderId && jobId
+  const canSaveDamageReport = damagePoints.length > 0 && damagePhotoCount >= 4
 
   const summaryItems = useMemo(() => {
     if (!vehicleData.vin) return []
@@ -221,6 +232,11 @@ export default function DriverJobIntake() {
       return
     }
 
+    if (damagePhotoCount < 4) {
+      setDamageStatus('Upload at least 4 damage photos before saving the report.')
+      return
+    }
+
     try {
       setDamageStatus('Saving damage report...')
       const reportedAt = formatReportedAt(new Date())
@@ -289,6 +305,40 @@ export default function DriverJobIntake() {
     } catch (error) {
       console.error('Checkpoint upload failed', error)
       setCheckpointMessage('Unable to upload checkpoint photo.')
+    }
+  }
+
+  const uploadDamagePhoto = async (slot) => {
+    if (!canSubmitJob) {
+      setDamagePhotoMessage('Enter a workorder ID and job ID before uploading damage photos.')
+      return
+    }
+
+    const file = damagePhotoFiles[slot]
+    if (!file) {
+      setDamagePhotoMessage('Select a photo before uploading.')
+      return
+    }
+
+    try {
+      setDamagePhotoMessage(`Uploading ${slot.replace('_', ' ')}...`)
+      await workorderService.uploadJobDamagePhoto(Number(workorderId), Number(jobId), file)
+      setDamagePhotoMessage('Damage photo uploaded.')
+      const status = await workorderService.getJobDamagePhotoStatus(Number(workorderId), Number(jobId))
+      setDamagePhotoCount(status.data.total || 0)
+    } catch (error) {
+      console.error('Damage photo upload failed', error)
+      setDamagePhotoMessage('Unable to upload damage photo.')
+    }
+  }
+
+  const refreshDamagePhotoStatus = async () => {
+    if (!canSubmitJob) return
+    try {
+      const status = await workorderService.getJobDamagePhotoStatus(Number(workorderId), Number(jobId))
+      setDamagePhotoCount(status.data.total || 0)
+    } catch (error) {
+      console.error('Damage photo status failed', error)
     }
   }
 
@@ -496,8 +546,48 @@ export default function DriverJobIntake() {
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Tap-to-Mark Damage</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Tap on the diagram to mark damage locations. Save the report to attach to the job.
+          Capture at least four damage photos, tap the diagram to mark damage locations, and save the report.
         </p>
+
+        <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-gray-900">Damage photo evidence</p>
+              <p className="text-xs text-gray-500">
+                Upload at least 4 photos to satisfy the mobile damage app requirement.
+              </p>
+            </div>
+            <span className="text-xs text-gray-500">{damagePhotoCount} of 4 uploaded</span>
+          </div>
+
+          <div className="mt-3 space-y-3">
+            {damagePhotoSlots.map((slot) => (
+              <div key={slot.key} className="flex flex-wrap items-center gap-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) =>
+                    setDamagePhotoFiles((prev) => ({
+                      ...prev,
+                      [slot.key]: event.target.files?.[0] ?? null,
+                    }))
+                  }
+                  className="text-sm"
+                />
+                <Button variant="secondary" onClick={() => uploadDamagePhoto(slot.key)}>
+                  Upload {slot.label}
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <Button variant="ghost" onClick={refreshDamagePhotoStatus} disabled={!canSubmitJob}>
+              Refresh damage photo status
+            </Button>
+            {damagePhotoMessage ? <span className="text-sm text-gray-600">{damagePhotoMessage}</span> : null}
+          </div>
+        </div>
 
         <div className="mt-4">
           <DamageDiagram
@@ -549,11 +639,16 @@ export default function DriverJobIntake() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button onClick={saveDamageReport} disabled={!damagePoints.length}>
+          <Button onClick={saveDamageReport} disabled={!canSaveDamageReport}>
             Save damage report
           </Button>
           {damageStatus ? <span className="text-sm text-gray-600">{damageStatus}</span> : null}
         </div>
+        {!canSaveDamageReport ? (
+          <p className="mt-2 text-xs text-gray-500">
+            Upload at least 4 damage photos and mark the diagram before saving the report.
+          </p>
+        ) : null}
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

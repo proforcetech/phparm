@@ -4002,6 +4002,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
+        $router->post('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $file = $request->file('file');
+            $data = $workorderController->uploadJobDamagePhoto($user, $id, $jobId, is_array($file) ? $file : []);
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->damagePhotoStatus($user, $id, $jobId);
+            return Response::json($data);
+        });
+
         $router->get('/api/workorders/{id}/jobs/{jobId}/checkpoints', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
