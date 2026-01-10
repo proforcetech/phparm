@@ -112,9 +112,9 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## Summary of "Must-Have" Feature Set
 
-[ ] Mobile Damage App: 4-photo minimum + car diagram marking.
-[ ] Automated Storage Ledger: Daily recurring fees with grace periods.
 [x] Customer Tracking Link: Real-time map view for the stranded motorist.
+[x] Automated Storage Ledger: Daily recurring fees with grace periods.
+[x] Mobile Damage App: 4-photo minimum + car diagram marking.
 [ ] Integrated VIN Decoding: Reduce manual entry for technicians.
 [ ] Digital Dispatch Adapters: Full handshake with Agero/AAA/Geico portals.
 
