@@ -17,6 +17,7 @@ class WorkorderJobEvidenceService
     public const CHECKPOINT_REAR_LEFT = 'rear_left';
     public const CHECKPOINT_REAR_RIGHT = 'rear_right';
     public const CHECKPOINT_VIN_ODOMETER = 'vin_odometer';
+    public const DAMAGE_PHOTO_MINIMUM = 4;
 
     public const SIGNATURE_TYPES = [
         JobSignature::TYPE_AUTHORIZATION,
@@ -128,6 +129,79 @@ class WorkorderJobEvidenceService
             'mime_type' => $mimeType,
             'uploaded_by' => $uploadedBy,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function storeDamagePhoto(int $jobId, array $file, ?int $uploadedBy = null): array
+    {
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new InvalidArgumentException('Invalid media upload');
+        }
+
+        $mimeType = mime_content_type($file['tmp_name']) ?: 'application/octet-stream';
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+
+        $allowed = ['jpg', 'jpeg', 'png', 'gif'];
+        if (!in_array($extension, $allowed, true)) {
+            throw new InvalidArgumentException('Unsupported media type');
+        }
+
+        $uploadDir = dirname(__DIR__, 3) . '/public/uploads/job-damage';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            throw new RuntimeException('Unable to prepare upload directory');
+        }
+
+        $filename = sprintf('job_%d_damage_%s.%s', $jobId, uniqid(), $extension);
+        $destination = $uploadDir . '/' . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new RuntimeException('Unable to store media');
+        }
+
+        $relativePath = '/uploads/job-damage/' . $filename;
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            INSERT INTO job_damage_media (
+                workorder_job_id, file_path, mime_type, uploaded_by, created_at
+            ) VALUES (
+                :job_id, :file_path, :mime_type, :uploaded_by, NOW()
+            )
+        SQL);
+
+        $stmt->execute([
+            'job_id' => $jobId,
+            'file_path' => $relativePath,
+            'mime_type' => $mimeType,
+            'uploaded_by' => $uploadedBy,
+        ]);
+
+        $id = (int) $this->connection->pdo()->lastInsertId();
+
+        $this->log('workorder_job.damage_photo_uploaded', $jobId, $uploadedBy, [
+            'file_path' => $relativePath,
+        ]);
+
+        return [
+            'id' => $id,
+            'workorder_job_id' => $jobId,
+            'file_path' => $relativePath,
+            'mime_type' => $mimeType,
+            'uploaded_by' => $uploadedBy,
+        ];
+    }
+
+    public function damagePhotoCount(int $jobId): int
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_media WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ? (int) $row['total'] : 0;
     }
 
     /**
