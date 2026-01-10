@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
+import Modal from '../../components/ui/Modal'
 import Table from '../../components/ui/Table'
 import inventoryService from '../../../services/inventory.service'
 import { useAuthStore } from '../../stores/auth.jsx'
@@ -17,6 +18,13 @@ export default function InventoryList() {
   const [items, setItems] = useState([])
   const [page, setPage] = useState(1)
   const [hasNextPage, setHasNextPage] = useState(false)
+  const [scanInput, setScanInput] = useState('')
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanMessage, setScanMessage] = useState('')
+  const [scanError, setScanError] = useState('')
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState('')
+  const [cameraSupported, setCameraSupported] = useState(false)
   const [pendingFilters, setPendingFilters] = useState({
     query: '',
     category: '',
@@ -32,6 +40,9 @@ export default function InventoryList() {
 
   const perPage = 10
   const debounceDelay = 400
+
+  const scanInputRef = useRef(null)
+  const videoRef = useRef(null)
 
   const canCreate = hasPermission('inventory.create')
   const canEdit = hasPermission('inventory.edit')
@@ -83,6 +94,10 @@ export default function InventoryList() {
     return () => window.clearTimeout(timeout)
   }, [pendingFilters, debounceDelay])
 
+  useEffect(() => {
+    setCameraSupported(Boolean(navigator.mediaDevices?.getUserMedia && window.BarcodeDetector))
+  }, [])
+
   const updateFilters = (nextFilters) => {
     setPendingFilters((prev) => ({ ...prev, ...nextFilters }))
   }
@@ -108,6 +123,113 @@ export default function InventoryList() {
     }
   }
 
+  const handleScanLookup = useCallback(async (rawCode) => {
+    const code = rawCode.trim()
+    if (!code || scanLoading) return
+
+    setScanLoading(true)
+    setScanError('')
+    setScanMessage('')
+
+    try {
+      const result = await inventoryService.findByBarcode(code, 'inventory_lookup')
+      if (result?.found && result.item) {
+        const mappedValue = result.item.sku || result.item.upc || code
+        const mappedLabel = result.item.sku ? `SKU ${result.item.sku}` : result.item.upc ? `UPC ${result.item.upc}` : code
+        updateFilters({ query: mappedValue })
+        setScanMessage(`Mapped ${code} to ${mappedLabel}`)
+      } else {
+        updateFilters({ query: code })
+        setScanError(result?.message || `No item found for ${code}`)
+      }
+    } catch (error) {
+      console.error('Scanner lookup failed:', error)
+      updateFilters({ query: code })
+      setScanError('Failed to scan barcode/QR code')
+    } finally {
+      setScanLoading(false)
+      setScanInput('')
+      setTimeout(() => scanInputRef.current?.focus(), 100)
+    }
+  }, [scanLoading, updateFilters])
+
+  const handleScanKeyDown = useCallback((event) => {
+    if (event.key === 'Enter' && scanInput.trim()) {
+      event.preventDefault()
+      handleScanLookup(scanInput)
+    }
+  }, [handleScanLookup, scanInput])
+
+  useEffect(() => {
+    if (!cameraOpen) return
+
+    let isActive = true
+    let stream = null
+    let animationFrame = null
+
+    const startCamera = async () => {
+      setCameraError('')
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Camera access is not available on this device.')
+        }
+        if (!window.BarcodeDetector) {
+          throw new Error('Barcode scanning is not supported in this browser.')
+        }
+
+        const detector = new window.BarcodeDetector({
+          formats: ['qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39', 'code_93', 'codabar', 'data_matrix', 'itf', 'pdf417'],
+        })
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        })
+
+        if (!isActive) return
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+
+        const scanFrame = async () => {
+          if (!isActive || !videoRef.current) return
+          try {
+            const barcodes = await detector.detect(videoRef.current)
+            if (barcodes.length && barcodes[0].rawValue) {
+              setCameraOpen(false)
+              handleScanLookup(barcodes[0].rawValue)
+              return
+            }
+          } catch (error) {
+            console.error('Barcode detection failed:', error)
+          }
+          animationFrame = requestAnimationFrame(scanFrame)
+        }
+
+        animationFrame = requestAnimationFrame(scanFrame)
+      } catch (error) {
+        console.error('Camera start failed:', error)
+        setCameraError(error instanceof Error ? error.message : 'Unable to access camera.')
+      }
+    }
+
+    startCamera()
+
+    return () => {
+      isActive = false
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame)
+      }
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop())
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
+    }
+  }, [cameraOpen, handleScanLookup])
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -128,7 +250,7 @@ export default function InventoryList() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <Card className="xl:col-span-3">
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Search</label>
                 <Input
@@ -136,6 +258,44 @@ export default function InventoryList() {
                   placeholder="Name or SKU"
                   onUpdateModelValue={(value) => updateFilters({ query: value })}
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Scan SKU / UPC</label>
+                <div className="flex gap-2">
+                  <Input
+                    ref={scanInputRef}
+                    value={scanInput}
+                    placeholder="Scan barcode or QR code"
+                    onUpdateModelValue={setScanInput}
+                    onKeyDown={handleScanKeyDown}
+                    disabled={scanLoading}
+                    className="font-mono"
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleScanLookup(scanInput)}
+                    disabled={!scanInput.trim() || scanLoading}
+                  >
+                    Scan
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setCameraOpen(true)}
+                    disabled={scanLoading || !cameraSupported}
+                  >
+                    Camera
+                  </Button>
+                </div>
+                {scanMessage ? (
+                  <p className="mt-1 text-xs text-green-600">{scanMessage}</p>
+                ) : null}
+                {scanError ? (
+                  <p className="mt-1 text-xs text-red-600">{scanError}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-500">
+                    USB scanner input and {cameraSupported ? 'camera scanning' : 'camera scanning (unsupported on this device)'}.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Category</label>
@@ -247,6 +407,30 @@ export default function InventoryList() {
           ) : null}
         </Card>
       </div>
+
+      <Modal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        title="Scan with Camera"
+        content={(
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-black">
+              <video ref={videoRef} className="h-64 w-full object-cover" playsInline muted />
+            </div>
+            <p className="text-sm text-gray-600">
+              Align the barcode or QR code within the frame to scan automatically.
+            </p>
+            {cameraError ? (
+              <p className="text-sm text-red-600">{cameraError}</p>
+            ) : null}
+          </div>
+        )}
+        footer={(
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setCameraOpen(false)}>Close</Button>
+          </div>
+        )}
+      />
     </div>
   )
 }
