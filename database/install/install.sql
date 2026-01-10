@@ -1321,6 +1321,30 @@ ALTER TABLE cms_pages
 -- Migration: 029_add_component_fields_to_cms_pages.sql
 -- ==================================================
 
+-- ==================================================
+-- FIX: Create missing cms_components table
+-- ==================================================
+
+CREATE TABLE IF NOT EXISTS cms_components (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(100) NOT NULL UNIQUE,
+    type VARCHAR(50) NOT NULL DEFAULT 'custom',
+    description TEXT NULL,
+    content LONGTEXT NULL,
+    css LONGTEXT NULL,
+    javascript LONGTEXT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    cache_ttl INT UNSIGNED NOT NULL DEFAULT 0,
+    created_by INT UNSIGNED NULL,
+    updated_by INT UNSIGNED NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_components_slug (slug),
+    INDEX idx_cms_components_type (type),
+    INDEX idx_cms_components_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Add component and custom styling fields to cms_pages
 -- Allows pages to specify header/footer components and custom CSS/JS
 
