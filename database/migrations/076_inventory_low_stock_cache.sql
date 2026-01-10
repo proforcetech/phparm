@@ -18,19 +18,9 @@ DROP TRIGGER IF EXISTS trg_inventory_items_set_low_stock_update;
 CREATE TRIGGER trg_inventory_items_set_low_stock_insert
 BEFORE INSERT ON inventory_items
 FOR EACH ROW
-BEGIN
-    SET NEW.is_low_stock = CASE
-        WHEN COALESCE(NEW.is_tracked, 1) = 1 AND COALESCE(NEW.stock_quantity, 0) <= COALESCE(NEW.low_stock_threshold, 0) THEN 1
-        ELSE 0
-    END;
-END;
+SET NEW.is_low_stock = IF(COALESCE(NEW.is_tracked, 1) = 1 AND COALESCE(NEW.stock_quantity, 0) <= COALESCE(NEW.low_stock_threshold, 0), 1, 0);
 
 CREATE TRIGGER trg_inventory_items_set_low_stock_update
 BEFORE UPDATE ON inventory_items
 FOR EACH ROW
-BEGIN
-    SET NEW.is_low_stock = CASE
-        WHEN COALESCE(NEW.is_tracked, 1) = 1 AND COALESCE(NEW.stock_quantity, 0) <= COALESCE(NEW.low_stock_threshold, 0) THEN 1
-        ELSE 0
-    END;
-END;
+SET NEW.is_low_stock = IF(COALESCE(NEW.is_tracked, 1) = 1 AND COALESCE(NEW.stock_quantity, 0) <= COALESCE(NEW.low_stock_threshold, 0), 1, 0);
