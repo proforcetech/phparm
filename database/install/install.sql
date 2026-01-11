@@ -1,7 +1,3 @@
--- ==================================================
--- Migration: 001_initial_schema.sql
--- ==================================================
-
 -- Core users and access
 CREATE TABLE IF NOT EXISTS roles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -28,9 +24,18 @@ CREATE TABLE IF NOT EXISTS users (
     email_verified TINYINT(1) DEFAULT 0,
     customer_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
+    two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    two_factor_type ENUM('none', 'totp', 'sms', 'email') NOT NULL DEFAULT 'none',
+    two_factor_secret VARCHAR(128) NULL,
+    two_factor_recovery_codes TEXT NULL,
+    two_factor_setup_pending TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Indicates whether user needs to complete 2FA setup',
     active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL
+    updated_at TIMESTAMP NULL,
+    last_activity_at TIMESTAMP NULL DEFAULT NULL,
+   INDEX idx_users_two_factor_setup_pending (two_factor_setup_pending),
+   INDEX idx_users_last_activity (last_activity_at),
+   INDEX idx_users_active (active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS customers (
@@ -45,6 +50,11 @@ CREATE TABLE IF NOT EXISTS customers (
     state VARCHAR(120) NULL,
     postal_code VARCHAR(20) NULL,
     country VARCHAR(120) NULL,
+    billing_street VARCHAR(255) NULL,
+    billing_city VARCHAR(120) NULL,
+    billing_state VARCHAR(120) NULL,
+    billing_postal_code VARCHAR(20) NULL,
+    billing_country VARCHAR(120) NULL,
     is_commercial TINYINT(1) DEFAULT 0,
     tax_exempt TINYINT(1) DEFAULT 0,
     notes TEXT NULL,
@@ -81,6 +91,8 @@ CREATE TABLE IF NOT EXISTS customer_vehicles (
     vin VARCHAR(30) NULL,
     license_plate VARCHAR(30) NULL,
     notes TEXT NULL,
+    mileage_in INT UNSIGNED NULL COMMENT 'Mileage when vehicle arrives',
+    mileage_out INT UNSIGNED NULL COMMENT 'Mileage when vehicle leaves',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
@@ -103,27 +115,57 @@ CREATE TABLE IF NOT EXISTS service_types (
     UNIQUE KEY uniq_service_types_alias (alias)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Inventory System
+
 CREATE TABLE IF NOT EXISTS inventory_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     sku VARCHAR(120) NULL,
+    manufacturer_part_number VARCHAR(120) NULL,
+    upc VARCHAR(50) NULL,
+    barcode VARCHAR(100) NULL,
+    barcode_type ENUM('UPC-A', 'UPC-E', 'EAN-13', 'EAN-8', 'CODE-39', 'CODE-128', 'QR', 'custom') NULL,
     category VARCHAR(120) NULL,
     stock_quantity INT DEFAULT 0,
     low_stock_threshold INT DEFAULT 0,
+    is_low_stock TINYINT(1) GENERATED ALWAYS AS (CASE WHEN COALESCE(is_tracked, 1) = 1 AND COALESCE(stock_quantity, 0) <= COALESCE(low_stock_threshold, 0) THEN 1 ELSE 0 END) STORED,
     reorder_quantity INT DEFAULT 0,
     reorder_point_override INT NULL,
     reorder_point_override_reason VARCHAR(255) NULL,
     reorder_point_override_updated_at TIMESTAMP NULL,
     reorder_point_override_updated_by INT UNSIGNED NULL,
     cost DECIMAL(12,2) DEFAULT 0,
+    core_cost DECIMAL(10, 2) NULL, 
+    core_price DECIMAL(10, 2) NULL,
+    is_core_eligible BOOLEAN DEFAULT FALSE,
     sale_price DECIMAL(12,2) DEFAULT 0,
+    list_price DECIMAL(12,2) DEFAULT 0, 
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
     bin_location VARCHAR(160) NULL,
     vendor VARCHAR(160) NULL,
     notes TEXT NULL,
-    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by)
+    partstech_part_id VARCHAR(100) NULL COMMENT 'Cached PartsTech part ID',
+    partstech_last_sync DATETIME NULL COMMENT 'Last sync with PartsTech',
+    INDEX idx_inv_partstech (partstech_part_id),
+    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by),
+    INDEX idx_inventory_upc (upc),
+    INDEX idx_inventory_barcode (barcode),
+    INDEX idx_inventory_manufacturer_pn (manufacturer_part_number),
+    INDEX idx_inventory_is_low_stock (is_low_stock),
+    FULLTEXT INDEX idx_inventory_search (name, description),
+    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by),
+    INDEX idx_inventory_sku_prefix (sku(20))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_lookups (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    type VARCHAR(32) NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
+    is_parts_supplier TINYINT(1) DEFAULT 0,
+    INDEX idx_inventory_lookups_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
@@ -142,12 +184,19 @@ CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
         REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Estimates, Workorders, Invoices
+
 CREATE TABLE IF NOT EXISTS estimates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    parent_id INT UNSIGNED NULL,
+    parent_estimate_id INT UNSIGNED NULL,
+    workorder_id INT UNSIGNED NULL,
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT UNSIGNED NOT NULL,
     vehicle_id INT UNSIGNED NOT NULL,
+    is_mobile TINYINT(1) NOT NULL DEFAULT 0,
     status VARCHAR(40) NOT NULL,
+    estimate_type VARCHAR(20) NOT NULL DEFAULT ''standard'',
     technician_id INT NULL,
     expiration_date DATE NULL,
     subtotal DECIMAL(12,2) DEFAULT 0,
@@ -155,15 +204,22 @@ CREATE TABLE IF NOT EXISTS estimates (
     call_out_fee DECIMAL(12,2) DEFAULT 0,
     mileage_total DECIMAL(12,2) DEFAULT 0,
     discounts DECIMAL(12,2) DEFAULT 0,
+    shop_fee DECIMAL(12,2) DEFAULT 0,
+    hazmat_disposal_fee DECIMAL(12,2) DEFAULT 0,
     grand_total DECIMAL(12,2) DEFAULT 0,
     internal_notes TEXT NULL,
     customer_notes TEXT NULL,
+    rejection_reason TEXT NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_estimate_customer (customer_id),
     INDEX idx_estimate_vehicle (vehicle_id),
+    INDEX idx_estimates_parent_id (parent_id),
     CONSTRAINT fk_estimate_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
-    CONSTRAINT fk_estimate_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
+    CONSTRAINT fk_estimate_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
+    CONSTRAINT fk_estimate_parent_estimate FOREIGN KEY (parent_estimate_id) REFERENCES estimates (id),
+    CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)
+
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS estimate_jobs (
@@ -177,8 +233,10 @@ CREATE TABLE IF NOT EXISTS estimate_jobs (
     subtotal DECIMAL(12,2) DEFAULT 0,
     tax DECIMAL(12,2) DEFAULT 0,
     total DECIMAL(12,2) DEFAULT 0,
+    display_order INT NOT NULL DEFAULT 0,
     INDEX idx_estimate_job_estimate (estimate_id),
     INDEX idx_estimate_jobs_service_type (service_type_id),
+    INDEX idx_estimate_jobs_display_order (estimate_id, display_order),
     CONSTRAINT fk_estimate_job_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
     CONSTRAINT fk_estimate_jobs_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -187,12 +245,18 @@ CREATE TABLE IF NOT EXISTS estimate_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     estimate_job_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
+    sku VARCHAR(120) NULL,
+    inventory_item_id INT UNSIGNED NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
+    list_price DECIMAL(12,2) DEFAULT 0, 
     taxable TINYINT(1) DEFAULT 1,
     line_total DECIMAL(12,2) DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT ''pending'',
     INDEX idx_estimate_item_job (estimate_job_id),
+    INDEX idx_estimate_item_sku (sku),
+    INDEX idx_estimate_item_inventory (inventory_item_id),
     CONSTRAINT fk_estimate_item_job FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -201,7 +265,9 @@ CREATE TABLE IF NOT EXISTS invoices (
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT UNSIGNED NOT NULL,
     vehicle_id INT NULL,
+    is_mobile TINYINT(1) NOT NULL DEFAULT 0,
     estimate_id INT NULL,
+    workorder_id INT UNSIGNED NULL,
     service_type_id INT NULL,
     status VARCHAR(40) NOT NULL,
     issue_date DATE NOT NULL,
@@ -212,26 +278,40 @@ CREATE TABLE IF NOT EXISTS invoices (
     total DECIMAL(12,2) DEFAULT 0,
     amount_paid DECIMAL(12,2) DEFAULT 0,
     balance_due DECIMAL(12,2) DEFAULT 0,
+    shop_fee DECIMAL(12,2) DEFAULT 0,
+    hazmat_disposal_fee DECIMAL(12,2) DEFAULT 0,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
+    public_token VARCHAR(64) NULL,
+    public_token_expires_at DATETIME NULL,
+    UNIQUE KEY idx_invoice_public_token (public_token),
     INDEX idx_invoice_customer (customer_id),
     INDEX idx_invoices_service_type (service_type_id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_invoice_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
     CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
-    CONSTRAINT fk_invoices_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
+    CONSTRAINT fk_invoices_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id),
+CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
+    sku VARCHAR(120) NULL,
+    inventory_item_id INT UNSIGNED NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
+    list_price DECIMAL(12,2) DEFAULT 0, 
     taxable TINYINT(1) DEFAULT 1,
     line_total DECIMAL(12,2) DEFAULT 0,
+    core_return_id INT UNSIGNED NULL,
+    core_price DECIMAL(10, 2) NULL,
     INDEX idx_invoice_item_invoice (invoice_id),
+    INDEX idx_invoice_item_sku (sku),
+    INDEX idx_invoice_item_inventory (inventory_item_id),
+    INDEX idx_invoice_item_core (core_return_id),
     CONSTRAINT fk_invoice_item_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -239,9 +319,12 @@ CREATE TABLE IF NOT EXISTS payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
     gateway VARCHAR(40) NOT NULL,
+    method VARCHAR(40) NULL,
     transaction_id VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
+    reference VARCHAR(40) NULL,
     status VARCHAR(40) NOT NULL,
+    metadata JSON NULL,
     paid_at DATETIME NOT NULL,
     created_at TIMESTAMP NULL,
     INDEX idx_payment_invoice (invoice_id),
@@ -261,6 +344,8 @@ CREATE TABLE IF NOT EXISTS invoice_payer_allocations (
     CONSTRAINT fk_invoice_payer_allocations_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Appointments System
+
 CREATE TABLE IF NOT EXISTS appointments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
@@ -271,10 +356,32 @@ CREATE TABLE IF NOT EXISTS appointments (
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
     notes TEXT NULL,
+    reminder_sent_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_appointments_reminder (status, scheduled_at, reminder_sent_at), 
     INDEX idx_appointment_customer (customer_id),
     CONSTRAINT fk_appointment_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_appointment_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS availability_settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    day_of_week TINYINT NULL,
+    holiday_date DATE NULL,
+    label VARCHAR(160) NULL,
+    opens_at TIME NULL,
+    closes_at TIME NULL,
+    slot_minutes INT NOT NULL DEFAULT 30,
+    buffer_minutes INT NOT NULL DEFAULT 0,
+    is_closed TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_availability_day (day_of_week),
+    INDEX idx_availability_date (holiday_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Warranty Claim System
 
 CREATE TABLE IF NOT EXISTS warranty_claims (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -285,6 +392,8 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
     description TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
     financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
+    financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
+    credit_received_amount DECIMAL(12,2) NULL,
     credit_received_amount DECIMAL(12,2) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
@@ -292,16 +401,40 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
     CONSTRAINT fk_warranty_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS warranty_claim_messages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    claim_id INT UNSIGNED NOT NULL,
+    actor_type VARCHAR(40) NOT NULL,
+    actor_id INT UNSIGNED NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    INDEX idx_warranty_message_claim (claim_id),
+    CONSTRAINT fk_warranty_message_claim FOREIGN KEY (claim_id) REFERENCES warranty_claims (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Reminder Campaigns and Preferences
+
 CREATE TABLE IF NOT EXISTS reminder_campaigns (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
     channel VARCHAR(20) NOT NULL,
     frequency VARCHAR(40) NOT NULL,
+    frequency_unit VARCHAR(20) NOT NULL DEFAULT 'day',
+    frequency_interval INT NOT NULL DEFAULT 1,
     status VARCHAR(20) NOT NULL,
+    email_subject VARCHAR(255) NULL,
+    email_body TEXT NULL,
+    sms_body TEXT NULL,
     service_type_filter VARCHAR(160) NULL,
     last_run_at DATETIME NULL,
-    next_run_at DATETIME NULL
+    next_run_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Job Bundles
 
 CREATE TABLE IF NOT EXISTS bundles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -324,16 +457,20 @@ CREATE TABLE IF NOT EXISTS bundle_items (
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
+    list_price DECIMAL(12,2) DEFAULT 0, 
     taxable TINYINT(1) DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0,
     INDEX idx_bundle_item_bundle (bundle_id),
     CONSTRAINT fk_bundle_item_bundle FOREIGN KEY (bundle_id) REFERENCES bundles (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Time tracking
+
 CREATE TABLE IF NOT EXISTS time_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     technician_id INT UNSIGNED NOT NULL,
     estimate_job_id INT NULL,
+    workorder_job_id INT UNSIGNED NULL,
     started_at DATETIME NOT NULL,
     ended_at DATETIME NULL,
     duration_minutes DECIMAL(10,2) NULL,
@@ -341,6 +478,9 @@ CREATE TABLE IF NOT EXISTS time_entries (
     reviewed_by INT NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    en_route_at DATETIME NULL,
+    on_site_at DATETIME NULL,
+    wrap_up_at DATETIME NULL,
     start_latitude DECIMAL(10,6) NULL,
     start_longitude DECIMAL(10,6) NULL,
     start_accuracy DECIMAL(10,2) NULL,
@@ -362,7 +502,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
     manual_override TINYINT(1) DEFAULT 0,
     notes TEXT NULL,
     created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL
+    updated_at TIMESTAMP NULL,
+   CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS time_adjustments (
@@ -373,20 +514,34 @@ CREATE TABLE IF NOT EXISTS time_adjustments (
     previous_status VARCHAR(20) NULL,
     previous_started_at DATETIME NULL,
     previous_ended_at DATETIME NULL,
+    previous_en_route_at DATETIME NULL,
+    previous_on_site_at DATETIME NULL,
+    previous_wrap_up_at DATETIME NULL,
     previous_duration_minutes DECIMAL(10,2) NULL,
     previous_estimate_job_id INT NULL,
+    previous_task_id INT UNSIGNED NULL,
+    previous_task_name VARCHAR(160) NULL,
+    previous_flat_rate_minutes DECIMAL(10,2) NULL,
     previous_notes TEXT NULL,
     previous_manual_override TINYINT(1) NULL,
     new_status VARCHAR(20) NULL,
     new_started_at DATETIME NULL,
     new_ended_at DATETIME NULL,
+    new_en_route_at DATETIME NULL,
+    new_on_site_at DATETIME NULL,
+    new_wrap_up_at DATETIME NULL,
     new_duration_minutes DECIMAL(10,2) NULL,
     new_estimate_job_id INT NULL,
+    new_task_id INT UNSIGNED NULL,
+    new_task_name VARCHAR(160) NULL,
+    new_flat_rate_minutes DECIMAL(10,2) NULL,
     new_notes TEXT NULL,
     new_manual_override TINYINT(1) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_time_adjustment_entry FOREIGN KEY (time_entry_id) REFERENCES time_entries (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Customer Credit Accounts
 
 CREATE TABLE IF NOT EXISTS credit_accounts (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -394,190 +549,15 @@ CREATE TABLE IF NOT EXISTS credit_accounts (
     type VARCHAR(20) NOT NULL,
     credit_limit DECIMAL(12,2) DEFAULT 0,
     balance DECIMAL(12,2) DEFAULT 0,
+    available_credit DECIMAL(12,2) DEFAULT 0,
+    created_at DATEIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     net_days INT DEFAULT 0,
     apr DECIMAL(5,2) DEFAULT 0,
     late_fee DECIMAL(12,2) DEFAULT 0,
     status VARCHAR(20) NOT NULL,
     CONSTRAINT fk_credit_account_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS financial_entries (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    type VARCHAR(20) NOT NULL,
-    category VARCHAR(120) NOT NULL,
-    reference VARCHAR(120) NOT NULL,
-    purchase_order VARCHAR(120) NOT NULL,
-    amount DECIMAL(12,2) NOT NULL,
-    entry_date DATE NOT NULL,
-    vendor VARCHAR(160) NULL,
-    description TEXT NULL,
-    attachment_path VARCHAR(255) NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS inspection_templates (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    description TEXT NULL,
-    active TINYINT(1) DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS inspection_sections (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    template_id INT UNSIGNED NOT NULL,
-    name VARCHAR(160) NOT NULL,
-    display_order INT DEFAULT 0,
-    CONSTRAINT fk_inspection_section_template FOREIGN KEY (template_id) REFERENCES inspection_templates (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS inspection_items (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    section_id INT UNSIGNED NOT NULL,
-    name VARCHAR(160) NOT NULL,
-    input_type VARCHAR(40) NOT NULL,
-    default_value VARCHAR(160) NULL,
-    display_order INT DEFAULT 0,
-    CONSTRAINT fk_inspection_item_section FOREIGN KEY (section_id) REFERENCES inspection_sections (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS settings (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `key` VARCHAR(160) NOT NULL UNIQUE,
-    `group` VARCHAR(80) NOT NULL,
-    `type` VARCHAR(20) NOT NULL,
-    `value` TEXT NOT NULL,
-    description TEXT NULL,
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-    INDEX idx_settings_group (`group`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 003_audit_logs.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    event VARCHAR(100) NOT NULL,
-    entity_type VARCHAR(100) NOT NULL,
-    entity_id VARCHAR(100) NULL,
-    actor_id INT UNSIGNED NULL,
-    context JSON NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_entity (entity_type, entity_id),
-    INDEX idx_actor (actor_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 004_notification_logs.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS notification_logs (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    channel VARCHAR(50) NOT NULL,
-    recipient VARCHAR(255) NOT NULL,
-    template VARCHAR(150) NOT NULL,
-    payload JSON NOT NULL,
-    status VARCHAR(50) NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_channel (channel),
-    INDEX idx_recipient (recipient)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 005_notification_logs_enhancements.sql
--- ==================================================
-
--- Add meta column if it doesn't exist
-SET @has_meta := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'notification_logs'
-      AND column_name = 'meta'
-);
-
-SET @meta_sql := IF(
-    @has_meta = 0,
-    'ALTER TABLE notification_logs ADD COLUMN meta JSON NULL AFTER status',
-    'SELECT 1'
-);
-
-PREPARE meta_stmt FROM @meta_sql;
-EXECUTE meta_stmt;
-DEALLOCATE PREPARE meta_stmt;
-
--- Add error_message column if it doesn't exist
-SET @has_error_message := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'notification_logs'
-      AND column_name = 'error_message'
-);
-
-SET @error_message_sql := IF(
-    @has_error_message = 0,
-    'ALTER TABLE notification_logs ADD COLUMN error_message TEXT NULL AFTER meta',
-    'SELECT 1'
-);
-
-PREPARE error_message_stmt FROM @error_message_sql;
-EXECUTE error_message_stmt;
-DEALLOCATE PREPARE error_message_stmt;
-
-
--- ==================================================
--- Migration: 007_password_resets.sql
--- ==================================================
-
--- Password reset tokens
-CREATE TABLE IF NOT EXISTS password_resets (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    email VARCHAR(160) NOT NULL,
-    token VARCHAR(120) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    used_at DATETIME NULL,
-    created_at TIMESTAMP NULL,
-    UNIQUE KEY unique_token (token),
-    INDEX idx_password_reset_email (email)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 008_email_verifications.sql
--- ==================================================
-
--- Email verification tokens
-CREATE TABLE IF NOT EXISTS email_verifications (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id INT UnSIGNED NOT NULL,
-    token VARCHAR(120) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    used_at DATETIME NULL,
-    created_at TIMESTAMP NULL,
-    UNIQUE KEY unique_email_verification_token (token),
-    INDEX idx_email_verifications_user (user_id),
-    CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 012_credit_ledger_tables.sql
--- ==================================================
-
--- Add ledger tables for credit accounts
-ALTER TABLE credit_accounts
-    ADD COLUMN available_credit DECIMAL(12,2) DEFAULT 0 AFTER balance,
-    ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
-
-UPDATE credit_accounts
-SET available_credit = GREATEST(0, credit_limit - balance),
-    created_at = IFNULL(created_at, NOW()),
-    updated_at = IFNULL(updated_at, NOW());
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -641,583 +621,54 @@ CREATE TABLE IF NOT EXISTS credit_payment_reminders (
     CONSTRAINT fk_credit_reminders_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Purchases, Expenses and Financials
 
--- ==================================================
--- Migration: 013_reminder_preferences_table.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS reminder_preferences (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT UNSIGNED NOT NULL,
-    email VARCHAR(160) NULL,
-    phone VARCHAR(40) NULL,
-    timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
-    preferred_channel ENUM('mail', 'sms', 'both', 'none') NOT NULL DEFAULT 'both',
-    lead_days SMALLINT NOT NULL DEFAULT 3,
-    preferred_hour TINYINT NOT NULL DEFAULT 9,
-    is_active TINYINT(1) NOT NULL DEFAULT 1,
-    source VARCHAR(120) NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY reminder_preferences_customer_unique (customer_id),
-    UNIQUE KEY reminder_preferences_email_unique (email),
-    INDEX reminder_preferences_channel_idx (preferred_channel),
-    INDEX reminder_preferences_active_idx (is_active),
-    CONSTRAINT fk_reminder_preferences_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 014_reminder_campaign_logs.sql
--- ==================================================
-
--- Check and add description column
-SET @has_description := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'description'
-);
-SET @description_sql := IF(@has_description = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN description TEXT NULL AFTER name', 'SELECT 1');
-PREPARE description_stmt FROM @description_sql;
-EXECUTE description_stmt;
-DEALLOCATE PREPARE description_stmt;
-
--- Check and add frequency_unit column
-SET @has_frequency_unit := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'frequency_unit'
-);
-SET @frequency_unit_sql := IF(@has_frequency_unit = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN frequency_unit VARCHAR(20) NOT NULL DEFAULT \'day\' AFTER frequency', 'SELECT 1');
-PREPARE frequency_unit_stmt FROM @frequency_unit_sql;
-EXECUTE frequency_unit_stmt;
-DEALLOCATE PREPARE frequency_unit_stmt;
-
--- Check and add frequency_interval column
-SET @has_frequency_interval := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'frequency_interval'
-);
-SET @frequency_interval_sql := IF(@has_frequency_interval = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN frequency_interval INT NOT NULL DEFAULT 1 AFTER frequency_unit', 'SELECT 1');
-PREPARE frequency_interval_stmt FROM @frequency_interval_sql;
-EXECUTE frequency_interval_stmt;
-DEALLOCATE PREPARE frequency_interval_stmt;
-
--- Check and add email_subject column
-SET @has_email_subject := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'email_subject'
-);
-SET @email_subject_sql := IF(@has_email_subject = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN email_subject VARCHAR(255) NULL AFTER status', 'SELECT 1');
-PREPARE email_subject_stmt FROM @email_subject_sql;
-EXECUTE email_subject_stmt;
-DEALLOCATE PREPARE email_subject_stmt;
-
--- Check and add email_body column
-SET @has_email_body := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'email_body'
-);
-SET @email_body_sql := IF(@has_email_body = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN email_body TEXT NULL AFTER email_subject', 'SELECT 1');
-PREPARE email_body_stmt FROM @email_body_sql;
-EXECUTE email_body_stmt;
-DEALLOCATE PREPARE email_body_stmt;
-
--- Check and add sms_body column
-SET @has_sms_body := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'sms_body'
-);
-SET @sms_body_sql := IF(@has_sms_body = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN sms_body TEXT NULL AFTER email_body', 'SELECT 1');
-PREPARE sms_body_stmt FROM @sms_body_sql;
-EXECUTE sms_body_stmt;
-DEALLOCATE PREPARE sms_body_stmt;
-
--- Check and add created_at column
-SET @has_created_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'created_at'
-);
-SET @created_at_sql := IF(@has_created_at = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER next_run_at', 'SELECT 1');
-PREPARE created_at_stmt FROM @created_at_sql;
-EXECUTE created_at_stmt;
-DEALLOCATE PREPARE created_at_stmt;
-
--- Check and add updated_at column
-SET @has_updated_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'reminder_campaigns' AND column_name = 'updated_at'
-);
-SET @updated_at_sql := IF(@has_updated_at = 0,
-    'ALTER TABLE reminder_campaigns ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at', 'SELECT 1');
-PREPARE updated_at_stmt FROM @updated_at_sql;
-EXECUTE updated_at_stmt;
-DEALLOCATE PREPARE updated_at_stmt;
-
-CREATE TABLE IF NOT EXISTS reminder_logs (
+CREATE TABLE IF NOT EXISTS financial_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    campaign_id INT UNSIGNED NOT NULL,
-    preference_id INT UNSIGNED NULL,
-    customer_id INT UNSIGNED NOT NULL,
-    channel VARCHAR(20) NOT NULL,
-    status VARCHAR(40) NOT NULL,
-    scheduled_for DATETIME NULL,
-    sent_at DATETIME NULL,
-    body TEXT NULL,
-    error TEXT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_reminder_logs_campaign (campaign_id),
-    INDEX idx_reminder_logs_preference (preference_id),
-    INDEX idx_reminder_logs_customer (customer_id),
-    CONSTRAINT fk_reminder_logs_campaign FOREIGN KEY (campaign_id) REFERENCES reminder_campaigns (id),
-    CONSTRAINT fk_reminder_logs_preference FOREIGN KEY (preference_id) REFERENCES reminder_preferences (id),
-    CONSTRAINT fk_reminder_logs_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 015_appointment_availability.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS availability_settings (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    day_of_week TINYINT NULL,
-    holiday_date DATE NULL,
-    label VARCHAR(160) NULL,
-    opens_at TIME NULL,
-    closes_at TIME NULL,
-    slot_minutes INT NOT NULL DEFAULT 30,
-    buffer_minutes INT NOT NULL DEFAULT 0,
-    is_closed TINYINT(1) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_availability_day (day_of_week),
-    INDEX idx_availability_date (holiday_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Modify existing columns
-ALTER TABLE appointments
-    MODIFY customer_id INT UNSIGNED NULL,
-    MODIFY vehicle_id INT UNSIGNED NULL;
-
--- Check and add created_at column
-SET @has_created_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'appointments' AND column_name = 'created_at'
-);
-SET @created_at_sql := IF(@has_created_at = 0,
-    'ALTER TABLE appointments ADD COLUMN created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER notes', 'SELECT 1');
-PREPARE created_at_stmt FROM @created_at_sql;
-EXECUTE created_at_stmt;
-DEALLOCATE PREPARE created_at_stmt;
-
--- Check and add updated_at column
-SET @has_updated_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'appointments' AND column_name = 'updated_at'
-);
-SET @updated_at_sql := IF(@has_updated_at = 0,
-    'ALTER TABLE appointments ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at', 'SELECT 1');
-PREPARE updated_at_stmt FROM @updated_at_sql;
-EXECUTE updated_at_stmt;
-DEALLOCATE PREPARE updated_at_stmt;
-
-
--- ==================================================
--- Migration: 016_payment_sessions_and_refunds.sql
--- ==================================================
-
--- Payment Sessions and Refunds Tables
--- These tables support the payment gateway integration
-
-CREATE TABLE IF NOT EXISTS payment_sessions (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT UNSIGNED NOT NULL,
-    provider VARCHAR(40) NOT NULL,
-    session_id VARCHAR(255) NOT NULL,
-    checkout_url TEXT NULL,
-    metadata JSON NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_payment_session_invoice (invoice_id),
-    INDEX idx_payment_session_session (session_id),
-    UNIQUE KEY unique_invoice_provider (invoice_id, provider),
-    CONSTRAINT fk_payment_session_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS refunds (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
-    payment_reference VARCHAR(255) NOT NULL,
-    refund_id VARCHAR(255) NOT NULL,
+    type VARCHAR(20) NOT NULL,
+    category VARCHAR(120) NOT NULL,
+    reference VARCHAR(120) NOT NULL,
+    purchase_order VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
-    reason TEXT NULL,
-    status VARCHAR(40) NOT NULL DEFAULT 'pending',
-    metadata JSON NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_refund_invoice (invoice_id),
-    INDEX idx_refund_payment (payment_reference),
-    INDEX idx_refund_id (refund_id),
-    CONSTRAINT fk_refund_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Update existing payments table to match documentation
--- Adding method/reference columns if they don't exist
-ALTER TABLE payments
-    MODIFY COLUMN gateway VARCHAR(40) NULL,
-    ADD COLUMN method VARCHAR(40) NULL AFTER gateway,
-    ADD COLUMN reference VARCHAR(255) NULL AFTER amount,
-    ADD COLUMN metadata JSON NULL AFTER status;
-
--- Migrate existing data: copy gateway to method if method is null
-UPDATE payments SET method = gateway WHERE method IS NULL;
-
-
--- ==================================================
--- Migration: 017_warranty_claim_messages.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS warranty_claim_messages (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    claim_id INT UNSIGNED NOT NULL,
-    actor_type VARCHAR(40) NOT NULL,
-    actor_id INT UNSIGNED NOT NULL,
-    message TEXT NOT NULL,
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-    INDEX idx_warranty_message_claim (claim_id),
-    CONSTRAINT fk_warranty_message_claim FOREIGN KEY (claim_id) REFERENCES warranty_claims (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seed initial customer messages from claim descriptions so history is preserved
-INSERT INTO warranty_claim_messages (claim_id, actor_type, actor_id, message, created_at, updated_at)
-SELECT id, 'customer', customer_id, description, created_at, updated_at FROM warranty_claims;
-
-
--- ==================================================
--- Migration: 018_invoice_public_tokens.sql
--- ==================================================
-
--- Check and add public_token column
-SET @has_public_token := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'public_token'
-);
-SET @public_token_sql := IF(@has_public_token = 0,
-    'ALTER TABLE invoices ADD COLUMN public_token VARCHAR(64) NULL', 'SELECT 1');
-PREPARE public_token_stmt FROM @public_token_sql;
-EXECUTE public_token_stmt;
-DEALLOCATE PREPARE public_token_stmt;
-
--- Check and add public_token_expires_at column
-SET @has_expires_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'public_token_expires_at'
-);
-SET @expires_at_sql := IF(@has_expires_at = 0,
-    'ALTER TABLE invoices ADD COLUMN public_token_expires_at DATETIME NULL', 'SELECT 1');
-PREPARE expires_at_stmt FROM @expires_at_sql;
-EXECUTE expires_at_stmt;
-DEALLOCATE PREPARE expires_at_stmt;
-
--- Check and add index
-SET @has_index := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND index_name = 'idx_invoice_public_token'
-);
-SET @index_sql := IF(@has_index = 0,
-    'ALTER TABLE invoices ADD UNIQUE KEY idx_invoice_public_token (public_token)', 'SELECT 1');
-PREPARE index_stmt FROM @index_sql;
-EXECUTE index_stmt;
-DEALLOCATE PREPARE index_stmt;
-
--- Seed existing invoices with tokens valid for 30 days to enable public access immediately
-UPDATE invoices
-SET public_token = LOWER(REPLACE(UUID(), '-', '')),
-    public_token_expires_at = DATE_ADD(NOW(), INTERVAL 30 DAY)
-WHERE public_token IS NULL;
-
-
--- ==================================================
--- Migration: 020_schema_enhancements.sql
--- ==================================================
-
--- Consolidated schema enhancements
--- This file consolidates multiple small ALTER TABLE migrations for better maintainability
-
--- Add reminder tracking to appointments
-SET @has_reminder_sent_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'appointments' AND column_name = 'reminder_sent_at'
-);
-SET @reminder_sent_at_sql := IF(@has_reminder_sent_at = 0,
-    'ALTER TABLE appointments ADD COLUMN reminder_sent_at TIMESTAMP NULL AFTER notes', 'SELECT 1');
-PREPARE reminder_sent_at_stmt FROM @reminder_sent_at_sql;
-EXECUTE reminder_sent_at_stmt;
-DEALLOCATE PREPARE reminder_sent_at_stmt;
-
--- Create index if it doesn't exist
-SET @has_reminder_index := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'appointments' AND index_name = 'idx_appointments_reminder'
-);
-SET @reminder_index_sql := IF(@has_reminder_index = 0,
-    'CREATE INDEX idx_appointments_reminder ON appointments (status, scheduled_at, reminder_sent_at)', 'SELECT 1');
-PREPARE reminder_index_stmt FROM @reminder_index_sql;
-EXECUTE reminder_index_stmt;
-DEALLOCATE PREPARE reminder_index_stmt;
-
--- Add mileage tracking to customer vehicles
-SET @has_mileage_in := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'customer_vehicles' AND column_name = 'mileage_in'
-);
-SET @mileage_in_sql := IF(@has_mileage_in = 0,
-    'ALTER TABLE customer_vehicles ADD COLUMN mileage_in INT UNSIGNED NULL COMMENT ''Mileage when vehicle arrives'' AFTER notes',
-    'SELECT 1');
-PREPARE mileage_in_stmt FROM @mileage_in_sql;
-EXECUTE mileage_in_stmt;
-DEALLOCATE PREPARE mileage_in_stmt;
-
-SET @has_mileage_out := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'customer_vehicles' AND column_name = 'mileage_out'
-);
-SET @mileage_out_sql := IF(@has_mileage_out = 0,
-    'ALTER TABLE customer_vehicles ADD COLUMN mileage_out INT UNSIGNED NULL COMMENT ''Mileage when vehicle leaves'' AFTER mileage_in',
-    'SELECT 1');
-PREPARE mileage_out_stmt FROM @mileage_out_sql;
-EXECUTE mileage_out_stmt;
-DEALLOCATE PREPARE mileage_out_stmt;
-
--- Add two-factor authentication to users
-SET @has_two_factor_enabled := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'two_factor_enabled'
-);
-SET @two_factor_enabled_sql := IF(@has_two_factor_enabled = 0,
-    'ALTER TABLE users ADD COLUMN two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER remember_token',
-    'SELECT 1');
-PREPARE two_factor_enabled_stmt FROM @two_factor_enabled_sql;
-EXECUTE two_factor_enabled_stmt;
-DEALLOCATE PREPARE two_factor_enabled_stmt;
-
-SET @has_two_factor_type := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'two_factor_type'
-);
-SET @two_factor_type_sql := IF(@has_two_factor_type = 0,
-    'ALTER TABLE users ADD COLUMN two_factor_type ENUM(''none'', ''totp'', ''sms'', ''email'') NOT NULL DEFAULT ''none'' AFTER two_factor_enabled',
-    'SELECT 1');
-PREPARE two_factor_type_stmt FROM @two_factor_type_sql;
-EXECUTE two_factor_type_stmt;
-DEALLOCATE PREPARE two_factor_type_stmt;
-
-SET @has_two_factor_secret := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'two_factor_secret'
-);
-SET @two_factor_secret_sql := IF(@has_two_factor_secret = 0,
-    'ALTER TABLE users ADD COLUMN two_factor_secret VARCHAR(128) NULL AFTER two_factor_type',
-    'SELECT 1');
-PREPARE two_factor_secret_stmt FROM @two_factor_secret_sql;
-EXECUTE two_factor_secret_stmt;
-DEALLOCATE PREPARE two_factor_secret_stmt;
-
-SET @has_two_factor_recovery_codes := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'two_factor_recovery_codes'
-);
-SET @two_factor_recovery_codes_sql := IF(@has_two_factor_recovery_codes = 0,
-    'ALTER TABLE users ADD COLUMN two_factor_recovery_codes TEXT NULL AFTER two_factor_secret',
-    'SELECT 1');
-PREPARE two_factor_recovery_codes_stmt FROM @two_factor_recovery_codes_sql;
-EXECUTE two_factor_recovery_codes_stmt;
-DEALLOCATE PREPARE two_factor_recovery_codes_stmt;
-
--- Update existing 2FA users to TOTP type
-SET @has_two_factor_columns := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'users'
-      AND column_name IN ('two_factor_enabled', 'two_factor_type')
-);
-SET @two_factor_update_sql := IF(@has_two_factor_columns = 2,
-    'UPDATE users SET two_factor_type = ''totp'' WHERE two_factor_enabled = 1 AND two_factor_type = ''none''',
-    'SELECT 1');
-PREPARE two_factor_update_stmt FROM @two_factor_update_sql;
-EXECUTE two_factor_update_stmt;
-DEALLOCATE PREPARE two_factor_update_stmt;
-
--- Add mobile service flags
-SET @has_estimate_is_mobile := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'is_mobile'
-);
-SET @estimate_is_mobile_sql := IF(@has_estimate_is_mobile = 0,
-    'ALTER TABLE estimates ADD COLUMN is_mobile TINYINT(1) NOT NULL DEFAULT 0 AFTER vehicle_id',
-    'SELECT 1');
-PREPARE estimate_is_mobile_stmt FROM @estimate_is_mobile_sql;
-EXECUTE estimate_is_mobile_stmt;
-DEALLOCATE PREPARE estimate_is_mobile_stmt;
-
-SET @has_invoice_is_mobile := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'is_mobile'
-);
-SET @invoice_is_mobile_sql := IF(@has_invoice_is_mobile = 0,
-    'ALTER TABLE invoices ADD COLUMN is_mobile TINYINT(1) NOT NULL DEFAULT 0 AFTER vehicle_id',
-    'SELECT 1');
-PREPARE invoice_is_mobile_stmt FROM @invoice_is_mobile_sql;
-EXECUTE invoice_is_mobile_stmt;
-DEALLOCATE PREPARE invoice_is_mobile_stmt;
-
-
--- ==================================================
--- Migration: 021_cms_content.sql
--- ==================================================
-
--- CMS content core tables
--- Adds pages, menus, and media metadata tables
-
-CREATE TABLE IF NOT EXISTS cms_pages (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) NOT NULL UNIQUE,
-    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
-    meta_title VARCHAR(255) NULL,
-    meta_description TEXT NULL,
-    meta_keywords VARCHAR(255) NULL,
-    summary TEXT NULL,
-    content LONGTEXT NULL,
-    publish_start_at DATETIME NULL,
-    publish_end_at DATETIME NULL,
-    published_at DATETIME NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_cms_pages_status (status),
-    INDEX idx_cms_pages_published_at (published_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS cms_menus (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(150) NOT NULL,
-    slug VARCHAR(150) NOT NULL UNIQUE,
-    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+    entry_date DATE NOT NULL,
+    vendor VARCHAR(160) NULL,
     description TEXT NULL,
-    items JSON NULL,
-    meta_title VARCHAR(255) NULL,
-    meta_description TEXT NULL,
-    published_at DATETIME NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_cms_menus_status (status),
-    INDEX idx_cms_menus_published_at (published_at)
+    attachment_path VARCHAR(255) NULL,
+    idempotency_key VARCHAR(120) NULL,
+    UNIQUE KEY uniq_financial_entries_idempotency (idempotency_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS cms_media (
+-- Vehicle Inspections
+
+CREATE TABLE IF NOT EXISTS inspection_templates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    file_name VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) NOT NULL UNIQUE,
-    url VARCHAR(500) NOT NULL,
-    mime_type VARCHAR(150) NULL,
-    size_bytes INT UNSIGNED NULL,
-    title VARCHAR(255) NULL,
-    alt_text VARCHAR(255) NULL,
-    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
-    published_at DATETIME NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_cms_media_status (status),
-    INDEX idx_cms_media_published_at (published_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 022_cms_templates.sql
--- ==================================================
-
--- CMS templates, settings, and cache tables
--- Adds the templates, settings, and cache tables for CMS functionality
-
-CREATE TABLE IF NOT EXISTS cms_templates (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    slug VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT NULL,
-    structure LONGTEXT NULL COMMENT 'Template structure/layout definition',
-    default_css TEXT NULL COMMENT 'Default CSS styles for this template',
-    default_js TEXT NULL COMMENT 'Default JavaScript for this template',
-    is_active TINYINT(1) DEFAULT 1,
-    created_by INT UNSIGNED NULL,
-    updated_by INT UNSIGNED NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_cms_templates_slug (slug),
-    INDEX idx_cms_templates_is_active (is_active),
-    INDEX idx_cms_templates_created_by (created_by),
-    INDEX idx_cms_templates_updated_by (updated_by)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- CMS settings table for configuration
-CREATE TABLE IF NOT EXISTS cms_settings (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    setting_key VARCHAR(100) NOT NULL UNIQUE,
-    setting_value TEXT NULL,
-    setting_type ENUM('string', 'number', 'boolean', 'json') DEFAULT 'string',
-    description TEXT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_cms_settings_key (setting_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- CMS cache table for page/component caching
-CREATE TABLE IF NOT EXISTS cms_cache (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    cache_key VARCHAR(255) NOT NULL UNIQUE,
-    type VARCHAR(50) NULL COMMENT 'Cache type: page, component, template, etc.',
-    cache_value LONGTEXT NULL,
-    expires_at DATETIME NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_cms_cache_key (cache_key),
-    INDEX idx_cms_cache_type (type),
-    INDEX idx_cms_cache_expires (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Insert a default template
-INSERT INTO cms_templates (name, slug, description, structure, is_active) VALUES
-('Default', 'default', 'Default page template', '<div class="container">{{content}}</div>', 1);
-
--- Insert default settings
-INSERT INTO cms_settings (setting_key, setting_value, setting_type, description) VALUES
-('site_name', 'My Website', 'string', 'The name of the website'),
-('site_description', 'Welcome to our website', 'string', 'Site meta description'),
-('cache_enabled', 'true', 'boolean', 'Enable page caching'),
-('cache_ttl', '3600', 'number', 'Default cache TTL in seconds');
-
-
--- ==================================================
--- Migration: 025_inventory_lookups.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS inventory_lookups (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    type VARCHAR(32) NOT NULL,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
-    is_parts_supplier TINYINT(1) DEFAULT 0,
-    INDEX idx_inventory_lookups_type (type)
+    active TINYINT(1) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS inspection_sections (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    template_id INT UNSIGNED NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    display_order INT DEFAULT 0,
+    CONSTRAINT fk_inspection_section_template FOREIGN KEY (template_id) REFERENCES inspection_templates (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==================================================
--- Migration: 026_inspection_reports.sql
--- ==================================================
+CREATE TABLE IF NOT EXISTS inspection_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    section_id INT UNSIGNED NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    input_type VARCHAR(40) NOT NULL,
+    default_value VARCHAR(160) NULL,
+    options JSON NULL AFTER default_value COMMENT 'JSON configuration: {min, max, step} for number_scale, {choices: [...]} for select_scale',
+    display_order INT DEFAULT 0,
+    fail_threshold VARCHAR(100) NULL COMMENT 'Threshold that indicates failure: "no" for boolean, numeric value for scales',
+    recommended_service_type_id INT UNSIGNED NULL COMMENT 'Default service type to suggest when item fails',
+    estimated_labor_hours DECIMAL(5,2) NULL COMMENT 'Default labor hours for failed item repair',
+    estimated_parts_cost DECIMAL(10,2) NULL COMMENT 'Estimated parts cost for failed item repair',
+    CONSTRAINT fk_inspection_item_section FOREIGN KEY (section_id) REFERENCES inspection_sections (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Inspection reports tables with media and signatures
 CREATE TABLE IF NOT EXISTS inspection_reports (
@@ -1264,66 +715,209 @@ CREATE TABLE IF NOT EXISTS inspection_report_media (
     path VARCHAR(255) NOT NULL,
     mime_type VARCHAR(160) NOT NULL,
     uploaded_by INT UNSIGNED NULL,
+    client_token VARCHAR(64) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_inspection_media_report (report_id)
-);
-
-
--- ==================================================
--- Migration: 027_custom_roles.sql
--- ==================================================
-
--- Custom roles table with JSON-based permissions
--- This supersedes the old role_permissions table with a more flexible approach
--- System roles (admin, manager, technician, customer) are pre-populated and protected
-
-CREATE TABLE IF NOT EXISTS custom_roles (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE,
-    label VARCHAR(100) NOT NULL,
-    description TEXT NULL,
-    permissions JSON NOT NULL,
-    is_system TINYINT(1) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_name (name),
-    INDEX idx_is_system (is_system)
+    INDEX idx_inspection_media_report (report_id),
+    UNIQUE INDEX idx_inspection_media_client_token (report_id, client_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert existing system roles for backwards compatibility
-INSERT INTO custom_roles (name, label, description, permissions, is_system) VALUES
-('admin', 'Admin', 'Full control across all modules', JSON_ARRAY('*'), 1),
-('manager', 'Manager', 'Manage shop operations, estimates, invoices, schedules, inventory', JSON_ARRAY('users.view', 'users.create', 'users.update', 'users.delete', 'users.invite', 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*', 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*', 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*', 'cms.*'), 1),
-('technician', 'Technician', 'Work estimates, inspections, jobs, and time tracking', JSON_ARRAY('customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view', 'service_types.view', 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete', 'cms.menus.view', 'cms.menus.create', 'cms.menus.update', 'cms.menus.delete', 'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete', 'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete', 'cms.dashboard.view', 'cms.templates.view'), 1),
-('customer', 'Customer', 'Customer portal scoped to their profile and documents', JSON_ARRAY('portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.invoices', 'portal.warranty', 'portal.reminders'), 1)
-ON DUPLICATE KEY UPDATE
-    label = VALUES(label),
-    description = VALUES(description),
-    permissions = VALUES(permissions);
+-- System Settings
 
+CREATE TABLE IF NOT EXISTS settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `key` VARCHAR(160) NOT NULL UNIQUE,
+    `group` VARCHAR(80) NOT NULL,
+    `type` VARCHAR(20) NOT NULL,
+    `value` TEXT NOT NULL,
+    description TEXT NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    INDEX idx_settings_group (`group`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==================================================
--- Migration: 028_add_template_id_to_cms_pages.sql
--- ==================================================
+-- audit logs
 
--- Add template_id to cms_pages to allow template switching
--- This allows pages to change their template after creation
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    event VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id VARCHAR(100) NULL,
+    actor_id INT UNSIGNED NULL,
+    context JSON NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_entity (entity_type, entity_id),
+    INDEX idx_actor (actor_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE cms_pages
-    ADD COLUMN template_id INT UNSIGNED NULL AFTER slug,
-    ADD INDEX idx_cms_pages_template_id (template_id),
-    ADD CONSTRAINT fk_cms_pages_template
-        FOREIGN KEY (template_id) REFERENCES cms_templates(id)
-        ON DELETE SET NULL;
+-- Notifications
 
+CREATE TABLE IF NOT EXISTS notification_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    channel VARCHAR(50) NOT NULL,
+    recipient VARCHAR(255) NOT NULL,
+    template VARCHAR(150) NOT NULL,
+    payload JSON NOT NULL,
+    status VARCHAR(50) NULL,
+    meta JSON NULL,
+    error_massage TEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_channel (channel),
+    INDEX idx_recipient (recipient)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==================================================
--- Migration: 029_add_component_fields_to_cms_pages.sql
--- ==================================================
+-- Password reset tokens
+CREATE TABLE IF NOT EXISTS password_resets (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(160) NOT NULL,
+    token VARCHAR(120) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at TIMESTAMP NULL,
+    UNIQUE KEY unique_token (token),
+    INDEX idx_password_reset_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==================================================
--- FIX: Create missing cms_components table
--- ==================================================
+-- Email verification tokens
+CREATE TABLE IF NOT EXISTS email_verifications (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UnSIGNED NOT NULL,
+    token VARCHAR(120) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at TIMESTAMP NULL,
+    UNIQUE KEY unique_email_verification_token (token),
+    INDEX idx_email_verifications_user (user_id),
+    CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Reminder preferences for customers
+
+CREATE TABLE IF NOT EXISTS reminder_preferences (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
+    email VARCHAR(160) NULL,
+    phone VARCHAR(40) NULL,
+    timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+    preferred_channel ENUM('mail', 'sms', 'both', 'none') NOT NULL DEFAULT 'both',
+    lead_days SMALLINT NOT NULL DEFAULT 3,
+    preferred_hour TINYINT NOT NULL DEFAULT 9,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    source VARCHAR(120) NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY reminder_preferences_customer_unique (customer_id),
+    UNIQUE KEY reminder_preferences_email_unique (email),
+    INDEX reminder_preferences_channel_idx (preferred_channel),
+    INDEX reminder_preferences_active_idx (is_active),
+    CONSTRAINT fk_reminder_preferences_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Log reminders
+
+CREATE TABLE IF NOT EXISTS reminder_logs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT UNSIGNED NOT NULL,
+    preference_id INT UNSIGNED NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    scheduled_for DATETIME NULL,
+    sent_at DATETIME NULL,
+    body TEXT NULL,
+    error TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_reminder_logs_campaign (campaign_id),
+    INDEX idx_reminder_logs_preference (preference_id),
+    INDEX idx_reminder_logs_customer (customer_id),
+    CONSTRAINT fk_reminder_logs_campaign FOREIGN KEY (campaign_id) REFERENCES reminder_campaigns (id),
+    CONSTRAINT fk_reminder_logs_preference FOREIGN KEY (preference_id) REFERENCES reminder_preferences (id),
+    CONSTRAINT fk_reminder_logs_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payment_sessions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
+    provider VARCHAR(40) NOT NULL,
+    session_id VARCHAR(255) NOT NULL,
+    checkout_url TEXT NULL,
+    metadata JSON NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_payment_session_invoice (invoice_id),
+    INDEX idx_payment_session_session (session_id),
+    CONSTRAINT fk_payment_sessions_masked_session FOREIGN KEY (session_id) REFERENCES masked_sms_sessions(id),
+    UNIQUE KEY unique_invoice_provider (invoice_id, provider),
+    CONSTRAINT fk_payment_session_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS refunds (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT NOT NULL,
+    payment_reference VARCHAR(255) NOT NULL,
+    refund_id VARCHAR(255) NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    reason TEXT NULL,
+    status VARCHAR(40) NOT NULL DEFAULT 'pending',
+    metadata JSON NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_refund_invoice (invoice_id),
+    INDEX idx_refund_payment (payment_reference),
+    INDEX idx_refund_id (refund_id),
+    CONSTRAINT fk_refund_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- CMS content core tables
+
+CREATE TABLE IF NOT EXISTS cms_menus (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    slug VARCHAR(150) NOT NULL UNIQUE,
+    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+    description TEXT NULL,
+    items JSON NULL,
+    meta_title VARCHAR(255) NULL,
+    meta_description TEXT NULL,
+    published_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_menus_status (status),
+    INDEX idx_cms_menus_published_at (published_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cms_media (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL UNIQUE,
+    url VARCHAR(500) NOT NULL,
+    mime_type VARCHAR(150) NULL,
+    size_bytes INT UNSIGNED NULL,
+    title VARCHAR(255) NULL,
+    alt_text VARCHAR(255) NULL,
+    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
+    published_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_media_status (status),
+    INDEX idx_cms_media_published_at (published_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cms_templates (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NULL,
+    structure LONGTEXT NULL COMMENT 'Template structure/layout definition',
+    default_css TEXT NULL COMMENT 'Default CSS styles for this template',
+    default_js TEXT NULL COMMENT 'Default JavaScript for this template',
+    is_active TINYINT(1) DEFAULT 1,
+    created_by INT UNSIGNED NULL,
+    updated_by INT UNSIGNED NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_templates_slug (slug),
+    INDEX idx_cms_templates_is_active (is_active),
+    INDEX idx_cms_templates_created_by (created_by),
+    INDEX idx_cms_templates_updated_by (updated_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS cms_components (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -1345,56 +939,103 @@ CREATE TABLE IF NOT EXISTS cms_components (
     INDEX idx_cms_components_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Add component and custom styling fields to cms_pages
--- Allows pages to specify header/footer components and custom CSS/JS
+CREATE TABLE IF NOT EXISTS cms_pages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL UNIQUE,
+category_id INT UNSIGNED NULL,
+    template_id INT UNSIGNED NULL,
+    header_component_id INT UNSIGNED NULL,
+    footer_component_id INT UNSIGNED NULL,
+    custom_css TEXT NULL,
+    custom_js TEXT NULL,
+    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+    meta_title VARCHAR(255) NULL,
+    meta_description TEXT NULL,
+    meta_keywords VARCHAR(255) NULL,
+    summary TEXT NULL,
+    content LONGTEXT NULL,
+    publish_start_at DATETIME NULL,
+    publish_end_at DATETIME NULL,
+    published_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_pages_status (status),
+    INDEX idx_cms_pages_published_at (published_at),
+    INDEX idx_cms_pages_template_id (template_id),
+    INDEX idx_cms_pages_header_component (header_component_id),
+    INDEX idx_cms_pages_footer_component (footer_component_id),
+    INDEX idx_cms_pages_category_id (category_id),
+    CONSTRAINT fk_cms_pages_header_component FOREIGN KEY (header_component_id) REFERENCES cms_components(id) ON DELETE SET NULL,
+    CONSTRAINT fk_cms_pages_footer_component FOREIGN KEY (footer_component_id) REFERENCES cms_components(id) ON DELETE SET NULL,
+    CONSTRAINT fk_cms_pages_category FOREIGN KEY (category_id) REFERENCES cms_categories(id) ON DELETE SET NULL,
+    CONSTRAINT fk_cms_pages_template FOREIGN KEY (template_id) REFERENCES cms_templates (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE cms_pages
-    ADD COLUMN header_component_id INT UNSIGNED NULL AFTER template_id,
-    ADD COLUMN footer_component_id INT UNSIGNED NULL AFTER header_component_id,
-    ADD COLUMN custom_css TEXT NULL AFTER footer_component_id,
-    ADD COLUMN custom_js TEXT NULL AFTER custom_css,
-    ADD INDEX idx_cms_pages_header_component (header_component_id),
-    ADD INDEX idx_cms_pages_footer_component (footer_component_id),
-    ADD CONSTRAINT fk_cms_pages_header_component
-        FOREIGN KEY (header_component_id) REFERENCES cms_components(id)
-        ON DELETE SET NULL,
-    ADD CONSTRAINT fk_cms_pages_footer_component
-        FOREIGN KEY (footer_component_id) REFERENCES cms_components(id)
-        ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS cms_categories (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL COMMENT 'Display name of the category',
+    slug VARCHAR(255) NOT NULL UNIQUE COMMENT 'URL-friendly identifier',
+    parent_id INT UNSIGNED NULL,
+    description TEXT NULL COMMENT 'Category description',
+    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'Display order (lower numbers first)',
+    meta_title VARCHAR(255) NULL COMMENT 'SEO meta title',
+    meta_description TEXT NULL COMMENT 'SEO meta description',
+    meta_keywords VARCHAR(255) NULL COMMENT 'SEO meta keywords',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_categories_status (status),
+    INDEX idx_cms_categories_sort_order (sort_order),
+    INDEX idx_cms_categories_parent_id (parent_id),
+    INDEX idx_cms_categories_slug (slug),
+    CONSTRAINT fk_cms_categories_parent FOREIGN KEY (parent_id) REFERENCES cms_categories(id) ON DELETE SET NULL,
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Note: When a category is deleted, pages are set to NULL (no category)
+-- This prevents data loss and allows pages to continue functioning at base URLs
 
--- ==================================================
--- Migration: 030_add_two_factor_setup_pending.sql
--- ==================================================
+-- CMS settings table for configuration
+CREATE TABLE IF NOT EXISTS cms_settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value TEXT NULL,
+    setting_type ENUM('string', 'number', 'boolean', 'json') DEFAULT 'string',
+    description TEXT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cms_settings_key (setting_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Add two_factor_setup_pending field to users table
--- This field tracks when 2FA has been required by an admin but not yet set up by the user
+-- CMS cache table for page/component caching
+CREATE TABLE IF NOT EXISTS cms_cache (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cache_key VARCHAR(255) NOT NULL UNIQUE,
+    type VARCHAR(50) NULL COMMENT 'Cache type: page, component, template, etc.',
+    cache_value LONGTEXT NULL,
+    expires_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_cms_cache_key (cache_key),
+    INDEX idx_cms_cache_type (type),
+    INDEX idx_cms_cache_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE users
-  ADD COLUMN two_factor_setup_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER two_factor_recovery_codes COMMENT 'Indicates whether user needs to complete 2FA setup';
+-- Custom roles table with JSON-based permissions
+-- This supersedes the old role_permissions table with a more flexible approach
+-- System roles (admin, manager, technician, customer) are pre-populated and protected
 
--- Add index for quick lookup of users who need to complete 2FA setup
-CREATE INDEX idx_users_two_factor_setup_pending ON users(two_factor_setup_pending);
-
-
--- ==================================================
--- Migration: 031_add_inspection_scale_options.sql
--- ==================================================
-
--- Migration: Add scale and options support to inspection items
--- This allows for number scales, Yes/No/N/A, and custom text scales
-
-ALTER TABLE inspection_items
-  ADD COLUMN options JSON NULL AFTER default_value COMMENT 'JSON configuration: {min, max, step} for number_scale, {choices: [...]} for select_scale';
-
--- Note: input_type supports: text, textarea, boolean, boolean_na, number, number_scale, select_scale
--- Update existing boolean items to support N/A option by changing type
--- Existing boolean items will remain compatible
-
-
--- ==================================================
--- Migration: 032_create_estimate_requests.sql
--- ==================================================
+CREATE TABLE IF NOT EXISTS custom_roles (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    label VARCHAR(100) NOT NULL,
+    description TEXT NULL,
+    permissions JSON NOT NULL,
+    is_system TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_name (name),
+    INDEX idx_is_system (is_system)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Migration: Create public estimate requests table
 -- Stores estimate requests submitted through public-facing form
@@ -1476,51 +1117,6 @@ CREATE TABLE IF NOT EXISTS estimate_request_media (
     FOREIGN KEY (request_id) REFERENCES estimate_requests(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
--- ==================================================
--- Migration: 033_add_estimate_request_cms_component.sql
--- ==================================================
-
--- Migration: Add estimate request form CMS component
--- This creates a reusable component that can be embedded in CMS pages using {{component:estimate-request}}
-
-INSERT INTO cms_components (
-    name,
-    slug,
-    type,
-    description,
-    content,
-    css,
-    javascript,
-    is_active,
-    cache_ttl,
-    created_at,
-    updated_at
-) VALUES (
-    'Estimate Request Form',
-    'estimate-request',
-    'custom',
-    'Public-facing estimate request form with vehicle selection, service details, and photo upload',
-    '<div data-vue-component="EstimateRequestForm" class="estimate-request-form-container"></div>',
-    '/* Ensure form has proper spacing */
-.estimate-request-form-container {
-    width: 100%;
-    max-width: 100%;
-    padding: 0;
-    margin: 0 auto;
-}',
-    NULL,
-    1,
-    0,
-    NOW(),
-    NOW()
-);
-
-
--- ==================================================
--- Migration: 034_add_404_logging_and_redirects.sql
--- ==================================================
-
 -- Migration: Add 404 logging and redirect management
 
 -- Table for tracking 404 errors
@@ -1565,246 +1161,6 @@ CREATE TABLE IF NOT EXISTS redirects (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='URL redirect rules for SEO and fixing broken links';
 
-
--- ==================================================
--- Migration: 035_add_cms_categories.sql
--- ==================================================
-
--- Add CMS categories for hierarchical page organization
--- Categories allow pages to be grouped and accessed via nested URIs
-
-CREATE TABLE IF NOT EXISTS cms_categories (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL COMMENT 'Display name of the category',
-    slug VARCHAR(255) NOT NULL UNIQUE COMMENT 'URL-friendly identifier',
-    description TEXT NULL COMMENT 'Category description',
-    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
-    sort_order INT NOT NULL DEFAULT 0 COMMENT 'Display order (lower numbers first)',
-    meta_title VARCHAR(255) NULL COMMENT 'SEO meta title',
-    meta_description TEXT NULL COMMENT 'SEO meta description',
-    meta_keywords VARCHAR(255) NULL COMMENT 'SEO meta keywords',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_cms_categories_status (status),
-    INDEX idx_cms_categories_sort_order (sort_order),
-    INDEX idx_cms_categories_slug (slug)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Add category relationship to pages
-ALTER TABLE cms_pages
-    ADD COLUMN category_id INT UNSIGNED NULL AFTER slug,
-    ADD INDEX idx_cms_pages_category_id (category_id),
-    ADD CONSTRAINT fk_cms_pages_category
-        FOREIGN KEY (category_id) REFERENCES cms_categories(id)
-        ON DELETE SET NULL;
-
--- Note: When a category is deleted, pages are set to NULL (no category)
--- This prevents data loss and allows pages to continue functioning at base URLs
-
-
--- ==================================================
--- Migration: 036_add_customer_billing_address.sql
--- ==================================================
-
--- Add billing address fields for commercial customers
-ALTER TABLE customers
-ADD COLUMN billing_street VARCHAR(255) NULL AFTER country,
-ADD COLUMN billing_city VARCHAR(120) NULL AFTER billing_street,
-ADD COLUMN billing_state VARCHAR(120) NULL AFTER billing_city,
-ADD COLUMN billing_postal_code VARCHAR(20) NULL AFTER billing_state,
-ADD COLUMN billing_country VARCHAR(120) NULL AFTER billing_postal_code;
-
-
--- ==================================================
--- Migration: 037_add_bundle_discount_fields.sql
--- ==================================================
-
--- Check and add internal_notes column
-SET @has_internal_notes := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'bundles' AND column_name = 'internal_notes'
-);
-SET @internal_notes_sql := IF(@has_internal_notes = 0,
-    'ALTER TABLE bundles ADD COLUMN internal_notes TEXT NULL AFTER description', 'SELECT 1');
-PREPARE internal_notes_stmt FROM @internal_notes_sql;
-EXECUTE internal_notes_stmt;
-DEALLOCATE PREPARE internal_notes_stmt;
-
--- Check and add discount_type column
-SET @has_discount_type := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'bundles' AND column_name = 'discount_type'
-);
-SET @discount_type_sql := IF(@has_discount_type = 0,
-    'ALTER TABLE bundles ADD COLUMN discount_type VARCHAR(20) NULL AFTER internal_notes', 'SELECT 1');
-PREPARE discount_type_stmt FROM @discount_type_sql;
-EXECUTE discount_type_stmt;
-DEALLOCATE PREPARE discount_type_stmt;
-
--- Check and add discount_value column
-SET @has_discount_value := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'bundles' AND column_name = 'discount_value'
-);
-SET @discount_value_sql := IF(@has_discount_value = 0,
-    'ALTER TABLE bundles ADD COLUMN discount_value DECIMAL(12,2) NULL AFTER discount_type', 'SELECT 1');
-PREPARE discount_value_stmt FROM @discount_value_sql;
-EXECUTE discount_value_stmt;
-DEALLOCATE PREPARE discount_value_stmt;
-
-
--- ==================================================
--- Migration: 038_add_customer_vehicle_active_flag.sql
--- ==================================================
-
--- Check and add is_active column
-SET @has_is_active := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'customer_vehicles' AND column_name = 'is_active'
-);
-SET @is_active_sql := IF(@has_is_active = 0,
-    'ALTER TABLE customer_vehicles ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER notes', 'SELECT 1');
-PREPARE is_active_stmt FROM @is_active_sql;
-EXECUTE is_active_stmt;
-DEALLOCATE PREPARE is_active_stmt;
-
-
--- ==================================================
--- Migration: 039_add_bundle_discount_columns.sql
--- ==================================================
-
-SET @has_internal_notes := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'bundles'
-      AND column_name = 'internal_notes'
-);
-
-SET @internal_notes_sql := IF(
-    @has_internal_notes = 0,
-    'ALTER TABLE bundles ADD COLUMN internal_notes TEXT NULL AFTER description',
-    'SELECT 1'
-);
-
-PREPARE internal_notes_stmt FROM @internal_notes_sql;
-EXECUTE internal_notes_stmt;
-DEALLOCATE PREPARE internal_notes_stmt;
-
-SET @has_discount_type := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'bundles'
-      AND column_name = 'discount_type'
-);
-
-SET @discount_type_sql := IF(
-    @has_discount_type = 0,
-    'ALTER TABLE bundles ADD COLUMN discount_type VARCHAR(20) NULL AFTER internal_notes',
-    'SELECT 1'
-);
-
-PREPARE discount_type_stmt FROM @discount_type_sql;
-EXECUTE discount_type_stmt;
-DEALLOCATE PREPARE discount_type_stmt;
-
-SET @has_discount_value := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'bundles'
-      AND column_name = 'discount_value'
-);
-
-SET @discount_value_sql := IF(
-    @has_discount_value = 0,
-    'ALTER TABLE bundles ADD COLUMN discount_value DECIMAL(12,2) NULL AFTER discount_type',
-    'SELECT 1'
-);
-
-PREPARE discount_value_stmt FROM @discount_value_sql;
-EXECUTE discount_value_stmt;
-DEALLOCATE PREPARE discount_value_stmt;
-
-
--- ==================================================
--- Migration: 040_add_estimate_rejection_and_item_status.sql
--- ==================================================
-
-SET @has_rejection_reason := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'estimates'
-      AND column_name = 'rejection_reason'
-);
-
-SET @rejection_reason_sql := IF(
-    @has_rejection_reason = 0,
-    'ALTER TABLE estimates ADD COLUMN rejection_reason TEXT NULL AFTER customer_notes',
-    'SELECT 1'
-);
-
-PREPARE rejection_reason_stmt FROM @rejection_reason_sql;
-EXECUTE rejection_reason_stmt;
-DEALLOCATE PREPARE rejection_reason_stmt;
-
-SET @has_parent_id := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'estimates'
-      AND column_name = 'parent_id'
-);
-
-SET @parent_id_sql := IF(
-    @has_parent_id = 0,
-    'ALTER TABLE estimates ADD COLUMN parent_id INT UNSIGNED NULL AFTER id',
-    'SELECT 1'
-);
-
-PREPARE parent_id_stmt FROM @parent_id_sql;
-EXECUTE parent_id_stmt;
-DEALLOCATE PREPARE parent_id_stmt;
-
-SET @has_parent_index := (
-    SELECT COUNT(*)
-    FROM information_schema.statistics
-    WHERE table_schema = DATABASE()
-      AND table_name = 'estimates'
-      AND index_name = 'idx_estimates_parent_id'
-);
-
-SET @parent_index_sql := IF(
-    @has_parent_index = 0,
-    'CREATE INDEX idx_estimates_parent_id ON estimates (parent_id)',
-    'SELECT 1'
-);
-
-PREPARE parent_index_stmt FROM @parent_index_sql;
-EXECUTE parent_index_stmt;
-DEALLOCATE PREPARE parent_index_stmt;
-
-SET @has_item_status := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'estimate_items'
-      AND column_name = 'status'
-);
-
-SET @item_status_sql := IF(
-    @has_item_status = 0,
-    'ALTER TABLE estimate_items ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT ''pending'' AFTER line_total',
-    'SELECT 1'
-);
-
-PREPARE item_status_stmt FROM @item_status_sql;
-EXECUTE item_status_stmt;
-DEALLOCATE PREPARE item_status_stmt;
-
-
 -- ==================================================
 -- Migration: 040_financial_categories.sql
 -- ==================================================
@@ -1816,43 +1172,6 @@ CREATE TABLE IF NOT EXISTS financial_categories (
     INDEX idx_financial_categories_type (type),
     INDEX idx_financial_categories_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 041_add_list_price_fields.sql
--- ==================================================
-
--- Add list_price to estimate_items
-ALTER TABLE estimate_items ADD COLUMN list_price DECIMAL(12,2) DEFAULT 0 AFTER unit_price;
-
--- Add list_price to invoice_items
-ALTER TABLE invoice_items ADD COLUMN list_price DECIMAL(12,2) DEFAULT 0 AFTER unit_price;
-
--- Add list_price to bundle_items
-ALTER TABLE bundle_items ADD COLUMN list_price DECIMAL(12,2) DEFAULT 0 AFTER unit_price;
-
--- Add list_price to inventory_items
-ALTER TABLE inventory_items ADD COLUMN list_price DECIMAL(12,2) DEFAULT 0 AFTER sale_price;
-
-
--- ==================================================
--- Migration: 042_add_shop_and_hazmat_fees.sql
--- ==================================================
-
--- Add shop fee and hazardous disposal fee to estimates
-ALTER TABLE estimates
-    ADD COLUMN shop_fee DECIMAL(12,2) DEFAULT 0 AFTER discounts,
-    ADD COLUMN hazmat_disposal_fee DECIMAL(12,2) DEFAULT 0 AFTER shop_fee;
-
--- Add shop fee and hazardous disposal fee to invoices
-ALTER TABLE invoices
-    ADD COLUMN shop_fee DECIMAL(12,2) DEFAULT 0 AFTER balance_due,
-    ADD COLUMN hazmat_disposal_fee DECIMAL(12,2) DEFAULT 0 AFTER shop_fee;
-
-
--- ==================================================
--- Migration: 043_create_workorders.sql
--- ==================================================
 
 -- Migration: Create workorders workflow tables
 -- This migration adds the workorder entity to support the estimate -> workorder -> invoice workflow
@@ -1878,6 +1197,8 @@ CREATE TABLE IF NOT EXISTS workorders (
     discounts DECIMAL(12,2) DEFAULT 0,
     shop_fee DECIMAL(12,2) DEFAULT 0,
     hazmat_disposal_fee DECIMAL(12,2) DEFAULT 0,
+    goa_fee DECIMAL(12,2) DEFAULT 0,
+    goa_billing_party VARCHAR(40) NULL,
     grand_total DECIMAL(12,2) DEFAULT 0,
     internal_notes TEXT NULL,
     customer_notes TEXT NULL,
@@ -1929,6 +1250,8 @@ CREATE TABLE IF NOT EXISTS workorder_items (
     workorder_job_id INT UNSIGNED NOT NULL,
     estimate_item_id INT UNSIGNED NULL,
     type VARCHAR(40) NOT NULL,
+    sku VARCHAR(120) NULL,
+    inventory_item_id INT UNSIGNED NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
@@ -1936,8 +1259,13 @@ CREATE TABLE IF NOT EXISTS workorder_items (
     taxable TINYINT(1) DEFAULT 1,
     line_total DECIMAL(12,2) DEFAULT 0,
     position INT NOT NULL DEFAULT 0,
+    core_return_id INT UNSIGNED NULL,
+    core_price DECIMAL(10, 2) NULL,
+    INDEX idx_workorder_item_core (core_return_id),
     INDEX idx_workorder_item_job (workorder_job_id),
     INDEX idx_workorder_item_estimate_item (estimate_item_id),
+    INDEX idx_workorder_item_sku (sku),
+    INDEX idx_workorder_item_inventory (inventory_item_id),
     CONSTRAINT fk_workorder_item_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE,
     CONSTRAINT fk_workorder_item_estimate_item FOREIGN KEY (estimate_item_id) REFERENCES estimate_items (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1950,122 +1278,13 @@ CREATE TABLE IF NOT EXISTS workorder_status_history (
     to_status VARCHAR(40) NOT NULL,
     changed_by INT UNSIGNED NULL,
     notes TEXT NULL,
+    client_event_id VARCHAR(64) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_workorder_status_history_workorder (workorder_id),
+    UNIQUE INDEX idx_workorder_status_event (workorder_id, client_event_id),
     CONSTRAINT fk_workorder_status_history_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE CASCADE,
     CONSTRAINT fk_workorder_status_history_user FOREIGN KEY (changed_by) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Add sub-estimate support to estimates table
-SET @has_parent_estimate_id := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'parent_estimate_id'
-);
-SET @parent_estimate_id_sql := IF(@has_parent_estimate_id = 0,
-    'ALTER TABLE estimates ADD COLUMN parent_estimate_id INT UNSIGNED NULL AFTER parent_id',
-    'SELECT 1');
-PREPARE parent_estimate_id_stmt FROM @parent_estimate_id_sql;
-EXECUTE parent_estimate_id_stmt;
-DEALLOCATE PREPARE parent_estimate_id_stmt;
-
-SET @has_workorder_id := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'workorder_id'
-);
-SET @workorder_id_sql := IF(@has_workorder_id = 0,
-    'ALTER TABLE estimates ADD COLUMN workorder_id INT UNSIGNED NULL AFTER parent_estimate_id',
-    'SELECT 1');
-PREPARE workorder_id_stmt FROM @workorder_id_sql;
-EXECUTE workorder_id_stmt;
-DEALLOCATE PREPARE workorder_id_stmt;
-
-SET @has_estimate_type := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'estimate_type'
-);
-SET @estimate_type_sql := IF(@has_estimate_type = 0,
-    'ALTER TABLE estimates ADD COLUMN estimate_type VARCHAR(20) NOT NULL DEFAULT ''standard'' AFTER status',
-    'SELECT 1');
-PREPARE estimate_type_stmt FROM @estimate_type_sql;
-EXECUTE estimate_type_stmt;
-DEALLOCATE PREPARE estimate_type_stmt;
-
--- Add foreign keys for sub-estimate support (after estimates table is modified)
-SET @has_fk_estimate_parent := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND constraint_name = 'fk_estimate_parent_estimate'
-);
-SET @fk_estimate_parent_sql := IF(@has_fk_estimate_parent = 0,
-    'ALTER TABLE estimates ADD CONSTRAINT fk_estimate_parent_estimate FOREIGN KEY (parent_estimate_id) REFERENCES estimates (id)',
-    'SELECT 1');
-PREPARE fk_estimate_parent_stmt FROM @fk_estimate_parent_sql;
-EXECUTE fk_estimate_parent_stmt;
-DEALLOCATE PREPARE fk_estimate_parent_stmt;
-
-SET @has_fk_estimate_workorder := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND constraint_name = 'fk_estimate_workorder'
-);
-SET @fk_estimate_workorder_sql := IF(@has_fk_estimate_workorder = 0,
-    'ALTER TABLE estimates ADD CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)',
-    'SELECT 1');
-PREPARE fk_estimate_workorder_stmt FROM @fk_estimate_workorder_sql;
-EXECUTE fk_estimate_workorder_stmt;
-DEALLOCATE PREPARE fk_estimate_workorder_stmt;
-
--- Add workorder_id to invoices for linking
-SET @has_invoice_workorder_id := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'workorder_id'
-);
-SET @invoice_workorder_id_sql := IF(@has_invoice_workorder_id = 0,
-    'ALTER TABLE invoices ADD COLUMN workorder_id INT UNSIGNED NULL AFTER estimate_id',
-    'SELECT 1');
-PREPARE invoice_workorder_id_stmt FROM @invoice_workorder_id_sql;
-EXECUTE invoice_workorder_id_stmt;
-DEALLOCATE PREPARE invoice_workorder_id_stmt;
-
-SET @has_fk_invoice_workorder := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND constraint_name = 'fk_invoice_workorder'
-);
-SET @fk_invoice_workorder_sql := IF(@has_fk_invoice_workorder = 0,
-    'ALTER TABLE invoices ADD CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)',
-    'SELECT 1');
-PREPARE fk_invoice_workorder_stmt FROM @fk_invoice_workorder_sql;
-EXECUTE fk_invoice_workorder_stmt;
-DEALLOCATE PREPARE fk_invoice_workorder_stmt;
-
--- Update time_entries to optionally link to workorder_jobs
-SET @has_time_entry_workorder_job_id := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'time_entries' AND column_name = 'workorder_job_id'
-);
-SET @time_entry_workorder_job_id_sql := IF(@has_time_entry_workorder_job_id = 0,
-    'ALTER TABLE time_entries ADD COLUMN workorder_job_id INT UNSIGNED NULL AFTER estimate_job_id',
-    'SELECT 1');
-PREPARE time_entry_workorder_job_id_stmt FROM @time_entry_workorder_job_id_sql;
-EXECUTE time_entry_workorder_job_id_stmt;
-DEALLOCATE PREPARE time_entry_workorder_job_id_stmt;
-
-SET @has_fk_time_entry_workorder_job := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'time_entries' AND constraint_name = 'fk_time_entry_workorder_job'
-);
-SET @fk_time_entry_workorder_job_sql := IF(@has_fk_time_entry_workorder_job = 0,
-    'ALTER TABLE time_entries ADD CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id)',
-    'SELECT 1');
-PREPARE fk_time_entry_workorder_job_stmt FROM @fk_time_entry_workorder_job_sql;
-EXECUTE fk_time_entry_workorder_job_stmt;
-DEALLOCATE PREPARE fk_time_entry_workorder_job_stmt;
-
-
--- ==================================================
--- Migration: 044_add_approval_audit_log.sql
--- ==================================================
-
--- Migration: Enhanced audit trail for e-signing and approval workflow
--- This migration adds comprehensive audit logging for legal compliance
 
 -- Create approval audit log for e-signing compliance
 CREATE TABLE IF NOT EXISTS approval_audit_log (
@@ -2151,41 +1370,6 @@ CREATE TABLE IF NOT EXISTS estimate_job_rejections (
     CONSTRAINT fk_job_rejection_job FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
--- ==================================================
--- Migration: 045_add_sku_and_vehicle_compatibility.sql
--- ==================================================
-
--- Add SKU/Part number fields to estimate_items, invoice_items, and workorder_items
--- Add manufacturer part number to inventory
--- Create inventory vehicle compatibility table
-
--- Add SKU to estimate_items
-ALTER TABLE estimate_items
-ADD COLUMN sku VARCHAR(120) NULL AFTER type,
-ADD COLUMN inventory_item_id INT UNSIGNED NULL AFTER sku,
-ADD INDEX idx_estimate_item_sku (sku),
-ADD INDEX idx_estimate_item_inventory (inventory_item_id);
-
--- Add SKU to invoice_items
-ALTER TABLE invoice_items
-ADD COLUMN sku VARCHAR(120) NULL AFTER type,
-ADD COLUMN inventory_item_id INT UNSIGNED NULL AFTER sku,
-ADD INDEX idx_invoice_item_sku (sku),
-ADD INDEX idx_invoice_item_inventory (inventory_item_id);
-
--- Add SKU to workorder_items
-ALTER TABLE workorder_items
-ADD COLUMN sku VARCHAR(120) NULL AFTER type,
-ADD COLUMN inventory_item_id INT UNSIGNED NULL AFTER sku,
-ADD INDEX idx_workorder_item_sku (sku),
-ADD INDEX idx_workorder_item_inventory (inventory_item_id);
-
--- Add manufacturer part number to inventory_items
-ALTER TABLE inventory_items
-ADD COLUMN manufacturer_part_number VARCHAR(120) NULL AFTER sku,
-ADD INDEX idx_inventory_manufacturer_pn (manufacturer_part_number);
-
 -- Create inventory vehicle compatibility table
 CREATE TABLE IF NOT EXISTS inventory_vehicle_compatibility (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -2202,101 +1386,6 @@ CREATE TABLE IF NOT EXISTS inventory_vehicle_compatibility (
     CONSTRAINT fk_ivc_vehicle FOREIGN KEY (vehicle_master_id)
         REFERENCES vehicle_master (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 046_add_estimate_job_display_order.sql
--- ==================================================
-
--- Add display_order column to estimate_jobs table
--- This column is used to maintain the order of jobs within an estimate
-
--- Check and add display_order column
-SET @has_display_order := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'estimate_jobs' AND column_name = 'display_order'
-);
-
-SET @display_order_sql := IF(@has_display_order = 0,
-    'ALTER TABLE estimate_jobs ADD COLUMN display_order INT NOT NULL DEFAULT 0 AFTER total', 'SELECT 1');
-
-PREPARE display_order_stmt FROM @display_order_sql;
-EXECUTE display_order_stmt;
-DEALLOCATE PREPARE display_order_stmt;
-
--- Add index for efficient ordering queries
-SET @has_display_order_idx := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'estimate_jobs' AND index_name = 'idx_estimate_jobs_display_order'
-);
-
-SET @display_order_idx_sql := IF(@has_display_order_idx = 0,
-    'CREATE INDEX idx_estimate_jobs_display_order ON estimate_jobs(estimate_id, display_order)', 'SELECT 1');
-
-PREPARE display_order_idx_stmt FROM @display_order_idx_sql;
-EXECUTE display_order_idx_stmt;
-DEALLOCATE PREPARE display_order_idx_stmt;
-
-
--- ==================================================
--- Migration: 047_make_service_type_id_nullable.sql
--- ==================================================
-
--- Make service_type_id nullable in estimate_jobs
--- Service type is optional when creating jobs, so the column should allow NULL values
-
--- First, check if we need to drop the foreign key constraint
-SET @constraint_name := (
-    SELECT CONSTRAINT_NAME
-    FROM information_schema.KEY_COLUMN_USAGE
-    WHERE table_schema = DATABASE()
-      AND table_name = 'estimate_jobs'
-      AND column_name = 'service_type_id'
-      AND CONSTRAINT_NAME != 'PRIMARY'
-      AND REFERENCED_TABLE_NAME IS NOT NULL
-    LIMIT 1
-);
-
-SET @drop_fk_sql := IF(@constraint_name IS NOT NULL,
-    CONCAT('ALTER TABLE estimate_jobs DROP FOREIGN KEY ', @constraint_name),
-    'SELECT 1');
-
-PREPARE drop_fk_stmt FROM @drop_fk_sql;
-EXECUTE drop_fk_stmt;
-DEALLOCATE PREPARE drop_fk_stmt;
-
--- Modify the column to be nullable
-ALTER TABLE estimate_jobs
-    MODIFY COLUMN service_type_id INT UNSIGNED NULL;
-
--- Re-add the foreign key constraint if it existed
-SET @add_fk_sql := IF(@constraint_name IS NOT NULL,
-    'ALTER TABLE estimate_jobs ADD CONSTRAINT fk_estimate_jobs_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)',
-    'SELECT 1');
-
-PREPARE add_fk_stmt FROM @add_fk_sql;
-EXECUTE add_fk_stmt;
-DEALLOCATE PREPARE add_fk_stmt;
-
--- Drop the old index if it exists (we'll recreate it)
-SET @has_service_type_idx := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE()
-      AND table_name = 'estimate_jobs'
-      AND index_name = 'idx_estimate_jobs_service_type'
-);
-
-SET @drop_idx_sql := IF(@has_service_type_idx > 0,
-    'DROP INDEX idx_estimate_jobs_service_type ON estimate_jobs',
-    'SELECT 1');
-
-PREPARE drop_idx_stmt FROM @drop_idx_sql;
-EXECUTE drop_idx_stmt;
-DEALLOCATE PREPARE drop_idx_stmt;
-
--- Create index for service_type_id (allows NULL values)
-CREATE INDEX idx_estimate_jobs_service_type ON estimate_jobs(service_type_id);
-
 
 -- ==================================================
 -- Migration: 048_estimate_public_sharing.sql
@@ -2344,18 +1433,6 @@ CREATE TABLE IF NOT EXISTS estimate_job_feedback (
     CONSTRAINT fk_estimate_job_feedback_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
     CONSTRAINT fk_estimate_job_feedback_job FOREIGN KEY (job_id) REFERENCES estimate_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 049_inventory_catalog_and_pull_requests.sql
--- ==================================================
-
--- Migration: 049_inventory_catalog_and_pull_requests.sql
--- Description: Add catalog/non-tracked items support and pull request system for workorders
-
--- Add is_tracked field to inventory_items to support catalog-only items
-ALTER TABLE inventory_items
-ADD COLUMN is_tracked TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether stock quantity is tracked (0 = catalog only)';
 
 -- Create inventory pull requests table for workorder parts management
 CREATE TABLE IF NOT EXISTS inventory_pull_requests (
@@ -2412,20 +1489,6 @@ CREATE TABLE IF NOT EXISTS inventory_pull_requests (
 -- Add index on is_tracked for filtering catalog vs tracked items
 CREATE INDEX idx_inventory_is_tracked ON inventory_items(is_tracked);
 
-
--- ==================================================
--- Migration: 050_add_inventory_description.sql
--- ==================================================
-
--- Add description column to inventory_items
-ALTER TABLE inventory_items
-    ADD COLUMN description TEXT NULL AFTER name;
-
-
--- ==================================================
--- Migration: 051_messaging_tables.sql
--- ==================================================
-
 -- Create messaging tables for staff conversations
 CREATE TABLE IF NOT EXISTS message_threads (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -2433,7 +1496,8 @@ CREATE TABLE IF NOT EXISTS message_threads (
     created_by INT UNSIGNED NOT NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT NULL,
-    INDEX idx_message_threads_created_at (created_at)
+    INDEX idx_message_threads_created_at (created_at),
+    CONSTRAINT fk_message_threads_created_by FOREIGN KEY (created_by) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS message_participants (
@@ -2443,7 +1507,9 @@ CREATE TABLE IF NOT EXISTS message_participants (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_message_participant (thread_id, participant_id),
     INDEX idx_message_participants_thread (thread_id),
-    INDEX idx_message_participants_participant (participant_id)
+    INDEX idx_message_participants_participant (participant_id),
+    CONSTRAINT fk_message_participants_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE,
+    CONSTRAINT fk_message_participants_user FOREIGN KEY (participant_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS message_messages (
@@ -2453,7 +1519,9 @@ CREATE TABLE IF NOT EXISTS message_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_message_messages_thread (thread_id),
-    INDEX idx_message_messages_created_at (created_at)
+    INDEX idx_message_messages_created_at (created_at),
+    CONSTRAINT fk_message_messages_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE,
+    CONSTRAINT fk_message_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS message_reads (
@@ -2467,189 +1535,11 @@ CREATE TABLE IF NOT EXISTS message_reads (
     UNIQUE KEY uniq_message_reads (thread_id, participant_id),
     INDEX idx_message_reads_thread (thread_id),
     INDEX idx_message_reads_participant (participant_id),
-    INDEX idx_message_reads_created_at (created_at)
+    INDEX idx_message_reads_created_at (created_at),
+    CONSTRAINT fk_message_reads_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE,
+    CONSTRAINT fk_message_reads_participant FOREIGN KEY (participant_id) REFERENCES users (id),
+    CONSTRAINT fk_message_reads_message FOREIGN KEY (last_read_message_id) REFERENCES message_messages (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET @has_fk_message_threads_created := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_threads' AND constraint_name = 'fk_message_threads_created_by'
-);
-SET @has_message_threads_created_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_threads'
-      AND c.column_name = 'created_by'
-);
-SET @fk_message_threads_created_sql := IF(@has_fk_message_threads_created = 0 AND @has_message_threads_created_match = 1,
-    'ALTER TABLE message_threads ADD CONSTRAINT fk_message_threads_created_by FOREIGN KEY (created_by) REFERENCES users (id)',
-    'SELECT 1');
-PREPARE fk_message_threads_created_stmt FROM @fk_message_threads_created_sql;
-EXECUTE fk_message_threads_created_stmt;
-DEALLOCATE PREPARE fk_message_threads_created_stmt;
-
-SET @has_fk_message_participants_thread := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_participants' AND constraint_name = 'fk_message_participants_thread'
-);
-SET @has_message_participants_thread_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'message_threads'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_participants'
-      AND c.column_name = 'thread_id'
-);
-SET @fk_message_participants_thread_sql := IF(@has_fk_message_participants_thread = 0 AND @has_message_participants_thread_match = 1,
-    'ALTER TABLE message_participants ADD CONSTRAINT fk_message_participants_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_message_participants_thread_stmt FROM @fk_message_participants_thread_sql;
-EXECUTE fk_message_participants_thread_stmt;
-DEALLOCATE PREPARE fk_message_participants_thread_stmt;
-
-SET @has_fk_message_participants_user := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_participants' AND constraint_name = 'fk_message_participants_user'
-);
-SET @has_message_participants_user_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_participants'
-      AND c.column_name = 'participant_id'
-);
-SET @fk_message_participants_user_sql := IF(@has_fk_message_participants_user = 0 AND @has_message_participants_user_match = 1,
-    'ALTER TABLE message_participants ADD CONSTRAINT fk_message_participants_user FOREIGN KEY (participant_id) REFERENCES users (id)',
-    'SELECT 1');
-PREPARE fk_message_participants_user_stmt FROM @fk_message_participants_user_sql;
-EXECUTE fk_message_participants_user_stmt;
-DEALLOCATE PREPARE fk_message_participants_user_stmt;
-
-SET @has_fk_message_messages_thread := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_messages' AND constraint_name = 'fk_message_messages_thread'
-);
-SET @has_message_messages_thread_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'message_threads'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_messages'
-      AND c.column_name = 'thread_id'
-);
-SET @fk_message_messages_thread_sql := IF(@has_fk_message_messages_thread = 0 AND @has_message_messages_thread_match = 1,
-    'ALTER TABLE message_messages ADD CONSTRAINT fk_message_messages_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_message_messages_thread_stmt FROM @fk_message_messages_thread_sql;
-EXECUTE fk_message_messages_thread_stmt;
-DEALLOCATE PREPARE fk_message_messages_thread_stmt;
-
-SET @has_fk_message_messages_sender := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_messages' AND constraint_name = 'fk_message_messages_sender'
-);
-SET @has_message_messages_sender_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_messages'
-      AND c.column_name = 'sender_id'
-);
-SET @fk_message_messages_sender_sql := IF(@has_fk_message_messages_sender = 0 AND @has_message_messages_sender_match = 1,
-    'ALTER TABLE message_messages ADD CONSTRAINT fk_message_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id)',
-    'SELECT 1');
-PREPARE fk_message_messages_sender_stmt FROM @fk_message_messages_sender_sql;
-EXECUTE fk_message_messages_sender_stmt;
-DEALLOCATE PREPARE fk_message_messages_sender_stmt;
-
-SET @has_fk_message_reads_thread := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_reads' AND constraint_name = 'fk_message_reads_thread'
-);
-SET @has_message_reads_thread_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'message_threads'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_reads'
-      AND c.column_name = 'thread_id'
-);
-SET @fk_message_reads_thread_sql := IF(@has_fk_message_reads_thread = 0 AND @has_message_reads_thread_match = 1,
-    'ALTER TABLE message_reads ADD CONSTRAINT fk_message_reads_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_message_reads_thread_stmt FROM @fk_message_reads_thread_sql;
-EXECUTE fk_message_reads_thread_stmt;
-DEALLOCATE PREPARE fk_message_reads_thread_stmt;
-
-SET @has_fk_message_reads_participant := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_reads' AND constraint_name = 'fk_message_reads_participant'
-);
-SET @has_message_reads_participant_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_reads'
-      AND c.column_name = 'participant_id'
-);
-SET @fk_message_reads_participant_sql := IF(@has_fk_message_reads_participant = 0 AND @has_message_reads_participant_match = 1,
-    'ALTER TABLE message_reads ADD CONSTRAINT fk_message_reads_participant FOREIGN KEY (participant_id) REFERENCES users (id)',
-    'SELECT 1');
-PREPARE fk_message_reads_participant_stmt FROM @fk_message_reads_participant_sql;
-EXECUTE fk_message_reads_participant_stmt;
-DEALLOCATE PREPARE fk_message_reads_participant_stmt;
-
-SET @has_fk_message_reads_message := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_reads' AND constraint_name = 'fk_message_reads_message'
-);
-SET @has_message_reads_message_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'message_messages'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_reads'
-      AND c.column_name = 'last_read_message_id'
-);
-SET @fk_message_reads_message_sql := IF(@has_fk_message_reads_message = 0 AND @has_message_reads_message_match = 1,
-    'ALTER TABLE message_reads ADD CONSTRAINT fk_message_reads_message FOREIGN KEY (last_read_message_id) REFERENCES message_messages (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_message_reads_message_stmt FROM @fk_message_reads_message_sql;
-EXECUTE fk_message_reads_message_stmt;
-DEALLOCATE PREPARE fk_message_reads_message_stmt;
-
-
--- ==================================================
--- Migration: 052_message_notification_threads.sql
--- ==================================================
 
 -- Track message threads tied to system notification scopes
 CREATE TABLE IF NOT EXISTS message_notification_threads (
@@ -2661,11 +1551,6 @@ CREATE TABLE IF NOT EXISTS message_notification_threads (
     UNIQUE KEY uniq_message_notification_scope (scope_type, scope_id),
     CONSTRAINT fk_message_notification_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 053_partner_integrations.sql
--- ==================================================
 
 -- Partner integrations tables for inbound dispatch requests
 
@@ -2685,6 +1570,13 @@ CREATE TABLE IF NOT EXISTS partner_dispatch_requests (
     partner_account_id INT UNSIGNED NOT NULL,
     external_reference VARCHAR(120) NULL,
     dispatch_reference VARCHAR(120) NULL,
+    protocol VARCHAR(40) NULL,
+    accepted_at TIMESTAMP NULL,
+    accepted_by INT UNSIGNED NULL,
+    last_partner_status VARCHAR(60) NULL,
+    last_synced_at TIMESTAMP NULL,
+    sync_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    sync_error TEXT NULL,
     source VARCHAR(40) NOT NULL,
     status VARCHAR(40) NOT NULL DEFAULT 'received',
     payload JSON NULL,
@@ -2694,7 +1586,9 @@ CREATE TABLE IF NOT EXISTS partner_dispatch_requests (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_partner_dispatch_partner (partner_account_id),
     INDEX idx_partner_dispatch_status (status),
-    INDEX idx_partner_dispatch_created (created_at)
+    INDEX idx_partner_dispatch_created (created_at),
+     CONSTRAINT fk_partner_dispatch_partner FOREIGN KEY (partner_account_id) REFERENCES partner_accounts (id),
+    CONSTRAINT fk_partner_dispatch_accepted_by FOREIGN KEY (accepted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS partner_request_attachments (
@@ -2705,57 +1599,9 @@ CREATE TABLE IF NOT EXISTS partner_request_attachments (
     file_size INT UNSIGNED NULL,
     content LONGBLOB NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_partner_attachment_request (partner_dispatch_request_id)
+    INDEX idx_partner_attachment_request (partner_dispatch_request_id),
+    CONSTRAINT fk_partner_attachment_request FOREIGN KEY (partner_dispatch_request_id) REFERENCES partner_dispatch_requests (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET @has_fk_partner_dispatch_partner := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND constraint_name = 'fk_partner_dispatch_partner'
-);
-SET @has_partner_dispatch_partner_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'partner_accounts'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'partner_dispatch_requests'
-      AND c.column_name = 'partner_account_id'
-);
-SET @fk_partner_dispatch_partner_sql := IF(@has_fk_partner_dispatch_partner = 0 AND @has_partner_dispatch_partner_match = 1,
-    'ALTER TABLE partner_dispatch_requests ADD CONSTRAINT fk_partner_dispatch_partner FOREIGN KEY (partner_account_id) REFERENCES partner_accounts (id)',
-    'SELECT 1');
-PREPARE fk_partner_dispatch_partner_stmt FROM @fk_partner_dispatch_partner_sql;
-EXECUTE fk_partner_dispatch_partner_stmt;
-DEALLOCATE PREPARE fk_partner_dispatch_partner_stmt;
-
-SET @has_fk_partner_attachment_request := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'partner_request_attachments' AND constraint_name = 'fk_partner_attachment_request'
-);
-SET @has_partner_attachment_request_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'partner_dispatch_requests'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'partner_request_attachments'
-      AND c.column_name = 'partner_dispatch_request_id'
-);
-SET @fk_partner_attachment_request_sql := IF(@has_fk_partner_attachment_request = 0 AND @has_partner_attachment_request_match = 1,
-    'ALTER TABLE partner_request_attachments ADD CONSTRAINT fk_partner_attachment_request FOREIGN KEY (partner_dispatch_request_id) REFERENCES partner_dispatch_requests (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_partner_attachment_request_stmt FROM @fk_partner_attachment_request_sql;
-EXECUTE fk_partner_attachment_request_stmt;
-DEALLOCATE PREPARE fk_partner_attachment_request_stmt;
-
-
--- ==================================================
--- Migration: 054_dispatch_schema.sql
--- ==================================================
 
 -- Dispatch schema tables for driver profiles, equipment, shifts, and requirements
 
@@ -2769,7 +1615,8 @@ CREATE TABLE IF NOT EXISTS driver_profiles (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_driver_profiles_user (user_id),
-    INDEX idx_driver_profiles_availability (availability_status)
+    INDEX idx_driver_profiles_availability (availability_status),
+ CONSTRAINT fk_driver_profiles_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS truck_equipment (
@@ -2780,7 +1627,8 @@ CREATE TABLE IF NOT EXISTS truck_equipment (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_truck_equipment_driver (driver_profile_id),
-    INDEX idx_truck_equipment_class (equipment_class)
+    INDEX idx_truck_equipment_class (equipment_class),
+    CONSTRAINT fk_truck_equipment_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS driver_shifts (
@@ -2792,83 +1640,26 @@ CREATE TABLE IF NOT EXISTS driver_shifts (
     status VARCHAR(40) NOT NULL DEFAULT 'scheduled',
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    pre_trip_checklist_id INT UNSIGNED NULL,
+    post_trip_checklist_id INT UNSIGNED NULL,
     INDEX idx_driver_shifts_driver (driver_profile_id),
     INDEX idx_driver_shifts_window (shift_start, shift_end)
+    INDEX idx_driver_shifts_pre_trip (pre_trip_checklist_id),
+    INDEX idx_driver_shifts_post_trip (post_trip_checklist_id),
+    CONSTRAINT fk_driver_shifts_pre_trip FOREIGN KEY (pre_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL,
+    CONSTRAINT fk_driver_shifts_post_trip FOREIGN KEY (post_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL,
+    CONSTRAINT fk_driver_shifts_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET @has_fk_driver_profiles_user := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_profiles' AND constraint_name = 'fk_driver_profiles_user'
-);
-SET @has_driver_profiles_user_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'driver_profiles'
-      AND c.column_name = 'user_id'
-);
-SET @fk_driver_profiles_user_sql := IF(@has_fk_driver_profiles_user = 0 AND @has_driver_profiles_user_match = 1,
-    'ALTER TABLE driver_profiles ADD CONSTRAINT fk_driver_profiles_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_profiles_user_stmt FROM @fk_driver_profiles_user_sql;
-EXECUTE fk_driver_profiles_user_stmt;
-DEALLOCATE PREPARE fk_driver_profiles_user_stmt;
-
-SET @has_fk_truck_equipment_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'truck_equipment' AND constraint_name = 'fk_truck_equipment_driver'
-);
-SET @has_truck_equipment_driver_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'driver_profiles'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'truck_equipment'
-      AND c.column_name = 'driver_profile_id'
-);
-SET @fk_truck_equipment_driver_sql := IF(@has_fk_truck_equipment_driver = 0 AND @has_truck_equipment_driver_match = 1,
-    'ALTER TABLE truck_equipment ADD CONSTRAINT fk_truck_equipment_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_truck_equipment_driver_stmt FROM @fk_truck_equipment_driver_sql;
-EXECUTE fk_truck_equipment_driver_stmt;
-DEALLOCATE PREPARE fk_truck_equipment_driver_stmt;
-
-SET @has_fk_driver_shifts_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_shifts' AND constraint_name = 'fk_driver_shifts_driver'
-);
-SET @has_driver_shifts_driver_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'driver_profiles'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'driver_shifts'
-      AND c.column_name = 'driver_profile_id'
-);
-SET @fk_driver_shifts_driver_sql := IF(@has_fk_driver_shifts_driver = 0 AND @has_driver_shifts_driver_match = 1,
-    'ALTER TABLE driver_shifts ADD CONSTRAINT fk_driver_shifts_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_shifts_driver_stmt FROM @fk_driver_shifts_driver_sql;
-EXECUTE fk_driver_shifts_driver_stmt;
-DEALLOCATE PREPARE fk_driver_shifts_driver_stmt;
 
 CREATE TABLE IF NOT EXISTS dispatch_requirements (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     dispatch_reference VARCHAR(120) NULL,
+    job_category VARCHAR(60) NULL,
     scheduled_start DATETIME NULL,
     estimated_duration_hours DECIMAL(6,2) NULL,
     required_capacity DECIMAL(10,2) NULL,
     required_equipment_class VARCHAR(60) NULL,
+    equipment_requirements JSON NULL,
     required_certifications JSON NULL,
     pickup_latitude DECIMAL(10,6) NULL,
     pickup_longitude DECIMAL(10,6) NULL,
@@ -2880,17 +1671,23 @@ CREATE TABLE IF NOT EXISTS dispatch_requirements (
     INDEX idx_dispatch_requirements_schedule (scheduled_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
--- ==================================================
--- Migration: 055_impound_storage_tables.sql
--- ==================================================
-
 -- Impound storage tables for cases, rates, fees, and lien notices
 
 CREATE TABLE IF NOT EXISTS impound_cases (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     case_number VARCHAR(60) NOT NULL,
     customer_id INT UNSIGNED NULL,
+    vin VARCHAR(30) NULL,
+    vehicle_year INT NULL, 
+     vehicle_make VARCHAR(80) NULL,
+     vehicle_model VARCHAR(80) NULL,,
+     vehicle_trim VARCHAR(80) NULL,
+     vehicle_weight_class VARCHAR(80) NULL,
+     vin_decoded JSON NULL,
+     vin_decoded_at DATETIME NULL,
+     vin_overrides JSON NULL,
+     impound_cases ADD COLUMN auction_status VARCHAR(40) NOT NULL DEFAULT 'in_storage',
+     auction_status_updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     customer_vehicle_id INT UNSIGNED NULL,
     state_code CHAR(2) NOT NULL,
     impound_date DATETIME NOT NULL,
@@ -2910,7 +1707,9 @@ CREATE TABLE IF NOT EXISTS impound_cases (
     UNIQUE KEY uniq_impound_cases_case_number (case_number),
     INDEX idx_impound_cases_status (status),
     INDEX idx_impound_cases_state (state_code),
-    INDEX idx_impound_cases_vehicle (customer_vehicle_id)
+    INDEX idx_impound_cases_vehicle (customer_vehicle_id),
+    CONSTRAINT fk_impound_cases_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL,
+    CONSTRAINT fk_impound_cases_vehicle FOREIGN KEY (customer_vehicle_id) REFERENCES customer_vehicles (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS storage_rates (
@@ -2928,7 +1727,8 @@ CREATE TABLE IF NOT EXISTS storage_rates (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_storage_rates_state (state_code),
-    INDEX idx_storage_rates_status (status)
+    INDEX idx_storage_rates_status (status),
+    CONSTRAINT fk_storage_fees_case FOREIGN KEY (impound_case_id) REFERENCES impound_cases (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS storage_fees (
@@ -2961,101 +1761,9 @@ CREATE TABLE IF NOT EXISTS lien_notices (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_lien_notices_case (impound_case_id),
-    INDEX idx_lien_notices_status (status)
+    INDEX idx_lien_notices_status (status),
+    CONSTRAINT fk_lien_notices_case FOREIGN KEY (impound_case_id) REFERENCES impound_cases (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET @has_fk_impound_cases_customer := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'impound_cases' AND constraint_name = 'fk_impound_cases_customer'
-);
-SET @has_impound_cases_customer_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'customers'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'impound_cases'
-      AND c.column_name = 'customer_id'
-);
-SET @fk_impound_cases_customer_sql := IF(@has_fk_impound_cases_customer = 0 AND @has_impound_cases_customer_match = 1,
-    'ALTER TABLE impound_cases ADD CONSTRAINT fk_impound_cases_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_impound_cases_customer_stmt FROM @fk_impound_cases_customer_sql;
-EXECUTE fk_impound_cases_customer_stmt;
-DEALLOCATE PREPARE fk_impound_cases_customer_stmt;
-
-SET @has_fk_impound_cases_vehicle := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'impound_cases' AND constraint_name = 'fk_impound_cases_vehicle'
-);
-SET @has_impound_cases_vehicle_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'customer_vehicles'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'impound_cases'
-      AND c.column_name = 'customer_vehicle_id'
-);
-SET @fk_impound_cases_vehicle_sql := IF(@has_fk_impound_cases_vehicle = 0 AND @has_impound_cases_vehicle_match = 1,
-    'ALTER TABLE impound_cases ADD CONSTRAINT fk_impound_cases_vehicle FOREIGN KEY (customer_vehicle_id) REFERENCES customer_vehicles (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_impound_cases_vehicle_stmt FROM @fk_impound_cases_vehicle_sql;
-EXECUTE fk_impound_cases_vehicle_stmt;
-DEALLOCATE PREPARE fk_impound_cases_vehicle_stmt;
-
-SET @has_fk_storage_fees_case := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'storage_fees' AND constraint_name = 'fk_storage_fees_case'
-);
-SET @has_storage_fees_case_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'impound_cases'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'storage_fees'
-      AND c.column_name = 'impound_case_id'
-);
-SET @fk_storage_fees_case_sql := IF(@has_fk_storage_fees_case = 0 AND @has_storage_fees_case_match = 1,
-    'ALTER TABLE storage_fees ADD CONSTRAINT fk_storage_fees_case FOREIGN KEY (impound_case_id) REFERENCES impound_cases (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_storage_fees_case_stmt FROM @fk_storage_fees_case_sql;
-EXECUTE fk_storage_fees_case_stmt;
-DEALLOCATE PREPARE fk_storage_fees_case_stmt;
-
-SET @has_fk_lien_notices_case := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'lien_notices' AND constraint_name = 'fk_lien_notices_case'
-);
-SET @has_lien_notices_case_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'impound_cases'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'lien_notices'
-      AND c.column_name = 'impound_case_id'
-);
-SET @fk_lien_notices_case_sql := IF(@has_fk_lien_notices_case = 0 AND @has_lien_notices_case_match = 1,
-    'ALTER TABLE lien_notices ADD CONSTRAINT fk_lien_notices_case FOREIGN KEY (impound_case_id) REFERENCES impound_cases (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_lien_notices_case_stmt FROM @fk_lien_notices_case_sql;
-EXECUTE fk_lien_notices_case_stmt;
-DEALLOCATE PREPARE fk_lien_notices_case_stmt;
-
-
--- ==================================================
--- Migration: 055_job_evidence_and_signatures.sql
--- ==================================================
 
 -- Migration: Job evidence checkpoints, damage reports, and signatures
 
@@ -3106,7 +1814,6 @@ CREATE TABLE IF NOT EXISTS job_signatures (
     CONSTRAINT fk_job_signature_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
 -- ==================================================
 -- Migration: 055_job_tracking_links.sql
 -- ==================================================
@@ -3126,24 +1833,6 @@ CREATE TABLE IF NOT EXISTS job_tracking_links (
     INDEX idx_job_tracking_links_expires (expires_at),
     CONSTRAINT fk_job_tracking_links_job FOREIGN KEY (job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 055_offline_queue_idempotency.sql
--- ==================================================
-
-ALTER TABLE inspection_report_media
-    ADD COLUMN client_token VARCHAR(64) NULL AFTER uploaded_by,
-    ADD UNIQUE INDEX idx_inspection_media_client_token (report_id, client_token);
-
-ALTER TABLE workorder_status_history
-    ADD COLUMN client_event_id VARCHAR(64) NULL AFTER notes,
-    ADD UNIQUE INDEX idx_workorder_status_event (workorder_id, client_event_id);
-
-
--- ==================================================
--- Migration: 055_payments_messaging_dispatch.sql
--- ==================================================
 
 -- Add payment transactions, masked SMS sessions, driver push tokens, and job offers
 
@@ -3174,7 +1863,8 @@ CREATE TABLE IF NOT EXISTS driver_push_tokens (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_driver_push_tokens (driver_profile_id, token),
-    INDEX idx_driver_push_tokens_driver (driver_profile_id)
+    INDEX idx_driver_push_tokens_driver (driver_profile_id),
+    CONSTRAINT fk_driver_push_tokens_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS driver_job_offers (
@@ -3184,15 +1874,34 @@ CREATE TABLE IF NOT EXISTS driver_job_offers (
     job_type VARCHAR(40) NOT NULL DEFAULT 'workorder',
     status VARCHAR(40) NOT NULL DEFAULT 'pending',
     offer_payload JSON NULL,
+    dropoff_latitude DECIMAL(10,6) NULL,
+    dropoff_longitude DECIMAL(10,6) NULL,
+    waterfall_sequence_id VARCHAR(120) NULL,
+    waterfall_position INT UNSIGNED NULL,
+    rejection_reason VARCHAR(100) NULL,
+    rejection_notes TEXT NULL,
+    estimated_eta_minutes INT UNSIGNED NULL,
+    estimated_distance_km DECIMAL(10,2) NULL,
+    traffic_factor DECIMAL(4,2) NULL,
+    idempotency_key VARCHAR(120) NULL,
     created_by INT UNSIGNED NULL,
     expires_at DATETIME NULL,
     accepted_at DATETIME NULL,
     declined_at DATETIME NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
     INDEX idx_driver_job_offers_driver (driver_profile_id),
     INDEX idx_driver_job_offers_status (status),
-    INDEX idx_driver_job_offers_reference (job_reference)
+    INDEX idx_driver_job_offers_reference (job_reference),
+    INDEX idx_driver_job_offers_waterfall (waterfall_sequence_id, waterfall_position),
+    INDEX idx_driver_job_offers_expires (expires_at, status),
+    INDEX idx_driver_job_offers_dropoff (driver_profile_id, status, accepted_at),
+
+    UNIQUE KEY uniq_driver_job_offers_idempotency (idempotency_key),
+
+    CONSTRAINT fk_driver_job_offers_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE,
+    CONSTRAINT fk_driver_job_offers_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS masked_sms_sessions (
@@ -3208,7 +1917,10 @@ CREATE TABLE IF NOT EXISTS masked_sms_sessions (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_masked_sms_session (job_reference, job_type, driver_user_id, customer_id),
-    INDEX idx_masked_sms_sessions_masked (masked_number)
+    INDEX idx_masked_sms_sessions_masked (masked_number),
+   CONSTRAINT fk_masked_sms_driver_user FOREIGN KEY (driver_user_id) REFERENCES users (id),
+   CONSTRAINT fk_masked_sms_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
+   CONSTRAINT fk_masked_sms_messages_session FOREIGN KEY (session_id) REFERENCES masked_sms_sessions (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS masked_sms_messages (
@@ -3225,158 +1937,6 @@ CREATE TABLE IF NOT EXISTS masked_sms_messages (
     INDEX idx_masked_sms_messages_direction (direction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-SET @has_fk_driver_push_tokens_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_push_tokens' AND constraint_name = 'fk_driver_push_tokens_driver'
-);
-SET @has_driver_push_tokens_driver_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'driver_profiles'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'driver_push_tokens'
-      AND c.column_name = 'driver_profile_id'
-);
-SET @fk_driver_push_tokens_driver_sql := IF(@has_fk_driver_push_tokens_driver = 0 AND @has_driver_push_tokens_driver_match = 1,
-    'ALTER TABLE driver_push_tokens ADD CONSTRAINT fk_driver_push_tokens_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_push_tokens_driver_stmt FROM @fk_driver_push_tokens_driver_sql;
-EXECUTE fk_driver_push_tokens_driver_stmt;
-DEALLOCATE PREPARE fk_driver_push_tokens_driver_stmt;
-
-SET @has_fk_driver_job_offers_driver := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_job_offers' AND constraint_name = 'fk_driver_job_offers_driver'
-);
-SET @has_driver_job_offers_driver_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'driver_profiles'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'driver_job_offers'
-      AND c.column_name = 'driver_profile_id'
-);
-SET @fk_driver_job_offers_driver_sql := IF(@has_fk_driver_job_offers_driver = 0 AND @has_driver_job_offers_driver_match = 1,
-    'ALTER TABLE driver_job_offers ADD CONSTRAINT fk_driver_job_offers_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_driver_job_offers_driver_stmt FROM @fk_driver_job_offers_driver_sql;
-EXECUTE fk_driver_job_offers_driver_stmt;
-DEALLOCATE PREPARE fk_driver_job_offers_driver_stmt;
-
-SET @has_fk_driver_job_offers_creator := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'driver_job_offers' AND constraint_name = 'fk_driver_job_offers_creator'
-);
-SET @has_driver_job_offers_creator_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'driver_job_offers'
-      AND c.column_name = 'created_by'
-);
-SET @fk_driver_job_offers_creator_sql := IF(@has_fk_driver_job_offers_creator = 0 AND @has_driver_job_offers_creator_match = 1,
-    'ALTER TABLE driver_job_offers ADD CONSTRAINT fk_driver_job_offers_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_driver_job_offers_creator_stmt FROM @fk_driver_job_offers_creator_sql;
-EXECUTE fk_driver_job_offers_creator_stmt;
-DEALLOCATE PREPARE fk_driver_job_offers_creator_stmt;
-
-SET @has_fk_masked_sms_driver_user := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'masked_sms_sessions' AND constraint_name = 'fk_masked_sms_driver_user'
-);
-SET @has_masked_sms_driver_user_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'masked_sms_sessions'
-      AND c.column_name = 'driver_user_id'
-);
-SET @fk_masked_sms_driver_user_sql := IF(@has_fk_masked_sms_driver_user = 0 AND @has_masked_sms_driver_user_match = 1,
-    'ALTER TABLE masked_sms_sessions ADD CONSTRAINT fk_masked_sms_driver_user FOREIGN KEY (driver_user_id) REFERENCES users (id)',
-    'SELECT 1');
-PREPARE fk_masked_sms_driver_user_stmt FROM @fk_masked_sms_driver_user_sql;
-EXECUTE fk_masked_sms_driver_user_stmt;
-DEALLOCATE PREPARE fk_masked_sms_driver_user_stmt;
-
-SET @has_fk_masked_sms_customer := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'masked_sms_sessions' AND constraint_name = 'fk_masked_sms_customer'
-);
-SET @has_masked_sms_customer_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'customers'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'masked_sms_sessions'
-      AND c.column_name = 'customer_id'
-);
-SET @fk_masked_sms_customer_sql := IF(@has_fk_masked_sms_customer = 0 AND @has_masked_sms_customer_match = 1,
-    'ALTER TABLE masked_sms_sessions ADD CONSTRAINT fk_masked_sms_customer FOREIGN KEY (customer_id) REFERENCES customers (id)',
-    'SELECT 1');
-PREPARE fk_masked_sms_customer_stmt FROM @fk_masked_sms_customer_sql;
-EXECUTE fk_masked_sms_customer_stmt;
-DEALLOCATE PREPARE fk_masked_sms_customer_stmt;
-
-SET @has_fk_masked_sms_messages_session := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'masked_sms_messages' AND constraint_name = 'fk_masked_sms_messages_session'
-);
-SET @has_masked_sms_messages_session_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'masked_sms_sessions'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'masked_sms_messages'
-      AND c.column_name = 'session_id'
-);
-SET @fk_masked_sms_messages_session_sql := IF(@has_fk_masked_sms_messages_session = 0 AND @has_masked_sms_messages_session_match = 1,
-    'ALTER TABLE masked_sms_messages ADD CONSTRAINT fk_masked_sms_messages_session FOREIGN KEY (session_id) REFERENCES masked_sms_sessions (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_masked_sms_messages_session_stmt FROM @fk_masked_sms_messages_session_sql;
-EXECUTE fk_masked_sms_messages_session_stmt;
-DEALLOCATE PREPARE fk_masked_sms_messages_session_stmt;
-
-
--- ==================================================
--- Migration: 056_add_parent_id_to_cms_categories.sql
--- ==================================================
-
--- Add optional parent category support for CMS categories
-
-ALTER TABLE cms_categories
-    ADD COLUMN parent_id INT UNSIGNED NULL AFTER slug,
-    ADD INDEX idx_cms_categories_parent_id (parent_id),
-    ADD CONSTRAINT fk_cms_categories_parent
-        FOREIGN KEY (parent_id) REFERENCES cms_categories(id)
-        ON DELETE SET NULL;
-
-
--- ==================================================
--- Migration: 056_inventory_stock_orders.sql
--- ==================================================
-
--- Migration: 056_inventory_stock_orders.sql
 -- Description: Add inventory stock order tracking for replenishment
 
 CREATE TABLE IF NOT EXISTS inventory_stock_orders (
@@ -3399,29 +1959,6 @@ CREATE TABLE IF NOT EXISTS inventory_stock_orders (
     INDEX idx_stock_order_status (status),
     INDEX idx_stock_order_expected_arrival (expected_arrival_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 057_time_entry_stage_times.sql
--- ==================================================
-
-ALTER TABLE time_entries
-    ADD COLUMN en_route_at DATETIME NULL AFTER review_notes,
-    ADD COLUMN on_site_at DATETIME NULL AFTER en_route_at,
-    ADD COLUMN wrap_up_at DATETIME NULL AFTER on_site_at;
-
-ALTER TABLE time_adjustments
-    ADD COLUMN previous_en_route_at DATETIME NULL AFTER previous_ended_at,
-    ADD COLUMN previous_on_site_at DATETIME NULL AFTER previous_en_route_at,
-    ADD COLUMN previous_wrap_up_at DATETIME NULL AFTER previous_on_site_at,
-    ADD COLUMN new_en_route_at DATETIME NULL AFTER new_ended_at,
-    ADD COLUMN new_on_site_at DATETIME NULL AFTER new_en_route_at,
-    ADD COLUMN new_wrap_up_at DATETIME NULL AFTER new_on_site_at;
-
-
--- ==================================================
--- Migration: 058_towing_pricing_matrix.sql
--- ==================================================
 
 -- Towing Pricing Matrix Tables
 -- Provides configurable pricing for roadside assistance and towing services
@@ -3475,58 +2012,12 @@ CREATE TABLE IF NOT EXISTS towing_price_matrix (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_towing_price_matrix (service_class_id, service_type_id),
-    CONSTRAINT fk_towing_price_matrix_class FOREIGN KEY (service_class_id)
-        REFERENCES towing_service_classes (id) ON DELETE CASCADE,
-    CONSTRAINT fk_towing_price_matrix_type FOREIGN KEY (service_type_id)
-        REFERENCES towing_service_types (id) ON DELETE CASCADE
+    CONSTRAINT fk_towing_price_matrix_class FOREIGN KEY (service_class_id) REFERENCES towing_service_classes (id) ON DELETE CASCADE,
+    CONSTRAINT fk_towing_price_matrix_type FOREIGN KEY (service_type_id) REFERENCES towing_service_types (id) ON DELETE CASCADE
+    INDEX idx_towing_price_matrix_class (service_class_id),
+    INDEX idx_towing_price_matrix_type (service_type_id),
+    INDEX idx_towing_price_matrix_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seed default service classes
-INSERT INTO towing_service_classes (name, description, weight_min, weight_max, sort_order) VALUES
-    ('Light Duty', 'Standard passenger vehicles, motorcycles, small trucks', NULL, 10000, 1),
-    ('Medium Duty', 'Box trucks, RVs, small buses, large pickup trucks', 10001, 26000, 2),
-    ('Heavy Duty', 'Semi-trucks, large buses, heavy equipment', 26001, NULL, 3),
-    ('Motorcycle', 'Motorcycles and scooters', NULL, 1500, 4)
-ON DUPLICATE KEY UPDATE description = VALUES(description);
-
--- Seed default service types
-INSERT INTO towing_service_types (name, code, description, sort_order) VALUES
-    ('Standard Tow', 'TOW', 'Standard towing service', 1),
-    ('Winch Out', 'WINCH', 'Vehicle recovery using winch', 2),
-    ('Jump Start', 'JUMP', 'Battery jump start service', 3),
-    ('Tire Change', 'TIRE', 'Flat tire replacement/change', 4),
-    ('Fuel Delivery', 'FUEL', 'Emergency fuel delivery', 5),
-    ('Lockout', 'LOCK', 'Vehicle lockout assistance', 6),
-    ('Accident Recovery', 'ACCIDENT', 'Accident scene recovery and cleanup', 7),
-    ('Flatbed Tow', 'FLATBED', 'Flatbed towing for specialty vehicles', 8)
-ON DUPLICATE KEY UPDATE description = VALUES(description);
-
--- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_towing_price_matrix_class ON towing_price_matrix (service_class_id);
-CREATE INDEX IF NOT EXISTS idx_towing_price_matrix_type ON towing_price_matrix (service_type_id);
-CREATE INDEX IF NOT EXISTS idx_towing_price_matrix_active ON towing_price_matrix (is_active);
-
-
--- ==================================================
--- Migration: 059_waterfall_dispatch_features.sql
--- ==================================================
-
--- Waterfall dispatching, geofencing, certification tracking, and reliability enhancements
-
--- Add waterfall dispatching columns to driver_job_offers
-ALTER TABLE driver_job_offers
-    ADD COLUMN IF NOT EXISTS waterfall_sequence_id VARCHAR(120) NULL,
-    ADD COLUMN IF NOT EXISTS waterfall_position INT UNSIGNED NULL,
-    ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR(100) NULL,
-    ADD COLUMN IF NOT EXISTS rejection_notes TEXT NULL,
-    ADD COLUMN IF NOT EXISTS estimated_eta_minutes INT UNSIGNED NULL,
-    ADD COLUMN IF NOT EXISTS estimated_distance_km DECIMAL(10,2) NULL,
-    ADD COLUMN IF NOT EXISTS traffic_factor DECIMAL(4,2) NULL,
-    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(120) NULL;
-
-CREATE INDEX IF NOT EXISTS idx_driver_job_offers_waterfall ON driver_job_offers (waterfall_sequence_id, waterfall_position);
-CREATE INDEX IF NOT EXISTS idx_driver_job_offers_expires ON driver_job_offers (expires_at, status);
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_driver_job_offers_idempotency ON driver_job_offers (idempotency_key);
 
 -- Waterfall dispatch sequences table for tracking job offer cascades
 CREATE TABLE IF NOT EXISTS waterfall_dispatch_sequences (
@@ -3742,65 +2233,6 @@ CREATE TABLE IF NOT EXISTS offer_rejection_reasons (
     INDEX idx_rejection_reasons_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert default rejection reasons
-INSERT IGNORE INTO offer_rejection_reasons (code, display_name, category, display_order) VALUES
-    ('too_far', 'Too far away', 'distance', 1),
-    ('heavy_traffic', 'Heavy traffic on route', 'distance', 2),
-    ('equipment_issue', 'Equipment issue or unavailable', 'equipment', 3),
-    ('wrong_equipment', 'Job requires different equipment', 'equipment', 4),
-    ('shift_ending', 'Shift ending soon', 'availability', 5),
-    ('already_assigned', 'Already on another job', 'availability', 6),
-    ('personal_emergency', 'Personal emergency', 'availability', 7),
-    ('vehicle_breakdown', 'Vehicle breakdown', 'equipment', 8),
-    ('certification_expired', 'Required certification expired', 'qualification', 9),
-    ('unfamiliar_area', 'Unfamiliar with area', 'distance', 10),
-    ('weather_conditions', 'Unsafe weather conditions', 'safety', 11),
-    ('other', 'Other reason', 'other', 99);
-
--- Insert default equipment job requirements
-INSERT IGNORE INTO equipment_job_requirements (job_category, equipment_class, is_compatible, min_capacity, required_certifications) VALUES
-    ('flatbed_tow', 'flatbed', 1, NULL, NULL),
-    ('flatbed_tow', 'light_tow', 0, NULL, NULL),
-    ('flatbed_tow', 'heavy_duty', 1, NULL, NULL),
-    ('light_tow', 'light_tow', 1, NULL, NULL),
-    ('light_tow', 'flatbed', 1, NULL, NULL),
-    ('light_tow', 'heavy_duty', 1, NULL, NULL),
-    ('heavy_tow', 'heavy_duty', 1, 10000, NULL),
-    ('heavy_tow', 'flatbed', 0, NULL, NULL),
-    ('heavy_tow', 'light_tow', 0, NULL, NULL),
-    ('motorcycle_tow', 'flatbed', 1, NULL, '["MOTORCYCLE"]'),
-    ('motorcycle_tow', 'light_tow', 0, NULL, NULL),
-    ('tire_change', 'light_tow', 1, NULL, NULL),
-    ('tire_change', 'flatbed', 1, NULL, NULL),
-    ('tire_change', 'service_vehicle', 1, NULL, NULL),
-    ('jump_start', 'light_tow', 1, NULL, NULL),
-    ('jump_start', 'flatbed', 1, NULL, NULL),
-    ('jump_start', 'service_vehicle', 1, NULL, NULL),
-    ('fuel_delivery', 'light_tow', 1, NULL, NULL),
-    ('fuel_delivery', 'service_vehicle', 1, NULL, NULL),
-    ('lockout', 'light_tow', 1, NULL, '["LOCKSMITH"]'),
-    ('lockout', 'service_vehicle', 1, NULL, '["LOCKSMITH"]'),
-    ('winch_out', 'light_tow', 1, NULL, NULL),
-    ('winch_out', 'heavy_duty', 1, NULL, NULL),
-    ('hazmat_recovery', 'heavy_duty', 1, NULL, '["HAZMAT"]');
-
-
--- ==================================================
--- Migration: 060_dispatch_requirement_equipment.sql
--- ==================================================
-
--- Add job category + equipment requirements to dispatch requirements
-
-ALTER TABLE dispatch_requirements
-    ADD COLUMN job_category VARCHAR(60) NULL AFTER dispatch_reference,
-    ADD COLUMN equipment_requirements JSON NULL AFTER required_equipment_class;
-
-
--- ==================================================
--- Migration: 060_module_access_control.sql
--- ==================================================
-
--- Migration: Module Access Control System
 -- Adds module enablement settings and user groups for granular access control
 
 -- Module settings at shop/tenant level
@@ -3863,44 +2295,6 @@ CREATE TABLE IF NOT EXISTS module_access_log (
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert default module settings (all enabled by default)
-INSERT IGNORE INTO module_settings (module_key, enabled, config) VALUES
-    ('core', 1, '{"description": "Core shop operations - cannot be disabled"}'),
-    ('estimates', 1, '{"description": "Estimates and quotes"}'),
-    ('workorders', 1, '{"description": "Work orders and job tracking"}'),
-    ('invoicing', 1, '{"description": "Invoicing and payments"}'),
-    ('appointments', 1, '{"description": "Appointment scheduling"}'),
-    ('inventory', 1, '{"description": "Parts and inventory management"}'),
-    ('towing', 1, '{"description": "Towing, roadside assistance, and dispatch"}'),
-    ('cms', 1, '{"description": "Website content management"}'),
-    ('impound', 0, '{"description": "Impound and vehicle storage"}'),
-    ('inspections', 1, '{"description": "Vehicle inspections"}'),
-    ('warranty', 1, '{"description": "Warranty claims management"}'),
-    ('time_tracking', 1, '{"description": "Technician time tracking"}'),
-    ('messaging', 1, '{"description": "Customer messaging and notifications"}'),
-    ('reminders', 1, '{"description": "Reminder campaigns"}'),
-    ('customer_portal', 1, '{"description": "Customer self-service portal"}'),
-    ('reports', 1, '{"description": "Reports and analytics"}');
-
--- Insert default user group
-INSERT IGNORE INTO user_groups (name, description, permissions, disabled_modules, is_default) VALUES
-    ('All Staff', 'Default group for all staff members', '[]', '[]', 1);
-
-
--- ==================================================
--- Migration: 070_inspection_estimate_bridge.sql
--- ==================================================
-
--- Migration: Inspection-to-Estimate Bridge
--- Adds failure threshold configuration and recommended services for inspection items
-
--- Add failure configuration to inspection items
-ALTER TABLE inspection_items
-    ADD COLUMN IF NOT EXISTS fail_threshold VARCHAR(100) NULL COMMENT 'Threshold that indicates failure: "no" for boolean, numeric value for scales',
-    ADD COLUMN IF NOT EXISTS recommended_service_type_id INT UNSIGNED NULL COMMENT 'Default service type to suggest when item fails',
-    ADD COLUMN IF NOT EXISTS estimated_labor_hours DECIMAL(5,2) NULL COMMENT 'Default labor hours for failed item repair',
-    ADD COLUMN IF NOT EXISTS estimated_parts_cost DECIMAL(10,2) NULL COMMENT 'Estimated parts cost for failed item repair';
-
 -- Track which inspection items have been converted to estimates
 CREATE TABLE IF NOT EXISTS inspection_estimate_conversions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -3930,7 +2324,6 @@ CREATE TABLE IF NOT EXISTS inspection_recommendations (
     INDEX idx_ir_report (inspection_report_id),
     INDEX idx_ir_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 
 -- ==================================================
 -- Migration: 071_workorder_status_notifications.sql
@@ -3967,83 +2360,6 @@ CREATE TABLE IF NOT EXISTS workorder_notification_rules (
     INDEX idx_wnr_active (active),
     UNIQUE KEY uk_status_recipient (to_status, from_status, recipient_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 3. Insert templates (One by one for stability)
-
--- Parts Pending
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_parts_pending', 'Workorder Parts Pending', 'email', 'Parts Required for Workorder {workorder_number}', 'Hello {recipient_name},\n\nWorkorder {workorder_number} for {vehicle_info} is now waiting for parts.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\n\nPlease review and order necessary parts.\n\nView workorder: {workorder_link}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_parts_pending_manager', 'Workorder Parts Pending - Manager', 'email', 'Parts Pending Alert: {workorder_number}', 'Manager Alert: Workorder {workorder_number} is waiting for parts.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\nTotal: ${grand_total}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- In Progress
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_in_progress', 'Workorder In Progress - Customer', 'email', 'Work Has Started on Your Vehicle - {workorder_number}', 'Hello {customer_name},\n\nGreat news! Work has begun on your {vehicle_info}.\n\nWorkorder: {workorder_number}\nTechnician: {technician_name}\n\nWe will notify you when the work is complete.\n\nThank you for your business!', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- On Hold
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_on_hold', 'Workorder On Hold - Manager', 'email', 'Workorder {workorder_number} Placed On Hold', 'Alert: Workorder {workorder_number} has been placed on hold.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\nPrevious Status: {from_status}\n\nPlease review and take action.', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_on_hold_tech', 'Workorder On Hold - Technician', 'email', 'Your Workorder {workorder_number} Is On Hold', 'Hello {technician_name},\n\nWorkorder {workorder_number} that you were assigned to has been placed on hold.\n\nVehicle: {vehicle_info}\nCustomer: {customer_name}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- Completed
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_completed', 'Workorder Completed - Customer', 'email', 'Your Vehicle Service Is Complete - {workorder_number}', 'Hello {customer_name},\n\nThe service on your {vehicle_info} has been completed!\n\nWorkorder: {workorder_number}\nTotal: ${grand_total}\n\nPlease contact us to schedule pickup.\n\nThank you for choosing us!', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_completed_manager', 'Workorder Completed - Manager', 'email', 'Workorder Completed: {workorder_number}', 'Workorder {workorder_number} has been marked as complete.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\nTotal: ${grand_total}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- Ready for Pickup
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_ready_pickup', 'Ready for Pickup - Customer Email', 'email', 'Your Vehicle Is Ready for Pickup! - {workorder_number}', 'Hello {customer_name},\n\nYour {vehicle_info} is ready for pickup!\n\nWorkorder: {workorder_number}\nTotal Due: ${grand_total}\n\nOur business hours are:\nMonday - Friday: 8:00 AM - 6:00 PM\nSaturday: 9:00 AM - 3:00 PM\n\nPlease bring a valid ID for vehicle release.\n\nThank you for your business!', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_ready_pickup_sms', 'Ready for Pickup - Customer SMS', 'sms', 'Vehicle Ready', 'Your {vehicle_info} is ready for pickup! Total: ${grand_total}. Workorder #{workorder_number}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- Awaiting Authorization
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_awaiting_auth', 'Awaiting Authorization - Customer Email', 'email', 'Authorization Required for Additional Work - {workorder_number}', 'Hello {customer_name},\n\nDuring service on your {vehicle_info}, we discovered additional work that requires your authorization.\n\nWorkorder: {workorder_number}\nEstimated Additional Cost: ${grand_total}\n\nPlease review and approve the estimate to proceed.\n\nView and approve: {portal_link}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_awaiting_auth_sms', 'Awaiting Authorization - Customer SMS', 'sms', 'Authorization Needed', 'Additional work needed on your {vehicle_info}. Please review estimate for Workorder #{workorder_number}. Total: ${grand_total}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- Cancelled
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_cancelled', 'Workorder Cancelled - Customer', 'email', 'Workorder {workorder_number} Has Been Cancelled', 'Hello {customer_name},\n\nWorkorder {workorder_number} for your {vehicle_info} has been cancelled.\n\nIf you have any questions, please contact us.\n\nThank you.', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES ('workorder_cancelled_tech', 'Workorder Cancelled - Technician', 'email', 'Workorder {workorder_number} Cancelled', 'Hello {technician_name},\n\nWorkorder {workorder_number} that you were assigned to has been cancelled.\n\nVehicle: {vehicle_info}\nCustomer: {customer_name}', NOW(), NOW())
-ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
-
--- 4. Insert Rules
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('parts_pending', NULL, 'role:manager', 'workorder_parts_pending_manager', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('in_progress', NULL, 'customer', 'workorder_in_progress', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('on_hold', NULL, 'role:manager', 'workorder_on_hold', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('completed', NULL, 'customer', 'workorder_completed', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('ready_for_pickup', NULL, 'customer', 'workorder_ready_pickup', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('ready_for_pickup', NULL, 'customer_sms', 'workorder_ready_pickup_sms', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('awaiting_authorization', NULL, 'customer', 'workorder_awaiting_auth', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('awaiting_authorization', NULL, 'customer_sms', 'workorder_awaiting_auth_sms', 1);
-INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('cancelled', NULL, 'customer', 'workorder_cancelled', 1);
-
-
--- ==================================================
--- Migration: 072_quality_control_checklist.sql
--- ==================================================
 
 -- Migration: Quality Control (QC) Checklist
 -- Implements QC checklists that must be completed before transitioning from repair complete to invoicing
@@ -4111,37 +2427,6 @@ CREATE TABLE IF NOT EXISTS qc_check_items (
     INDEX idx_qcci_passed (passed)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Settings for QC enforcement
-INSERT INTO settings (`key`, `group`, `type`, `value`, description, created_at, updated_at)
-VALUES
-    ('qc_enabled', 'workflow', 'boolean', 'true', 'Enable QC checklist requirement before invoicing', NOW(), NOW()),
-    ('qc_auto_assign_template', 'workflow', 'boolean', 'true', 'Automatically assign default QC template to workorders', NOW(), NOW()),
-    ('qc_required_for_invoice', 'workflow', 'boolean', 'true', 'Require QC pass before converting workorder to invoice', NOW(), NOW())
-ON DUPLICATE KEY UPDATE updated_at = NOW();
-
--- Insert a default QC template with common items
-INSERT INTO qc_templates (name, description, is_default, active, created_at, updated_at)
-VALUES ('Standard QC Checklist', 'Default quality control checklist for all repairs', 1, 1, NOW(), NOW());
-
-SET @default_template_id = LAST_INSERT_ID();
-
-INSERT INTO qc_template_items (template_id, label, description, category, required, display_order) VALUES
-(@default_template_id, 'All repairs completed per work order', 'Verify all work items marked as complete', 'Completion', 1, 1),
-(@default_template_id, 'Parts properly installed', 'Check that all new parts are correctly installed', 'Functionality', 1, 2),
-(@default_template_id, 'No fluid leaks', 'Inspect for oil, coolant, brake fluid, or other leaks', 'Safety', 1, 3),
-(@default_template_id, 'Test drive completed (if applicable)', 'Verify vehicle operation during road test', 'Functionality', 0, 4),
-(@default_template_id, 'Warning lights cleared', 'Confirm no dashboard warning lights are on', 'Functionality', 1, 5),
-(@default_template_id, 'Vehicle exterior cleaned', 'Vehicle washed or wiped down before return', 'Cleanliness', 0, 6),
-(@default_template_id, 'Interior clean and free of debris', 'Floor mats and seats clean, no tools left behind', 'Cleanliness', 1, 7),
-(@default_template_id, 'Old parts available for customer (if requested)', 'Collect replaced parts for customer inspection', 'Documentation', 0, 8),
-(@default_template_id, 'Work order documentation complete', 'All notes, times, and parts recorded accurately', 'Documentation', 1, 9),
-(@default_template_id, 'Customer communication notes added', 'Any verbal agreements or instructions documented', 'Documentation', 0, 10);
-
-
--- ==================================================
--- Migration: 073_parts_cart_partstech.sql
--- ==================================================
-
 -- Migration: Parts Cart & PartsTech Integration
 -- Enables technicians to build parts carts that sync with PartsTech for ordering
 
@@ -4199,42 +2484,6 @@ CREATE TABLE IF NOT EXISTS parts_cart_items (
     INDEX idx_pci_partstech_part (partstech_part_id),
     INDEX idx_pci_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- PartsTech Integration Settings
-INSERT INTO settings (`key`, `group`, `type`, `value`, description, created_at, updated_at)
-VALUES
-    ('partstech_enabled', 'integrations', 'boolean', 'false', 'Enable PartsTech integration for parts ordering', NOW(), NOW()),
-    ('partstech_api_key', 'integrations', 'string', '', 'PartsTech API key', NOW(), NOW()),
-    ('partstech_shop_id', 'integrations', 'string', '', 'PartsTech shop/account identifier', NOW(), NOW()),
-    ('partstech_default_markup', 'integrations', 'number', '30', 'Default markup percentage on parts cost', NOW(), NOW()),
-    ('parts_cart_requires_approval', 'workflow', 'boolean', 'true', 'Require manager approval before ordering parts', NOW(), NOW())
-ON DUPLICATE KEY UPDATE updated_at = NOW();
-
--- Add partstech fields to inventory_items for caching
-ALTER TABLE inventory_items
-    ADD COLUMN partstech_part_id VARCHAR(100) NULL COMMENT 'Cached PartsTech part ID',
-    ADD COLUMN partstech_last_sync DATETIME NULL COMMENT 'Last sync with PartsTech';
-
--- Create index for PartsTech lookups
-CREATE INDEX idx_inv_partstech ON inventory_items(partstech_part_id);
-
-
--- ==================================================
--- Migration: 074_core_return_tracking.sql
--- ==================================================
-
--- Core Return Tracking
--- Tracks core charges, returns, and credits for parts like alternators, batteries, etc.
-
--- Add core tracking fields to inventory_items
-ALTER TABLE inventory_items
-ADD COLUMN IF NOT EXISTS core_cost DECIMAL(10, 2) NULL AFTER cost;
-
-ALTER TABLE inventory_items
-ADD COLUMN IF NOT EXISTS core_price DECIMAL(10, 2) NULL AFTER core_cost;
-
-ALTER TABLE inventory_items
-ADD COLUMN IF NOT EXISTS is_core_eligible BOOLEAN DEFAULT FALSE AFTER core_price;
 
 -- Create core_returns table to track individual core transactions
 CREATE TABLE IF NOT EXISTS core_returns (
@@ -4311,48 +2560,6 @@ CREATE TABLE IF NOT EXISTS core_return_history (
         REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Add core_return_id to invoice_items and workorder_items for linking
-ALTER TABLE invoice_items
-ADD COLUMN IF NOT EXISTS core_return_id INT UNSIGNED NULL;
-
-ALTER TABLE invoice_items
-ADD COLUMN IF NOT EXISTS core_price DECIMAL(10, 2) NULL;
-
-ALTER TABLE invoice_items
-ADD INDEX IF NOT EXISTS idx_invoice_item_core (core_return_id);
-
-ALTER TABLE workorder_items
-ADD COLUMN IF NOT EXISTS core_return_id INT UNSIGNED NULL;
-
-ALTER TABLE workorder_items
-ADD COLUMN IF NOT EXISTS core_price DECIMAL(10, 2) NULL;
-
-ALTER TABLE workorder_items
-ADD INDEX IF NOT EXISTS idx_workorder_item_core (core_return_id);
-
--- Insert default settings for core tracking
-INSERT IGNORE INTO settings (`key`, `group`, type, value, description) VALUES
-('inventory.core_tracking.enabled', 'inventory', 'boolean', 'true', 'Enable core return tracking'),
-('inventory.core_tracking.customer_return_days', 'inventory', 'integer', '30', 'Days allowed for customer to return core'),
-('inventory.core_tracking.vendor_return_days', 'inventory', 'integer', '45', 'Days allowed to return core to vendor'),
-('inventory.core_tracking.alert_days_before_due', 'inventory', 'integer', '7', 'Days before due date to show alert');
-
-
--- ==================================================
--- Migration: 075_barcode_upc_support.sql
--- ==================================================
-
--- Barcode/UPC Support for Inventory
--- Adds barcode and UPC fields to inventory items for scanner support
-
--- Add barcode fields to inventory_items
-ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS upc VARCHAR(50) NULL AFTER manufacturer_part_number;
-ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS barcode VARCHAR(100) NULL AFTER upc;
-ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS barcode_type ENUM('UPC-A', 'UPC-E', 'EAN-13', 'EAN-8', 'CODE-39', 'CODE-128', 'QR', 'custom') NULL AFTER barcode;
-
-ALTER TABLE inventory_items ADD INDEX IF NOT EXISTS idx_inventory_upc (upc);
-ALTER TABLE inventory_items ADD INDEX IF NOT EXISTS idx_inventory_barcode (barcode);
-
 -- Create barcode scan log table for audit purposes
 -- Fixed: Foreign keys defined INLINE to prevent "Duplicate key" errors on re-runs
 CREATE TABLE IF NOT EXISTS barcode_scan_log (
@@ -4379,18 +2586,6 @@ CREATE TABLE IF NOT EXISTS barcode_scan_log (
     CONSTRAINT fk_scan_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert settings for barcode scanning
-INSERT IGNORE INTO settings (`key`, `group`, type, value, description) VALUES
-('inventory.barcode.enabled', 'inventory', 'boolean', 'true', 'Enable barcode scanning'),
-('inventory.barcode.auto_add_to_cart', 'inventory', 'boolean', 'true', 'Automatically add scanned item to cart/workorder'),
-('inventory.barcode.beep_on_success', 'inventory', 'boolean', 'true', 'Play sound on successful scan'),
-('inventory.barcode.preferred_camera', 'inventory', 'string', 'environment', 'Preferred camera for scanning (user/environment)');
-
-
--- ==================================================
--- Migration: 076_granular_labor_clocking.sql
--- ==================================================
-
 -- Migration: Granular Labor Clocking
 -- Allows technicians to clock into specific tasks within a job for efficiency reporting
 
@@ -4411,22 +2606,499 @@ CREATE TABLE IF NOT EXISTS labor_tasks (
     CONSTRAINT fk_labor_tasks_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Add task_id and flat_rate_minutes to time_entries
-ALTER TABLE time_entries
-    ADD COLUMN IF NOT EXISTS task_id INT UNSIGNED NULL AFTER estimate_job_id,
-    ADD COLUMN IF NOT EXISTS task_name VARCHAR(160) NULL COMMENT 'Snapshot of task name at clock-in time' AFTER task_id,
-    ADD COLUMN IF NOT EXISTS flat_rate_minutes DECIMAL(10,2) NULL COMMENT 'Snapshot of expected time for efficiency calculation' AFTER task_name,
-    ADD INDEX idx_time_entries_task (task_id),
-    ADD CONSTRAINT fk_time_entries_task FOREIGN KEY (task_id) REFERENCES labor_tasks (id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS message_attachments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    message_id INT UNSIGNED NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(120) NOT NULL,
+    size_bytes INT UNSIGNED NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_message_attachments_message (message_id)
+    CONSTRAINT fk_message_attachments_message FOREIGN KEY (message_id) REFERENCES message_messages (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Add task tracking to time_adjustments for audit trail
-ALTER TABLE time_adjustments
-    ADD COLUMN IF NOT EXISTS previous_task_id INT UNSIGNED NULL AFTER previous_estimate_job_id,
-    ADD COLUMN IF NOT EXISTS previous_task_name VARCHAR(160) NULL AFTER previous_task_id,
-    ADD COLUMN IF NOT EXISTS previous_flat_rate_minutes DECIMAL(10,2) NULL AFTER previous_task_name,
-    ADD COLUMN IF NOT EXISTS new_task_id INT UNSIGNED NULL AFTER new_estimate_job_id,
-    ADD COLUMN IF NOT EXISTS new_task_name VARCHAR(160) NULL AFTER new_task_id,
-    ADD COLUMN IF NOT EXISTS new_flat_rate_minutes DECIMAL(10,2) NULL AFTER new_task_name;
+CREATE TABLE IF NOT EXISTS invoice_public_payment_tokens (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_invoice_public_payment_invoice (invoice_id),
+    UNIQUE KEY uniq_invoice_public_payment_token (token_hash),
+    CONSTRAINT fk_invoice_public_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS job_damage_media (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    workorder_job_id INT UNSIGNED NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(120) NULL,
+    uploaded_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_job_damage_media_job (workorder_job_id),
+    CONSTRAINT fk_job_damage_media_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE,
+    CONSTRAINT fk_job_damage_media_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    session_id VARCHAR(128) NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent TEXT NULL,
+    device_label VARCHAR(191) NULL,
+    last_seen_at DATETIME NULL,
+    created_at DATETIME NOT NULL,
+    revoked_at DATETIME NULL,
+    revoked_by INT UNSIGNED NULL,
+    INDEX idx_user_sessions_user (user_id),
+    INDEX idx_user_sessions_revoked (revoked_at),
+    UNIQUE KEY uniq_user_sessions_session (session_id),
+    CONSTRAINT fk_user_sessions_masked_session FOREIGN KEY (session_id) REFERENCES masked_sms_sessions(id),
+    CONSTRAINT fk_user_sessions_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS auction_lots (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    impound_case_id INT UNSIGNED NOT NULL,
+    lot_number VARCHAR(60) NOT NULL,
+    status VARCHAR(40) NOT NULL DEFAULT 'scheduled',
+    status_updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    auction_date DATE NULL,
+    sale_price DECIMAL(10,2) NULL,
+    buyer_name VARCHAR(160) NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_auction_lots_case (impound_case_id),
+    INDEX idx_auction_lots_status (status),
+    INDEX idx_auction_lots_date (auction_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invoice_payer_allocations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
+    payer_role ENUM('primary', 'secondary') NOT NULL,
+    payer_name VARCHAR(160) NULL,
+    allocated_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_invoice_payer_allocations_invoice (invoice_id),
+    INDEX idx_invoice_payer_allocations_role (payer_role),
+    CONSTRAINT fk_invoice_payer_allocations_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS job_vehicle_intakes (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    workorder_id INT UNSIGNED NOT NULL,
+    workorder_job_id INT UNSIGNED NOT NULL,
+    vin VARCHAR(30) NULL,
+    vehicle_year INT NULL,
+    vehicle_make VARCHAR(80) NULL,
+    vehicle_model VARCHAR(80) NULL,
+    vehicle_trim VARCHAR(80) NULL,
+    vehicle_weight_class VARCHAR(80) NULL,
+    vin_decoded JSON NULL,
+    vin_overrides JSON NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_job_vehicle_intakes_job (workorder_job_id),
+    INDEX idx_job_vehicle_intakes_workorder (workorder_id),
+    CONSTRAINT fk_job_vehicle_intakes_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE CASCADE,
+    CONSTRAINT fk_job_vehicle_intakes_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: Truck Checklists (Pre-trip/Post-trip)
+-- Adds checklist templates, entries, and driver shift requirements.
+
+CREATE TABLE IF NOT EXISTS truck_checklist_templates (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
+    checklist_type ENUM('pre_trip', 'post_trip') NOT NULL,
+    is_default TINYINT(1) DEFAULT 0,
+    active TINYINT(1) DEFAULT 1,
+    created_by INT UNSIGNED NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_tct_type (checklist_type),
+    INDEX idx_tct_default (is_default),
+    INDEX idx_tct_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS truck_checklist_template_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    template_id INT UNSIGNED NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    required TINYINT(1) DEFAULT 1,
+    display_order INT DEFAULT 0,
+    FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE,
+    INDEX idx_tcti_template (template_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS truck_checklist_entries (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    driver_profile_id INT UNSIGNED NOT NULL,
+    driver_shift_id INT UNSIGNED NULL,
+    template_id INT UNSIGNED NOT NULL,
+    checklist_type ENUM('pre_trip', 'post_trip') NOT NULL,
+    status ENUM('completed') NOT NULL DEFAULT 'completed',
+    completed_at DATETIME NULL,
+    completed_by INT UNSIGNED NULL,
+    notes TEXT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_tce_driver (driver_profile_id),
+    INDEX idx_tce_shift (driver_shift_id),
+    INDEX idx_tce_type (checklist_type),
+    INDEX idx_tce_completed_at (completed_at),
+    INDEX idx_tce_template (template_id),
+    CONSTRAINT fk_tce_template FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tce_driver_profile FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles(id) ON DELETE CASCADE,
+    ADD CONSTRAINT fk_tce_driver_shift FOREIGN KEY (driver_shift_id) REFERENCES driver_shifts(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS truck_checklist_entry_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    entry_id INT UNSIGNED NOT NULL,
+    template_item_id INT UNSIGNED NOT NULL,
+    response ENUM('pass', 'fail', 'na') NULL,
+    notes TEXT NULL,
+    checked_by INT UNSIGNED NULL,
+    checked_at DATETIME NULL,
+    FOREIGN KEY (entry_id) REFERENCES truck_checklist_entries(id) ON DELETE CASCADE,
+    FOREIGN KEY (template_item_id) REFERENCES truck_checklist_template_items(id) ON DELETE CASCADE,
+    INDEX idx_tcei_entry (entry_id),
+    INDEX idx_tcei_response (response)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Description: Add inventory transaction ledger table
+
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    quantity_before INT NOT NULL,
+    quantity_after INT NOT NULL,
+    quantity_change INT NOT NULL,
+    source VARCHAR(60) NOT NULL,
+    reference VARCHAR(120) NULL,
+    reason VARCHAR(255) NULL,
+    created_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_transactions_item (inventory_item_id),
+    INDEX idx_inventory_transactions_source (source),
+    INDEX idx_inventory_transactions_reference (reference),
+    CONSTRAINT fk_inventory_transactions_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_transactions_user FOREIGN KEY (created_by)
+        REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_reorder_history_item (inventory_item_id),
+    INDEX idx_inventory_reorder_history_user (changed_by),
+    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
+        REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--- Insert Default Datasets
+
+-- Seed initial customer messages from claim descriptions so history is preserved
+INSERT INTO warranty_claim_messages (claim_id, actor_type, actor_id, message, created_at, updated_at)
+SELECT id, 'customer', customer_id, description, created_at, updated_at FROM warranty_claims;
+
+-- Insert default settings for core tracking
+INSERT IGNORE INTO settings (`key`, `group`, type, value, description) VALUES
+('inventory.core_tracking.enabled', 'inventory', 'boolean', 'true', 'Enable core return tracking'),
+('inventory.core_tracking.customer_return_days', 'inventory', 'integer', '30', 'Days allowed for customer to return core'),
+('inventory.core_tracking.vendor_return_days', 'inventory', 'integer', '45', 'Days allowed to return core to vendor'),
+('inventory.core_tracking.alert_days_before_due', 'inventory', 'integer', '7', 'Days before due date to show alert');
+
+-- Migration: Job tracking link notification template
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES (
+    'job_tracking_link',
+    'Job Tracking Link - Customer SMS',
+    'sms',
+    'Tracking Link',
+    'Hi {customer_name}, track your service for workorder {workorder_number} here: {job_tracking_link}',
+    NOW(),
+    NOW()
+)
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    channel = VALUES(channel),
+    subject = VALUES(subject),
+    body = VALUES(body),
+    updated_at = NOW();
+
+-- Partition driver_locations by month
+-- Note: Uses RANGE with UNIX_TIMESTAMP for TIMESTAMP columns
+-- Default templates
+INSERT INTO truck_checklist_templates (name, description, checklist_type, is_default, active, created_at, updated_at)
+VALUES
+    ('Standard Pre-Trip Checklist', 'Default pre-trip checklist for tow trucks', 'pre_trip', 1, 1, NOW(), NOW()),
+    ('Standard Post-Trip Checklist', 'Default post-trip checklist for tow trucks', 'post_trip', 1, 1, NOW(), NOW());
+
+INSERT INTO truck_checklist_template_items (template_id, label, description, required, display_order) VALUES
+(@pre_trip_template_id, 'Check tires (tread/pressure)', 'Inspect all tires for proper inflation and tread wear', 1, 1),
+(@pre_trip_template_id, 'Lights & signals operational', 'Headlights, brake lights, turn signals, hazard lights', 1, 2),
+(@pre_trip_template_id, 'Hydraulic system check', 'Verify hydraulics are functioning and leak-free', 1, 3),
+(@pre_trip_template_id, 'Winch & cables inspected', 'Inspect winch operation and cable condition', 1, 4),
+(@pre_trip_template_id, 'Safety equipment onboard', 'Cones, flares, fire extinguisher, PPE', 1, 5),
+(@pre_trip_template_id, 'Fuel level sufficient', 'Verify fuel level for scheduled shift', 1, 6);
+
+INSERT INTO truck_checklist_template_items (template_id, label, description, required, display_order) VALUES
+(@post_trip_template_id, 'Vehicle damage noted', 'Record any new damage or issues', 1, 1),
+(@post_trip_template_id, 'Equipment cleaned & secured', 'Secure chains, straps, and tools', 1, 2),
+(@post_trip_template_id, 'Fuel level recorded', 'Record remaining fuel level', 1, 3),
+(@post_trip_template_id, 'Odometer recorded', 'Log ending mileage', 1, 4),
+(@post_trip_template_id, 'Issues reported to dispatch', 'Report any incidents or maintenance needs', 1, 5);
+
+-- Insert a default template
+INSERT INTO cms_templates (name, slug, description, structure, is_active) VALUES
+('Default', 'default', 'Default page template', '<div class="container">{{content}}</div>', 1);
+
+-- Insert default settings
+INSERT INTO cms_settings (setting_key, setting_value, setting_type, description) VALUES
+('site_name', 'My Website', 'string', 'The name of the website'),
+('site_description', 'Welcome to our website', 'string', 'Site meta description'),
+('cache_enabled', 'true', 'boolean', 'Enable page caching'),
+('cache_ttl', '3600', 'number', 'Default cache TTL in seconds');
+
+-- Insert existing system roles for backwards compatibility
+INSERT INTO custom_roles (name, label, description, permissions, is_system) VALUES
+('admin', 'Admin', 'Full control across all modules', JSON_ARRAY('*'), 1),
+('manager', 'Manager', 'Manage shop operations, estimates, invoices, schedules, inventory', JSON_ARRAY('users.view', 'users.create', 'users.update', 'users.delete', 'users.invite', 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*', 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*', 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*', 'cms.*'), 1),
+('technician', 'Technician', 'Work estimates, inspections, jobs, and time tracking', JSON_ARRAY('customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view', 'service_types.view', 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete', 'cms.menus.view', 'cms.menus.create', 'cms.menus.update', 'cms.menus.delete', 'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete', 'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete', 'cms.dashboard.view', 'cms.templates.view'), 1),
+('customer', 'Customer', 'Customer portal scoped to their profile and documents', JSON_ARRAY('portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.invoices', 'portal.warranty', 'portal.reminders'), 1)
+ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description), permissions = VALUES(permissions);
+
+INSERT INTO cms_components (name, slug, type, description, content, css, javascript, is_active, cache_ttl, created_at, updated_at
+) VALUES ('Estimate Request Form',
+    'estimate-request', 'custom', 'Public-facing estimate request form with vehicle selection, service details, and photo upload', '<div data-vue-component="EstimateRequestForm" class="estimate-request-form-container"></div>', '/* Ensure form has proper spacing */ .estimate-request-form-container { width: 100%; max-width: 100%; padding: 0; margin: 0 auto; }', NULL, 1, 0, NOW(), NOW());
+
+-- Seed default service classes
+INSERT INTO towing_service_classes (name, description, weight_min, weight_max, sort_order) VALUES
+    ('Light Duty', 'Standard passenger vehicles, motorcycles, small trucks', NULL, 10000, 1),
+    ('Medium Duty', 'Box trucks, RVs, small buses, large pickup trucks', 10001, 26000, 2),
+    ('Heavy Duty', 'Semi-trucks, large buses, heavy equipment', 26001, NULL, 3),
+    ('Motorcycle', 'Motorcycles and scooters', NULL, 1500, 4)
+ON DUPLICATE KEY UPDATE description = VALUES(description);
+
+-- Seed default service types
+INSERT INTO towing_service_types (name, code, description, sort_order) VALUES
+    ('Standard Tow', 'TOW', 'Standard towing service', 1),
+    ('Winch Out', 'WINCH', 'Vehicle recovery using winch', 2),
+    ('Jump Start', 'JUMP', 'Battery jump start service', 3),
+    ('Tire Change', 'TIRE', 'Flat tire replacement/change', 4),
+    ('Fuel Delivery', 'FUEL', 'Emergency fuel delivery', 5),
+    ('Lockout', 'LOCK', 'Vehicle lockout assistance', 6),
+    ('Accident Recovery', 'ACCIDENT', 'Accident scene recovery and cleanup', 7),
+    ('Flatbed Tow', 'FLATBED', 'Flatbed towing for specialty vehicles', 8)
+ON DUPLICATE KEY UPDATE description = VALUES(description);
+
+-- Insert default rejection reasons
+INSERT IGNORE INTO offer_rejection_reasons (code, display_name, category, display_order) VALUES
+    ('too_far', 'Too far away', 'distance', 1),
+    ('heavy_traffic', 'Heavy traffic on route', 'distance', 2),
+    ('equipment_issue', 'Equipment issue or unavailable', 'equipment', 3),
+    ('wrong_equipment', 'Job requires different equipment', 'equipment', 4),
+    ('shift_ending', 'Shift ending soon', 'availability', 5),
+    ('already_assigned', 'Already on another job', 'availability', 6),
+    ('personal_emergency', 'Personal emergency', 'availability', 7),
+    ('vehicle_breakdown', 'Vehicle breakdown', 'equipment', 8),
+    ('certification_expired', 'Required certification expired', 'qualification', 9),
+    ('unfamiliar_area', 'Unfamiliar with area', 'distance', 10),
+    ('weather_conditions', 'Unsafe weather conditions', 'safety', 11),
+    ('other', 'Other reason', 'other', 99);
+
+-- Insert default equipment job requirements
+INSERT IGNORE INTO equipment_job_requirements (job_category, equipment_class, is_compatible, min_capacity, required_certifications) VALUES
+    ('flatbed_tow', 'flatbed', 1, NULL, NULL),
+    ('flatbed_tow', 'light_tow', 0, NULL, NULL),
+    ('flatbed_tow', 'heavy_duty', 1, NULL, NULL),
+    ('light_tow', 'light_tow', 1, NULL, NULL),
+    ('light_tow', 'flatbed', 1, NULL, NULL),
+    ('light_tow', 'heavy_duty', 1, NULL, NULL),
+    ('heavy_tow', 'heavy_duty', 1, 10000, NULL),
+    ('heavy_tow', 'flatbed', 0, NULL, NULL),
+    ('heavy_tow', 'light_tow', 0, NULL, NULL),
+    ('motorcycle_tow', 'flatbed', 1, NULL, '["MOTORCYCLE"]'),
+    ('motorcycle_tow', 'light_tow', 0, NULL, NULL),
+    ('tire_change', 'light_tow', 1, NULL, NULL),
+    ('tire_change', 'flatbed', 1, NULL, NULL),
+    ('tire_change', 'service_vehicle', 1, NULL, NULL),
+    ('jump_start', 'light_tow', 1, NULL, NULL),
+    ('jump_start', 'flatbed', 1, NULL, NULL),
+    ('jump_start', 'service_vehicle', 1, NULL, NULL),
+    ('fuel_delivery', 'light_tow', 1, NULL, NULL),
+    ('fuel_delivery', 'service_vehicle', 1, NULL, NULL),
+    ('lockout', 'light_tow', 1, NULL, '["LOCKSMITH"]'),
+    ('lockout', 'service_vehicle', 1, NULL, '["LOCKSMITH"]'),
+    ('winch_out', 'light_tow', 1, NULL, NULL),
+    ('winch_out', 'heavy_duty', 1, NULL, NULL),
+    ('hazmat_recovery', 'heavy_duty', 1, NULL, '["HAZMAT"]');
+
+-- Insert default module settings (all enabled by default)
+INSERT IGNORE INTO module_settings (module_key, enabled, config) VALUES
+    ('core', 1, '{"description": "Core shop operations - cannot be disabled"}'),
+    ('estimates', 1, '{"description": "Estimates and quotes"}'),
+    ('workorders', 1, '{"description": "Work orders and job tracking"}'),
+    ('invoicing', 1, '{"description": "Invoicing and payments"}'),
+    ('appointments', 1, '{"description": "Appointment scheduling"}'),
+    ('inventory', 1, '{"description": "Parts and inventory management"}'),
+    ('towing', 1, '{"description": "Towing, roadside assistance, and dispatch"}'),
+    ('cms', 1, '{"description": "Website content management"}'),
+    ('impound', 0, '{"description": "Impound and vehicle storage"}'),
+    ('inspections', 1, '{"description": "Vehicle inspections"}'),
+    ('warranty', 1, '{"description": "Warranty claims management"}'),
+    ('time_tracking', 1, '{"description": "Technician time tracking"}'),
+    ('messaging', 1, '{"description": "Customer messaging and notifications"}'),
+    ('reminders', 1, '{"description": "Reminder campaigns"}'),
+    ('customer_portal', 1, '{"description": "Customer self-service portal"}'),
+    ('reports', 1, '{"description": "Reports and analytics"}');
+
+-- Insert default user group
+INSERT IGNORE INTO user_groups (name, description, permissions, disabled_modules, is_default) VALUES
+    ('All Staff', 'Default group for all staff members', '[]', '[]', 1);
+
+-- 3. Insert templates (One by one for stability)
+
+-- Parts Pending
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_parts_pending', 'Workorder Parts Pending', 'email', 'Parts Required for Workorder {workorder_number}', 'Hello {recipient_name},\n\nWorkorder {workorder_number} for {vehicle_info} is now waiting for parts.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\n\nPlease review and order necessary parts.\n\nView workorder: {workorder_link}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_parts_pending_manager', 'Workorder Parts Pending - Manager', 'email', 'Parts Pending Alert: {workorder_number}', 'Manager Alert: Workorder {workorder_number} is waiting for parts.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\nTotal: ${grand_total}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- In Progress
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_in_progress', 'Workorder In Progress - Customer', 'email', 'Work Has Started on Your Vehicle - {workorder_number}', 'Hello {customer_name},\n\nGreat news! Work has begun on your {vehicle_info}.\n\nWorkorder: {workorder_number}\nTechnician: {technician_name}\n\nWe will notify you when the work is complete.\n\nThank you for your business!', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- On Hold
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_on_hold', 'Workorder On Hold - Manager', 'email', 'Workorder {workorder_number} Placed On Hold', 'Alert: Workorder {workorder_number} has been placed on hold.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\nPrevious Status: {from_status}\n\nPlease review and take action.', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_on_hold_tech', 'Workorder On Hold - Technician', 'email', 'Your Workorder {workorder_number} Is On Hold', 'Hello {technician_name},\n\nWorkorder {workorder_number} that you were assigned to has been placed on hold.\n\nVehicle: {vehicle_info}\nCustomer: {customer_name}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- Completed
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_completed', 'Workorder Completed - Customer', 'email', 'Your Vehicle Service Is Complete - {workorder_number}', 'Hello {customer_name},\n\nThe service on your {vehicle_info} has been completed!\n\nWorkorder: {workorder_number}\nTotal: ${grand_total}\n\nPlease contact us to schedule pickup.\n\nThank you for choosing us!', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_completed_manager', 'Workorder Completed - Manager', 'email', 'Workorder Completed: {workorder_number}', 'Workorder {workorder_number} has been marked as complete.\n\nCustomer: {customer_name}\nVehicle: {vehicle_info}\nTotal: ${grand_total}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- Ready for Pickup
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_ready_pickup', 'Ready for Pickup - Customer Email', 'email', 'Your Vehicle Is Ready for Pickup! - {workorder_number}', 'Hello {customer_name},\n\nYour {vehicle_info} is ready for pickup!\n\nWorkorder: {workorder_number}\nTotal Due: ${grand_total}\n\nOur business hours are:\nMonday - Friday: 8:00 AM - 6:00 PM\nSaturday: 9:00 AM - 3:00 PM\n\nPlease bring a valid ID for vehicle release.\n\nThank you for your business!', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_ready_pickup_sms', 'Ready for Pickup - Customer SMS', 'sms', 'Vehicle Ready', 'Your {vehicle_info} is ready for pickup! Total: ${grand_total}. Workorder #{workorder_number}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- Awaiting Authorization
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_awaiting_auth', 'Awaiting Authorization - Customer Email', 'email', 'Authorization Required for Additional Work - {workorder_number}', 'Hello {customer_name},\n\nDuring service on your {vehicle_info}, we discovered additional work that requires your authorization.\n\nWorkorder: {workorder_number}\nEstimated Additional Cost: ${grand_total}\n\nPlease review and approve the estimate to proceed.\n\nView and approve: {portal_link}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_awaiting_auth_sms', 'Awaiting Authorization - Customer SMS', 'sms', 'Authorization Needed', 'Additional work needed on your {vehicle_info}. Please review estimate for Workorder #{workorder_number}. Total: ${grand_total}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- Cancelled
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_cancelled', 'Workorder Cancelled - Customer', 'email', 'Workorder {workorder_number} Has Been Cancelled', 'Hello {customer_name},\n\nWorkorder {workorder_number} for your {vehicle_info} has been cancelled.\n\nIf you have any questions, please contact us.\n\nThank you.', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
+VALUES ('workorder_cancelled_tech', 'Workorder Cancelled - Technician', 'email', 'Workorder {workorder_number} Cancelled', 'Hello {technician_name},\n\nWorkorder {workorder_number} that you were assigned to has been cancelled.\n\nVehicle: {vehicle_info}\nCustomer: {customer_name}', NOW(), NOW())
+ON DUPLICATE KEY UPDATE name=VALUES(name), subject=VALUES(subject), body=VALUES(body), updated_at=NOW();
+
+-- 4. Insert Rules
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('parts_pending', NULL, 'role:manager', 'workorder_parts_pending_manager', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('in_progress', NULL, 'customer', 'workorder_in_progress', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('on_hold', NULL, 'role:manager', 'workorder_on_hold', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('completed', NULL, 'customer', 'workorder_completed', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('ready_for_pickup', NULL, 'customer', 'workorder_ready_pickup', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('ready_for_pickup', NULL, 'customer_sms', 'workorder_ready_pickup_sms', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('awaiting_authorization', NULL, 'customer', 'workorder_awaiting_auth', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('awaiting_authorization', NULL, 'customer_sms', 'workorder_awaiting_auth_sms', 1);
+
+INSERT IGNORE INTO workorder_notification_rules (to_status, from_status, recipient_type, template_key, active) VALUES ('cancelled', NULL, 'customer', 'workorder_cancelled', 1);
+
+-- Settings for QC enforcement
+INSERT INTO settings (`key`, `group`, `type`, `value`, description, created_at, updated_at)
+VALUES
+    ('qc_enabled', 'workflow', 'boolean', 'true', 'Enable QC checklist requirement before invoicing', NOW(), NOW()),
+    ('qc_auto_assign_template', 'workflow', 'boolean', 'true', 'Automatically assign default QC template to workorders', NOW(), NOW()),
+    ('qc_required_for_invoice', 'workflow', 'boolean', 'true', 'Require QC pass before converting workorder to invoice', NOW(), NOW())
+ON DUPLICATE KEY UPDATE updated_at = NOW();
+
+-- Insert a default QC template with common items
+INSERT INTO qc_templates (name, description, is_default, active, created_at, updated_at)
+VALUES ('Standard QC Checklist', 'Default quality control checklist for all repairs', 1, 1, NOW(), NOW());
+
+SET @default_template_id = LAST_INSERT_ID();
+
+INSERT INTO qc_template_items (template_id, label, description, category, required, display_order) VALUES
+(@default_template_id, 'All repairs completed per work order', 'Verify all work items marked as complete', 'Completion', 1, 1),
+(@default_template_id, 'Parts properly installed', 'Check that all new parts are correctly installed', 'Functionality', 1, 2),
+(@default_template_id, 'No fluid leaks', 'Inspect for oil, coolant, brake fluid, or other leaks', 'Safety', 1, 3),
+(@default_template_id, 'Test drive completed (if applicable)', 'Verify vehicle operation during road test', 'Functionality', 0, 4),
+(@default_template_id, 'Warning lights cleared', 'Confirm no dashboard warning lights are on', 'Functionality', 1, 5),
+(@default_template_id, 'Vehicle exterior cleaned', 'Vehicle washed or wiped down before return', 'Cleanliness', 0, 6),
+(@default_template_id, 'Interior clean and free of debris', 'Floor mats and seats clean, no tools left behind', 'Cleanliness', 1, 7),
+(@default_template_id, 'Old parts available for customer (if requested)', 'Collect replaced parts for customer inspection', 'Documentation', 0, 8),
+(@default_template_id, 'Work order documentation complete', 'All notes, times, and parts recorded accurately', 'Documentation', 1, 9),
+(@default_template_id, 'Customer communication notes added', 'Any verbal agreements or instructions documented', 'Documentation', 0, 10);
+
+-- PartsTech Integration Settings
+INSERT INTO settings (`key`, `group`, `type`, `value`, description, created_at, updated_at)
+VALUES
+    ('partstech_enabled', 'integrations', 'boolean', 'false', 'Enable PartsTech integration for parts ordering', NOW(), NOW()),
+    ('partstech_api_key', 'integrations', 'string', '', 'PartsTech API key', NOW(), NOW()),
+    ('partstech_shop_id', 'integrations', 'string', '', 'PartsTech shop/account identifier', NOW(), NOW()),
+    ('partstech_default_markup', 'integrations', 'number', '30', 'Default markup percentage on parts cost', NOW(), NOW()),
+    ('parts_cart_requires_approval', 'workflow', 'boolean', 'true', 'Require manager approval before ordering parts', NOW(), NOW())
+ON DUPLICATE KEY UPDATE updated_at = NOW();
+
+-- Insert settings for barcode scanning
+INSERT IGNORE INTO settings (`key`, `group`, type, value, description) VALUES
+('inventory.barcode.enabled', 'inventory', 'boolean', 'true', 'Enable barcode scanning'),
+('inventory.barcode.auto_add_to_cart', 'inventory', 'boolean', 'true', 'Automatically add scanned item to cart/workorder'),
+('inventory.barcode.beep_on_success', 'inventory', 'boolean', 'true', 'Play sound on successful scan'),
+('inventory.barcode.preferred_camera', 'inventory', 'string', 'environment', 'Preferred camera for scanning (user/environment)');
 
 -- Insert common labor tasks with industry-standard flat rates
 INSERT INTO labor_tasks (name, description, flat_rate_minutes, display_order) VALUES
@@ -4484,1059 +3156,3 @@ WHERE te.ended_at IS NOT NULL
     AND te.flat_rate_minutes IS NOT NULL
     AND te.flat_rate_minutes > 0
 GROUP BY te.technician_id, u.name, DATE(te.started_at);
-
-
--- ==================================================
--- Migration: 076_inventory_low_stock_cache.sql
--- ==================================================
-
--- Migration: 076_inventory_low_stock_cache.sql
-
--- 1. Cleanup: Remove potential leftovers from previous attempts
-DROP TRIGGER IF EXISTS trg_inventory_items_set_low_stock_insert;
-DROP TRIGGER IF EXISTS trg_inventory_items_set_low_stock_update;
-
--- 2. Drop the column if it exists so we can recreate it correctly as a Generated Column
--- (MariaDB 10.11 supports IF EXISTS)
-ALTER TABLE inventory_items
-DROP COLUMN IF EXISTS is_low_stock;
-
--- 3. Add the self-calculating column
--- 'STORED' means it saves the result to disk (good for read performance & indexing)
-ALTER TABLE inventory_items
-ADD COLUMN is_low_stock TINYINT(1)
-GENERATED ALWAYS AS (
-    CASE
-        WHEN COALESCE(is_tracked, 1) = 1 AND COALESCE(stock_quantity, 0) <= COALESCE(low_stock_threshold, 0) THEN 1
-        ELSE 0
-    END
-) STORED AFTER low_stock_threshold;
-
--- 4. Index the generated column
-CREATE INDEX IF NOT EXISTS idx_inventory_is_low_stock ON inventory_items(is_low_stock);
-
-
--- ==================================================
--- Migration: 077_add_branch_to_workorders.sql
--- ==================================================
-
--- Add branch support for workorders
-
-SET @has_branch_id := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'workorders' AND column_name = 'branch_id'
-);
-
-SET @branch_sql := IF(@has_branch_id = 0,
-    'ALTER TABLE workorders ADD COLUMN branch_id INT UNSIGNED NULL AFTER vehicle_id',
-    'SELECT 1');
-
-PREPARE branch_stmt FROM @branch_sql;
-EXECUTE branch_stmt;
-DEALLOCATE PREPARE branch_stmt;
-
-SET @has_branch_idx := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'workorders' AND index_name = 'idx_workorder_branch'
-);
-
-SET @branch_idx_sql := IF(@has_branch_idx = 0,
-    'ALTER TABLE workorders ADD INDEX idx_workorder_branch (branch_id)',
-    'SELECT 1');
-
-PREPARE branch_idx_stmt FROM @branch_idx_sql;
-EXECUTE branch_idx_stmt;
-DEALLOCATE PREPARE branch_idx_stmt;
-
-
--- ==================================================
--- Migration: 077_user_active_flag.sql
--- ==================================================
-
--- Add active flag to users for soft deletes
-SET @has_user_active := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'active'
-);
-SET @user_active_sql := IF(@has_user_active = 0,
-    'ALTER TABLE users ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1 AFTER remember_token',
-    'SELECT 1'
-);
-PREPARE user_active_stmt FROM @user_active_sql;
-EXECUTE user_active_stmt;
-DEALLOCATE PREPARE user_active_stmt;
-
-SET @has_user_active_index := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'idx_users_active'
-);
-SET @user_active_index_sql := IF(@has_user_active_index = 0,
-    'CREATE INDEX idx_users_active ON users (active)',
-    'SELECT 1'
-);
-PREPARE user_active_index_stmt FROM @user_active_index_sql;
-EXECUTE user_active_index_stmt;
-DEALLOCATE PREPARE user_active_index_stmt;
-
-
--- ==================================================
--- Migration: 078_add_financial_entry_idempotency.sql
--- ==================================================
-
-ALTER TABLE financial_entries
-    ADD COLUMN idempotency_key VARCHAR(120) NULL;
-
-CREATE UNIQUE INDEX uniq_financial_entries_idempotency
-    ON financial_entries (idempotency_key);
-
-
--- ==================================================
--- Migration: 078_damage_report_metadata.sql
--- ==================================================
-
--- Migration: Add time and location metadata to job damage reports
-
-ALTER TABLE job_damage_reports
-    ADD COLUMN reported_at DATETIME NULL AFTER reported_by,
-    ADD COLUMN latitude DECIMAL(10,7) NULL AFTER reported_at,
-    ADD COLUMN longitude DECIMAL(10,7) NULL AFTER latitude,
-    ADD COLUMN location_accuracy_meters DECIMAL(8,2) NULL AFTER longitude;
-
-
--- ==================================================
--- Migration: 078_driver_job_offer_dropoff_locations.sql
--- ==================================================
-
--- Track drop-off locations for active driver job offers
-
-ALTER TABLE driver_job_offers
-    ADD COLUMN IF NOT EXISTS dropoff_latitude DECIMAL(10,6) NULL,
-    ADD COLUMN IF NOT EXISTS dropoff_longitude DECIMAL(10,6) NULL;
-
-CREATE INDEX IF NOT EXISTS idx_driver_job_offers_dropoff
-    ON driver_job_offers (driver_profile_id, status, accepted_at);
-
-
--- ==================================================
--- Migration: 078_message_attachments.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS message_attachments (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    message_id INT UNSIGNED NOT NULL,
-    file_name VARCHAR(255) NOT NULL,
-    file_path VARCHAR(255) NOT NULL,
-    mime_type VARCHAR(120) NOT NULL,
-    size_bytes INT UNSIGNED NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_message_attachments_message (message_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET @has_fk_message_attachments_message := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'message_attachments' AND constraint_name = 'fk_message_attachments_message'
-);
-SET @has_message_attachments_message_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'message_messages'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'message_attachments'
-      AND c.column_name = 'message_id'
-);
-SET @fk_message_attachments_message_sql := IF(@has_fk_message_attachments_message = 0 AND @has_message_attachments_message_match = 1,
-    'ALTER TABLE message_attachments ADD CONSTRAINT fk_message_attachments_message FOREIGN KEY (message_id) REFERENCES message_messages (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_message_attachments_message_stmt FROM @fk_message_attachments_message_sql;
-EXECUTE fk_message_attachments_message_stmt;
-DEALLOCATE PREPARE fk_message_attachments_message_stmt;
-
-
--- ==================================================
--- Migration: 079_invoice_public_payment_tokens.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS invoice_public_payment_tokens (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT UNSIGNED NOT NULL,
-    token_hash CHAR(64) NOT NULL,
-    amount DECIMAL(12,2) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    used_at DATETIME NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_invoice_public_payment_invoice (invoice_id),
-    UNIQUE KEY uniq_invoice_public_payment_token (token_hash),
-    CONSTRAINT fk_invoice_public_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 079_job_damage_media.sql
--- ==================================================
-
--- Migration: Job damage photo evidence
-
-CREATE TABLE IF NOT EXISTS job_damage_media (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    workorder_job_id INT UNSIGNED NOT NULL,
-    file_path VARCHAR(255) NOT NULL,
-    mime_type VARCHAR(120) NULL,
-    uploaded_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_job_damage_media_job (workorder_job_id),
-    CONSTRAINT fk_job_damage_media_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE,
-    CONSTRAINT fk_job_damage_media_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES users (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 079_user_last_activity.sql
--- ==================================================
-
--- Add last activity tracking to users
-SET @has_user_last_activity := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'last_activity_at'
-);
-SET @user_last_activity_sql := IF(@has_user_last_activity = 0,
-    'ALTER TABLE users ADD COLUMN last_activity_at TIMESTAMP NULL DEFAULT NULL AFTER updated_at',
-    'SELECT 1'
-);
-PREPARE user_last_activity_stmt FROM @user_last_activity_sql;
-EXECUTE user_last_activity_stmt;
-DEALLOCATE PREPARE user_last_activity_stmt;
-
-SET @has_user_last_activity_index := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'idx_users_last_activity'
-);
-SET @user_last_activity_index_sql := IF(@has_user_last_activity_index = 0,
-    'CREATE INDEX idx_users_last_activity ON users (last_activity_at)',
-    'SELECT 1'
-);
-PREPARE user_last_activity_index_stmt FROM @user_last_activity_index_sql;
-EXECUTE user_last_activity_index_stmt;
-DEALLOCATE PREPARE user_last_activity_index_stmt;
-
-
--- ==================================================
--- Migration: 079_user_sessions.sql
--- ==================================================
-
-CREATE TABLE IF NOT EXISTS user_sessions (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id INT UNSIGNED NOT NULL,
-    session_id VARCHAR(128) NOT NULL,
-    ip_address VARCHAR(45) NULL,
-    user_agent TEXT NULL,
-    device_label VARCHAR(191) NULL,
-    last_seen_at DATETIME NULL,
-    created_at DATETIME NOT NULL,
-    revoked_at DATETIME NULL,
-    revoked_by INT UNSIGNED NULL,
-    INDEX idx_user_sessions_user (user_id),
-    INDEX idx_user_sessions_revoked (revoked_at),
-    UNIQUE KEY uniq_user_sessions_session (session_id),
-    CONSTRAINT fk_user_sessions_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
-
-
--- ==================================================
--- Migration: 080_auction_management.sql
--- ==================================================
-
--- Auction management tables and impound case auction status tracking
-
-SET @has_impound_case_auction_status := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'impound_cases' AND column_name = 'auction_status'
-);
-SET @impound_case_auction_status_sql := IF(@has_impound_case_auction_status = 0,
-    "ALTER TABLE impound_cases ADD COLUMN auction_status VARCHAR(40) NOT NULL DEFAULT 'in_storage' AFTER status",
-    'SELECT 1'
-);
-PREPARE impound_case_auction_status_stmt FROM @impound_case_auction_status_sql;
-EXECUTE impound_case_auction_status_stmt;
-DEALLOCATE PREPARE impound_case_auction_status_stmt;
-
-SET @has_impound_case_auction_status_updated := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'impound_cases' AND column_name = 'auction_status_updated_at'
-);
-SET @impound_case_auction_status_updated_sql := IF(@has_impound_case_auction_status_updated = 0,
-    'ALTER TABLE impound_cases ADD COLUMN auction_status_updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER auction_status',
-    'SELECT 1'
-);
-PREPARE impound_case_auction_status_updated_stmt FROM @impound_case_auction_status_updated_sql;
-EXECUTE impound_case_auction_status_updated_stmt;
-DEALLOCATE PREPARE impound_case_auction_status_updated_stmt;
-
-CREATE TABLE IF NOT EXISTS auction_lots (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    impound_case_id INT UNSIGNED NOT NULL,
-    lot_number VARCHAR(60) NOT NULL,
-    status VARCHAR(40) NOT NULL DEFAULT 'scheduled',
-    status_updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    auction_date DATE NULL,
-    sale_price DECIMAL(10,2) NULL,
-    buyer_name VARCHAR(160) NULL,
-    notes TEXT NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_auction_lots_case (impound_case_id),
-    INDEX idx_auction_lots_status (status),
-    INDEX idx_auction_lots_date (auction_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET @has_fk_auction_lots_case := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'auction_lots' AND constraint_name = 'fk_auction_lots_case'
-);
-SET @has_auction_lots_case_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'impound_cases'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'auction_lots'
-      AND c.column_name = 'impound_case_id'
-);
-SET @fk_auction_lots_case_sql := IF(@has_fk_auction_lots_case = 0 AND @has_auction_lots_case_match = 1,
-    'ALTER TABLE auction_lots ADD CONSTRAINT fk_auction_lots_case FOREIGN KEY (impound_case_id) REFERENCES impound_cases (id) ON DELETE CASCADE',
-    'SELECT 1'
-);
-PREPARE fk_auction_lots_case_stmt FROM @fk_auction_lots_case_sql;
-EXECUTE fk_auction_lots_case_stmt;
-DEALLOCATE PREPARE fk_auction_lots_case_stmt;
-
-
--- ==================================================
--- Migration: 081_job_tracking_link_notification.sql
--- ==================================================
-
--- Migration: Job tracking link notification template
-
-INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
-VALUES (
-    'job_tracking_link',
-    'Job Tracking Link - Customer SMS',
-    'sms',
-    'Tracking Link',
-    'Hi {customer_name}, track your service for workorder {workorder_number} here: {job_tracking_link}',
-    NOW(),
-    NOW()
-)
-ON DUPLICATE KEY UPDATE
-    name = VALUES(name),
-    channel = VALUES(channel),
-    subject = VALUES(subject),
-    body = VALUES(body),
-    updated_at = NOW();
-
-
--- ==================================================
--- Migration: 081_partition_driver_locations.sql
--- ==================================================
-
--- Partition driver_locations by month
--- Note: Uses RANGE with UNIX_TIMESTAMP for TIMESTAMP columns
-
-DELIMITER //
-
--- 1. Adjust Primary Key
-ALTER TABLE driver_locations
-    DROP PRIMARY KEY,
-    ADD PRIMARY KEY (id, recorded_at)
-//
-
-DROP PROCEDURE IF EXISTS create_driver_locations_partitions
-//
-
--- 2. Create the Procedure for TIMESTAMP partitioning
-CREATE PROCEDURE create_driver_locations_partitions()
-BEGIN
-    DECLARE start_date DATE;
-    DECLARE end_date DATE;
-    DECLARE current_date_var DATE;
-
-    SET start_date = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 12 MONTH), '%Y-%m-01');
-    SET end_date = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 12 MONTH), '%Y-%m-01');
-    SET current_date_var = start_date;
-
-    SET @sql = 'ALTER TABLE driver_locations PARTITION BY RANGE (UNIX_TIMESTAMP(recorded_at)) (';
-
-    WHILE current_date_var < end_date DO
-        SET @partition_name = DATE_FORMAT(current_date_var, 'p%Y_%m');
-        SET @next_date = DATE_ADD(current_date_var, INTERVAL 1 MONTH);
-
-        SET @sql = CONCAT(
-            @sql,
-            'PARTITION ', @partition_name, ' VALUES LESS THAN (UNIX_TIMESTAMP(''', DATE_FORMAT(@next_date, '%Y-%m-%d'), ''')),');
-        SET current_date_var = @next_date;
-    END WHILE;
-
-    SET @sql = CONCAT(@sql, 'PARTITION pmax VALUES LESS THAN (MAXVALUE))');
-
-    PREPARE stmt FROM @sql;
-    EXECUTE stmt;
-    DEALLOCATE PREPARE stmt;
-END
-//
-
--- 3. Run and Cleanup
-CALL create_driver_locations_partitions()
-//
-
-DROP PROCEDURE create_driver_locations_partitions
-//
-
-
--- ==================================================
--- Migration: 081_partner_dispatch_sync.sql
--- ==================================================
-
--- Add protocol and sync tracking to partner dispatch requests
-
-SET @has_partner_dispatch_protocol := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'protocol'
-);
-SET @partner_dispatch_protocol_sql := IF(@has_partner_dispatch_protocol = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN protocol VARCHAR(40) NULL AFTER dispatch_reference',
-    'SELECT 1');
-PREPARE partner_dispatch_protocol_stmt FROM @partner_dispatch_protocol_sql;
-EXECUTE partner_dispatch_protocol_stmt;
-DEALLOCATE PREPARE partner_dispatch_protocol_stmt;
-
-SET @has_partner_dispatch_accepted_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'accepted_at'
-);
-SET @partner_dispatch_accepted_at_sql := IF(@has_partner_dispatch_accepted_at = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN accepted_at TIMESTAMP NULL AFTER processed_at',
-    'SELECT 1');
-PREPARE partner_dispatch_accepted_at_stmt FROM @partner_dispatch_accepted_at_sql;
-EXECUTE partner_dispatch_accepted_at_stmt;
-DEALLOCATE PREPARE partner_dispatch_accepted_at_stmt;
-
-SET @has_partner_dispatch_accepted_by := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'accepted_by'
-);
-SET @partner_dispatch_accepted_by_sql := IF(@has_partner_dispatch_accepted_by = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN accepted_by INT UNSIGNED NULL AFTER accepted_at',
-    'SELECT 1');
-PREPARE partner_dispatch_accepted_by_stmt FROM @partner_dispatch_accepted_by_sql;
-EXECUTE partner_dispatch_accepted_by_stmt;
-DEALLOCATE PREPARE partner_dispatch_accepted_by_stmt;
-
-SET @has_partner_dispatch_last_status := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'last_partner_status'
-);
-SET @partner_dispatch_last_status_sql := IF(@has_partner_dispatch_last_status = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN last_partner_status VARCHAR(60) NULL AFTER accepted_by',
-    'SELECT 1');
-PREPARE partner_dispatch_last_status_stmt FROM @partner_dispatch_last_status_sql;
-EXECUTE partner_dispatch_last_status_stmt;
-DEALLOCATE PREPARE partner_dispatch_last_status_stmt;
-
-SET @has_partner_dispatch_last_synced := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'last_synced_at'
-);
-SET @partner_dispatch_last_synced_sql := IF(@has_partner_dispatch_last_synced = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN last_synced_at TIMESTAMP NULL AFTER last_partner_status',
-    'SELECT 1');
-PREPARE partner_dispatch_last_synced_stmt FROM @partner_dispatch_last_synced_sql;
-EXECUTE partner_dispatch_last_synced_stmt;
-DEALLOCATE PREPARE partner_dispatch_last_synced_stmt;
-
-SET @has_partner_dispatch_sync_attempts := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'sync_attempts'
-);
-SET @partner_dispatch_sync_attempts_sql := IF(@has_partner_dispatch_sync_attempts = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN sync_attempts INT UNSIGNED NOT NULL DEFAULT 0 AFTER last_synced_at',
-    'SELECT 1');
-PREPARE partner_dispatch_sync_attempts_stmt FROM @partner_dispatch_sync_attempts_sql;
-EXECUTE partner_dispatch_sync_attempts_stmt;
-DEALLOCATE PREPARE partner_dispatch_sync_attempts_stmt;
-
-SET @has_partner_dispatch_sync_error := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND column_name = 'sync_error'
-);
-SET @partner_dispatch_sync_error_sql := IF(@has_partner_dispatch_sync_error = 0,
-    'ALTER TABLE partner_dispatch_requests ADD COLUMN sync_error TEXT NULL AFTER sync_attempts',
-    'SELECT 1');
-PREPARE partner_dispatch_sync_error_stmt FROM @partner_dispatch_sync_error_sql;
-EXECUTE partner_dispatch_sync_error_stmt;
-DEALLOCATE PREPARE partner_dispatch_sync_error_stmt;
-
-SET @has_fk_partner_dispatch_accepted_by := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'partner_dispatch_requests' AND constraint_name = 'fk_partner_dispatch_accepted_by'
-);
-SET @has_partner_dispatch_accepted_by_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'partner_dispatch_requests'
-      AND c.column_name = 'accepted_by'
-);
-SET @fk_partner_dispatch_accepted_by_sql := IF(@has_fk_partner_dispatch_accepted_by = 0 AND @has_partner_dispatch_accepted_by_match = 1,
-    'ALTER TABLE partner_dispatch_requests ADD CONSTRAINT fk_partner_dispatch_accepted_by FOREIGN KEY (accepted_by) REFERENCES users (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_partner_dispatch_accepted_by_stmt FROM @fk_partner_dispatch_accepted_by_sql;
-EXECUTE fk_partner_dispatch_accepted_by_stmt;
-DEALLOCATE PREPARE fk_partner_dispatch_accepted_by_stmt;
-
-
--- ==================================================
--- Migration: 081_split_billing_allocations.sql
--- ==================================================
-
--- Add split billing support for invoices
-
-SET @has_invoice_split_billing := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'invoices'
-      AND column_name = 'split_billing'
-);
-SET @invoice_split_billing_sql := IF(@has_invoice_split_billing = 0,
-    'ALTER TABLE invoices ADD COLUMN split_billing TINYINT(1) NOT NULL DEFAULT 0 AFTER due_date',
-    'SELECT 1');
-PREPARE invoice_split_billing_stmt FROM @invoice_split_billing_sql;
-EXECUTE invoice_split_billing_stmt;
-DEALLOCATE PREPARE invoice_split_billing_stmt;
-
-CREATE TABLE IF NOT EXISTS invoice_payer_allocations (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT UNSIGNED NOT NULL,
-    payer_role ENUM('primary', 'secondary') NOT NULL,
-    payer_name VARCHAR(160) NULL,
-    allocated_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_invoice_payer_allocations_invoice (invoice_id),
-    INDEX idx_invoice_payer_allocations_role (payer_role),
-    CONSTRAINT fk_invoice_payer_allocations_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 082_vin_decoding_intake_storage.sql
--- ==================================================
-
--- Store decoded VIN data for intake reporting
-
-SET @has_impound_vin := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vin'
-);
-
-SET @impound_vin_sql := IF(
-    @has_impound_vin = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vin VARCHAR(30) NULL AFTER customer_vehicle_id',
-    'SELECT 1'
-);
-
-PREPARE impound_vin_stmt FROM @impound_vin_sql;
-EXECUTE impound_vin_stmt;
-DEALLOCATE PREPARE impound_vin_stmt;
-
-SET @has_impound_vehicle_year := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vehicle_year'
-);
-
-SET @impound_vehicle_year_sql := IF(
-    @has_impound_vehicle_year = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vehicle_year INT NULL AFTER vin',
-    'SELECT 1'
-);
-
-PREPARE impound_vehicle_year_stmt FROM @impound_vehicle_year_sql;
-EXECUTE impound_vehicle_year_stmt;
-DEALLOCATE PREPARE impound_vehicle_year_stmt;
-
-SET @has_impound_vehicle_make := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vehicle_make'
-);
-
-SET @impound_vehicle_make_sql := IF(
-    @has_impound_vehicle_make = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vehicle_make VARCHAR(80) NULL AFTER vehicle_year',
-    'SELECT 1'
-);
-
-PREPARE impound_vehicle_make_stmt FROM @impound_vehicle_make_sql;
-EXECUTE impound_vehicle_make_stmt;
-DEALLOCATE PREPARE impound_vehicle_make_stmt;
-
-SET @has_impound_vehicle_model := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vehicle_model'
-);
-
-SET @impound_vehicle_model_sql := IF(
-    @has_impound_vehicle_model = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vehicle_model VARCHAR(80) NULL AFTER vehicle_make',
-    'SELECT 1'
-);
-
-PREPARE impound_vehicle_model_stmt FROM @impound_vehicle_model_sql;
-EXECUTE impound_vehicle_model_stmt;
-DEALLOCATE PREPARE impound_vehicle_model_stmt;
-
-SET @has_impound_vehicle_trim := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vehicle_trim'
-);
-
-SET @impound_vehicle_trim_sql := IF(
-    @has_impound_vehicle_trim = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vehicle_trim VARCHAR(80) NULL AFTER vehicle_model',
-    'SELECT 1'
-);
-
-PREPARE impound_vehicle_trim_stmt FROM @impound_vehicle_trim_sql;
-EXECUTE impound_vehicle_trim_stmt;
-DEALLOCATE PREPARE impound_vehicle_trim_stmt;
-
-SET @has_impound_vehicle_weight := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vehicle_weight_class'
-);
-
-SET @impound_vehicle_weight_sql := IF(
-    @has_impound_vehicle_weight = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vehicle_weight_class VARCHAR(80) NULL AFTER vehicle_trim',
-    'SELECT 1'
-);
-
-PREPARE impound_vehicle_weight_stmt FROM @impound_vehicle_weight_sql;
-EXECUTE impound_vehicle_weight_stmt;
-DEALLOCATE PREPARE impound_vehicle_weight_stmt;
-
-SET @has_impound_vin_decoded := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vin_decoded'
-);
-
-SET @impound_vin_decoded_sql := IF(
-    @has_impound_vin_decoded = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vin_decoded JSON NULL AFTER vehicle_weight_class',
-    'SELECT 1'
-);
-
-PREPARE impound_vin_decoded_stmt FROM @impound_vin_decoded_sql;
-EXECUTE impound_vin_decoded_stmt;
-DEALLOCATE PREPARE impound_vin_decoded_stmt;
-
-SET @has_impound_vin_decoded_at := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vin_decoded_at'
-);
-
-SET @impound_vin_decoded_at_sql := IF(
-    @has_impound_vin_decoded_at = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vin_decoded_at DATETIME NULL AFTER vin_decoded',
-    'SELECT 1'
-);
-
-PREPARE impound_vin_decoded_at_stmt FROM @impound_vin_decoded_at_sql;
-EXECUTE impound_vin_decoded_at_stmt;
-DEALLOCATE PREPARE impound_vin_decoded_at_stmt;
-
-SET @has_impound_vin_overrides := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'impound_cases'
-      AND column_name = 'vin_overrides'
-);
-
-SET @impound_vin_overrides_sql := IF(
-    @has_impound_vin_overrides = 0,
-    'ALTER TABLE impound_cases ADD COLUMN vin_overrides JSON NULL AFTER vin_decoded_at',
-    'SELECT 1'
-);
-
-PREPARE impound_vin_overrides_stmt FROM @impound_vin_overrides_sql;
-EXECUTE impound_vin_overrides_stmt;
-DEALLOCATE PREPARE impound_vin_overrides_stmt;
-
-CREATE TABLE IF NOT EXISTS job_vehicle_intakes (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    workorder_id INT UNSIGNED NOT NULL,
-    workorder_job_id INT UNSIGNED NOT NULL,
-    vin VARCHAR(30) NULL,
-    vehicle_year INT NULL,
-    vehicle_make VARCHAR(80) NULL,
-    vehicle_model VARCHAR(80) NULL,
-    vehicle_trim VARCHAR(80) NULL,
-    vehicle_weight_class VARCHAR(80) NULL,
-    vin_decoded JSON NULL,
-    vin_overrides JSON NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_job_vehicle_intakes_job (workorder_job_id),
-    INDEX idx_job_vehicle_intakes_workorder (workorder_id),
-    CONSTRAINT fk_job_vehicle_intakes_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE CASCADE,
-    CONSTRAINT fk_job_vehicle_intakes_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 083_goa_workorder_fields.sql
--- ==================================================
-
--- Add GOA fee tracking fields to workorders
-
-SET @has_goa_fee := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'workorders'
-      AND column_name = 'goa_fee'
-);
-SET @goa_fee_sql := IF(@has_goa_fee = 0,
-    'ALTER TABLE workorders ADD COLUMN goa_fee DECIMAL(12,2) DEFAULT 0 AFTER hazmat_disposal_fee',
-    'SELECT 1'
-);
-PREPARE goa_fee_stmt FROM @goa_fee_sql;
-EXECUTE goa_fee_stmt;
-DEALLOCATE PREPARE goa_fee_stmt;
-
-SET @has_goa_billing_party := (
-    SELECT COUNT(*)
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'workorders'
-      AND column_name = 'goa_billing_party'
-);
-SET @goa_billing_party_sql := IF(@has_goa_billing_party = 0,
-    'ALTER TABLE workorders ADD COLUMN goa_billing_party VARCHAR(40) NULL AFTER goa_fee',
-    'SELECT 1'
-);
-PREPARE goa_billing_party_stmt FROM @goa_billing_party_sql;
-EXECUTE goa_billing_party_stmt;
-DEALLOCATE PREPARE goa_billing_party_stmt;
-
-
--- ==================================================
--- Migration: 083_inventory_search_indexes.sql
--- ==================================================
-
--- Migration: 083_inventory_search_indexes.sql
--- Description: Add full-text and prefix indexes to accelerate inventory search
-
-ALTER TABLE inventory_items
-ADD FULLTEXT INDEX IF NOT EXISTS idx_inventory_search (name, description);
-
-ALTER TABLE inventory_items
-ADD INDEX IF NOT EXISTS idx_inventory_sku_prefix (sku(20));
-
-
--- ==================================================
--- Migration: 083_truck_checklists.sql
--- ==================================================
-
--- Migration: Truck Checklists (Pre-trip/Post-trip)
--- Adds checklist templates, entries, and driver shift requirements.
-
-CREATE TABLE IF NOT EXISTS truck_checklist_templates (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    description TEXT NULL,
-    checklist_type ENUM('pre_trip', 'post_trip') NOT NULL,
-    is_default TINYINT(1) DEFAULT 0,
-    active TINYINT(1) DEFAULT 1,
-    created_by INT UNSIGNED NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_tct_type (checklist_type),
-    INDEX idx_tct_default (is_default),
-    INDEX idx_tct_active (active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS truck_checklist_template_items (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    template_id INT UNSIGNED NOT NULL,
-    label VARCHAR(255) NOT NULL,
-    description TEXT NULL,
-    required TINYINT(1) DEFAULT 1,
-    display_order INT DEFAULT 0,
-    FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE,
-    INDEX idx_tcti_template (template_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS truck_checklist_entries (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    driver_profile_id INT UNSIGNED NOT NULL,
-    driver_shift_id INT UNSIGNED NULL,
-    template_id INT UNSIGNED NOT NULL,
-    checklist_type ENUM('pre_trip', 'post_trip') NOT NULL,
-    status ENUM('completed') NOT NULL DEFAULT 'completed',
-    completed_at DATETIME NULL,
-    completed_by INT UNSIGNED NULL,
-    notes TEXT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_tce_driver (driver_profile_id),
-    INDEX idx_tce_shift (driver_shift_id),
-    INDEX idx_tce_type (checklist_type),
-    INDEX idx_tce_completed_at (completed_at),
-    INDEX idx_tce_template (template_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Add foreign keys separately using conditional logic
-SET @has_fk_tce_template := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'truck_checklist_entries' AND constraint_name = 'fk_tce_template'
-);
-SET @fk_tce_template_sql := IF(@has_fk_tce_template = 0,
-    'ALTER TABLE truck_checklist_entries ADD CONSTRAINT fk_tce_template FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_tce_template_stmt FROM @fk_tce_template_sql;
-EXECUTE fk_tce_template_stmt;
-DEALLOCATE PREPARE fk_tce_template_stmt;
-
-SET @has_fk_tce_driver_profile := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'truck_checklist_entries' AND constraint_name = 'fk_tce_driver_profile'
-);
-SET @fk_tce_driver_profile_sql := IF(@has_fk_tce_driver_profile = 0,
-    'ALTER TABLE truck_checklist_entries ADD CONSTRAINT fk_tce_driver_profile FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles(id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_tce_driver_profile_stmt FROM @fk_tce_driver_profile_sql;
-EXECUTE fk_tce_driver_profile_stmt;
-DEALLOCATE PREPARE fk_tce_driver_profile_stmt;
-
-SET @has_fk_tce_driver_shift := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'truck_checklist_entries' AND constraint_name = 'fk_tce_driver_shift'
-);
-SET @fk_tce_driver_shift_sql := IF(@has_fk_tce_driver_shift = 0,
-    'ALTER TABLE truck_checklist_entries ADD CONSTRAINT fk_tce_driver_shift FOREIGN KEY (driver_shift_id) REFERENCES driver_shifts(id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_tce_driver_shift_stmt FROM @fk_tce_driver_shift_sql;
-EXECUTE fk_tce_driver_shift_stmt;
-DEALLOCATE PREPARE fk_tce_driver_shift_stmt;
-
-CREATE TABLE IF NOT EXISTS truck_checklist_entry_items (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    entry_id INT UNSIGNED NOT NULL,
-    template_item_id INT UNSIGNED NOT NULL,
-    response ENUM('pass', 'fail', 'na') NULL,
-    notes TEXT NULL,
-    checked_by INT UNSIGNED NULL,
-    checked_at DATETIME NULL,
-    FOREIGN KEY (entry_id) REFERENCES truck_checklist_entries(id) ON DELETE CASCADE,
-    FOREIGN KEY (template_item_id) REFERENCES truck_checklist_template_items(id) ON DELETE CASCADE,
-    INDEX idx_tcei_entry (entry_id),
-    INDEX idx_tcei_response (response)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-ALTER TABLE driver_shifts
-    ADD COLUMN pre_trip_checklist_id INT UNSIGNED NULL,
-    ADD COLUMN post_trip_checklist_id INT UNSIGNED NULL,
-    ADD INDEX idx_driver_shifts_pre_trip (pre_trip_checklist_id),
-    ADD INDEX idx_driver_shifts_post_trip (post_trip_checklist_id),
-    ADD CONSTRAINT fk_driver_shifts_pre_trip FOREIGN KEY (pre_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL,
-    ADD CONSTRAINT fk_driver_shifts_post_trip FOREIGN KEY (post_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL;
-
--- Default templates
-INSERT INTO truck_checklist_templates (name, description, checklist_type, is_default, active, created_at, updated_at)
-VALUES
-    ('Standard Pre-Trip Checklist', 'Default pre-trip checklist for tow trucks', 'pre_trip', 1, 1, NOW(), NOW()),
-    ('Standard Post-Trip Checklist', 'Default post-trip checklist for tow trucks', 'post_trip', 1, 1, NOW(), NOW());
-
-SET @pre_trip_template_id = (SELECT id FROM truck_checklist_templates WHERE checklist_type = 'pre_trip' AND is_default = 1 LIMIT 1);
-SET @post_trip_template_id = (SELECT id FROM truck_checklist_templates WHERE checklist_type = 'post_trip' AND is_default = 1 LIMIT 1);
-
-INSERT INTO truck_checklist_template_items (template_id, label, description, required, display_order) VALUES
-(@pre_trip_template_id, 'Check tires (tread/pressure)', 'Inspect all tires for proper inflation and tread wear', 1, 1),
-(@pre_trip_template_id, 'Lights & signals operational', 'Headlights, brake lights, turn signals, hazard lights', 1, 2),
-(@pre_trip_template_id, 'Hydraulic system check', 'Verify hydraulics are functioning and leak-free', 1, 3),
-(@pre_trip_template_id, 'Winch & cables inspected', 'Inspect winch operation and cable condition', 1, 4),
-(@pre_trip_template_id, 'Safety equipment onboard', 'Cones, flares, fire extinguisher, PPE', 1, 5),
-(@pre_trip_template_id, 'Fuel level sufficient', 'Verify fuel level for scheduled shift', 1, 6);
-
-INSERT INTO truck_checklist_template_items (template_id, label, description, required, display_order) VALUES
-(@post_trip_template_id, 'Vehicle damage noted', 'Record any new damage or issues', 1, 1),
-(@post_trip_template_id, 'Equipment cleaned & secured', 'Secure chains, straps, and tools', 1, 2),
-(@post_trip_template_id, 'Fuel level recorded', 'Record remaining fuel level', 1, 3),
-(@post_trip_template_id, 'Odometer recorded', 'Log ending mileage', 1, 4),
-(@post_trip_template_id, 'Issues reported to dispatch', 'Report any incidents or maintenance needs', 1, 5);
-
-
--- ==================================================
--- Migration: 084_inventory_bin_location.sql
--- ==================================================
-
--- Migration: 084_inventory_bin_location.sql
--- Description: Add bin location to inventory items
-
-ALTER TABLE inventory_items
-ADD COLUMN IF NOT EXISTS bin_location VARCHAR(160) NULL AFTER location;
-
-
--- ==================================================
--- Migration: 084_inventory_transactions.sql
--- ==================================================
-
--- Migration: 084_inventory_transactions.sql
--- Description: Add inventory transaction ledger table
-
-CREATE TABLE IF NOT EXISTS inventory_transactions (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    inventory_item_id INT UNSIGNED NOT NULL,
-    quantity_before INT NOT NULL,
-    quantity_after INT NOT NULL,
-    quantity_change INT NOT NULL,
-    source VARCHAR(60) NOT NULL,
-    reference VARCHAR(120) NULL,
-    reason VARCHAR(255) NULL,
-    created_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_inventory_transactions_item (inventory_item_id),
-    INDEX idx_inventory_transactions_source (source),
-    INDEX idx_inventory_transactions_reference (reference),
-    CONSTRAINT fk_inventory_transactions_item FOREIGN KEY (inventory_item_id)
-        REFERENCES inventory_items (id) ON DELETE CASCADE,
-    CONSTRAINT fk_inventory_transactions_user FOREIGN KEY (created_by)
-        REFERENCES users (id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 084_stock_forecasting.sql
--- ==================================================
-
--- Add inventory stock forecasting overrides and history
-
-SET @has_reorder_point_override := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'inventory_items' AND column_name = 'reorder_point_override'
-);
-SET @reorder_point_override_sql := IF(@has_reorder_point_override = 0,
-    'ALTER TABLE inventory_items ADD COLUMN reorder_point_override INT NULL AFTER reorder_quantity',
-    'SELECT 1'
-);
-PREPARE reorder_point_override_stmt FROM @reorder_point_override_sql;
-EXECUTE reorder_point_override_stmt;
-DEALLOCATE PREPARE reorder_point_override_stmt;
-
-SET @has_reorder_point_override_reason := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'inventory_items' AND column_name = 'reorder_point_override_reason'
-);
-SET @reorder_point_override_reason_sql := IF(@has_reorder_point_override_reason = 0,
-    'ALTER TABLE inventory_items ADD COLUMN reorder_point_override_reason VARCHAR(255) NULL AFTER reorder_point_override',
-    'SELECT 1'
-);
-PREPARE reorder_point_override_reason_stmt FROM @reorder_point_override_reason_sql;
-EXECUTE reorder_point_override_reason_stmt;
-DEALLOCATE PREPARE reorder_point_override_reason_stmt;
-
-SET @has_reorder_point_override_updated_at := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'inventory_items' AND column_name = 'reorder_point_override_updated_at'
-);
-SET @reorder_point_override_updated_at_sql := IF(@has_reorder_point_override_updated_at = 0,
-    'ALTER TABLE inventory_items ADD COLUMN reorder_point_override_updated_at TIMESTAMP NULL AFTER reorder_point_override_reason',
-    'SELECT 1'
-);
-PREPARE reorder_point_override_updated_at_stmt FROM @reorder_point_override_updated_at_sql;
-EXECUTE reorder_point_override_updated_at_stmt;
-DEALLOCATE PREPARE reorder_point_override_updated_at_stmt;
-
-SET @has_reorder_point_override_updated_by := (
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = DATABASE() AND table_name = 'inventory_items' AND column_name = 'reorder_point_override_updated_by'
-);
-SET @reorder_point_override_updated_by_sql := IF(@has_reorder_point_override_updated_by = 0,
-    'ALTER TABLE inventory_items ADD COLUMN reorder_point_override_updated_by INT UNSIGNED NULL AFTER reorder_point_override_updated_at',
-    'SELECT 1'
-);
-PREPARE reorder_point_override_updated_by_stmt FROM @reorder_point_override_updated_by_sql;
-EXECUTE reorder_point_override_updated_by_stmt;
-DEALLOCATE PREPARE reorder_point_override_updated_by_stmt;
-
-SET @has_reorder_point_override_updated_by_index := (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'inventory_items' AND index_name = 'idx_inventory_reorder_override_user'
-);
-SET @reorder_point_override_updated_by_index_sql := IF(@has_reorder_point_override_updated_by_index = 0,
-    'CREATE INDEX idx_inventory_reorder_override_user ON inventory_items(reorder_point_override_updated_by)',
-    'SELECT 1'
-);
-PREPARE reorder_point_override_updated_by_index_stmt FROM @reorder_point_override_updated_by_index_sql;
-EXECUTE reorder_point_override_updated_by_index_stmt;
-DEALLOCATE PREPARE reorder_point_override_updated_by_index_stmt;
-
-CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    inventory_item_id INT UNSIGNED NOT NULL,
-    previous_override INT NULL,
-    new_override INT NULL,
-    reason VARCHAR(255) NULL,
-    changed_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_inventory_reorder_history_item (inventory_item_id),
-    INDEX idx_inventory_reorder_history_user (changed_by),
-    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
-        REFERENCES inventory_items (id) ON DELETE CASCADE,
-    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
-        REFERENCES users (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- ==================================================
--- Migration: 084_warranty_claim_financials.sql
--- ==================================================
-
-ALTER TABLE warranty_claims
-    ADD COLUMN financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER status,
-    ADD COLUMN credit_received_amount DECIMAL(12,2) NULL AFTER financial_impact;
-
-
