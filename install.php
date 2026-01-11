@@ -202,7 +202,7 @@ function write_env_file($filepath, $env) {
 /**
  * Create admin user in database
  */
-function create_admin_user($pdo, $name, $email, $password) {
+function create_admin_user($pdo, $name, $email, $password, $twoFactorSecret = null, $twoFactorEnabled = false, $twoFactorPending = false) {
     // Hash the password
     $hashedPassword = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
 
@@ -210,17 +210,217 @@ function create_admin_user($pdo, $name, $email, $password) {
     $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
     $stmt->execute([$email]);
 
-    if ($stmt->fetch()) {
+    $existing = $stmt->fetch();
+
+    if ($existing) {
         // Update existing user
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, password = ?, role = 'admin', active = 1, email_verified = 1, updated_at = NOW() WHERE email = ?");
-        $stmt->execute([$name, $hashedPassword, $email]);
-        return ['action' => 'updated', 'id' => null];
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, password = ?, role = 'admin', active = 1, email_verified = 1, two_factor_secret = ?, two_factor_enabled = ?, two_factor_setup_pending = ?, updated_at = NOW() WHERE email = ?");
+        $stmt->execute([$name, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $email]);
+        return ['action' => 'updated', 'id' => $existing['id'] ?? null];
     } else {
         // Insert new user
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, active, email_verified, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, NOW(), NOW())");
-        $stmt->execute([$name, $email, $hashedPassword]);
+        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, active, email_verified, two_factor_secret, two_factor_enabled, two_factor_setup_pending, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, ?, ?, ?, NOW(), NOW())");
+        $stmt->execute([$name, $email, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0]);
         return ['action' => 'created', 'id' => $pdo->lastInsertId()];
     }
+}
+
+/**
+ * Generate TOTP secret (Base32 encoded)
+ */
+function generate_totp_secret($length = 16) {
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $secret = '';
+    for ($i = 0; $i < $length; $i++) {
+        $secret .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+    return $secret;
+}
+
+/**
+ * Generate TOTP code for verification
+ */
+function generate_totp_code($secret, $timestamp = null) {
+    $period = 30;
+    $digits = 6;
+    $timestamp = $timestamp ?? time();
+    $counter = floor($timestamp / $period);
+
+    // Base32 decode
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $binaryString = '';
+    for ($i = 0; $i < strlen($secret); $i++) {
+        $current = strpos($alphabet, $secret[$i]);
+        if ($current === false) {
+            return null;
+        }
+        $binaryString .= str_pad(decbin($current), 5, '0', STR_PAD_LEFT);
+    }
+
+    $eightBits = str_split($binaryString, 8);
+    $key = '';
+    foreach ($eightBits as $bits) {
+        if (strlen($bits) === 8) {
+            $key .= chr(bindec($bits));
+        }
+    }
+
+    $binaryCounter = pack('N*', 0) . pack('N*', $counter);
+    $hash = hash_hmac('sha1', $binaryCounter, $key, true);
+    $offset = ord(substr($hash, -1)) & 0x0F;
+    $truncated = unpack('N', substr($hash, $offset, 4))[1] & 0x7FFFFFFF;
+    $otp = $truncated % (10 ** $digits);
+
+    return str_pad((string) $otp, $digits, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Verify TOTP code
+ */
+function verify_totp_code($secret, $code, $window = 1) {
+    $timestamp = time();
+    $normalizedCode = preg_replace('/\s+/', '', $code);
+
+    for ($i = -$window; $i <= $window; $i++) {
+        $expected = generate_totp_code($secret, $timestamp + ($i * 30));
+        if ($expected !== null && hash_equals($expected, $normalizedCode)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Get otpauth URI for authenticator apps
+ */
+function get_totp_uri($secret, $email, $issuer = 'PHPArm') {
+    $issuer = rawurlencode($issuer);
+    $email = rawurlencode($email);
+    return "otpauth://totp/{$issuer}:{$email}?secret={$secret}&issuer={$issuer}&algorithm=SHA1&digits=6&period=30";
+}
+
+/**
+ * Get list of existing application tables
+ */
+function get_existing_tables($pdo, $prefix = '') {
+    $stmt = $pdo->query("SHOW TABLES");
+    $allTables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    // Known application tables (from install.sql)
+    $appTables = [
+        'users', 'password_resets', 'email_verifications', 'user_sessions',
+        'customers', 'customer_vehicles', 'vehicle_master', 'customer_credit',
+        'estimates', 'estimate_items', 'workorders', 'workorder_jobs', 'workorder_notes',
+        'invoices', 'invoice_items', 'payments', 'inventory', 'inventory_categories',
+        'inventory_vendors', 'inventory_locations', 'inventory_adjustments',
+        'appointments', 'appointment_slots', 'service_types', 'bundles', 'bundle_items',
+        'time_entries', 'warranty_claims', 'inspections', 'inspection_templates',
+        'audit_logs', 'settings', 'messages', 'notifications', 'migrations',
+        'impound_cases', 'lien_notices', 'auction_lots', 'storage_rates',
+        'towing_rates', 'roadside_calls', 'dispatch_offers', 'driver_tokens',
+        'truck_checklists', 'driver_shifts', 'cms_pages', 'cms_categories',
+        'cms_menus', 'cms_menu_items', 'cms_media', 'cms_components', 'cms_templates',
+        'not_found_logs', 'redirects', 'user_groups', 'user_group_members',
+        'role_permissions', 'financial_entries', 'financial_vendors',
+        'pull_requests', 'pull_request_items', 'stock_orders', 'stock_order_items'
+    ];
+
+    $existing = [];
+    foreach ($allTables as $table) {
+        $tableName = $prefix ? preg_replace('/^' . preg_quote($prefix, '/') . '/', '', $table) : $table;
+        if (in_array($tableName, $appTables) || in_array($table, $appTables)) {
+            $existing[] = $table;
+        }
+    }
+
+    return $existing;
+}
+
+/**
+ * Dump tables to SQL file
+ */
+function dump_tables($pdo, $tables, $outputFile) {
+    $dump = "-- PHPArm Database Backup\n";
+    $dump .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
+    $dump .= "-- Tables: " . count($tables) . "\n\n";
+    $dump .= "SET FOREIGN_KEY_CHECKS = 0;\n\n";
+
+    foreach ($tables as $table) {
+        // Get CREATE TABLE statement
+        $stmt = $pdo->query("SHOW CREATE TABLE `{$table}`");
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $createTable = $row['Create Table'] ?? null;
+
+        if ($createTable) {
+            $dump .= "-- Table: {$table}\n";
+            $dump .= "DROP TABLE IF EXISTS `{$table}`;\n";
+            $dump .= $createTable . ";\n\n";
+
+            // Get table data
+            $stmt = $pdo->query("SELECT * FROM `{$table}`");
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if (count($rows) > 0) {
+                $columns = array_keys($rows[0]);
+                $columnList = implode('`, `', $columns);
+
+                foreach ($rows as $row) {
+                    $values = array_map(function ($value) use ($pdo) {
+                        if ($value === null) {
+                            return 'NULL';
+                        }
+                        return $pdo->quote($value);
+                    }, array_values($row));
+                    $valueList = implode(', ', $values);
+                    $dump .= "INSERT INTO `{$table}` (`{$columnList}`) VALUES ({$valueList});\n";
+                }
+                $dump .= "\n";
+            }
+        }
+    }
+
+    $dump .= "SET FOREIGN_KEY_CHECKS = 1;\n";
+
+    return file_put_contents($outputFile, $dump) !== false;
+}
+
+/**
+ * Drop tables from database
+ */
+function drop_tables($pdo, $tables) {
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+
+    $dropped = 0;
+    foreach ($tables as $table) {
+        try {
+            $pdo->exec("DROP TABLE IF EXISTS `{$table}`");
+            $dropped++;
+        } catch (PDOException $e) {
+            // Continue even if one fails
+        }
+    }
+
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+
+    return $dropped;
+}
+
+/**
+ * Show menu and get user choice
+ */
+function menu($title, $options) {
+    output("\n  {$title}\n", COLOR_BOLD);
+    output("  " . str_repeat("-", strlen($title)) . "\n");
+
+    foreach ($options as $key => $label) {
+        output("  [{$key}] {$label}\n", COLOR_YELLOW);
+    }
+
+    output("\n");
+    $choice = prompt("  Enter your choice");
+
+    return $choice;
 }
 
 /**
@@ -447,19 +647,103 @@ header_section("Database Installation");
 
 $installFile = $baseDir . '/database/install/install.sql';
 $migrationsDir = $baseDir . '/database/migrations';
+$backupDir = $baseDir . '/storage/backups';
+$tablePrefix = '';
 
 // Check if tables already exist
-$stmt = $pdo->query("SHOW TABLES");
-$tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+$existingTables = get_existing_tables($pdo);
 
-if (count($tables) > 0) {
-    output("  Database already contains " . count($tables) . " table(s).\n", COLOR_YELLOW);
+if (count($existingTables) > 0) {
+    output("\n", COLOR_YELLOW);
+    output("  ⚠ WARNING: Found " . count($existingTables) . " existing PHPArm table(s):\n", COLOR_RED);
+    output("  " . implode(", ", array_slice($existingTables, 0, 5)), COLOR_YELLOW);
+    if (count($existingTables) > 5) {
+        output(" ... and " . (count($existingTables) - 5) . " more", COLOR_YELLOW);
+    }
+    output("\n\n");
 
-    if (confirm("  Run database installation anyway? (may cause errors)", false)) {
-        $runInstall = true;
-    } else {
-        $runInstall = false;
-        output("  Skipping database installation.\n", COLOR_YELLOW);
+    $choice = menu("How would you like to handle existing tables?", [
+        '1' => 'Add a prefix to new tables (keeps existing tables)',
+        '2' => 'Backup existing tables to SQL file, then drop them',
+        '3' => 'Drop existing tables WITHOUT backup (destructive!)',
+        '4' => 'Skip database installation (keep existing tables)',
+    ]);
+
+    switch ($choice) {
+        case '1':
+            // Add prefix option
+            $tablePrefix = prompt("  Enter table prefix (e.g., 'new_')", "phparm_");
+            if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $tablePrefix)) {
+                output("  Invalid prefix. Using 'phparm_'\n", COLOR_YELLOW);
+                $tablePrefix = 'phparm_';
+            }
+            output("  ✓ Will use prefix: {$tablePrefix}\n", COLOR_GREEN);
+            $runInstall = true;
+            break;
+
+        case '2':
+            // Backup and drop
+            if (!file_exists($backupDir)) {
+                mkdir($backupDir, 0755, true);
+            }
+
+            $backupFile = $backupDir . '/backup_' . date('Y-m-d_His') . '.sql';
+            output("  Creating backup...\n", COLOR_YELLOW);
+
+            if (dump_tables($pdo, $existingTables, $backupFile)) {
+                output("  ✓ Backup saved to: {$backupFile}\n", COLOR_GREEN);
+
+                if (confirm("  Proceed to drop " . count($existingTables) . " tables?", true)) {
+                    $dropped = drop_tables($pdo, $existingTables);
+                    output("  ✓ Dropped {$dropped} table(s)\n", COLOR_GREEN);
+                    $runInstall = true;
+                } else {
+                    output("  Aborted. Tables not dropped.\n", COLOR_YELLOW);
+                    $runInstall = false;
+                }
+            } else {
+                output("  ✗ Failed to create backup. Aborting.\n", COLOR_RED);
+                $runInstall = false;
+            }
+            break;
+
+        case '3':
+            // Drop without backup - requires multiple confirmations
+            output("\n", COLOR_RED);
+            output("  ╔════════════════════════════════════════════════════════════╗\n", COLOR_RED);
+            output("  ║  ⚠  DANGER: This will permanently delete all data!        ║\n", COLOR_RED);
+            output("  ║  This action CANNOT be undone!                             ║\n", COLOR_RED);
+            output("  ╚════════════════════════════════════════════════════════════╝\n", COLOR_RED);
+            output("\n");
+
+            if (!confirm("  Are you ABSOLUTELY sure you want to delete all tables?", false)) {
+                output("  Aborted.\n", COLOR_YELLOW);
+                $runInstall = false;
+            } else {
+                output("\n  Type 'DELETE ALL DATA' to confirm: ", COLOR_RED);
+                $confirmation = trim(fgets(STDIN));
+
+                if ($confirmation === 'DELETE ALL DATA') {
+                    if (!confirm("  FINAL WARNING: Drop " . count($existingTables) . " tables now?", false)) {
+                        output("  Aborted.\n", COLOR_YELLOW);
+                        $runInstall = false;
+                    } else {
+                        $dropped = drop_tables($pdo, $existingTables);
+                        output("  ✓ Dropped {$dropped} table(s)\n", COLOR_GREEN);
+                        $runInstall = true;
+                    }
+                } else {
+                    output("  Confirmation failed. Aborted.\n", COLOR_YELLOW);
+                    $runInstall = false;
+                }
+            }
+            break;
+
+        case '4':
+        default:
+            output("  Skipping database installation.\n", COLOR_YELLOW);
+            $runInstall = false;
+            break;
     }
 } else {
     $runInstall = true;
@@ -468,7 +752,36 @@ if (count($tables) > 0) {
 if ($runInstall) {
     if (file_exists($installFile)) {
         output("  Running install.sql...\n", COLOR_YELLOW);
-        $result = run_sql_file($pdo, $installFile);
+
+        // If using a prefix, we need to modify the SQL
+        if ($tablePrefix !== '') {
+            $sql = file_get_contents($installFile);
+            // Add prefix to table names in CREATE TABLE, INSERT, ALTER, etc.
+            $sql = preg_replace('/CREATE TABLE (IF NOT EXISTS )?`?([a-zA-Z_][a-zA-Z0-9_]*)`?/i',
+                'CREATE TABLE $1`' . $tablePrefix . '$2`', $sql);
+            $sql = preg_replace('/INSERT INTO `?([a-zA-Z_][a-zA-Z0-9_]*)`?/i',
+                'INSERT INTO `' . $tablePrefix . '$1`', $sql);
+            $sql = preg_replace('/ALTER TABLE `?([a-zA-Z_][a-zA-Z0-9_]*)`?/i',
+                'ALTER TABLE `' . $tablePrefix . '$1`', $sql);
+            $sql = preg_replace('/REFERENCES `?([a-zA-Z_][a-zA-Z0-9_]*)`?\s*\(/i',
+                'REFERENCES `' . $tablePrefix . '$1` (', $sql);
+            $sql = preg_replace('/DROP TABLE (IF EXISTS )?`?([a-zA-Z_][a-zA-Z0-9_]*)`?/i',
+                'DROP TABLE $1`' . $tablePrefix . '$2`', $sql);
+
+            // Write modified SQL to temp file
+            $tempFile = $baseDir . '/storage/temp/install_prefixed.sql';
+            if (!file_exists(dirname($tempFile))) {
+                mkdir(dirname($tempFile), 0755, true);
+            }
+            file_put_contents($tempFile, $sql);
+            $result = run_sql_file($pdo, $tempFile);
+            unlink($tempFile);
+
+            output("  ✓ Tables created with prefix '{$tablePrefix}'\n", COLOR_GREEN);
+            output("  Note: Update your .env to include DB_PREFIX={$tablePrefix}\n", COLOR_YELLOW);
+        } else {
+            $result = run_sql_file($pdo, $installFile);
+        }
 
         if ($result['success']) {
             output("  ✓ Executed {$result['executed']} statements", COLOR_GREEN);
@@ -479,8 +792,9 @@ if ($runInstall) {
         }
 
         // Create migrations tracking table
+        $migrationsTable = $tablePrefix . 'migrations';
         $pdo->exec("
-            CREATE TABLE IF NOT EXISTS migrations (
+            CREATE TABLE IF NOT EXISTS `{$migrationsTable}` (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 migration VARCHAR(255) NOT NULL UNIQUE,
                 executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -491,7 +805,7 @@ if ($runInstall) {
         $migrationFiles = glob($migrationsDir . '/*.sql');
         sort($migrationFiles);
 
-        $stmt = $pdo->prepare("INSERT IGNORE INTO migrations (migration) VALUES (?)");
+        $stmt = $pdo->prepare("INSERT IGNORE INTO `{$migrationsTable}` (migration) VALUES (?)");
         foreach ($migrationFiles as $file) {
             $name = basename($file);
             if (strpos($name, 'README') === false) {
@@ -538,12 +852,127 @@ if ($generatePassword) {
     }
 }
 
-$result = create_admin_user($pdo, $adminName, $adminEmail, $adminPassword);
+// Step 10b: Two-Factor Authentication Setup
+header_section("Two-Factor Authentication (2FA)");
 
-if ($result['action'] === 'created') {
-    output("  ✓ Admin user created successfully\n", COLOR_GREEN);
+output("  Admin accounts require Two-Factor Authentication for security.\n");
+output("  You can set it up now or defer until first login.\n\n");
+
+$twoFactorChoice = menu("How would you like to handle 2FA?", [
+    '1' => 'Set up 2FA now (recommended)',
+    '2' => 'Prompt for 2FA setup on first login',
+    '3' => 'Disable 2FA requirement for this admin (not recommended)',
+]);
+
+$twoFactorSecret = null;
+$twoFactorEnabled = false;
+$twoFactorPending = false;
+
+switch ($twoFactorChoice) {
+    case '1':
+        // Set up 2FA now
+        $twoFactorSecret = generate_totp_secret(16);
+        $otpauthUri = get_totp_uri($twoFactorSecret, $adminEmail, $appName);
+
+        output("\n  ┌─────────────────────────────────────────────────────────────┐\n", COLOR_CYAN);
+        output("  │  Scan this with your authenticator app (Google Authenticator,│\n", COLOR_CYAN);
+        output("  │  Authy, 1Password, etc.) or enter the secret manually:       │\n", COLOR_CYAN);
+        output("  └─────────────────────────────────────────────────────────────┘\n", COLOR_CYAN);
+        output("\n");
+        output("  Secret Key: ", COLOR_BOLD);
+        output("{$twoFactorSecret}\n", COLOR_GREEN);
+        output("\n  Or use this URI in your authenticator app:\n", COLOR_YELLOW);
+        output("  {$otpauthUri}\n\n", COLOR_CYAN);
+
+        // Verify the code
+        $verified = false;
+        $attempts = 0;
+        $maxAttempts = 3;
+
+        while (!$verified && $attempts < $maxAttempts) {
+            $verifyCode = prompt("  Enter the 6-digit code from your authenticator app");
+            $verifyCode = preg_replace('/\s+/', '', $verifyCode);
+
+            if (verify_totp_code($twoFactorSecret, $verifyCode)) {
+                $verified = true;
+                $twoFactorEnabled = true;
+                output("  ✓ 2FA verified and enabled!\n", COLOR_GREEN);
+            } else {
+                $attempts++;
+                if ($attempts < $maxAttempts) {
+                    output("  ✗ Invalid code. Please try again. (" . ($maxAttempts - $attempts) . " attempts remaining)\n", COLOR_RED);
+                } else {
+                    output("  ✗ Verification failed after {$maxAttempts} attempts.\n", COLOR_RED);
+                    if (confirm("  Save 2FA secret anyway and try again at login?", true)) {
+                        $twoFactorEnabled = false;
+                        $twoFactorPending = true;
+                        output("  2FA secret saved. You'll need to verify on first login.\n", COLOR_YELLOW);
+                    } else {
+                        $twoFactorSecret = null;
+                        $twoFactorPending = true;
+                        output("  2FA setup deferred to first login.\n", COLOR_YELLOW);
+                    }
+                }
+            }
+        }
+        break;
+
+    case '2':
+        // Defer to first login
+        $twoFactorPending = true;
+        output("  ✓ 2FA setup will be required on first login.\n", COLOR_GREEN);
+        break;
+
+    case '3':
+        // Disable requirement (not recommended)
+        output("\n", COLOR_RED);
+        output("  ⚠ WARNING: Disabling 2FA reduces account security!\n", COLOR_RED);
+        output("  Admin accounts are high-value targets for attackers.\n", COLOR_RED);
+        output("\n");
+
+        if (confirm("  Are you sure you want to disable 2FA for this admin?", false)) {
+            $twoFactorEnabled = false;
+            $twoFactorPending = false;
+            $twoFactorSecret = null;
+            output("  2FA disabled for this admin account.\n", COLOR_YELLOW);
+            output("  You can enable it later from Settings > Security.\n", COLOR_YELLOW);
+        } else {
+            $twoFactorPending = true;
+            output("  ✓ 2FA setup will be required on first login.\n", COLOR_GREEN);
+        }
+        break;
+
+    default:
+        $twoFactorPending = true;
+        output("  ✓ 2FA setup will be required on first login.\n", COLOR_GREEN);
+        break;
+}
+
+// Determine the correct users table name (with prefix if used)
+$usersTable = $tablePrefix . 'users';
+
+// Check if users table exists before creating admin
+$stmt = $pdo->query("SHOW TABLES LIKE '{$usersTable}'");
+if ($stmt->rowCount() === 0) {
+    output("  ✗ Users table not found. Skipping admin creation.\n", COLOR_RED);
+    output("  Run database installation first.\n", COLOR_YELLOW);
 } else {
-    output("  ✓ Admin user updated successfully\n", COLOR_GREEN);
+    // Modify create_admin_user to use the correct table
+    $hashedPassword = password_hash($adminPassword, PASSWORD_BCRYPT, ['cost' => 12]);
+
+    $stmt = $pdo->prepare("SELECT id FROM `{$usersTable}` WHERE email = ?");
+    $stmt->execute([$adminEmail]);
+    $existing = $stmt->fetch();
+
+    if ($existing) {
+        $stmt = $pdo->prepare("UPDATE `{$usersTable}` SET name = ?, password = ?, role = 'admin', active = 1, email_verified = 1, two_factor_secret = ?, two_factor_enabled = ?, two_factor_setup_pending = ?, updated_at = NOW() WHERE email = ?");
+        $stmt->execute([$adminName, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $adminEmail]);
+        output("  ✓ Admin user updated successfully\n", COLOR_GREEN);
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO `{$usersTable}` (name, email, password, role, active, email_verified, two_factor_secret, two_factor_enabled, two_factor_setup_pending, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, ?, ?, ?, NOW(), NOW())");
+        $stmt->execute([$adminName, $adminEmail, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0]);
+        output("  ✓ Admin user created successfully\n", COLOR_GREEN);
+    }
 }
 
 // Step 11: Install Demo Data
@@ -554,7 +983,25 @@ $seedFile = $baseDir . '/database/seed_data.sql';
 if (file_exists($seedFile)) {
     if (confirm("  Install demo/sample data?", false)) {
         output("  Installing seed data...\n", COLOR_YELLOW);
-        $result = run_sql_file($pdo, $seedFile);
+
+        // If using a prefix, modify the seed SQL too
+        if ($tablePrefix !== '') {
+            $sql = file_get_contents($seedFile);
+            $sql = preg_replace('/INSERT INTO `?([a-zA-Z_][a-zA-Z0-9_]*)`?/i',
+                'INSERT INTO `' . $tablePrefix . '$1`', $sql);
+            $sql = preg_replace('/UPDATE `?([a-zA-Z_][a-zA-Z0-9_]*)`?/i',
+                'UPDATE `' . $tablePrefix . '$1`', $sql);
+
+            $tempFile = $baseDir . '/storage/temp/seed_prefixed.sql';
+            if (!file_exists(dirname($tempFile))) {
+                mkdir(dirname($tempFile), 0755, true);
+            }
+            file_put_contents($tempFile, $sql);
+            $result = run_sql_file($pdo, $tempFile);
+            unlink($tempFile);
+        } else {
+            $result = run_sql_file($pdo, $seedFile);
+        }
 
         if ($result['success']) {
             output("  ✓ Demo data installed ({$result['executed']} statements)\n", COLOR_GREEN);
@@ -571,18 +1018,38 @@ header_section("Installation Complete!");
 
 output("\n  Your PHPArm installation is ready!\n\n", COLOR_GREEN);
 
-output("  ┌─────────────────────────────────────────┐\n", COLOR_CYAN);
-output("  │  Configuration Summary                  │\n", COLOR_CYAN);
-output("  ├─────────────────────────────────────────┤\n", COLOR_CYAN);
+// Determine 2FA status message
+$twoFactorStatus = 'Disabled';
+if ($twoFactorEnabled) {
+    $twoFactorStatus = 'Enabled ✓';
+} elseif ($twoFactorPending) {
+    $twoFactorStatus = 'Setup required on first login';
+}
+
+output("  ┌──────────────────────────────────────────────────────────┐\n", COLOR_CYAN);
+output("  │  Configuration Summary                                   │\n", COLOR_CYAN);
+output("  ├──────────────────────────────────────────────────────────┤\n", COLOR_CYAN);
 output("  │  URL: {$appUrl}\n", COLOR_CYAN);
 output("  │  Database: {$dbName}@{$dbHost}\n", COLOR_CYAN);
+if ($tablePrefix !== '') {
+    output("  │  Table Prefix: {$tablePrefix}\n", COLOR_CYAN);
+}
 output("  │  Admin Email: {$adminEmail}\n", COLOR_CYAN);
-output("  └─────────────────────────────────────────┘\n", COLOR_CYAN);
+output("  │  2FA Status: {$twoFactorStatus}\n", COLOR_CYAN);
+output("  └──────────────────────────────────────────────────────────┘\n", COLOR_CYAN);
 
 output("\n  Next Steps:\n", COLOR_BOLD);
 output("  1. Run: composer install\n");
 output("  2. Run: npm install && npm run build\n");
 output("  3. Configure your web server to point to the /public directory\n");
 output("  4. Access your application at: {$appUrl}\n");
+if ($twoFactorPending) {
+    output("  5. Complete 2FA setup on your first login\n");
+}
+
+if ($tablePrefix !== '') {
+    output("\n  Important: Add this to your .env file:\n", COLOR_YELLOW);
+    output("  DB_PREFIX={$tablePrefix}\n", COLOR_BOLD);
+}
 
 output("\n  For future database updates, run: php upgrade.php\n\n", COLOR_YELLOW);
