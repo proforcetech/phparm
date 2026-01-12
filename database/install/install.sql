@@ -581,15 +581,15 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS credit_payments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    credit_account_id INT NOT NULL,
-    customer_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    credit_account_id INT UNSIGNED NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     payment_method VARCHAR(50) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     payment_date DATETIME NOT NULL,
     reference_number VARCHAR(100) NULL,
     notes TEXT NULL,
-    processed_by INT NULL,
+    processed_by INT UNSIGNED NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'completed',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
