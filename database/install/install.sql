@@ -442,7 +442,7 @@ CREATE TABLE IF NOT EXISTS bundles (
     internal_notes TEXT NULL,
     discount_type VARCHAR(20) NULL,
     discount_value DECIMAL(12,2) NULL,
-    service_type_id INT NULL,
+    service_type_id INT UNSIGNED NULL,
     default_job_title VARCHAR(160) NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0,
