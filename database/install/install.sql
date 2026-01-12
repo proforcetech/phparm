@@ -393,8 +393,6 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
     description TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
     financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
-    financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
-    credit_received_amount DECIMAL(12,2) NULL,
     credit_received_amount DECIMAL(12,2) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
