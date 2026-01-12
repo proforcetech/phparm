@@ -360,7 +360,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     reminder_sent_at TIMESTAMP NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_appointments_reminder (status, scheduled_at, reminder_sent_at), 
+    INDEX idx_appointments_reminder (status, start_time, reminder_sent_at), 
     INDEX idx_appointment_customer (customer_id),
     CONSTRAINT fk_appointment_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_appointment_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
