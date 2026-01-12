@@ -581,15 +581,15 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS credit_payments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    credit_account_id INT NOT NULL,
-    customer_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    credit_account_id INT UNSIGNED NOT NULL,
+    customer_id INT UNSIGNED NOT NULL,
     payment_method VARCHAR(50) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     payment_date DATETIME NOT NULL,
     reference_number VARCHAR(100) NULL,
     notes TEXT NULL,
-    processed_by INT NULL,
+    processed_by INT UNSIGNED NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'completed',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -603,7 +603,7 @@ CREATE TABLE IF NOT EXISTS credit_payments (
 
 CREATE TABLE IF NOT EXISTS credit_payment_reminders (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    credit_account_id INT NOT NULL,
+    credit_account_id INT UNSIGNED NOT NULL,
     customer_id INT UNSIGNED NOT NULL,
     reminder_type VARCHAR(20) NOT NULL,
     days_before_due INT UNSIGNED NULL,
@@ -780,7 +780,7 @@ CREATE TABLE IF NOT EXISTS password_resets (
 -- Email verification tokens
 CREATE TABLE IF NOT EXISTS email_verifications (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id INT UnSIGNED NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
     token VARCHAR(120) NOT NULL,
     expires_at DATETIME NOT NULL,
     used_at DATETIME NULL,
@@ -850,7 +850,7 @@ CREATE TABLE IF NOT EXISTS payment_sessions (
 
 CREATE TABLE IF NOT EXISTS refunds (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    invoice_id INT UNSIGNED NOT NULL,
     payment_reference VARCHAR(255) NOT NULL,
     refund_id VARCHAR(255) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
