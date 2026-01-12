@@ -393,8 +393,6 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
     description TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
     financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
-    financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
-    credit_received_amount DECIMAL(12,2) NULL,
     credit_received_amount DECIMAL(12,2) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
@@ -432,7 +430,7 @@ CREATE TABLE IF NOT EXISTS reminder_campaigns (
     last_run_at DATETIME NULL,
     next_run_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Job Bundles
