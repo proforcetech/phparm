@@ -424,9 +424,34 @@ function menu($title, $options) {
 }
 
 /**
+ * Get the installation log file path
+ */
+function get_install_log_path() {
+    $logDir = __DIR__ . '/storage/logs';
+    if (!file_exists($logDir)) {
+        mkdir($logDir, 0755, true);
+    }
+    return $logDir . '/install_' . date('Y-m-d') . '.log';
+}
+
+/**
+ * Log a message to the installation log file
+ */
+function log_install_error($message, $context = []) {
+    $logFile = get_install_log_path();
+    $timestamp = date('Y-m-d H:i:s');
+    $logEntry = "[{$timestamp}] {$message}";
+    if (!empty($context)) {
+        $logEntry .= " | Context: " . json_encode($context, JSON_UNESCAPED_SLASHES);
+    }
+    $logEntry .= "\n";
+    file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
+}
+
+/**
  * Run SQL file against database
  */
-function run_sql_file($pdo, $filepath) {
+function run_sql_file($pdo, $filepath, $stopOnError = true) {
     if (!file_exists($filepath)) {
         return ['success' => false, 'error' => "File not found: {$filepath}"];
     }
@@ -452,8 +477,9 @@ function run_sql_file($pdo, $filepath) {
 
     $successCount = 0;
     $errorCount = 0;
+    $errors = [];
 
-    foreach ($statements as $statement) {
+    foreach ($statements as $statementIndex => $statement) {
         $statement = preg_replace('/^--.*$/m', '', $statement);
         $statement = trim($statement);
 
@@ -466,10 +492,36 @@ function run_sql_file($pdo, $filepath) {
             $successCount++;
         } catch (PDOException $e) {
             $errorCount++;
+            $errorInfo = [
+                'statement_index' => $statementIndex + 1,
+                'error_code' => $e->getCode(),
+                'error_message' => $e->getMessage(),
+                'statement_preview' => substr($statement, 0, 200) . (strlen($statement) > 200 ? '...' : ''),
+            ];
+            $errors[] = $errorInfo;
+
+            // Log the error
+            log_install_error("SQL execution error in {$filepath}", $errorInfo);
+
+            if ($stopOnError) {
+                return [
+                    'success' => false,
+                    'executed' => $successCount,
+                    'errors' => $errorCount,
+                    'error_details' => $errors,
+                    'log_file' => get_install_log_path(),
+                ];
+            }
         }
     }
 
-    return ['success' => true, 'executed' => $successCount, 'errors' => $errorCount];
+    return [
+        'success' => $errorCount === 0,
+        'executed' => $successCount,
+        'errors' => $errorCount,
+        'error_details' => $errors,
+        'log_file' => $errorCount > 0 ? get_install_log_path() : null,
+    ];
 }
 
 // ============================================
@@ -774,22 +826,45 @@ if ($runInstall) {
                 mkdir(dirname($tempFile), 0755, true);
             }
             file_put_contents($tempFile, $sql);
-            $result = run_sql_file($pdo, $tempFile);
+            $result = run_sql_file($pdo, $tempFile, true);
             unlink($tempFile);
 
+            if (!$result['success']) {
+                output("  ✗ Database installation failed!\n", COLOR_RED);
+                if (!empty($result['error_details'])) {
+                    foreach ($result['error_details'] as $err) {
+                        output("    Error: {$err['error_message']}\n", COLOR_RED);
+                    }
+                }
+                if (!empty($result['log_file'])) {
+                    output("  See log file for details: {$result['log_file']}\n", COLOR_YELLOW);
+                }
+                exit(1);
+            }
             output("  ✓ Tables created with prefix '{$tablePrefix}'\n", COLOR_GREEN);
             output("  Note: Update your .env to include DB_PREFIX={$tablePrefix}\n", COLOR_YELLOW);
         } else {
-            $result = run_sql_file($pdo, $installFile);
+            $result = run_sql_file($pdo, $installFile, true);
         }
 
-        if ($result['success']) {
-            output("  ✓ Executed {$result['executed']} statements", COLOR_GREEN);
-            if ($result['errors'] > 0) {
-                output(" ({$result['errors']} errors)", COLOR_YELLOW);
+        if (!$result['success']) {
+            output("  ✗ Database installation failed!\n", COLOR_RED);
+            if (!empty($result['error_details'])) {
+                foreach ($result['error_details'] as $err) {
+                    output("    Error: {$err['error_message']}\n", COLOR_RED);
+                }
             }
-            output("\n");
+            if (!empty($result['log_file'])) {
+                output("  See log file for details: {$result['log_file']}\n", COLOR_YELLOW);
+            }
+            exit(1);
         }
+
+        output("  ✓ Executed {$result['executed']} statements", COLOR_GREEN);
+        if ($result['errors'] > 0) {
+            output(" ({$result['errors']} warnings)", COLOR_YELLOW);
+        }
+        output("\n");
 
         // Create migrations tracking table
         $migrationsTable = $tablePrefix . 'migrations';
@@ -997,14 +1072,28 @@ if (file_exists($seedFile)) {
                 mkdir(dirname($tempFile), 0755, true);
             }
             file_put_contents($tempFile, $sql);
-            $result = run_sql_file($pdo, $tempFile);
+            $result = run_sql_file($pdo, $tempFile, false);
             unlink($tempFile);
         } else {
-            $result = run_sql_file($pdo, $seedFile);
+            $result = run_sql_file($pdo, $seedFile, false);
         }
 
         if ($result['success']) {
             output("  ✓ Demo data installed ({$result['executed']} statements)\n", COLOR_GREEN);
+        } else {
+            output("  ⚠ Demo data installation completed with errors\n", COLOR_YELLOW);
+            output("    Executed: {$result['executed']} statements, Errors: {$result['errors']}\n", COLOR_YELLOW);
+            if (!empty($result['error_details'])) {
+                foreach (array_slice($result['error_details'], 0, 3) as $err) {
+                    output("    - {$err['error_message']}\n", COLOR_RED);
+                }
+                if (count($result['error_details']) > 3) {
+                    output("    ... and " . (count($result['error_details']) - 3) . " more errors\n", COLOR_RED);
+                }
+            }
+            if (!empty($result['log_file'])) {
+                output("  See log file for details: {$result['log_file']}\n", COLOR_YELLOW);
+            }
         }
     } else {
         output("  Skipping demo data installation.\n", COLOR_YELLOW);
