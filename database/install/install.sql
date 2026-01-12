@@ -504,7 +504,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
     notes TEXT NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
-   CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id)
+    INDEX idx_time_entry_workorder_job (workorder_job_id)
+    -- Note: fk_time_entry_workorder_job added via ALTER TABLE after workorder_jobs table is created
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS time_adjustments (
@@ -845,7 +846,6 @@ CREATE TABLE IF NOT EXISTS payment_sessions (
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_payment_session_invoice (invoice_id),
     INDEX idx_payment_session_session (session_id),
-    CONSTRAINT fk_payment_sessions_masked_session FOREIGN KEY (session_id) REFERENCES masked_sms_sessions(id),
     UNIQUE KEY unique_invoice_provider (invoice_id, provider),
     CONSTRAINT fk_payment_session_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1249,6 +1249,9 @@ CREATE TABLE IF NOT EXISTS workorder_jobs (
     CONSTRAINT fk_workorder_job_technician FOREIGN KEY (assigned_technician_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Add deferred foreign key from time_entries to workorder_jobs
+ALTER TABLE time_entries ADD CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id);
+
 -- Create workorder_items table (links to estimate_items for traceability)
 CREATE TABLE IF NOT EXISTS workorder_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -1648,12 +1651,11 @@ CREATE TABLE IF NOT EXISTS driver_shifts (
     pre_trip_checklist_id INT UNSIGNED NULL,
     post_trip_checklist_id INT UNSIGNED NULL,
     INDEX idx_driver_shifts_driver (driver_profile_id),
-    INDEX idx_driver_shifts_window (shift_start, shift_end)
+    INDEX idx_driver_shifts_window (shift_start, shift_end),
     INDEX idx_driver_shifts_pre_trip (pre_trip_checklist_id),
     INDEX idx_driver_shifts_post_trip (post_trip_checklist_id),
-    CONSTRAINT fk_driver_shifts_pre_trip FOREIGN KEY (pre_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL,
-    CONSTRAINT fk_driver_shifts_post_trip FOREIGN KEY (post_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL,
     CONSTRAINT fk_driver_shifts_driver FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles (id) ON DELETE CASCADE
+    -- Note: fk_driver_shifts_pre_trip and fk_driver_shifts_post_trip added via ALTER TABLE after truck_checklist_entries
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS dispatch_requirements (
@@ -2763,8 +2765,12 @@ CREATE TABLE IF NOT EXISTS truck_checklist_entries (
     INDEX idx_tce_template (template_id),
     CONSTRAINT fk_tce_template FOREIGN KEY (template_id) REFERENCES truck_checklist_templates(id) ON DELETE CASCADE,
     CONSTRAINT fk_tce_driver_profile FOREIGN KEY (driver_profile_id) REFERENCES driver_profiles(id) ON DELETE CASCADE,
-    ADD CONSTRAINT fk_tce_driver_shift FOREIGN KEY (driver_shift_id) REFERENCES driver_shifts(id) ON DELETE SET NULL
+    CONSTRAINT fk_tce_driver_shift FOREIGN KEY (driver_shift_id) REFERENCES driver_shifts(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Add deferred foreign keys from driver_shifts to truck_checklist_entries
+ALTER TABLE driver_shifts ADD CONSTRAINT fk_driver_shifts_pre_trip FOREIGN KEY (pre_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL;
+ALTER TABLE driver_shifts ADD CONSTRAINT fk_driver_shifts_post_trip FOREIGN KEY (post_trip_checklist_id) REFERENCES truck_checklist_entries(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS truck_checklist_entry_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
