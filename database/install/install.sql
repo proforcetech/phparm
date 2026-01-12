@@ -287,11 +287,12 @@ CREATE TABLE IF NOT EXISTS invoices (
     UNIQUE KEY idx_invoice_public_token (public_token),
     INDEX idx_invoice_customer (customer_id),
     INDEX idx_invoices_service_type (service_type_id),
+    INDEX idx_invoice_workorder (workorder_id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_invoice_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
     CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
-    CONSTRAINT fk_invoices_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id),
-CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)
+    CONSTRAINT fk_invoices_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
+    -- Note: fk_invoice_workorder added via ALTER TABLE after workorders table is created
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
@@ -1216,8 +1217,9 @@ CREATE TABLE IF NOT EXISTS workorders (
     CONSTRAINT fk_workorder_technician FOREIGN KEY (assigned_technician_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Add deferred foreign key from estimates to workorders (couldn't be added during estimates creation)
+-- Add deferred foreign keys to workorders (couldn't be added during table creation)
 ALTER TABLE estimates ADD CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id);
+ALTER TABLE invoices ADD CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id);
 
 -- Create workorder_jobs table (links to estimate_jobs for traceability)
 CREATE TABLE IF NOT EXISTS workorder_jobs (
