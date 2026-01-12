@@ -2657,7 +2657,6 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     INDEX idx_user_sessions_user (user_id),
     INDEX idx_user_sessions_revoked (revoked_at),
     UNIQUE KEY uniq_user_sessions_session (session_id),
-    CONSTRAINT fk_user_sessions_masked_session FOREIGN KEY (session_id) REFERENCES masked_sms_sessions(id),
     CONSTRAINT fk_user_sessions_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
