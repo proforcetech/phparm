@@ -661,7 +661,7 @@ CREATE TABLE IF NOT EXISTS inspection_items (
     name VARCHAR(160) NOT NULL,
     input_type VARCHAR(40) NOT NULL,
     default_value VARCHAR(160) NULL,
-    options JSON NULL AFTER default_value COMMENT 'JSON configuration: {min, max, step} for number_scale, {choices: [...]} for select_scale',
+    options JSON NULL COMMENT 'JSON configuration: {min, max, step} for number_scale, {choices: [...]} for select_scale',
     display_order INT DEFAULT 0,
     fail_threshold VARCHAR(100) NULL COMMENT 'Threshold that indicates failure: "no" for boolean, numeric value for scales',
     recommended_service_type_id INT UNSIGNED NULL COMMENT 'Default service type to suggest when item fails',
