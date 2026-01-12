@@ -215,11 +215,11 @@ CREATE TABLE IF NOT EXISTS estimates (
     INDEX idx_estimate_customer (customer_id),
     INDEX idx_estimate_vehicle (vehicle_id),
     INDEX idx_estimates_parent_id (parent_id),
+    INDEX idx_estimates_workorder_id (workorder_id),
     CONSTRAINT fk_estimate_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_estimate_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
-    CONSTRAINT fk_estimate_parent_estimate FOREIGN KEY (parent_estimate_id) REFERENCES estimates (id),
-    CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)
-
+    CONSTRAINT fk_estimate_parent_estimate FOREIGN KEY (parent_estimate_id) REFERENCES estimates (id)
+    -- Note: fk_estimate_workorder added via ALTER TABLE after workorders table is created
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS estimate_jobs (
@@ -1215,6 +1215,9 @@ CREATE TABLE IF NOT EXISTS workorders (
     CONSTRAINT fk_workorder_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
     CONSTRAINT fk_workorder_technician FOREIGN KEY (assigned_technician_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Add deferred foreign key from estimates to workorders (couldn't be added during estimates creation)
+ALTER TABLE estimates ADD CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id);
 
 -- Create workorder_jobs table (links to estimate_jobs for traceability)
 CREATE TABLE IF NOT EXISTS workorder_jobs (
