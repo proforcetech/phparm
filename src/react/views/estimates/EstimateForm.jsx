@@ -12,6 +12,7 @@ import estimateService from '../../../services/estimate.service'
 import customerService from '../../../services/customer.service'
 import technicianService from '../../../services/technician.service'
 import bundleService from '../../../services/bundle.service'
+import api from '../../../services/api'
 import { useToast } from '../../stores/toast'
 
 const statusOptions = [
@@ -20,13 +21,6 @@ const statusOptions = [
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
 ]
-
-const createEmptyLineItem = () => ({
-  description: '',
-  quantity: 1,
-  unit_price: 0,
-  notes: '',
-})
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-US', {
@@ -53,6 +47,11 @@ export default function EstimateForm() {
   const [customerVehicles, setCustomerVehicles] = useState([])
   const [vehiclesLoading, setVehiclesLoading] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [pricingSettings, setPricingSettings] = useState({
+    laborRate: 0,
+    laborTaxable: false,
+    feeTaxable: false,
+  })
   const [form, setForm] = useState({
     customer_id: null,
     vehicle_id: null,
@@ -68,11 +67,20 @@ export default function EstimateForm() {
     customer_notes: '',
     internal_notes: '',
     status: 'pending',
-    line_items: [createEmptyLineItem()],
+    line_items: [],
   })
 
   const isEditing = Boolean(id)
   const today = new Date().toISOString().substring(0, 10)
+
+  const createEmptyLineItem = useCallback(() => ({
+    type: 'LABOR',
+    description: '',
+    quantity: 1,
+    unit_price: pricingSettings.laborRate,
+    taxable: pricingSettings.laborTaxable,
+    notes: '',
+  }), [pricingSettings.laborRate, pricingSettings.laborTaxable])
 
   const subtotal = useMemo(() => {
     return form.line_items.reduce((sum, item) => {
@@ -121,12 +129,14 @@ export default function EstimateForm() {
         is_mobile: Boolean(data.is_mobile),
         line_items: data.line_items?.length
           ? data.line_items.map((item) => ({
+              type: item.type || 'LABOR',
               description: item.description || '',
               quantity: Number(item.quantity) || 1,
               unit_price: Number(item.unit_price) || 0,
+              taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
               notes: item.notes || '',
             }))
-          : [createEmptyLineItem()],
+          : [],
       }))
     } catch (loadError) {
       console.error('Failed to load estimate:', loadError)
@@ -150,6 +160,24 @@ export default function EstimateForm() {
     }
   }, [])
 
+  const loadPricingSettings = useCallback(async () => {
+    try {
+      const response = await api.get('/settings')
+      const settings = response.data || {}
+      setPricingSettings({
+        laborRate: Number(settings['pricing.labor_rate']) || 0,
+        laborTaxable: settings['pricing.labor_taxable'] === true || settings['pricing.labor_taxable'] === 'true',
+        feeTaxable: settings['pricing.fee_taxable'] === true || settings['pricing.fee_taxable'] === 'true',
+      })
+    } catch (err) {
+      console.error('Failed to load pricing settings', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadPricingSettings()
+  }, [loadPricingSettings])
+
   useEffect(() => {
     if (isEditing) {
       loadEstimate()
@@ -159,6 +187,12 @@ export default function EstimateForm() {
   useEffect(() => {
     loadBundles()
   }, [loadBundles])
+
+  useEffect(() => {
+    if (!isEditing && form.line_items.length === 0 && pricingSettings.laborRate !== undefined) {
+      setForm((prev) => ({ ...prev, line_items: [createEmptyLineItem()] }))
+    }
+  }, [isEditing, form.line_items.length, createEmptyLineItem, pricingSettings.laborRate])
 
   const loadCustomerVehicles = useCallback(async (customerId) => {
     if (!customerId) {
@@ -210,10 +244,22 @@ export default function EstimateForm() {
       ...prev,
       line_items: prev.line_items.map((item, idx) => {
         if (idx !== index) return item
-        return {
-          ...item,
-          [field]: value,
+        const updated = { ...item, [field]: value }
+
+        if (field === 'type' && value !== item.type) {
+          if (value === 'LABOR') {
+            updated.unit_price = pricingSettings.laborRate
+            updated.taxable = pricingSettings.laborTaxable
+          } else if (value === 'FEE') {
+            updated.taxable = pricingSettings.feeTaxable
+          } else if (value === 'DISCOUNT') {
+            updated.taxable = false
+          } else if (value === 'PART') {
+            updated.taxable = true
+          }
         }
+
+        return updated
       }),
     }))
   }
@@ -228,25 +274,15 @@ export default function EstimateForm() {
         return
       }
 
-      const typeLabel = (type) => {
-        if (!type) return ''
-        const normalized = type.toUpperCase()
-        if (normalized === 'LABOR') return 'Labor'
-        if (normalized === 'PART') return 'Part'
-        if (normalized === 'FEE') return 'Fee'
-        if (normalized === 'DISCOUNT') return 'Discount'
-        return type
-      }
-
       const nextItems = items.map((item) => {
-        const prefix = typeLabel(item.type)
-        const description = prefix ? `${prefix}: ${item.description}` : item.description
         const unitPrice = Number(item.unit_price) || 0
         const adjustedPrice = item.type === 'DISCOUNT' ? -Math.abs(unitPrice) : unitPrice
         return {
-          description,
+          type: item.type || 'LABOR',
+          description: item.description || '',
           quantity: Number(item.quantity) || 1,
           unit_price: adjustedPrice,
+          taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
           notes: '',
         }
       })
@@ -291,9 +327,11 @@ export default function EstimateForm() {
         internal_notes: form.internal_notes || null,
         status: form.status || 'pending',
         line_items: form.line_items.map((item) => ({
+          type: item.type || 'LABOR',
           description: item.description,
           quantity: Number(item.quantity) || 0,
           unit_price: Number(item.unit_price) || 0,
+          taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
           notes: item.notes || null,
         })),
       }
@@ -354,6 +392,11 @@ export default function EstimateForm() {
     if (vehicle.model) parts.push(vehicle.model)
     if (parts.length === 0) return `Vehicle #${vehicle.id}`
     return parts.join(' ')
+  }
+
+  const getUnitPriceLabel = (type) => {
+    if (type === 'LABOR') return 'Hourly Rate'
+    return 'Unit Price'
   }
 
   return (
@@ -518,7 +561,22 @@ export default function EstimateForm() {
                   {form.line_items.map((item, index) => (
                     <div key={index} className="border border-gray-200 rounded-lg p-4">
                       <div className="grid grid-cols-12 gap-3">
-                        <div className="col-span-12 md:col-span-5">
+                        <div className="col-span-6 md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700">Type</label>
+                          <select
+                            value={item.type}
+                            onChange={(event) => updateLineItem(index, 'type', event.target.value)}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            required
+                          >
+                            <option value="LABOR">Labor</option>
+                            <option value="PART">Part</option>
+                            <option value="FEE">Fee</option>
+                            <option value="DISCOUNT">Discount</option>
+                          </select>
+                        </div>
+
+                        <div className="col-span-6 md:col-span-4">
                           <Input
                             value={item.description}
                             placeholder="Service or part description"
@@ -528,13 +586,13 @@ export default function EstimateForm() {
                           />
                         </div>
 
-                        <div className="col-span-4 md:col-span-2">
+                        <div className="col-span-4 md:col-span-1">
                           <Input
                             value={item.quantity}
                             type="number"
-                            label="Quantity"
-                            min="1"
-                            step="1"
+                            label="Qty"
+                            min="0"
+                            step="0.01"
                             required
                             onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
                           />
@@ -544,7 +602,7 @@ export default function EstimateForm() {
                           <Input
                             value={item.unit_price}
                             type="number"
-                            label="Unit Price"
+                            label={getUnitPriceLabel(item.type)}
                             min="0"
                             step="0.01"
                             required
@@ -578,11 +636,25 @@ export default function EstimateForm() {
                         </div>
                       </div>
 
-                      <div className="mt-3">
+                      <div className="mt-3 flex items-center justify-between">
+                        {item.type !== 'DISCOUNT' ? (
+                          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={item.taxable}
+                              onChange={(event) => updateLineItem(index, 'taxable', event.target.checked)}
+                              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            Taxable
+                          </label>
+                        ) : (
+                          <span />
+                        )}
                         <Textarea
                           value={item.notes}
                           placeholder="Additional notes (optional)"
-                          rows={2}
+                          rows={1}
+                          className="flex-1 ml-4 max-w-md"
                           onUpdateModelValue={(value) => updateLineItem(index, 'notes', value)}
                         />
                       </div>

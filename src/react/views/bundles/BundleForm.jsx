@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import Button from '../../components/ui/Button'
@@ -8,15 +8,6 @@ import Textarea from '../../components/ui/Textarea'
 import bundleService from '../../../services/bundle.service'
 import api from '../../../services/api'
 
-const emptyItem = (index = 0) => ({
-  type: 'LABOR',
-  description: '',
-  quantity: 1,
-  unit_price: 0,
-  taxable: true,
-  sort_order: index,
-})
-
 export default function BundleForm() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -24,6 +15,11 @@ export default function BundleForm() {
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
   const [serviceTypes, setServiceTypes] = useState([])
+  const [pricingSettings, setPricingSettings] = useState({
+    laborRate: 0,
+    laborTaxable: false,
+    feeTaxable: false,
+  })
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -38,6 +34,15 @@ export default function BundleForm() {
 
   const goBack = () => navigate('/cp/bundles')
 
+  const createEmptyItem = useCallback((index = 0) => ({
+    type: 'LABOR',
+    description: '',
+    quantity: 1,
+    unit_price: pricingSettings.laborRate,
+    taxable: pricingSettings.laborTaxable,
+    sort_order: index,
+  }), [pricingSettings.laborRate, pricingSettings.laborTaxable])
+
   useEffect(() => {
     const loadServiceTypes = async () => {
       try {
@@ -49,11 +54,22 @@ export default function BundleForm() {
       }
     }
 
-    const loadBundle = async () => {
-      if (!id) {
-        setForm((prev) => ({ ...prev, items: prev.items.length ? prev.items : [emptyItem()] }))
-        return
+    const loadPricingSettings = async () => {
+      try {
+        const response = await api.get('/settings')
+        const settings = response.data || {}
+        setPricingSettings({
+          laborRate: Number(settings['pricing.labor_rate']) || 0,
+          laborTaxable: settings['pricing.labor_taxable'] === true || settings['pricing.labor_taxable'] === 'true',
+          feeTaxable: settings['pricing.fee_taxable'] === true || settings['pricing.fee_taxable'] === 'true',
+        })
+      } catch (err) {
+        console.error('Failed to load pricing settings', err)
       }
+    }
+
+    const loadBundle = async () => {
+      if (!id) return
       try {
         const data = await bundleService.get(id)
         setForm({
@@ -78,13 +94,20 @@ export default function BundleForm() {
     }
 
     loadServiceTypes()
+    loadPricingSettings()
     loadBundle()
   }, [id])
+
+  useEffect(() => {
+    if (!id && form.items.length === 0) {
+      setForm((prev) => ({ ...prev, items: [createEmptyItem()] }))
+    }
+  }, [id, form.items.length, createEmptyItem])
 
   const addItem = () => {
     setForm((prev) => ({
       ...prev,
-      items: [...prev.items, emptyItem(prev.items.length)],
+      items: [...prev.items, createEmptyItem(prev.items.length)],
     }))
   }
 
@@ -98,7 +121,25 @@ export default function BundleForm() {
   const updateItem = (index, changes) => {
     setForm((prev) => ({
       ...prev,
-      items: prev.items.map((item, idx) => (idx === index ? { ...item, ...changes } : item)),
+      items: prev.items.map((item, idx) => {
+        if (idx !== index) return item
+        const updated = { ...item, ...changes }
+
+        if (changes.type !== undefined && changes.type !== item.type) {
+          if (changes.type === 'LABOR') {
+            updated.unit_price = pricingSettings.laborRate
+            updated.taxable = pricingSettings.laborTaxable
+          } else if (changes.type === 'FEE') {
+            updated.taxable = pricingSettings.feeTaxable
+          } else if (changes.type === 'DISCOUNT') {
+            updated.taxable = false
+          } else if (changes.type === 'PART') {
+            updated.taxable = true
+          }
+        }
+
+        return updated
+      }),
     }))
   }
 
@@ -123,6 +164,11 @@ export default function BundleForm() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const getUnitPriceLabel = (type) => {
+    if (type === 'LABOR') return 'Hourly Rate'
+    return 'Unit Price'
   }
 
   return (
@@ -255,7 +301,7 @@ export default function BundleForm() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Unit Price</label>
+                    <label className="block text-sm font-medium text-gray-700">{getUnitPriceLabel(item.type)}</label>
                     <Input
                       modelValue={item.unit_price}
                       type="number"
@@ -264,15 +310,17 @@ export default function BundleForm() {
                       onUpdateModelValue={(value) => updateItem(index, { unit_price: Number(value) })}
                     />
                   </div>
-                  <div className="flex items-center gap-2 pt-6">
-                    <input
-                      checked={item.taxable}
-                      type="checkbox"
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      onChange={(event) => updateItem(index, { taxable: event.target.checked })}
-                    />
-                    <span className="text-sm text-gray-700">Taxable</span>
-                  </div>
+                  {item.type !== 'DISCOUNT' ? (
+                    <div className="flex items-center gap-2 pt-6">
+                      <input
+                        checked={item.taxable}
+                        type="checkbox"
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        onChange={(event) => updateItem(index, { taxable: event.target.checked })}
+                      />
+                      <span className="text-sm text-gray-700">Taxable</span>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="mt-3 flex justify-end">
                   <Button type="button" variant="danger" size="sm" onClick={() => removeItem(index)}>Remove</Button>
