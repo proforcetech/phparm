@@ -329,7 +329,7 @@ function get_existing_tables($pdo, $prefix = '') {
     'messages', 'migrations,', 'module_access_log', 'module_settings', 'not_found_logs', 'notification_logs', 'notification_templates', 'notifications', 
     'offer_rejection_reasons', 'partner_accounts', 'partner_dispatch_requests', 'partner_request_attachments', 'parts_cart_items', 'parts_carts', 'password_resets',
     'payment_sessions', 'payment_transactions', 'payments', 'pull_request_items', 'pull_requests', 'qc_check_items', 'qc_checks', 'qc_template_items', 'qc_templates',
-    'redirects', 'refunds', 'reminder_campaigns', 'reminder_logs', 'reminder_p', 'roadside_calls', 'role_permissions', 'roles', 'service_types', 'settings',
+    'redirects', 'refunds', 'reminder_campaigns', 'reminder_logs', 'reminder_preferences', 'roadside_calls', 'role_permissions', 'roles', 'service_types', 'settings',
     'stock_order_items', 'stock_orders', 'storage_fees', 'storage_rates', 'storage_rates,', 'time_adjustments', 'time_entries', 'towing_price_matrix', 'towing_rates',
     'towing_service_classes', 'towing_service_types', 'truck_checklist_entries', 'truck_checklist_entry_items', 'truck_checklist_template_items',
     'truck_checklist_templates', 'truck_checklists', 'truck_equipment', 'user_group_members', 'user_group_members,', 'user_groups', 'user_sessions', 'user_sessions,',
