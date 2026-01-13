@@ -10,6 +10,7 @@ import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import estimateService from '../../../services/estimate.service'
 import customerService from '../../../services/customer.service'
+import technicianService from '../../../services/technician.service'
 import bundleService from '../../../services/bundle.service'
 import { useToast } from '../../stores/toast'
 
@@ -49,6 +50,9 @@ export default function EstimateForm() {
   const [bundleLoading, setBundleLoading] = useState(false)
   const [bundleSelection, setBundleSelection] = useState('')
   const [addingBundle, setAddingBundle] = useState(false)
+  const [customerVehicles, setCustomerVehicles] = useState([])
+  const [vehiclesLoading, setVehiclesLoading] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [form, setForm] = useState({
     customer_id: null,
     vehicle_id: null,
@@ -155,6 +159,31 @@ export default function EstimateForm() {
   useEffect(() => {
     loadBundles()
   }, [loadBundles])
+
+  const loadCustomerVehicles = useCallback(async (customerId) => {
+    if (!customerId) {
+      setCustomerVehicles([])
+      return
+    }
+    setVehiclesLoading(true)
+    try {
+      const vehicles = await customerService.getCustomerVehicles(customerId)
+      setCustomerVehicles(Array.isArray(vehicles) ? vehicles : [])
+    } catch (vehicleError) {
+      console.error('Failed to load customer vehicles:', vehicleError)
+      setCustomerVehicles([])
+    } finally {
+      setVehiclesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (form.customer_id) {
+      loadCustomerVehicles(form.customer_id)
+    } else {
+      setCustomerVehicles([])
+    }
+  }, [form.customer_id, loadCustomerVehicles])
 
   const addLineItem = () => {
     setForm((prev) => ({
@@ -300,6 +329,33 @@ export default function EstimateForm() {
     }
   }, [])
 
+  const searchTechnicians = useCallback(async (query) => {
+    try {
+      return await technicianService.searchTechnicians(query)
+    } catch (searchError) {
+      console.error('Technician search failed:', searchError)
+      return []
+    }
+  }, [])
+
+  const handleCustomerSelect = (customer) => {
+    setSelectedCustomer(customer)
+    setForm((prev) => ({
+      ...prev,
+      customer_id: customer?.id || null,
+      vehicle_id: null,
+    }))
+  }
+
+  const formatVehicleLabel = (vehicle) => {
+    const parts = []
+    if (vehicle.year) parts.push(vehicle.year)
+    if (vehicle.make) parts.push(vehicle.make)
+    if (vehicle.model) parts.push(vehicle.model)
+    if (parts.length === 0) return `Vehicle #${vehicle.id}`
+    return parts.join(' ')
+  }
+
   return (
     <div>
       <div className="mb-6">
@@ -341,21 +397,27 @@ export default function EstimateForm() {
                       itemLabel={(item) => item.name || `Customer #${item.id}`}
                       itemSubtext={(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`}
                       required
-                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value }))}
-                      onSelect={() => {}}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value, vehicle_id: null }))}
+                      onSelect={handleCustomerSelect}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Vehicle ID *</label>
-                    <Input
+                    <label className="block text-sm font-medium text-gray-700">Vehicle *</label>
+                    <Select
                       value={form.vehicle_id ?? ''}
-                      type="number"
-                      placeholder="Vehicle ID"
-                      className="mt-1"
+                      placeholder={vehiclesLoading ? 'Loading vehicles...' : (form.customer_id ? 'Select a vehicle' : 'Select a customer first')}
+                      options={customerVehicles.map((vehicle) => ({
+                        value: vehicle.id,
+                        label: formatVehicleLabel(vehicle) + (vehicle.license_plate ? ` (${vehicle.license_plate})` : ''),
+                      }))}
+                      disabled={!form.customer_id || vehiclesLoading}
                       required
-                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, vehicle_id: value }))}
+                      onChange={(event) => setForm((prev) => ({ ...prev, vehicle_id: event.target.value ? Number(event.target.value) : null }))}
                     />
+                    {form.customer_id && !vehiclesLoading && customerVehicles.length === 0 ? (
+                      <p className="mt-1 text-xs text-amber-600">No vehicles found for this customer.</p>
+                    ) : null}
                   </div>
 
                   <div>
@@ -383,13 +445,16 @@ export default function EstimateForm() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Technician ID</label>
-                    <Input
-                      value={form.technician_id ?? ''}
-                      type="number"
-                      placeholder="Assign technician (optional)"
-                      className="mt-1"
+                    <Autocomplete
+                      modelValue={form.technician_id}
+                      label="Technician"
+                      placeholder="Search by name or email..."
+                      searchFn={searchTechnicians}
+                      itemValue={(item) => item.id}
+                      itemLabel={(item) => item.name || `Technician #${item.id}`}
+                      itemSubtext={(item) => item.email || ''}
                       onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, technician_id: value }))}
+                      onSelect={() => {}}
                     />
                   </div>
 
