@@ -149,7 +149,6 @@ CREATE TABLE inventory_items (
     partstech_part_id VARCHAR(100) NULL COMMENT 'Cached PartsTech part ID',
     partstech_last_sync DATETIME NULL COMMENT 'Last sync with PartsTech',
     INDEX idx_inv_partstech (partstech_part_id),
-    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by),
     INDEX idx_inventory_upc (upc),
     INDEX idx_inventory_barcode (barcode),
     INDEX idx_inventory_manufacturer_pn (manufacturer_part_number),
