@@ -20,8 +20,8 @@ import * as OutlineIcons from '@heroicons/react/24/outline'
 const initialFormState = {
   name: '',
   alias: '',
-  color: '',
-  icon: '',
+  color: '#1F2937',
+  icon: 'WrenchIcon',
   description: '',
   displayOrder: 0,
   active: true,
