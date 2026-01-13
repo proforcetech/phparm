@@ -818,7 +818,7 @@ CREATE TABLE IF NOT EXISTS reminder_preferences (
 CREATE TABLE IF NOT EXISTS reminder_logs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     campaign_id INT UNSIGNED NOT NULL,
-    preference_id INT UNSIGNED NULL,
+    preference_id INT UNSIGNED NULL, -- Ensure this matches parent
     customer_id INT UNSIGNED NOT NULL,
     channel VARCHAR(20) NOT NULL,
     status VARCHAR(40) NOT NULL,
@@ -989,7 +989,7 @@ CREATE TABLE IF NOT EXISTS cms_categories (
     INDEX idx_cms_categories_sort_order (sort_order),
     INDEX idx_cms_categories_parent_id (parent_id),
     INDEX idx_cms_categories_slug (slug),
-    CONSTRAINT fk_cms_categories_parent FOREIGN KEY (parent_id) REFERENCES cms_categories(id) ON DELETE SET NULL,
+    CONSTRAINT fk_cms_categories_parent FOREIGN KEY (parent_id) REFERENCES cms_categories(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Note: When a category is deleted, pages are set to NULL (no category)
@@ -1685,15 +1685,15 @@ CREATE TABLE IF NOT EXISTS impound_cases (
     customer_id INT UNSIGNED NULL,
     vin VARCHAR(30) NULL,
     vehicle_year INT NULL, 
-     vehicle_make VARCHAR(80) NULL,
-     vehicle_model VARCHAR(80) NULL,,
-     vehicle_trim VARCHAR(80) NULL,
-     vehicle_weight_class VARCHAR(80) NULL,
-     vin_decoded JSON NULL,
-     vin_decoded_at DATETIME NULL,
-     vin_overrides JSON NULL,
-     impound_cases ADD COLUMN auction_status VARCHAR(40) NOT NULL DEFAULT 'in_storage',
-     auction_status_updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    vehicle_make VARCHAR(80) NULL,
+    vehicle_model VARCHAR(80) NULL,
+    vehicle_trim VARCHAR(80) NULL,
+    vehicle_weight_class VARCHAR(80) NULL,
+    vin_decoded JSON NULL,
+    vin_decoded_at DATETIME NULL,
+    vin_overrides JSON NULL,
+    auction_status VARCHAR(40) NOT NULL DEFAULT 'in_storage', -- Removed 'ADD COLUMN'
+    auction_status_updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     customer_vehicle_id INT UNSIGNED NULL,
     state_code CHAR(2) NOT NULL,
     impound_date DATETIME NOT NULL,
@@ -1709,7 +1709,248 @@ CREATE TABLE IF NOT EXISTS impound_cases (
     released_at DATETIME NULL,
     notes TEXT NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,-- Core users and access
+CREATE TABLE IF NOT EXISTS roles (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    description VARCHAR(255) NULL,
+    UNIQUE KEY unique_role_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    role VARCHAR(50) NOT NULL,
+    permission VARCHAR(120) NOT NULL,
+    created_at TIMESTAMP NULL,
+    UNIQUE KEY role_permission_unique (role, permission),
+    INDEX idx_role_permissions_role (role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS users (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    email VARCHAR(160) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    email_verified TINYINT(1) DEFAULT 0,
+    customer_id INT UNSIGNED NULL,
+    remember_token VARCHAR(100) NULL,
+    two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    two_factor_type ENUM('none', 'totp', 'sms', 'email') NOT NULL DEFAULT 'none',
+    two_factor_secret VARCHAR(128) NULL,
+    two_factor_recovery_codes TEXT NULL,
+    two_factor_setup_pending TINYINT(1) NOT NULL DEFAULT 0,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    last_activity_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_users_two_factor_setup_pending (two_factor_setup_pending),
+    INDEX idx_users_last_activity (last_activity_at),
+    INDEX idx_users_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS customers (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(120) NOT NULL,
+    last_name VARCHAR(120) NOT NULL,
+    business_name VARCHAR(160) NULL,
+    email VARCHAR(160) NOT NULL,
+    phone VARCHAR(40) NOT NULL,
+    street VARCHAR(255) NULL,
+    city VARCHAR(120) NULL,
+    state VARCHAR(120) NULL,
+    postal_code VARCHAR(20) NULL,
+    country VARCHAR(120) NULL,
+    is_commercial TINYINT(1) DEFAULT 0,
+    tax_exempt TINYINT(1) DEFAULT 0,
+    notes TEXT NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vehicle_master (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    year SMALLINT NOT NULL,
+    make VARCHAR(120) NOT NULL,
+    model VARCHAR(120) NOT NULL,
+    engine VARCHAR(120) NOT NULL,
+    transmission VARCHAR(120) NOT NULL,
+    drive VARCHAR(20) NOT NULL,
+    trim VARCHAR(120) NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    UNIQUE KEY vehicle_unique (year, make, model, engine, transmission, drive, trim)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS customer_vehicles (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_master_id INT UNSIGNED NULL,
+    year SMALLINT NOT NULL,
+    make VARCHAR(120) NOT NULL,
+    model VARCHAR(120) NOT NULL,
+    vin VARCHAR(30) NULL,
+    license_plate VARCHAR(30) NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    INDEX idx_customer_vehicle_customer (customer_id),
+    CONSTRAINT fk_customer_vehicle_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS service_types (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    alias VARCHAR(120) NOT NULL,
+    color VARCHAR(120) NOT NULL,
+    icon VARCHAR(120) NOT NULL,
+    active TINYINT(1) DEFAULT 1,
+    UNIQUE KEY uniq_service_types_name (name),
+    UNIQUE KEY uniq_service_types_alias (alias)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Inventory
+CREATE TABLE IF NOT EXISTS inventory_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    sku VARCHAR(120) NULL,
+    stock_quantity INT DEFAULT 0,
+    low_stock_threshold INT DEFAULT 0,
+    is_tracked TINYINT(1) DEFAULT 1,
+    cost DECIMAL(12,2) DEFAULT 0,
+    sale_price DECIMAL(12,2) DEFAULT 0,
+    INDEX idx_inventory_sku (sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inv_reorder_item FOREIGN KEY (inventory_item_id) REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inv_reorder_user FOREIGN KEY (changed_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Reminder System
+CREATE TABLE IF NOT EXISTS reminder_preferences (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
+    email VARCHAR(160) NULL,
+    phone VARCHAR(40) NULL,
+    preferred_channel ENUM('mail', 'sms', 'both', 'none') NOT NULL DEFAULT 'both',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY reminder_preferences_customer_unique (customer_id),
+    CONSTRAINT fk_reminder_pref_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS reminder_campaigns (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS reminder_logs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT UNSIGNED NOT NULL,
+    preference_id INT UNSIGNED NULL,
+    customer_id INT UNSIGNED NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_reminder_logs_campaign FOREIGN KEY (campaign_id) REFERENCES reminder_campaigns (id),
+    CONSTRAINT fk_reminder_logs_preference FOREIGN KEY (preference_id) REFERENCES reminder_preferences (id),
+    CONSTRAINT fk_reminder_logs_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Estimates and Invoices
+CREATE TABLE IF NOT EXISTS estimates (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    number VARCHAR(50) NOT NULL UNIQUE,
+    customer_id INT UNSIGNED NOT NULL,
+    vehicle_id INT UNSIGNED NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    grand_total DECIMAL(12,2) DEFAULT 0,
+    workorder_id INT UNSIGNED NULL,
+    created_at TIMESTAMP NULL,
+    CONSTRAINT fk_estimate_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
+    CONSTRAINT fk_estimate_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invoices (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    number VARCHAR(50) NOT NULL UNIQUE,
+    customer_id INT UNSIGNED NOT NULL,
+    estimate_id INT UNSIGNED NULL,
+    status VARCHAR(40) NOT NULL,
+    total DECIMAL(12,2) DEFAULT 0,
+    created_at TIMESTAMP NULL,
+    CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
+    CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Impound System
+CREATE TABLE IF NOT EXISTS impound_cases (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    case_number VARCHAR(60) NOT NULL,
+    customer_id INT UNSIGNED NULL,
+    vehicle_make VARCHAR(80) NULL,
+    vehicle_model VARCHAR(80) NULL,
+    auction_status VARCHAR(40) NOT NULL DEFAULT 'in_storage',
+    status VARCHAR(40) NOT NULL DEFAULT 'open',
+    impound_date DATETIME NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_impound_case_num (case_number),
+    CONSTRAINT fk_impound_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Inspections
+CREATE TABLE IF NOT EXISTS inspection_sections (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inspection_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    section_id INT UNSIGNED NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    input_type VARCHAR(40) NOT NULL,
+    default_value VARCHAR(160) NULL,
+    display_order INT DEFAULT 0,
+    CONSTRAINT fk_inspection_item_section FOREIGN KEY (section_id) REFERENCES inspection_sections (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Messaging
+CREATE TABLE IF NOT EXISTS message_threads (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    created_by INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_msg_thread_user FOREIGN KEY (created_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS message_messages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    thread_id INT UNSIGNED NOT NULL,
+    sender_id INT UNSIGNED NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_msg_msg_thread FOREIGN KEY (thread_id) REFERENCES message_threads (id) ON DELETE CASCADE,
+    CONSTRAINT fk_msg_msg_sender FOREIGN KEY (sender_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS message_attachments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    message_id INT UNSIGNED NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(120) NOT NULL,
+    CONSTRAINT fk_msg_attach_msg FOREIGN KEY (message_id) REFERENCES message_messages (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     UNIQUE KEY uniq_impound_cases_case_number (case_number),
     INDEX idx_impound_cases_status (status),
     INDEX idx_impound_cases_state (state_code),
