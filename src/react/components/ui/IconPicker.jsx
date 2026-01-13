@@ -170,44 +170,44 @@ export default function IconPicker({
       ) : null}
 
       <div className="relative">
-        <button
-          id={inputId}
-          type="button"
-          disabled={disabled}
-          onClick={() => setShowPicker(!showPicker)}
-          className={`w-full flex items-center justify-between px-3 py-2 border rounded-md shadow-sm bg-white text-left sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-            error ? 'border-red-300' : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            {SelectedIcon ? (
-              <>
-                <SelectedIcon className="h-5 w-5 text-gray-600" />
-                <span className="text-gray-900">{iconNameToLabel(value)}</span>
-              </>
-            ) : (
-              <span className="text-gray-400">Select an icon...</span>
-            )}
-          </span>
+        <div className="flex">
+          <button
+            id={inputId}
+            type="button"
+            disabled={disabled}
+            onClick={() => setShowPicker(!showPicker)}
+            className={`flex-1 flex items-center justify-between px-3 py-2 border bg-white text-left sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+              value && !disabled ? 'rounded-l-md border-r-0' : 'rounded-md'
+            } ${
+              error ? 'border-red-300' : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              {SelectedIcon ? (
+                <>
+                  <SelectedIcon className="h-5 w-5 text-gray-600" />
+                  <span className="text-gray-900">{iconNameToLabel(value)}</span>
+                </>
+              ) : (
+                <span className="text-gray-400">Select an icon...</span>
+              )}
+            </span>
+            <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
           {value && !disabled ? (
             <button
               type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                handleClear()
-              }}
-              className="text-gray-400 hover:text-gray-600"
+              onClick={handleClear}
+              className="px-2 border border-l-0 border-gray-300 rounded-r-md bg-gray-50 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          ) : (
-            <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          )}
-        </button>
+          ) : null}
+        </div>
 
         {showPicker && !disabled ? (
           <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
