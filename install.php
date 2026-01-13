@@ -309,21 +309,32 @@ function get_existing_tables($pdo, $prefix = '') {
 
     // Known application tables (from install.sql)
     $appTables = [
-        'users', 'password_resets', 'email_verifications', 'user_sessions',
-        'customers', 'customer_vehicles', 'vehicle_master', 'customer_credit',
-        'estimates', 'estimate_items', 'workorders', 'workorder_jobs', 'workorder_notes',
-        'invoices', 'invoice_items', 'payments', 'inventory', 'inventory_categories',
-        'inventory_vendors', 'inventory_locations', 'inventory_adjustments',
-        'appointments', 'appointment_slots', 'service_types', 'bundles', 'bundle_items',
-        'time_entries', 'warranty_claims', 'inspections', 'inspection_templates',
-        'audit_logs', 'settings', 'messages', 'notifications', 'migrations',
-        'impound_cases', 'lien_notices', 'auction_lots', 'storage_rates',
-        'towing_rates', 'roadside_calls', 'dispatch_offers', 'driver_tokens',
-        'truck_checklists', 'driver_shifts', 'cms_pages', 'cms_categories',
-        'cms_menus', 'cms_menu_items', 'cms_media', 'cms_components', 'cms_templates',
-        'not_found_logs', 'redirects', 'user_groups', 'user_group_members',
-        'role_permissions', 'financial_entries', 'financial_vendors',
-        'pull_requests', 'pull_request_items', 'stock_orders', 'stock_order_items'
+    'appointment_slots', 'appointments', 'approval_audit_log', 'auction_lots', 'audit_logs', 
+    'availability_settings', 'barcode_scan_log', 'bundle_items', 'bundle_items,', 'bundles',
+    'cms_cache', 'cms_categories', 'cms_categories,', 'cms_components', 'cms_media', 'cms_menu_items', 
+    'cms_menus', 'cms_pages', 'cms_settings', 'cms_templates', 'cms_templates,', 'core_return_history', 
+    'core_returns', 'credit_accounts', 'credit_payment_reminders', 'credit_payments', 'credit_transactions', 
+    'custom_roles', 'customer_credit,', 'customer_vehicles', 'customers', 'dispatch_audit_log', 'dispatch_offers',
+    'dispatch_requirements', 'driver_certifications', 'driver_idle_alerts', 'driver_job_offers', 'driver_locations',
+    'driver_performance_metrics', 'driver_profiles', 'driver_push_tokens', 'driver_shifts', 'driver_tokens,', 'email_verifications',
+    'equipment_job_requirements', 'estimate_items', 'estimate_job_feedback', 'estimate_job_rejections', 'estimate_jobs', 'estimate_public_comments',
+    'estimate_public_links', 'estimate_request_media', 'estimate_requests', 'estimate_signatures', 'estimates', 'financial_categories', 'financial_entries',
+    'financial_vendors,', 'geofence_events', 'geofences', 'impound_cases', 'inspection_estimate_conversions', 'inspection_items', 'inspection_recommendations',
+    'inspection_report_items', 'inspection_report_media', 'inspection_report_signatures', 'inspection_reports', 'inspection_sections', 'inspection_templates',
+    'inspection_templates,', 'inspections', 'inventory', 'inventory_adjustments,', 'inventory_categories,', 'inventory_items', 'inventory_locations', 'inventory_lookups',
+    'inventory_pull_requests', 'inventory_reorder_point_history', 'inventory_stock_orders', 'inventory_transactions', 'inventory_vehicle_compatibility',
+    'inventory_vendors', 'invoice_items', 'invoice_payer_allocations', 'invoice_public_payment_tokens', 'invoices', 'job_checkpoint_media', 'job_damage_media',
+    'job_damage_reports', 'job_density_snapshots', 'job_signatures', 'job_tracking_links', 'job_vehicle_intakes', 'labor_tasks', 'lien_notices', 'masked_sms_messages',
+    'masked_sms_sessions', 'message_attachments', 'message_messages', 'message_notification_threads', 'message_participants', 'message_reads', 'message_threads',
+    'messages', 'migrations,', 'module_access_log', 'module_settings', 'not_found_logs', 'notification_logs', 'notification_templates', 'notifications', 
+    'offer_rejection_reasons', 'partner_accounts', 'partner_dispatch_requests', 'partner_request_attachments', 'parts_cart_items', 'parts_carts', 'password_resets',
+    'payment_sessions', 'payment_transactions', 'payments', 'pull_request_items', 'pull_requests', 'qc_check_items', 'qc_checks', 'qc_template_items', 'qc_templates',
+    'redirects', 'refunds', 'reminder_campaigns', 'reminder_logs', 'reminder_p', 'roadside_calls', 'role_permissions', 'roles', 'service_types', 'settings',
+    'stock_order_items', 'stock_orders', 'storage_fees', 'storage_rates', 'storage_rates,', 'time_adjustments', 'time_entries', 'towing_price_matrix', 'towing_rates',
+    'towing_service_classes', 'towing_service_types', 'truck_checklist_entries', 'truck_checklist_entry_items', 'truck_checklist_template_items',
+    'truck_checklist_templates', 'truck_checklists', 'truck_equipment', 'user_group_members', 'user_group_members,', 'user_groups', 'user_sessions', 'user_sessions,',
+    'users', 'vehicle_master', 'warranty_claim_messages', 'warranty_claims', 'waterfall_dispatch_sequences', 'workorder_items', 'workorder_jobs', 'workorder_notes,',
+    'workorder_notification_rules', 'workorder_signatures', 'workorder_status_history', 'workorders'
     ];
 
     $existing = [];
