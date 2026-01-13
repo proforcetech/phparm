@@ -115,73 +115,7 @@ CREATE TABLE service_types (
     UNIQUE KEY uniq_service_types_alias (alias)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Inventory System
 
-CREATE TABLE inventory_items (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    description TEXT NULL,
-    sku VARCHAR(120) NULL,
-    manufacturer_part_number VARCHAR(120) NULL,
-    upc VARCHAR(50) NULL,
-    barcode VARCHAR(100) NULL,
-    barcode_type ENUM('UPC-A', 'UPC-E', 'EAN-13', 'EAN-8', 'CODE-39', 'CODE-128', 'QR', 'custom') NULL,
-    category VARCHAR(120) NULL,
-    stock_quantity INT DEFAULT 0,
-    low_stock_threshold INT DEFAULT 0,
-    is_low_stock TINYINT(1) GENERATED ALWAYS AS (CASE WHEN COALESCE(is_tracked, 1) = 1 AND COALESCE(stock_quantity, 0) <= COALESCE(low_stock_threshold, 0) THEN 1 ELSE 0 END) STORED,
-    reorder_quantity INT DEFAULT 0,
-    reorder_point_override INT NULL,
-    reorder_point_override_reason VARCHAR(255) NULL,
-    reorder_point_override_updated_at TIMESTAMP NULL,
-    reorder_point_override_updated_by INT UNSIGNED NULL,
-    cost DECIMAL(12,2) DEFAULT 0,
-    core_cost DECIMAL(10, 2) NULL, 
-    core_price DECIMAL(10, 2) NULL,
-    is_core_eligible BOOLEAN DEFAULT FALSE,
-    sale_price DECIMAL(12,2) DEFAULT 0,
-    list_price DECIMAL(12,2) DEFAULT 0, 
-    markup DECIMAL(6,2) NULL,
-    location VARCHAR(160) NULL,
-    bin_location VARCHAR(160) NULL,
-    vendor VARCHAR(160) NULL,
-    notes TEXT NULL,
-    partstech_part_id VARCHAR(100) NULL COMMENT 'Cached PartsTech part ID',
-    partstech_last_sync DATETIME NULL COMMENT 'Last sync with PartsTech',
-    INDEX idx_inv_partstech (partstech_part_id),
-    INDEX idx_inventory_upc (upc),
-    INDEX idx_inventory_barcode (barcode),
-    INDEX idx_inventory_manufacturer_pn (manufacturer_part_number),
-    INDEX idx_inventory_is_low_stock (is_low_stock),
-    FULLTEXT INDEX idx_inventory_search (name, description),
-    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by),
-    INDEX idx_inventory_sku_prefix (sku(20))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE inventory_lookups (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    type VARCHAR(32) NOT NULL,
-    name VARCHAR(160) NOT NULL,
-    description TEXT NULL,
-    is_parts_supplier TINYINT(1) DEFAULT 0,
-    INDEX idx_inventory_lookups_type (type)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE inventory_reorder_point_history (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    inventory_item_id INT UNSIGNED NOT NULL,
-    previous_override INT NULL,
-    new_override INT NULL,
-    reason VARCHAR(255) NULL,
-    changed_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_inventory_reorder_history_item (inventory_item_id),
-    INDEX idx_inventory_reorder_history_user (changed_by),
-    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
-        REFERENCES inventory_items (id) ON DELETE CASCADE,
-    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
-        REFERENCES users (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Estimates, Workorders, Invoices
 
@@ -1036,7 +970,7 @@ CREATE TABLE custom_roles (
     INDEX idx_is_system (is_system)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Create public estimate requests table
+-- Create public estimate requests table
 -- Stores estimate requests submitted through public-facing form
 
 CREATE TABLE estimate_requests (
@@ -1116,7 +1050,7 @@ CREATE TABLE estimate_request_media (
     FOREIGN KEY (request_id) REFERENCES estimate_requests(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Add 404 logging and redirect management
+-- 404 logging and redirect management
 
 -- Table for tracking 404 errors
 CREATE TABLE not_found_logs (
@@ -1160,9 +1094,7 @@ CREATE TABLE redirects (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='URL redirect rules for SEO and fixing broken links';
 
--- ==================================================
--- Migration: 040_financial_categories.sql
--- ==================================================
+-- Financial Categories for Financial Reports
 
 CREATE TABLE financial_categories (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -1172,8 +1104,8 @@ CREATE TABLE financial_categories (
     INDEX idx_financial_categories_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Create workorders workflow tables
--- This migration adds the workorder entity to support the estimate -> workorder -> invoice workflow
+-- Create workorders workflow tables
+-- adds the workorder entity to support the estimate -> workorder -> invoice workflow
 
 -- Create workorders table
 CREATE TABLE workorders (
@@ -1376,29 +1308,6 @@ CREATE TABLE estimate_job_rejections (
     CONSTRAINT fk_job_rejection_job FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create inventory vehicle compatibility table
-CREATE TABLE inventory_vehicle_compatibility (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    inventory_item_id INT UNSIGNED NOT NULL,
-    vehicle_master_id INT UNSIGNED NOT NULL,
-    notes VARCHAR(255) NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY unique_inventory_vehicle (inventory_item_id, vehicle_master_id),
-    INDEX idx_ivc_inventory (inventory_item_id),
-    INDEX idx_ivc_vehicle (vehicle_master_id),
-    CONSTRAINT fk_ivc_inventory FOREIGN KEY (inventory_item_id)
-        REFERENCES inventory_items (id) ON DELETE CASCADE,
-    CONSTRAINT fk_ivc_vehicle FOREIGN KEY (vehicle_master_id)
-        REFERENCES vehicle_master (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ==================================================
--- Migration: 048_estimate_public_sharing.sql
--- ==================================================
-
--- Migration: Add tables for public estimate sharing functionality
--- These tables support the share via email/SMS feature
 
 -- Create estimate_public_links table for shareable estimate links
 CREATE TABLE estimate_public_links (
@@ -1440,60 +1349,6 @@ CREATE TABLE estimate_job_feedback (
     CONSTRAINT fk_estimate_job_feedback_job FOREIGN KEY (job_id) REFERENCES estimate_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create inventory pull requests table for workorder parts management
-CREATE TABLE inventory_pull_requests (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    workorder_id INT UNSIGNED NOT NULL,
-    workorder_job_id INT UNSIGNED NULL COMMENT 'Optional link to specific job',
-
-    -- Item reference (either from inventory or manual entry)
-    inventory_item_id INT UNSIGNED NULL COMMENT 'Link to inventory item if from catalog',
-
-    -- Item details (copied from inventory or manually entered)
-    sku VARCHAR(120) NULL,
-    description VARCHAR(255) NOT NULL,
-
-    -- Quantities
-    quantity_requested INT UNSIGNED NOT NULL DEFAULT 1,
-    quantity_fulfilled INT UNSIGNED NOT NULL DEFAULT 0,
-
-    -- Pricing
-    unit_cost DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    unit_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-
-    -- Status and type
-    status ENUM('pending', 'pulled', 'ordered', 'received', 'cancelled') NOT NULL DEFAULT 'pending',
-    request_type ENUM('pull', 'order') NOT NULL DEFAULT 'pull' COMMENT 'pull = from stock, order = needs ordering',
-
-    -- Tracking
-    notes TEXT NULL,
-    vendor VARCHAR(160) NULL COMMENT 'Vendor for ordering',
-    order_reference VARCHAR(120) NULL COMMENT 'PO number or order reference',
-
-    -- Audit fields
-    requested_by INT UNSIGNED NULL,
-    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    fulfilled_by INT UNSIGNED NULL,
-    fulfilled_at TIMESTAMP NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    -- Foreign keys
-    CONSTRAINT fk_pull_request_workorder FOREIGN KEY (workorder_id) REFERENCES workorders(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pull_request_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs(id) ON DELETE SET NULL,
-    CONSTRAINT fk_pull_request_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id) ON DELETE SET NULL,
-    CONSTRAINT fk_pull_request_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT fk_pull_request_fulfilled_by FOREIGN KEY (fulfilled_by) REFERENCES users(id) ON DELETE SET NULL,
-
-    -- Indexes
-    INDEX idx_pull_request_workorder (workorder_id),
-    INDEX idx_pull_request_status (status),
-    INDEX idx_pull_request_type (request_type),
-    INDEX idx_pull_request_inventory (inventory_item_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Add index on is_tracked for filtering catalog vs tracked items
-CREATE INDEX idx_inventory_is_tracked ON inventory_items(is_tracked);
 
 -- Create messaging tables for staff conversations
 CREATE TABLE message_threads (
@@ -1808,30 +1663,7 @@ CREATE TABLE service_types (
     UNIQUE KEY uniq_service_types_alias (alias)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Inventory
-CREATE TABLE inventory_items (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    sku VARCHAR(120) NULL,
-    stock_quantity INT DEFAULT 0,
-    low_stock_threshold INT DEFAULT 0,
-    is_tracked TINYINT(1) DEFAULT 1,
-    cost DECIMAL(12,2) DEFAULT 0,
-    sale_price DECIMAL(12,2) DEFAULT 0,
-    INDEX idx_inventory_sku (sku)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_reorder_point_history (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    inventory_item_id INT UNSIGNED NOT NULL,
-    previous_override INT NULL,
-    new_override INT NULL,
-    reason VARCHAR(255) NULL,
-    changed_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_inv_reorder_item FOREIGN KEY (inventory_item_id) REFERENCES inventory_items (id) ON DELETE CASCADE,
-    CONSTRAINT fk_inv_reorder_user FOREIGN KEY (changed_by) REFERENCES users (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Reminder System
 CREATE TABLE reminder_preferences (
@@ -2011,7 +1843,7 @@ CREATE TABLE lien_notices (
     CONSTRAINT fk_lien_notices_case FOREIGN KEY (impound_case_id) REFERENCES impound_cases (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Job evidence checkpoints, damage reports, and signatures
+-- Job evidence checkpoints, damage reports, and signatures
 
 CREATE TABLE job_checkpoint_media (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -2059,10 +1891,6 @@ CREATE TABLE job_signatures (
     INDEX idx_job_signature_type (signature_type),
     CONSTRAINT fk_job_signature_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ==================================================
--- Migration: 055_job_tracking_links.sql
--- ==================================================
 
 -- Create tracking links for workorder jobs
 
@@ -2183,28 +2011,6 @@ CREATE TABLE masked_sms_messages (
     INDEX idx_masked_sms_messages_direction (direction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Description: Add inventory stock order tracking for replenishment
-
-CREATE TABLE inventory_stock_orders (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    inventory_item_id INT UNSIGNED NULL,
-    sku VARCHAR(120) NULL,
-    description VARCHAR(255) NOT NULL,
-    quantity_ordered INT UNSIGNED NOT NULL DEFAULT 1,
-    status ENUM('backorder', 'on_order', 'received', 'cancelled') NOT NULL DEFAULT 'on_order',
-    expected_arrival_date DATE NULL,
-    notes TEXT NULL,
-    vendor VARCHAR(160) NULL,
-    order_reference VARCHAR(120) NULL,
-    created_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_stock_order_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id) ON DELETE SET NULL,
-    CONSTRAINT fk_stock_order_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_stock_order_inventory (inventory_item_id),
-    INDEX idx_stock_order_status (status),
-    INDEX idx_stock_order_expected_arrival (expected_arrival_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Towing Pricing Matrix Tables
 -- Provides configurable pricing for roadside assistance and towing services
@@ -2571,11 +2377,7 @@ CREATE TABLE inspection_recommendations (
     INDEX idx_ir_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ==================================================
--- Migration: 071_workorder_status_notifications.sql
--- ==================================================
-
--- Migration: Workorder Status-Driven Notifications
+-- Workorder Status-Driven Notifications
 -- Allows configurable notification rules when workorder status changes
 
 -- 1. Create notification_templates table
@@ -2607,7 +2409,7 @@ CREATE TABLE workorder_notification_rules (
     UNIQUE KEY uk_status_recipient (to_status, from_status, recipient_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Quality Control (QC) Checklist
+-- Quality Control (QC) Checklist
 -- Implements QC checklists that must be completed before transitioning from repair complete to invoicing
 
 -- QC Templates (reusable checklist definitions)
@@ -2673,7 +2475,7 @@ CREATE TABLE qc_check_items (
     INDEX idx_qcci_passed (passed)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Parts Cart & PartsTech Integration
+-- Parts Cart & PartsTech Integration
 -- Enables technicians to build parts carts that sync with PartsTech for ordering
 
 -- Parts Cart for workorders
@@ -2832,7 +2634,7 @@ CREATE TABLE barcode_scan_log (
     CONSTRAINT fk_scan_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Granular Labor Clocking
+-- Granular Labor Clocking
 -- Allows technicians to clock into specific tasks within a job for efficiency reporting
 
 -- Labor tasks table - predefined tasks with flat-rate times
@@ -2956,7 +2758,7 @@ CREATE TABLE job_vehicle_intakes (
     CONSTRAINT fk_job_vehicle_intakes_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration: Truck Checklists (Pre-trip/Post-trip)
+-- Truck Checklists (Pre-trip/Post-trip)
 -- Adds checklist templates, entries, and driver shift requirements.
 
 CREATE TABLE truck_checklist_templates (
@@ -3063,6 +2865,181 @@ CREATE TABLE inventory_reorder_point_history (
         REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Inventory System
+
+CREATE TABLE inventory_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
+    sku VARCHAR(120) NULL,
+    manufacturer_part_number VARCHAR(120) NULL,
+    upc VARCHAR(50) NULL,
+    barcode VARCHAR(100) NULL,
+    barcode_type ENUM('UPC-A', 'UPC-E', 'EAN-13', 'EAN-8', 'CODE-39', 'CODE-128', 'QR', 'custom') NULL,
+    category VARCHAR(120) NULL,
+    stock_quantity INT DEFAULT 0,
+    low_stock_threshold INT DEFAULT 0,
+    is_low_stock TINYINT(1) GENERATED ALWAYS AS (CASE WHEN COALESCE(is_tracked, 1) = 1 AND COALESCE(stock_quantity, 0) <= COALESCE(low_stock_threshold, 0) THEN 1 ELSE 0 END) STORED,
+    reorder_quantity INT DEFAULT 0,
+    reorder_point_override INT NULL,
+    reorder_point_override_reason VARCHAR(255) NULL,
+    reorder_point_override_updated_at TIMESTAMP NULL,
+    reorder_point_override_updated_by INT UNSIGNED NULL,
+    cost DECIMAL(12,2) DEFAULT 0,
+    core_cost DECIMAL(10, 2) NULL, 
+    core_price DECIMAL(10, 2) NULL,
+    is_core_eligible BOOLEAN DEFAULT FALSE,
+    sale_price DECIMAL(12,2) DEFAULT 0,
+    list_price DECIMAL(12,2) DEFAULT 0, 
+    markup DECIMAL(6,2) NULL,
+    location VARCHAR(160) NULL,
+    bin_location VARCHAR(160) NULL,
+    vendor VARCHAR(160) NULL,
+    notes TEXT NULL,
+    partstech_part_id VARCHAR(100) NULL COMMENT 'Cached PartsTech part ID',
+    partstech_last_sync DATETIME NULL COMMENT 'Last sync with PartsTech',
+    INDEX idx_inv_partstech (partstech_part_id),
+    INDEX idx_inventory_upc (upc),
+    INDEX idx_inventory_barcode (barcode),
+    INDEX idx_inventory_manufacturer_pn (manufacturer_part_number),
+    INDEX idx_inventory_is_low_stock (is_low_stock),
+    FULLTEXT INDEX idx_inventory_search (name, description),
+    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by),
+    INDEX idx_inventory_sku_prefix (sku(20))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE inventory_lookups (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    type VARCHAR(32) NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
+    is_parts_supplier TINYINT(1) DEFAULT 0,
+    INDEX idx_inventory_lookups_type (type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_reorder_history_item (inventory_item_id),
+    INDEX idx_inventory_reorder_history_user (changed_by),
+    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
+        REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create inventory vehicle compatibility table
+CREATE TABLE inventory_vehicle_compatibility (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    vehicle_master_id INT UNSIGNED NOT NULL,
+    notes VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_inventory_vehicle (inventory_item_id, vehicle_master_id),
+    INDEX idx_ivc_inventory (inventory_item_id),
+    INDEX idx_ivc_vehicle (vehicle_master_id),
+    CONSTRAINT fk_ivc_inventory FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_ivc_vehicle FOREIGN KEY (vehicle_master_id)
+        REFERENCES vehicle_master (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Create inventory pull requests table for workorder parts management
+CREATE TABLE inventory_pull_requests (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    workorder_id INT UNSIGNED NOT NULL,
+    workorder_job_id INT UNSIGNED NULL COMMENT 'Optional link to specific job',
+
+    -- Item reference (either from inventory or manual entry)
+    inventory_item_id INT UNSIGNED NULL COMMENT 'Link to inventory item if from catalog',
+
+    -- Item details (copied from inventory or manually entered)
+    sku VARCHAR(120) NULL,
+    description VARCHAR(255) NOT NULL,
+
+    -- Quantities
+    quantity_requested INT UNSIGNED NOT NULL DEFAULT 1,
+    quantity_fulfilled INT UNSIGNED NOT NULL DEFAULT 0,
+
+    -- Pricing
+    unit_cost DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    unit_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+
+    -- Status and type
+    status ENUM('pending', 'pulled', 'ordered', 'received', 'cancelled') NOT NULL DEFAULT 'pending',
+    request_type ENUM('pull', 'order') NOT NULL DEFAULT 'pull' COMMENT 'pull = from stock, order = needs ordering',
+
+    -- Tracking
+    notes TEXT NULL,
+    vendor VARCHAR(160) NULL COMMENT 'Vendor for ordering',
+    order_reference VARCHAR(120) NULL COMMENT 'PO number or order reference',
+
+    -- Audit fields
+    requested_by INT UNSIGNED NULL,
+    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fulfilled_by INT UNSIGNED NULL,
+    fulfilled_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Foreign keys
+    CONSTRAINT fk_pull_request_workorder FOREIGN KEY (workorder_id) REFERENCES workorders(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pull_request_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs(id) ON DELETE SET NULL,
+    CONSTRAINT fk_pull_request_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id) ON DELETE SET NULL,
+    CONSTRAINT fk_pull_request_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_pull_request_fulfilled_by FOREIGN KEY (fulfilled_by) REFERENCES users(id) ON DELETE SET NULL,
+
+    -- Indexes
+    INDEX idx_pull_request_workorder (workorder_id),
+    INDEX idx_pull_request_status (status),
+    INDEX idx_pull_request_type (request_type),
+    INDEX idx_pull_request_inventory (inventory_item_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inv_reorder_item FOREIGN KEY (inventory_item_id) REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inv_reorder_user FOREIGN KEY (changed_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Description: Add inventory stock order tracking for replenishment
+
+CREATE TABLE inventory_stock_orders (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NULL,
+    sku VARCHAR(120) NULL,
+    description VARCHAR(255) NOT NULL,
+    quantity_ordered INT UNSIGNED NOT NULL DEFAULT 1,
+    status ENUM('backorder', 'on_order', 'received', 'cancelled') NOT NULL DEFAULT 'on_order',
+    expected_arrival_date DATE NULL,
+    notes TEXT NULL,
+    vendor VARCHAR(160) NULL,
+    order_reference VARCHAR(120) NULL,
+    created_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_stock_order_inventory FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id) ON DELETE SET NULL,
+    CONSTRAINT fk_stock_order_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_stock_order_inventory (inventory_item_id),
+    INDEX idx_stock_order_status (status),
+    INDEX idx_stock_order_expected_arrival (expected_arrival_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 --- Insert Default Datasets
 
 -- Seed initial customer messages from claim descriptions so history is preserved
@@ -3076,7 +3053,7 @@ INSERT IGNORE INTO settings (`key`, `group`, type, value, description) VALUES
 ('inventory.core_tracking.vendor_return_days', 'inventory', 'integer', '45', 'Days allowed to return core to vendor'),
 ('inventory.core_tracking.alert_days_before_due', 'inventory', 'integer', '7', 'Days before due date to show alert');
 
--- Migration: Job tracking link notification template
+-- Job tracking link notification template
 
 INSERT INTO notification_templates (template_key, name, channel, subject, body, created_at, updated_at)
 VALUES (
