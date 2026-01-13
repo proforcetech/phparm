@@ -412,26 +412,6 @@ CREATE TABLE IF NOT EXISTS warranty_claim_messages (
     CONSTRAINT fk_warranty_message_claim FOREIGN KEY (claim_id) REFERENCES warranty_claims (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Reminder Campaigns and Preferences
-
-CREATE TABLE IF NOT EXISTS reminder_campaigns (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    description TEXT NULL,
-    channel VARCHAR(20) NOT NULL,
-    frequency VARCHAR(40) NOT NULL,
-    frequency_unit VARCHAR(20) NOT NULL DEFAULT 'day',
-    frequency_interval INT NOT NULL DEFAULT 1,
-    status VARCHAR(20) NOT NULL,
-    email_subject VARCHAR(255) NULL,
-    email_body TEXT NULL,
-    sms_body TEXT NULL,
-    service_type_filter VARCHAR(160) NULL,
-    last_run_at DATETIME NULL,
-    next_run_at DATETIME NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Job Bundles
 
@@ -790,10 +770,31 @@ CREATE TABLE IF NOT EXISTS email_verifications (
     CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Reminder Campaigns and Preferences
+
+CREATE TABLE IF NOT EXISTS reminder_campaigns (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    description TEXT NULL,
+    channel VARCHAR(20) NOT NULL,
+    frequency VARCHAR(40) NOT NULL,
+    frequency_unit VARCHAR(20) NOT NULL DEFAULT 'day',
+    frequency_interval INT NOT NULL DEFAULT 1,
+    status VARCHAR(20) NOT NULL,
+    email_subject VARCHAR(255) NULL,
+    email_body TEXT NULL,
+    sms_body TEXT NULL,
+    service_type_filter VARCHAR(160) NULL,
+    last_run_at DATETIME NULL,
+    next_run_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Reminder preferences for customers
 
 CREATE TABLE IF NOT EXISTS reminder_preferences (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
     email VARCHAR(160) NULL,
     phone VARCHAR(40) NULL,
