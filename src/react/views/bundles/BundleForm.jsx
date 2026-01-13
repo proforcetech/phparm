@@ -42,7 +42,7 @@ export default function BundleForm() {
     const loadServiceTypes = async () => {
       try {
         const response = await api.get('/service-types', { params: { active: 1 } })
-        setServiceTypes(response.data?.data || [])
+        setServiceTypes(response.data || [])
       } catch (err) {
         console.error('Failed to load service types', err)
         setServiceTypes([])
