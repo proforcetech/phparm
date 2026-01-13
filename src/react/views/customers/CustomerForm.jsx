@@ -11,14 +11,22 @@ import customerService from '../../../services/customer.service'
 import { useToast } from '../../stores/toast.jsx'
 
 const initialFormData = {
-  name: '',
+  first_name: '',
+  last_name: '',
   email: '',
   phone: '',
-  address: '',
+  street: '',
   city: '',
   state: '',
-  zip: '',
+  postal_code: '',
   notes: '',
+  is_commercial: false,
+  business_name: '',
+  tax_exempt: false,
+  billing_street: '',
+  billing_city: '',
+  billing_state: '',
+  billing_postal_code: '',
 }
 
 export default function CustomerForm() {
@@ -39,14 +47,22 @@ export default function CustomerForm() {
     try {
       const customer = await customerService.getCustomer(id)
       setFormData({
-        name: customer.name || '',
+        first_name: customer.first_name || '',
+        last_name: customer.last_name || '',
         email: customer.email || '',
         phone: customer.phone || '',
-        address: customer.address || '',
+        street: customer.street || '',
         city: customer.city || '',
         state: customer.state || '',
-        zip: customer.zip || '',
+        postal_code: customer.postal_code || '',
         notes: customer.notes || '',
+        is_commercial: Boolean(customer.is_commercial),
+        business_name: customer.business_name || '',
+        tax_exempt: Boolean(customer.tax_exempt),
+        billing_street: customer.billing_street || '',
+        billing_city: customer.billing_city || '',
+        billing_state: customer.billing_state || '',
+        billing_postal_code: customer.billing_postal_code || '',
       })
     } catch {
       error('Failed to load customer')
@@ -67,13 +83,31 @@ export default function CustomerForm() {
     }
   }
 
+  const updateCheckbox = (field) => (e) => {
+    const checked = e.target ? e.target.checked : e
+    setFormData((prev) => ({ ...prev, [field]: checked }))
+    if (formErrors[field]) {
+      setFormErrors((prev) => ({ ...prev, [field]: null }))
+    }
+  }
+
   const validate = () => {
     const errors = {}
-    if (!formData.name.trim()) {
-      errors.name = 'Name is required'
+    if (!formData.first_name.trim()) {
+      errors.first_name = 'First name is required'
+    }
+    if (!formData.last_name.trim()) {
+      errors.last_name = 'Last name is required'
+    }
+    if (!formData.email.trim() && !formData.phone.trim()) {
+      errors.email = 'Email or phone is required'
+      errors.phone = 'Email or phone is required'
     }
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = 'Please enter a valid email address'
+    }
+    if (formData.is_commercial && !formData.business_name.trim()) {
+      errors.business_name = 'Business name is required for commercial accounts'
     }
     setFormErrors(errors)
     return Object.keys(errors).length === 0
@@ -138,11 +172,20 @@ export default function CustomerForm() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
-              label="Name"
-              value={formData.name}
-              onUpdateModelValue={updateField('name')}
-              error={formErrors.name}
-              placeholder="Customer name"
+              label="First Name"
+              value={formData.first_name}
+              onUpdateModelValue={updateField('first_name')}
+              error={formErrors.first_name}
+              placeholder="First name"
+              required
+            />
+
+            <Input
+              label="Last Name"
+              value={formData.last_name}
+              onUpdateModelValue={updateField('last_name')}
+              error={formErrors.last_name}
+              placeholder="Last name"
               required
             />
 
@@ -160,13 +203,14 @@ export default function CustomerForm() {
               type="tel"
               value={formData.phone}
               onUpdateModelValue={updateField('phone')}
+              error={formErrors.phone}
               placeholder="(555) 123-4567"
             />
 
             <Input
               label="Address"
-              value={formData.address}
-              onUpdateModelValue={updateField('address')}
+              value={formData.street}
+              onUpdateModelValue={updateField('street')}
               placeholder="Street address"
             />
 
@@ -187,11 +231,95 @@ export default function CustomerForm() {
 
               <Input
                 label="ZIP Code"
-                value={formData.zip}
-                onUpdateModelValue={updateField('zip')}
+                value={formData.postal_code}
+                onUpdateModelValue={updateField('postal_code')}
                 placeholder="12345"
               />
             </div>
+          </div>
+
+          {/* Commercial Account Section */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className="flex items-center mb-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.is_commercial}
+                  onChange={updateCheckbox('is_commercial')}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="ml-2 text-sm font-medium text-gray-900">
+                  Commercial Account
+                </span>
+              </label>
+            </div>
+
+            {formData.is_commercial ? (
+              <div className="space-y-6 mt-4 p-4 bg-gray-50 rounded-lg">
+                <Input
+                  label="Business Name"
+                  value={formData.business_name}
+                  onUpdateModelValue={updateField('business_name')}
+                  error={formErrors.business_name}
+                  placeholder="Company or business name"
+                  required
+                />
+
+                <div className="flex items-center">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.tax_exempt}
+                      onChange={updateCheckbox('tax_exempt')}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="ml-2 text-sm font-medium text-gray-700">
+                      Tax Exempt
+                    </span>
+                  </label>
+                  <span className="ml-2 text-xs text-gray-500">
+                    (Check if this business is exempt from sales tax)
+                  </span>
+                </div>
+
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">Billing Address</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <Input
+                        label="Billing Street"
+                        value={formData.billing_street}
+                        onUpdateModelValue={updateField('billing_street')}
+                        placeholder="Billing street address"
+                      />
+                    </div>
+
+                    <Input
+                      label="Billing City"
+                      value={formData.billing_city}
+                      onUpdateModelValue={updateField('billing_city')}
+                      placeholder="City"
+                    />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        label="Billing State"
+                        value={formData.billing_state}
+                        onUpdateModelValue={updateField('billing_state')}
+                        placeholder="State"
+                      />
+
+                      <Input
+                        label="Billing ZIP"
+                        value={formData.billing_postal_code}
+                        onUpdateModelValue={updateField('billing_postal_code')}
+                        placeholder="12345"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-6">
