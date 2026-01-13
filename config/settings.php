@@ -62,6 +62,18 @@ return [
             'description' => 'Mileage charge per unit used for mobile appointments.',
             'value' => 0.0,
         ],
+        'pricing.labor_taxable' => [
+            'group' => 'pricing',
+            'type' => 'boolean',
+            'description' => 'Whether labor charges are taxable by default.',
+            'value' => false,
+        ],
+        'pricing.fee_taxable' => [
+            'group' => 'pricing',
+            'type' => 'boolean',
+            'description' => 'Whether fees are taxable by default.',
+            'value' => false,
+        ],
         'integrations.stripe.public_key' => [
             'group' => 'integrations',
             'type' => 'string',

@@ -113,6 +113,8 @@ export default function useSettingsForm() {
             laborRate: Number(getSetting(settings, 'pricing.labor_rate', 0)),
             callOutFee: Number(getSetting(settings, 'pricing.call_out_fee', 0)),
             mileageRate: Number(getSetting(settings, 'pricing.mileage_rate', 0)),
+            laborTaxable: !!getSetting(settings, 'pricing.labor_taxable', false),
+            feeTaxable: !!getSetting(settings, 'pricing.fee_taxable', false),
           },
           notifications: {
             fromName: getSetting(settings, 'notifications.mail.from_name', ''),
@@ -210,6 +212,8 @@ export default function useSettingsForm() {
       'pricing.labor_rate': Number(form.pricing.laborRate) || 0,
       'pricing.call_out_fee': Number(form.pricing.callOutFee) || 0,
       'pricing.mileage_rate': Number(form.pricing.mileageRate) || 0,
+      'pricing.labor_taxable': !!form.pricing.laborTaxable,
+      'pricing.fee_taxable': !!form.pricing.feeTaxable,
       'notifications.mail.from_name': form.notifications.fromName,
       'notifications.mail.from_address': form.notifications.fromAddress,
       'notifications.sms.from_number': form.notifications.smsNumber,
