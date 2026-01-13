@@ -175,8 +175,8 @@ export default function ServiceTypes() {
   ]), [])
 
   const cellRenderers = useMemo(() => ({
-    active: (value) => (value ? 'Yes' : 'No'),
-    color: (value) => value ? (
+    active: ({ value }) => (value ? 'Yes' : 'No'),
+    color: ({ value }) => value ? (
       <div className="flex items-center gap-2">
         <span
           className="inline-block w-5 h-5 rounded border border-gray-300"
@@ -185,7 +185,7 @@ export default function ServiceTypes() {
         <span className="text-sm text-gray-600">{value}</span>
       </div>
     ) : '-',
-    icon: (value) => {
+    icon: ({ value }) => {
       if (!value) return '-'
       const IconComponent = OutlineIcons[value]
       return IconComponent ? (
@@ -197,7 +197,7 @@ export default function ServiceTypes() {
         <span className="text-sm text-gray-600">{value}</span>
       )
     },
-    actions: (_, row) => (
+    actions: ({ row }) => (
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={() => openEditModal(row)}>
           Edit
