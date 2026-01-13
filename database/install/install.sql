@@ -1664,41 +1664,6 @@ CREATE TABLE service_types (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
-
--- Reminder System
-CREATE TABLE reminder_preferences (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT UNSIGNED NOT NULL,
-    email VARCHAR(160) NULL,
-    phone VARCHAR(40) NULL,
-    preferred_channel ENUM('mail', 'sms', 'both', 'none') NOT NULL DEFAULT 'both',
-    is_active TINYINT(1) NOT NULL DEFAULT 1,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY reminder_preferences_customer_unique (customer_id),
-    CONSTRAINT fk_reminder_pref_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE reminder_campaigns (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    channel VARCHAR(20) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE reminder_logs (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    campaign_id INT UNSIGNED NOT NULL,
-    preference_id INT UNSIGNED NULL,
-    customer_id INT UNSIGNED NOT NULL,
-    channel VARCHAR(20) NOT NULL,
-    status VARCHAR(40) NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_reminder_logs_campaign FOREIGN KEY (campaign_id) REFERENCES reminder_campaigns (id),
-    CONSTRAINT fk_reminder_logs_preference FOREIGN KEY (preference_id) REFERENCES reminder_preferences (id),
-    CONSTRAINT fk_reminder_logs_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- Estimates and Invoices
 CREATE TABLE estimates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
