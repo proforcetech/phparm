@@ -136,7 +136,8 @@ export default function CMSPageForm() {
     } finally {
       setLoading(false)
     }
-  }, [draftKey, id, isEditing, pageStore])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pageStore.drafts intentionally excluded to prevent infinite loop; draft is only read on initial load
+  }, [draftKey, id, isEditing, pageStore.fetchPage])
 
   useEffect(() => {
     loadData()
@@ -144,7 +145,7 @@ export default function CMSPageForm() {
 
   useEffect(() => {
     pageStore.setDraft(draftKey, form)
-  }, [draftKey, form, pageStore])
+  }, [draftKey, form, pageStore.setDraft])
 
   const generateSlug = (title) => {
     if (isEditing) return
