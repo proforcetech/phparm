@@ -8,11 +8,10 @@ import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
+import api from '../../../services/api'
 import customerService from '../../../services/customer.service'
 import invoiceService from '../../../services/invoice.service'
 import { useToast } from '../../stores/toast.jsx'
-
-const emptyLineItem = { description: '', quantity: 1, unit_price: 0 }
 
 export default function InvoiceCreate() {
   const navigate = useNavigate()
@@ -23,6 +22,9 @@ export default function InvoiceCreate() {
   const [loadingCustomers, setLoadingCustomers] = useState(true)
   const [saving, setSaving] = useState(false)
   const [apiError, setApiError] = useState(null)
+  const [pricingSettings, setPricingSettings] = useState({
+    laborRate: 0,
+  })
 
   const [formData, setFormData] = useState({
     customer_id: searchParams.get('customer') || '',
@@ -30,7 +32,7 @@ export default function InvoiceCreate() {
     due_date: '',
     notes: '',
   })
-  const [lineItems, setLineItems] = useState([{ ...emptyLineItem }])
+  const [lineItems, setLineItems] = useState([{ description: '', quantity: 1, unit_price: 0 }])
   const [splitBilling, setSplitBilling] = useState(false)
   const [payerAllocations, setPayerAllocations] = useState([
     { payer_role: 'primary', payer_name: '', allocated_amount: '' },
@@ -55,9 +57,33 @@ export default function InvoiceCreate() {
     }
   }, [error])
 
+  const loadPricingSettings = useCallback(async () => {
+    try {
+      const response = await api.get('/settings')
+      const settings = response.data || {}
+      const laborRate = Number(settings['pricing.labor_rate']) || 0
+      setPricingSettings({ laborRate })
+      setLineItems((prev) => {
+        if (prev.length === 1 && prev[0].unit_price === 0 && !prev[0].description) {
+          return [{ description: '', quantity: 1, unit_price: laborRate }]
+        }
+        return prev
+      })
+    } catch (err) {
+      console.error('Failed to load pricing settings', err)
+    }
+  }, [])
+
+  const createEmptyLineItem = useCallback(() => ({
+    description: '',
+    quantity: 1,
+    unit_price: pricingSettings.laborRate,
+  }), [pricingSettings.laborRate])
+
   useEffect(() => {
     loadCustomers()
-  }, [loadCustomers])
+    loadPricingSettings()
+  }, [loadCustomers, loadPricingSettings])
 
   const updateField = (field) => (value) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -86,7 +112,7 @@ export default function InvoiceCreate() {
   }
 
   const addLineItem = () => {
-    setLineItems((prev) => [...prev, { ...emptyLineItem }])
+    setLineItems((prev) => [...prev, createEmptyLineItem()])
   }
 
   const removeLineItem = (index) => {

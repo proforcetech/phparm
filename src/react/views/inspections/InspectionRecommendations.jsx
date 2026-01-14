@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
+import api from '../../../services/api'
 import inspectionService from '../../../services/inspection.service'
 
 const SEVERITY_COLORS = {
@@ -31,12 +32,24 @@ export default function InspectionRecommendations() {
   const [mode, setMode] = useState('new') // 'new' | 'existing' | 'workorder'
   const [estimateId, setEstimateId] = useState('')
   const [workorderId, setWorkorderId] = useState('')
-  const [laborRate, setLaborRate] = useState('100.00')
+  const [laborRate, setLaborRate] = useState('0')
   const [taxRate, setTaxRate] = useState('0.0')
+
+  const loadPricingSettings = useCallback(async () => {
+    try {
+      const response = await api.get('/settings')
+      const settings = response.data || {}
+      const rate = Number(settings['pricing.labor_rate']) || 0
+      setLaborRate(rate.toFixed(2))
+    } catch (err) {
+      console.error('Failed to load pricing settings', err)
+    }
+  }, [])
 
   useEffect(() => {
     loadFailedItems()
-  }, [id])
+    loadPricingSettings()
+  }, [id, loadPricingSettings])
 
   async function loadFailedItems() {
     setLoading(true)
