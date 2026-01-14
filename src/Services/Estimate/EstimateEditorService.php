@@ -442,8 +442,8 @@ class EstimateEditorService
     private function insertItems(int $jobId, array $items): void
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimate_items (estimate_job_id, type, description, quantity, unit_price, list_price, taxable, line_total, status)
-            VALUES (:estimate_job_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :line_total, :status)
+            INSERT INTO estimate_items (estimate_job_id, type, description, quantity, unit_price, list_price, taxable, discount_type, line_total, status)
+            VALUES (:estimate_job_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :discount_type, :line_total, :status)
         SQL);
 
         foreach ($items as $displayOrder => $item) {
@@ -456,6 +456,7 @@ class EstimateEditorService
                 'unit_price' => (float) $item['unit_price'],
                 'list_price' => (float) ($item['list_price'] ?? 0),
                 'taxable' => $this->normalizeTaxable($item),
+                'discount_type' => $item['discount_type'] ?? 'fixed',
                 'line_total' => $lineTotal,
                 'status' => $item['status'] ?? 'pending',
             ]);

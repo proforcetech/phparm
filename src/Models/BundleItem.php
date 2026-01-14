@@ -12,5 +12,6 @@ class BundleItem extends BaseModel
     public float $unit_price;
     public float $list_price = 0.0;
     public bool $taxable = true;
+    public string $discount_type = 'fixed';
     public int $sort_order = 0;
 }
