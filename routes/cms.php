@@ -25,6 +25,7 @@ return function (Router $router, array $config, $connection) {
 
     $reservedPrefixes = [
         'api',
+        'cp',
         'health',
         'cms',
         'cms/assets',
