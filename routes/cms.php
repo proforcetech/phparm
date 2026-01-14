@@ -498,4 +498,5 @@ $router->get('/{path:.+}', function (Request $request) use ($isReservedPath, $pa
         return Response::html(file_get_contents($indexPath));
     }
     return Response::notFound('Application not found');
-});
+    });
+};
