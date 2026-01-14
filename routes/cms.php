@@ -203,6 +203,16 @@ return function (Router $router, array $config, $connection) {
         return Response::html($content);
     });
 
+// In routes/cms.php
+$router->get('{slug}', function(Request $request, Response $response, $slug) {
+    // Prevent CMS from trying to handle admin control panel routes
+    if (str_starts_with($slug, 'cp/')) {
+        return null; // Let the main router/React handle it
+    }
+    
+    // ... existing CMS page rendering logic ...
+});
+
     $router->get('/cms/admin/pages/edit/{id}', function (Request $request) {
         $controller = new AdminController();
         $id = (int) $request->getAttribute('id');
