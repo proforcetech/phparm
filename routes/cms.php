@@ -480,24 +480,22 @@ return function (Router $router, array $config, $connection) {
 
     // Catch-all route - serve the SPA entry point for all non-reserved paths
     // The SPA will handle routing client-side and make API calls to fetch CMS content
-    $router->get('/{path:.+}', function (Request $request) use ($isReservedPath, $pageController, $renderCmsPage) {
-        if ($isReservedPath($request->path())) {
-            return Response::notFound('Route not found');
-        }
-
-        // Try to render a published CMS page first
+$router->get('/{path:.+}', function (Request $request) use ($isReservedPath, $pageController, $renderCmsPage) {
+    // If it's a reserved path (like /cp/...), do NOT try to render a CMS page.
+    // Instead, jump straight to serving the index.html SPA.
+    if (!$isReservedPath($request->path())) {
+        // Only try to render CMS pages for non-system paths
         $path = $request->path();
         $response = $renderCmsPage($pageController, $path);
         if ($response !== null) {
             return $response;
         }
+    }
 
-        // Serve the SPA entry point for all public routes when no CMS page exists
-        // Client-side routing will handle navigation on the front end
-        $indexPath = __DIR__ . '/../index.html';
-        if (file_exists($indexPath)) {
-            return Response::html(file_get_contents($indexPath));
-        }
-        return Response::notFound('Application not found');
-    });
-};
+    // Serve the SPA entry point
+    $indexPath = __DIR__ . '/../index.html'; // Adjust path if necessary to point to your public index.html
+    if (file_exists($indexPath)) {
+        return Response::html(file_get_contents($indexPath));
+    }
+    return Response::notFound('Application not found');
+});
