@@ -40,6 +40,7 @@ export default function BundleForm() {
     quantity: 1,
     unit_price: pricingSettings.laborRate,
     taxable: pricingSettings.laborTaxable,
+    discount_type: 'fixed',
     sort_order: index,
   }), [pricingSettings.laborRate, pricingSettings.laborTaxable])
 
@@ -85,6 +86,7 @@ export default function BundleForm() {
             quantity: item.quantity,
             unit_price: item.unit_price,
             taxable: Boolean(item.taxable),
+            discount_type: item.discount_type || 'fixed',
             sort_order: item.sort_order ?? index,
           })),
         })
@@ -133,6 +135,8 @@ export default function BundleForm() {
             updated.taxable = pricingSettings.feeTaxable
           } else if (changes.type === 'DISCOUNT') {
             updated.taxable = false
+            updated.discount_type = 'fixed'
+            updated.quantity = 1
           } else if (changes.type === 'PART') {
             updated.taxable = true
           }
@@ -166,8 +170,11 @@ export default function BundleForm() {
     }
   }
 
-  const getUnitPriceLabel = (type) => {
-    if (type === 'LABOR') return 'Hourly Rate'
+  const getUnitPriceLabel = (item) => {
+    if (item.type === 'LABOR') return 'Hourly Rate'
+    if (item.type === 'DISCOUNT') {
+      return item.discount_type === 'percent' ? 'Percentage (%)' : 'Amount ($)'
+    }
     return 'Unit Price'
   }
 
@@ -277,7 +284,7 @@ export default function BundleForm() {
                     <Input
                       modelValue={item.description}
                       required
-                      placeholder="Pad replacement"
+                      placeholder={item.type === 'DISCOUNT' ? 'Discount description' : 'Pad replacement'}
                       onUpdateModelValue={(value) => updateItem(index, { description: value })}
                     />
                   </div>
@@ -290,18 +297,32 @@ export default function BundleForm() {
                       onUpdateModelValue={(value) => updateItem(index, { sort_order: Number(value) })}
                     />
                   </div>
+                  {item.type === 'DISCOUNT' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Discount Type</label>
+                      <select
+                        value={item.discount_type || 'fixed'}
+                        onChange={(event) => updateItem(index, { discount_type: event.target.value })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      >
+                        <option value="fixed">Flat Rate ($)</option>
+                        <option value="percent">Percentage (%)</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                      <Input
+                        modelValue={item.quantity}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        onUpdateModelValue={(value) => updateItem(index, { quantity: Number(value) })}
+                      />
+                    </div>
+                  )}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Quantity</label>
-                    <Input
-                      modelValue={item.quantity}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      onUpdateModelValue={(value) => updateItem(index, { quantity: Number(value) })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">{getUnitPriceLabel(item.type)}</label>
+                    <label className="block text-sm font-medium text-gray-700">{getUnitPriceLabel(item)}</label>
                     <Input
                       modelValue={item.unit_price}
                       type="number"

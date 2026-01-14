@@ -236,6 +236,7 @@ class BundleService
                     'quantity' => $item->quantity,
                     'unit_price' => $item->unit_price,
                     'taxable' => $item->taxable,
+                    'discount_type' => $item->discount_type ?? 'fixed',
                 ];
             }, $items),
         ];
@@ -253,6 +254,7 @@ class BundleService
                 'quantity' => $item->quantity,
                 'unit_price' => $item->unit_price,
                 'taxable' => $item->taxable,
+                'discount_type' => $item->discount_type ?? 'fixed',
                 'sort_order' => $item->sort_order,
             ];
         }, $this->fetchItems($bundleId));
@@ -264,7 +266,7 @@ class BundleService
     private function persistItems(int $bundleId, array $items): void
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO bundle_items (bundle_id, type, description, quantity, unit_price, taxable, sort_order) VALUES (:bundle_id, :type, :description, :quantity, :unit_price, :taxable, :sort_order)'
+            'INSERT INTO bundle_items (bundle_id, type, description, quantity, unit_price, taxable, discount_type, sort_order) VALUES (:bundle_id, :type, :description, :quantity, :unit_price, :taxable, :discount_type, :sort_order)'
         );
 
         foreach ($items as $index => $item) {
@@ -284,6 +286,7 @@ class BundleService
                 'quantity' => (float) ($item['quantity'] ?? 1),
                 'unit_price' => (float) ($item['unit_price'] ?? 0),
                 'taxable' => isset($item['taxable']) ? (int) (bool) $item['taxable'] : 1,
+                'discount_type' => $item['discount_type'] ?? 'fixed',
                 'sort_order' => isset($item['sort_order']) ? (int) $item['sort_order'] : $index,
             ]);
         }
@@ -301,6 +304,7 @@ class BundleService
             $item = new BundleItem($row);
             $item->taxable = (bool) $row['taxable'];
             $item->sort_order = (int) $row['sort_order'];
+            $item->discount_type = $row['discount_type'] ?? 'fixed';
 
             return $item;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));

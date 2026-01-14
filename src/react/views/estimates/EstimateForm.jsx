@@ -79,6 +79,7 @@ export default function EstimateForm() {
     quantity: 1,
     unit_price: pricingSettings.laborRate,
     taxable: pricingSettings.laborTaxable,
+    discount_type: 'fixed',
     notes: '',
   }), [pricingSettings.laborRate, pricingSettings.laborTaxable])
 
@@ -134,6 +135,7 @@ export default function EstimateForm() {
               quantity: Number(item.quantity) || 1,
               unit_price: Number(item.unit_price) || 0,
               taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+              discount_type: item.discount_type || 'fixed',
               notes: item.notes || '',
             }))
           : [],
@@ -254,6 +256,8 @@ export default function EstimateForm() {
             updated.taxable = pricingSettings.feeTaxable
           } else if (value === 'DISCOUNT') {
             updated.taxable = false
+            updated.discount_type = 'fixed'
+            updated.quantity = 1
           } else if (value === 'PART') {
             updated.taxable = true
           }
@@ -283,6 +287,7 @@ export default function EstimateForm() {
           quantity: Number(item.quantity) || 1,
           unit_price: adjustedPrice,
           taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
+          discount_type: item.discount_type || 'fixed',
           notes: '',
         }
       })
@@ -332,6 +337,7 @@ export default function EstimateForm() {
           quantity: Number(item.quantity) || 0,
           unit_price: Number(item.unit_price) || 0,
           taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
+          discount_type: item.discount_type || 'fixed',
           notes: item.notes || null,
         })),
       }
@@ -394,8 +400,11 @@ export default function EstimateForm() {
     return parts.join(' ')
   }
 
-  const getUnitPriceLabel = (type) => {
-    if (type === 'LABOR') return 'Hourly Rate'
+  const getUnitPriceLabel = (item) => {
+    if (item.type === 'LABOR') return 'Hourly Rate'
+    if (item.type === 'DISCOUNT') {
+      return item.discount_type === 'percent' ? 'Percentage (%)' : 'Amount ($)'
+    }
     return 'Unit Price'
   }
 
@@ -586,23 +595,37 @@ export default function EstimateForm() {
                           />
                         </div>
 
-                        <div className="col-span-4 md:col-span-1">
-                          <Input
-                            value={item.quantity}
-                            type="number"
-                            label="Qty"
-                            min="0"
-                            step="0.01"
-                            required
-                            onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
-                          />
-                        </div>
+                        {item.type === 'DISCOUNT' ? (
+                          <div className="col-span-4 md:col-span-1">
+                            <label className="block text-sm font-medium text-gray-700">Discount Type</label>
+                            <select
+                              value={item.discount_type || 'fixed'}
+                              onChange={(event) => updateLineItem(index, 'discount_type', event.target.value)}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            >
+                              <option value="fixed">Flat Rate ($)</option>
+                              <option value="percent">Percentage (%)</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="col-span-4 md:col-span-1">
+                            <Input
+                              value={item.quantity}
+                              type="number"
+                              label="Qty"
+                              min="0"
+                              step="0.01"
+                              required
+                              onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
+                            />
+                          </div>
+                        )}
 
                         <div className="col-span-4 md:col-span-2">
                           <Input
                             value={item.unit_price}
                             type="number"
-                            label={getUnitPriceLabel(item.type)}
+                            label={getUnitPriceLabel(item)}
                             min="0"
                             step="0.01"
                             required
