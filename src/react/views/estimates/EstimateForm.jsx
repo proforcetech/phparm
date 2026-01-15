@@ -167,9 +167,9 @@ export default function EstimateForm() {
       const response = await api.get('/settings')
       const settings = response.data || {}
       setPricingSettings({
-        laborRate: Number(settings['pricing.labor_rate']) || 0,
-        laborTaxable: settings['pricing.labor_taxable'] === true || settings['pricing.labor_taxable'] === 'true',
-        feeTaxable: settings['pricing.fee_taxable'] === true || settings['pricing.fee_taxable'] === 'true',
+        laborRate: Number(settings['pricing.labor_rate']?.value) || 0,
+        laborTaxable: settings['pricing.labor_taxable']?.value === true || settings['pricing.labor_taxable']?.value === 'true',
+        feeTaxable: settings['pricing.fee_taxable']?.value === true || settings['pricing.fee_taxable']?.value === 'true',
       })
     } catch (err) {
       console.error('Failed to load pricing settings', err)
