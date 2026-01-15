@@ -4977,7 +4977,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inspection routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $settingsRepository) {
 
         $inspectionController = new \App\Services\Inspection\InspectionController(
             new \App\Services\Inspection\InspectionTemplateService($connection),
