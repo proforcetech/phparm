@@ -16,7 +16,7 @@ export default function BundleForm() {
   const [error, setError] = useState('')
   const [serviceTypes, setServiceTypes] = useState([])
   const [pricingSettings, setPricingSettings] = useState({
-    laborRate: 0,
+    laborRate: null,
     laborTaxable: false,
     feeTaxable: false,
   })
@@ -38,7 +38,7 @@ export default function BundleForm() {
     type: 'LABOR',
     description: '',
     quantity: 1,
-    unit_price: pricingSettings.laborRate,
+    unit_price: pricingSettings.laborRate ?? 0,
     taxable: pricingSettings.laborTaxable,
     discount_type: 'fixed',
     sort_order: index,
@@ -101,10 +101,10 @@ export default function BundleForm() {
   }, [id])
 
   useEffect(() => {
-    if (!id && form.items.length === 0) {
+    if (!id && form.items.length === 0 && pricingSettings.laborRate !== null) {
       setForm((prev) => ({ ...prev, items: [createEmptyItem()] }))
     }
-  }, [id, form.items.length, createEmptyItem])
+  }, [id, form.items.length, createEmptyItem, pricingSettings.laborRate])
 
   const addItem = () => {
     setForm((prev) => ({
@@ -129,7 +129,7 @@ export default function BundleForm() {
 
         if (changes.type !== undefined && changes.type !== item.type) {
           if (changes.type === 'LABOR') {
-            updated.unit_price = pricingSettings.laborRate
+            updated.unit_price = pricingSettings.laborRate ?? 0
             updated.taxable = pricingSettings.laborTaxable
           } else if (changes.type === 'FEE') {
             updated.taxable = pricingSettings.feeTaxable

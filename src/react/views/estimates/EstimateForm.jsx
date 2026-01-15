@@ -48,7 +48,7 @@ export default function EstimateForm() {
   const [vehiclesLoading, setVehiclesLoading] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [pricingSettings, setPricingSettings] = useState({
-    laborRate: 0,
+    laborRate: null,
     laborTaxable: false,
     feeTaxable: false,
   })
@@ -77,7 +77,7 @@ export default function EstimateForm() {
     type: 'LABOR',
     description: '',
     quantity: 1,
-    unit_price: pricingSettings.laborRate,
+    unit_price: pricingSettings.laborRate ?? 0,
     taxable: pricingSettings.laborTaxable,
     discount_type: 'fixed',
     notes: '',
@@ -191,7 +191,7 @@ export default function EstimateForm() {
   }, [loadBundles])
 
   useEffect(() => {
-    if (!isEditing && form.line_items.length === 0 && pricingSettings.laborRate !== undefined) {
+    if (!isEditing && form.line_items.length === 0 && pricingSettings.laborRate !== null) {
       setForm((prev) => ({ ...prev, line_items: [createEmptyLineItem()] }))
     }
   }, [isEditing, form.line_items.length, createEmptyLineItem, pricingSettings.laborRate])
@@ -250,7 +250,7 @@ export default function EstimateForm() {
 
         if (field === 'type' && value !== item.type) {
           if (value === 'LABOR') {
-            updated.unit_price = pricingSettings.laborRate
+            updated.unit_price = pricingSettings.laborRate ?? 0
             updated.taxable = pricingSettings.laborTaxable
           } else if (value === 'FEE') {
             updated.taxable = pricingSettings.feeTaxable
