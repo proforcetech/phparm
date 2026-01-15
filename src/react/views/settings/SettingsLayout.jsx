@@ -6,20 +6,23 @@ export default function SettingsLayout() {
       <header>
         <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500">
-          React mirror of Vue /cp/settings.
+          Configure shop-wide preferences and integrations.
         </p>
       </header>
       <div className="flex flex-wrap gap-2">
         {[
-          { label: 'Shop profile', to: '/react/cp/settings' },
-          { label: 'Terms', to: '/react/cp/settings/terms' },
-          { label: 'Templates', to: '/react/cp/settings/templates' },
-          { label: 'Rejection reasons', to: '/react/cp/settings/rejection-reasons' },
-          { label: 'Pricing', to: '/react/cp/settings/pricing' },
-          { label: 'Notifications', to: '/react/cp/settings/notifications' },
-          { label: 'Payments', to: '/react/cp/settings/payments' },
-          { label: 'Integrations', to: '/react/cp/settings/integrations' },
-          { label: 'Services', to: '/react/cp/settings/services' },
+          { label: 'Overview', to: '/cp/settings' },
+          { label: 'Shop profile', to: '/cp/settings/profile' },
+          { label: 'Terms', to: '/cp/settings/terms' },
+          { label: 'Templates', to: '/cp/settings/templates' },
+          { label: 'Rejection reasons', to: '/cp/settings/rejection-reasons' },
+          { label: 'Pricing', to: '/cp/settings/pricing' },
+          { label: 'Security', to: '/cp/settings/security' },
+          { label: 'Notifications', to: '/cp/settings/notifications' },
+          { label: 'Payments', to: '/cp/settings/payments' },
+          { label: 'Integrations', to: '/cp/settings/integrations' },
+          { label: 'Services', to: '/cp/settings/services' },
+          { label: 'Modules', to: '/cp/settings/modules' },
         ].map((link) => (
           <NavLink
             key={link.to}

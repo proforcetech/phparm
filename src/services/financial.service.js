@@ -36,6 +36,9 @@ export default {
   report(params = {}) {
     return api.get('/financial/reports', { params }).then((res) => res.data)
   },
+  reportSummary(params = {}) {
+    return api.get('/financial/reports/summary', { params }).then((res) => res.data)
+  },
   exportReport(params = {}) {
     return api.get('/financial/reports/export', { params }).then((res) => res.data)
   },

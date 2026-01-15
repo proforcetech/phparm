@@ -8,14 +8,8 @@ import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import userService from '../../../services/user.service'
+import roleService from '../../../services/role.service'
 import { useToast } from '../../stores/toast.jsx'
-
-const roleOptions = [
-  { label: 'Admin', value: 'admin' },
-  { label: 'Manager', value: 'manager' },
-  { label: 'Technician', value: 'technician' },
-  { label: 'Customer', value: 'customer' },
-]
 
 const twoFactorOptions = [
   { label: 'Disabled', value: 'none' },
@@ -23,29 +17,6 @@ const twoFactorOptions = [
   { label: 'SMS', value: 'sms' },
   { label: 'Email', value: 'email' },
 ]
-
-const roleInfo = {
-  admin: {
-    label: 'Admin',
-    description: 'Full control across all modules',
-    permissions: ['*'],
-  },
-  manager: {
-    label: 'Manager',
-    description: 'Manage shop operations, estimates, invoices, schedules, inventory',
-    permissions: ['users.view', 'users.invite', 'users.update', 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*', 'inventory.*', 'inspections.*', 'cms.*'],
-  },
-  technician: {
-    label: 'Technician',
-    description: 'Work estimates, inspections, jobs, and time tracking',
-    permissions: ['customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view'],
-  },
-  customer: {
-    label: 'Customer',
-    description: 'Customer portal scoped to their profile and documents',
-    permissions: ['portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.invoices', 'portal.warranty', 'portal.reminders'],
-  },
-}
 
 const twoFactorDescriptions = {
   totp: 'User will need an authenticator app like Google Authenticator or Authy',
@@ -75,6 +46,8 @@ export default function UserForm() {
     password: '',
     role: '',
   })
+  const [roleOptions, setRoleOptions] = useState([])
+  const [roleInfo, setRoleInfo] = useState({})
 
   const isEditMode = useMemo(() => id && id !== 'create', [id])
 
@@ -97,11 +70,6 @@ export default function UserForm() {
       isValid = false
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       setErrors((prev) => ({ ...prev, email: 'Invalid email format' }))
-      isValid = false
-    }
-
-    if (!isEditMode && !form.password) {
-      setErrors((prev) => ({ ...prev, password: 'Password is required' }))
       isValid = false
     }
 
@@ -143,8 +111,8 @@ export default function UserForm() {
         await userService.updateUser(id, payload)
         toast.success('User updated successfully')
       } else {
-        await userService.createUser(payload)
-        toast.success('User created successfully')
+        await userService.inviteUser(payload)
+        toast.success('Invitation sent successfully')
       }
 
       navigate('/cp/users')
@@ -185,6 +153,28 @@ export default function UserForm() {
   }
 
   useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const roles = await roleService.listRoles({ include_system: true })
+        setRoleOptions(roles.map((role) => ({ label: role.label, value: role.name })))
+        setRoleInfo(
+          roles.reduce((acc, role) => {
+            acc[role.name] = {
+              label: role.label,
+              description: role.description || '',
+              permissions: role.permissions || [],
+            }
+            return acc
+          }, {})
+        )
+      } catch (error) {
+        console.error('Failed to load roles:', error)
+        toast.error('Failed to load roles')
+      }
+    }
+
+    loadRoles()
+
     if (isEditMode) {
       loadUser()
     }
@@ -201,8 +191,12 @@ export default function UserForm() {
               </svg>
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{isEditMode ? 'Edit User' : 'Create User'}</h1>
-              <p className="mt-1 text-sm text-gray-500">{isEditMode ? 'Update user information and permissions' : 'Add a new user to the system'}</p>
+              <h1 className="text-2xl font-bold text-gray-900">{isEditMode ? 'Edit User' : 'Invite User'}</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                {isEditMode
+                  ? 'Update user information and permissions'
+                  : 'Send a secure invitation link to a new user'}
+              </p>
             </div>
           </div>
         </div>
@@ -238,43 +232,69 @@ export default function UserForm() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password {isEditMode ? '' : '*'}</label>
-                  <Input
-                    modelValue={form.password}
-                    type="password"
-                    placeholder={isEditMode ? 'Leave blank to keep current password' : 'Enter password'}
-                    required={!isEditMode}
-                    error={errors.password}
-                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, password: value }))}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Minimum 12 characters</p>
+              {isEditMode ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <Input
+                      modelValue={form.password}
+                      type="password"
+                      placeholder="Leave blank to keep current password"
+                      error={errors.password}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, password: value }))}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Minimum 12 characters</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                    <Select
+                      modelValue={form.role}
+                      options={roleOptions}
+                      required
+                      error={errors.role}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, role: value }))}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-                  <Select
-                    modelValue={form.role}
-                    options={roleOptions}
-                    required
-                    error={errors.role}
-                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, role: value }))}
-                  />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-md bg-blue-50 border border-blue-200 p-4">
+                    <p className="text-sm text-blue-800">
+                      A secure invitation link will be emailed to this user so they can set their
+                      own password.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                    <Select
+                      modelValue={form.role}
+                      options={roleOptions}
+                      required
+                      error={errors.role}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, role: value }))}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="border-t border-gray-200 pt-6">
                 <h4 className="text-sm font-medium text-gray-900 mb-4">Account Status</h4>
                 <div className="space-y-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      checked={form.email_verified}
-                      onChange={(event) => setForm((prev) => ({ ...prev, email_verified: event.target.checked }))}
-                      type="checkbox"
-                      className="h-4 w-4 text-indigo-600 rounded"
-                    />
-                    <span className="text-sm text-gray-700">Email Verified</span>
-                  </label>
+                  {isEditMode ? (
+                    <label className="flex items-center gap-2">
+                      <input
+                        checked={form.email_verified}
+                        onChange={(event) => setForm((prev) => ({ ...prev, email_verified: event.target.checked }))}
+                        type="checkbox"
+                        className="h-4 w-4 text-indigo-600 rounded"
+                      />
+                      <span className="text-sm text-gray-700">Email Verified</span>
+                    </label>
+                  ) : (
+                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600">
+                      Email verification will be completed when the invitation is accepted.
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Two-Factor Authentication</label>
@@ -314,7 +334,7 @@ export default function UserForm() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate('/cp/users')}>Cancel</Button>
             <Button onClick={handleSubmit} loading={saving}>
-              {isEditMode ? 'Update User' : 'Create User'}
+              {isEditMode ? 'Update User' : 'Send Invite'}
             </Button>
           </div>
         </div>

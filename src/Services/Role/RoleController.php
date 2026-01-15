@@ -4,6 +4,7 @@ namespace App\Services\Role;
 
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\RolePermissions;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
 
@@ -11,11 +12,13 @@ class RoleController
 {
     private RoleRepository $repository;
     private AccessGate $gate;
+    private RolePermissions $permissions;
 
-    public function __construct(RoleRepository $repository, AccessGate $gate)
+    public function __construct(RoleRepository $repository, AccessGate $gate, RolePermissions $permissions)
     {
         $this->repository = $repository;
         $this->gate = $gate;
+        $this->permissions = $permissions;
     }
 
     public function listRoles(User $user, array $filters = []): array
@@ -25,17 +28,61 @@ class RoleController
         }
 
         $roles = $this->repository->list($filters);
+        $rolesByName = [];
 
-        return array_map(static fn ($r) => [
-            'id' => $r->id,
-            'name' => $r->name,
-            'label' => $r->label,
-            'description' => $r->description,
-            'permissions' => $r->permissions,
-            'is_system' => $r->is_system,
-            'created_at' => $r->created_at,
-            'updated_at' => $r->updated_at,
-        ], $roles);
+        foreach ($roles as $role) {
+            $rolesByName[$role->name] = [
+                'id' => $role->id,
+                'name' => $role->name,
+                'label' => $role->label,
+                'description' => $role->description,
+                'permissions' => $role->permissions,
+                'is_system' => $role->is_system,
+                'created_at' => $role->created_at,
+                'updated_at' => $role->updated_at,
+            ];
+        }
+
+        $includeSystem = $filters['include_system'] ?? true;
+        if ($includeSystem) {
+            $query = strtolower((string) ($filters['query'] ?? ''));
+            foreach ($this->permissions->roleDefinitions() as $name => $definition) {
+                if (isset($rolesByName[$name])) {
+                    continue;
+                }
+
+                $label = $definition['label'] ?? $name;
+                $description = $definition['description'] ?? '';
+                if ($query !== '') {
+                    $haystack = strtolower($name . ' ' . $label . ' ' . $description);
+                    if (!str_contains($haystack, $query)) {
+                        continue;
+                    }
+                }
+
+                $rolesByName[$name] = [
+                    'id' => null,
+                    'name' => $name,
+                    'label' => $label,
+                    'description' => $description,
+                    'permissions' => $definition['permissions'] ?? [],
+                    'is_system' => true,
+                    'created_at' => null,
+                    'updated_at' => null,
+                ];
+            }
+        }
+
+        $rolesList = array_values($rolesByName);
+        usort($rolesList, static function ($a, $b) {
+            if ($a['is_system'] !== $b['is_system']) {
+                return $a['is_system'] ? -1 : 1;
+            }
+
+            return strcmp($a['name'], $b['name']);
+        });
+
+        return $rolesList;
     }
 
     public function getRole(User $user, int $id): array
@@ -154,6 +201,6 @@ class RoleController
             throw new UnauthorizedException('Cannot view permissions');
         }
 
-        return $this->repository->getAvailablePermissions();
+        return $this->permissions->availablePermissions();
     }
 }

@@ -7,6 +7,9 @@ class TimeEntry extends BaseModel
     public int $id;
     public int $technician_id;
     public ?int $estimate_job_id = null;
+    public ?int $task_id = null;
+    public ?string $task_name = null;
+    public ?float $flat_rate_minutes = null;
     public string $started_at;
     public ?string $ended_at = null;
     public ?float $duration_minutes = null;
@@ -14,6 +17,9 @@ class TimeEntry extends BaseModel
     public ?int $reviewed_by = null;
     public ?string $reviewed_at = null;
     public ?string $review_notes = null;
+    public ?string $en_route_at = null;
+    public ?string $on_site_at = null;
+    public ?string $wrap_up_at = null;
     public ?float $start_latitude = null;
     public ?float $start_longitude = null;
     public ?float $start_accuracy = null;

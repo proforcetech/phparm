@@ -16,6 +16,11 @@ export default {
     return response.data
   },
 
+  async getTransactions(id, params = {}) {
+    const response = await api.get(`/inventory/${id}/transactions`, { params })
+    return response.data
+  },
+
   async create(payload) {
     const response = await api.post('/inventory', payload)
     return response.data
@@ -48,6 +53,36 @@ export default {
   },
 
   /**
+   * Search inventory parts with compatibility highlighting
+   * Returns all matching parts with is_compatible flag for the specified vehicle
+   * @param {string} query - Search query
+   * @param {number|null} vehicleMasterId - Vehicle master ID to check compatibility against
+   * @param {number} limit - Maximum results
+   * @returns {Promise}
+   */
+  async searchWithCompatibility(query, vehicleMasterId = null, limit = 20) {
+    const params = { query, limit }
+    if (vehicleMasterId) {
+      params.vehicle_master_id = vehicleMasterId
+    }
+    const response = await api.get('/inventory/search-with-compatibility', { params })
+    return response.data
+  },
+
+  /**
+   * Get all inventory items compatible with a specific vehicle
+   * @param {number} vehicleMasterId - Vehicle master ID
+   * @param {number} limit - Maximum results
+   * @returns {Promise}
+   */
+  async getCompatibleParts(vehicleMasterId, limit = 100) {
+    const response = await api.get(`/inventory/compatible-parts/${vehicleMasterId}`, {
+      params: { limit }
+    })
+    return response.data
+  },
+
+  /**
    * Find inventory item by SKU
    * @param {string} sku - SKU to search for
    * @returns {Promise}
@@ -55,6 +90,41 @@ export default {
   async findBySku(sku) {
     const response = await api.get('/inventory/by-sku', {
       params: { sku }
+    })
+    return response.data
+  },
+
+  /**
+   * Find inventory item by barcode or UPC
+   * @param {string} code - Barcode or UPC value
+   * @param {string} scanType - Type of scan (inventory_lookup, workorder_add, etc.)
+   * @param {number|null} workorderId - Related workorder ID
+   * @param {number|null} invoiceId - Related invoice ID
+   * @returns {Promise}
+   */
+  async findByBarcode(code, scanType = 'inventory_lookup', workorderId = null, invoiceId = null) {
+    const params = { code, scan_type: scanType }
+    if (workorderId) params.workorder_id = workorderId
+    if (invoiceId) params.invoice_id = invoiceId
+
+    const response = await api.get('/inventory/by-barcode', { params })
+    return response.data
+  },
+
+  /**
+   * Scan barcode (POST version for scanner input)
+   * @param {string} code - Barcode or UPC value
+   * @param {string} scanType - Type of scan
+   * @param {number|null} workorderId - Related workorder ID
+   * @param {number|null} invoiceId - Related invoice ID
+   * @returns {Promise}
+   */
+  async scanBarcode(code, scanType = 'inventory_lookup', workorderId = null, invoiceId = null) {
+    const response = await api.post('/inventory/scan-barcode', {
+      code,
+      scan_type: scanType,
+      workorder_id: workorderId,
+      invoice_id: invoiceId
     })
     return response.data
   },

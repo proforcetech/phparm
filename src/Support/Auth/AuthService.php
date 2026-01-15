@@ -42,11 +42,10 @@ class AuthService
     public function registerStaff(string $name, string $email, string $password, string $role): User
     {
         $role = strtolower($role);
-        if (!in_array($role, ['admin', 'manager', 'technician', 'parts', 'roadside', 'cms'], true)) {
-            throw new InvalidArgumentException('Staff role must be admin, manager, technician, parts, roadside, or cms.');
-        }
-
         $this->roles->validateRole($role);
+        if ($role === 'customer') {
+            throw new InvalidArgumentException('Staff role cannot be customer.');
+        }
         $this->assertPasswordStrength($password);
 
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
@@ -96,7 +95,7 @@ class AuthService
     public function staffLogin(string $email, string $password): ?User
     {
         $user = $this->findByEmail($email);
-        if (!$user || !in_array($user->role, ['admin', 'manager', 'technician', 'parts', 'roadside', 'cms'], true)) {
+        if (!$user || $user->role === 'customer' || !$this->roles->hasRole($user->role)) {
             return null;
         }
 
@@ -165,6 +164,28 @@ class AuthService
         return true;
     }
 
+    public function acceptInvitation(string $token, string $password): ?User
+    {
+        $this->assertPasswordStrength($password);
+
+        $verification = $this->verifications->findValidToken($token);
+        if ($verification === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users SET password = :password, email_verified = 1, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute([
+            'password' => password_hash($password, PASSWORD_BCRYPT),
+            'id' => $verification->user_id,
+        ]);
+
+        $this->verifications->markUsed($token);
+
+        return $this->findUserById($verification->user_id);
+    }
+
     public function linkCustomerUserByEmail(int $customerId, string $email, ?string $name = null): User
     {
         $user = $this->findByEmail($email);
@@ -218,6 +239,12 @@ class AuthService
         return $this->findUserById($user->id);
     }
 
+    public function recordLastActivity(int $userId): void
+    {
+        $stmt = $this->connection->pdo()->prepare('UPDATE users SET last_activity_at = NOW() WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
+    }
+
     private function assertPasswordStrength(string $password): void
     {
         $minLength = (int) ($this->config['passwords']['min_length'] ?? 12);
@@ -228,7 +255,7 @@ class AuthService
 
     private function findByEmail(string $email): ?User
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM users WHERE email = :email AND active = 1 LIMIT 1');
         $stmt->execute(['email' => $email]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -237,7 +264,7 @@ class AuthService
 
     public function findUserById(int $id): User
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM users WHERE id = :id AND active = 1 LIMIT 1');
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 

@@ -30,7 +30,7 @@ class MessagingService
                     LEFT JOIN message_reads r ON r.thread_id = t.id AND r.participant_id = :participant_id
                     WHERE m.thread_id = t.id
                       AND m.sender_id != :participant_id
-                      AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
+                      AND (r.last_read_message_id IS NULL OR m.id > r.last_read_message_id)
                 ) AS unread_count
             FROM message_threads t
             JOIN message_participants p ON p.thread_id = t.id
@@ -73,8 +73,46 @@ class MessagingService
              ORDER BY m.created_at ASC, m.id ASC'
         );
         $stmt->execute(['thread_id' => $threadId]);
+        $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($messages === []) {
+            return [];
+        }
+
+        $messageIds = array_map(static fn ($message) => (int) $message['id'], $messages);
+        $attachmentsByMessage = $this->attachmentsForMessages($messageIds);
+        $participants = $this->participantsForThreads([$threadId])[$threadId] ?? [];
+        $readStatus = $this->readStatusForThread($threadId);
+
+        foreach ($messages as &$message) {
+            $messageId = (int) $message['id'];
+            $senderId = (int) $message['sender_id'];
+            $recipientCount = 0;
+            $readBy = [];
+
+            foreach ($participants as $participant) {
+                if ((int) $participant['id'] === $senderId) {
+                    continue;
+                }
+
+                $recipientCount++;
+                $lastReadMessageId = $readStatus[(int) $participant['id']]['last_read_message_id'] ?? 0;
+                if ($lastReadMessageId >= $messageId) {
+                    $readBy[] = [
+                        'id' => (int) $participant['id'],
+                        'name' => $participant['name'] ?? trim(($participant['first_name'] ?? '') . ' ' . ($participant['last_name'] ?? '')),
+                    ];
+                }
+            }
+
+            $message['attachments'] = $attachmentsByMessage[$messageId] ?? [];
+            $message['recipient_count'] = $recipientCount;
+            $message['read_count'] = count($readBy);
+            $message['read_by'] = $readBy;
+        }
+        unset($message);
+
+        return $messages;
     }
 
     /**
@@ -157,6 +195,53 @@ class MessagingService
         return $messageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $attachments
+     * @return array<string, mixed>
+     */
+    public function postMessageWithAttachments(
+        int $threadId,
+        int $senderId,
+        ?string $body,
+        array $attachments
+    ): array {
+        $body = $body !== null ? trim($body) : '';
+        if ($body === '' && $attachments === []) {
+            throw new InvalidArgumentException('Message body or attachments are required');
+        }
+
+        $this->assertParticipant($threadId, $senderId);
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        $this->insertMessage($threadId, $senderId, $body === '' ? '[Attachment]' : $body);
+
+        $messageStmt = $pdo->prepare(
+            'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
+                    u.first_name, u.last_name
+             FROM message_messages m
+             JOIN users u ON u.id = m.sender_id
+             WHERE m.thread_id = :thread_id
+             ORDER BY m.created_at DESC, m.id DESC
+             LIMIT 1'
+        );
+        $messageStmt->execute(['thread_id' => $threadId]);
+        $message = $messageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $messageId = (int) ($message['id'] ?? 0);
+
+        if ($messageId > 0 && $attachments !== []) {
+            $this->storeAttachments($messageId, $attachments);
+        }
+
+        $updateStmt = $pdo->prepare('UPDATE message_threads SET updated_at = NOW() WHERE id = :thread_id');
+        $updateStmt->execute(['thread_id' => $threadId]);
+
+        $pdo->commit();
+
+        return $message;
+    }
+
     public function markRead(int $threadId, int $participantId): void
     {
         $this->assertParticipant($threadId, $participantId);
@@ -216,8 +301,8 @@ class MessagingService
                 SUM(CASE
                     WHEN m.sender_id IS NULL THEN 0
                     WHEN m.sender_id = :participant_id THEN 0
-                    WHEN r.last_read_at IS NULL THEN 1
-                    WHEN m.created_at > r.last_read_at THEN 1
+                    WHEN r.last_read_message_id IS NULL THEN 1
+                    WHEN m.id > r.last_read_message_id THEN 1
                     ELSE 0
                 END) AS unread_count
              FROM message_threads t
@@ -311,6 +396,115 @@ class MessagingService
             'sender_id' => $senderId,
             'body' => $body,
         ]);
+    }
+
+    /**
+     * @param array<int, int> $messageIds
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function attachmentsForMessages(array $messageIds): array
+    {
+        if ($messageIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, message_id, file_name, file_path, mime_type, size_bytes, created_at
+             FROM message_attachments
+             WHERE message_id IN (' . $placeholders . ')
+             ORDER BY id ASC'
+        );
+        $stmt->execute($messageIds);
+
+        $attachments = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $messageId = (int) $row['message_id'];
+            $attachments[$messageId][] = [
+                'id' => (int) $row['id'],
+                'file_name' => (string) $row['file_name'],
+                'file_path' => (string) $row['file_path'],
+                'mime_type' => (string) $row['mime_type'],
+                'size_bytes' => $row['size_bytes'] !== null ? (int) $row['size_bytes'] : null,
+                'created_at' => $row['created_at'],
+            ];
+        }
+
+        return $attachments;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function readStatusForThread(int $threadId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT participant_id, last_read_message_id, last_read_at
+             FROM message_reads
+             WHERE thread_id = :thread_id'
+        );
+        $stmt->execute(['thread_id' => $threadId]);
+
+        $reads = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $reads[(int) $row['participant_id']] = [
+                'last_read_message_id' => $row['last_read_message_id'] !== null ? (int) $row['last_read_message_id'] : 0,
+                'last_read_at' => $row['last_read_at'],
+            ];
+        }
+
+        return $reads;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $attachments
+     */
+    private function storeAttachments(int $messageId, array $attachments): void
+    {
+        if ($attachments === []) {
+            return;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO message_attachments (message_id, file_name, file_path, mime_type, size_bytes, created_at)
+             VALUES (:message_id, :file_name, :file_path, :mime_type, :size_bytes, NOW())'
+        );
+
+        foreach ($attachments as $attachment) {
+            $stmt->execute([
+                'message_id' => $messageId,
+                'file_name' => $attachment['file_name'],
+                'file_path' => $attachment['file_path'],
+                'mime_type' => $attachment['mime_type'],
+                'size_bytes' => $attachment['size_bytes'],
+            ]);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function threadState(int $threadId, int $participantId): array
+    {
+        $this->assertParticipant($threadId, $participantId);
+
+        $messageStmt = $this->connection->pdo()->prepare(
+            'SELECT id, created_at FROM message_messages WHERE thread_id = :thread_id ORDER BY created_at DESC, id DESC LIMIT 1'
+        );
+        $messageStmt->execute(['thread_id' => $threadId]);
+        $message = $messageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $readStmt = $this->connection->pdo()->prepare(
+            'SELECT MAX(updated_at) AS last_read_update FROM message_reads WHERE thread_id = :thread_id'
+        );
+        $readStmt->execute(['thread_id' => $threadId]);
+        $readUpdate = $readStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'last_message_id' => isset($message['id']) ? (int) $message['id'] : 0,
+            'last_message_at' => $message['created_at'] ?? null,
+            'last_read_update' => $readUpdate['last_read_update'] ?? null,
+        ];
     }
 
     private function assertParticipant(int $threadId, int $participantId): void

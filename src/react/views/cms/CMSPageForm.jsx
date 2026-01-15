@@ -54,10 +54,55 @@ export default function CMSPageForm() {
   const [availableCategories, setAvailableCategories] = useState([])
   const [form, setForm] = useState(createDefaultForm())
 
+  const categoryOptions = useMemo(() => {
+    if (!availableCategories.length) return []
+    const categoryMap = new Map()
+    availableCategories.forEach((category) => {
+      categoryMap.set(category.id, { ...category, children: [] })
+    })
+
+    categoryMap.forEach((category) => {
+      if (category.parent_id && categoryMap.has(category.parent_id)) {
+        categoryMap.get(category.parent_id).children.push(category)
+      }
+    })
+
+    const sortCategories = (list) => {
+      list.sort((a, b) => {
+        if (a.sort_order !== b.sort_order) {
+          return a.sort_order - b.sort_order
+        }
+        return a.name.localeCompare(b.name)
+      })
+      list.forEach((item) => sortCategories(item.children))
+    }
+
+    const roots = Array.from(categoryMap.values()).filter(
+      (category) => !category.parent_id || !categoryMap.has(category.parent_id)
+    )
+    sortCategories(roots)
+
+    const flattened = []
+    const walk = (category, depth, path, slugPath) => {
+      flattened.push({
+        ...category,
+        depth,
+        path,
+        slugPath,
+      })
+      category.children.forEach((child) =>
+        walk(child, depth + 1, [...path, child.name], [...slugPath, child.slug])
+      )
+    }
+
+    roots.forEach((category) => walk(category, 0, [category.name], [category.slug]))
+    return flattened
+  }, [availableCategories])
+
   const selectedCategory = useMemo(() => {
     if (!form.category_id) return null
-    return availableCategories.find((category) => category.id === form.category_id)
-  }, [availableCategories, form.category_id])
+    return categoryOptions.find((category) => category.id === form.category_id) || null
+  }, [categoryOptions, form.category_id])
 
   const loadData = useCallback(async () => {
     try {
@@ -91,7 +136,8 @@ export default function CMSPageForm() {
     } finally {
       setLoading(false)
     }
-  }, [draftKey, id, isEditing, pageStore])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pageStore.drafts intentionally excluded to prevent infinite loop; draft is only read on initial load
+  }, [draftKey, id, isEditing, pageStore.fetchPage])
 
   useEffect(() => {
     loadData()
@@ -99,7 +145,7 @@ export default function CMSPageForm() {
 
   useEffect(() => {
     pageStore.setDraft(draftKey, form)
-  }, [draftKey, form, pageStore])
+  }, [draftKey, form, pageStore.setDraft])
 
   const generateSlug = (title) => {
     if (isEditing) return
@@ -268,15 +314,16 @@ export default function CMSPageForm() {
                       }
                     >
                       <option value="">No Category (Base URL)</option>
-                      {availableCategories.map((category) => (
+                      {categoryOptions.map((category) => (
                         <option key={category.id} value={category.id}>
-                          {category.name} ({category.slug})
+                          {'— '.repeat(category.depth)}
+                          {category.path.join(' / ')} ({category.slugPath.join('/')})
                         </option>
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-500">
                       {form.category_id && selectedCategory
-                        ? `Page will be accessible at: /${selectedCategory.slug}/${form.slug}`
+                        ? `Page will be accessible at: /${selectedCategory.slugPath.join('/')}/${form.slug}`
                         : `Page will be accessible at: /${form.slug}`}
                     </p>
                   </div>

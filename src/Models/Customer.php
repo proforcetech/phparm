@@ -26,4 +26,15 @@ class Customer extends BaseModel
     public ?string $external_reference = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
+
+    public function toArray(): array
+    {
+        $data = parent::toArray();
+        $fullName = trim($this->first_name . ' ' . $this->last_name);
+        $name = $fullName !== '' ? $fullName : trim((string) ($this->business_name ?? ''));
+
+        $data['name'] = $name;
+
+        return $data;
+    }
 }

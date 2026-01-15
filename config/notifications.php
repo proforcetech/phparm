@@ -19,6 +19,7 @@ return [
     'sms' => [
         'default' => env('SMS_DRIVER', 'log'),
         'from_number' => env('SMS_FROM', null),
+        'masked_number' => env('SMS_MASKED_NUMBER', null),
         'drivers' => [
             'log' => [],
             'twilio' => [
@@ -166,6 +167,17 @@ If you have any questions, please don't hesitate to contact us.
 
 Thank you!
 TEMPLATE,
+        'auth.invitation' => <<<'TEMPLATE'
+Hello {{name}},
+
+You have been invited to join our Auto Repair Shop Management System. Use the secure link below to set your password and verify your email:
+
+{{invite_url}}
+
+This link will expire in {{expiry_hours}} hours.
+
+If you were not expecting this invitation, you can ignore this email.
+TEMPLATE,
 
         // Reminder campaign templates (dynamic body)
         'reminder.campaign' => '{{body}}',
@@ -173,13 +185,41 @@ TEMPLATE,
 
         // Inventory templates
         'inventory.low_stock_alert' => <<<'TEMPLATE'
-Low Stock Alert
+Daily Low Stock Summary
 
-{{total}} items are at or below their low stock threshold:
+{{total}} items are at or below their low stock threshold.
+Out of stock: {{out_of_stock}}
+Low stock: {{low_stock}}
+
+Top low-stock items (showing {{items_shown}}):
 
 {{items_list}}
 
 Please review and reorder as needed.
+TEMPLATE,
+
+        // Tracking templates
+        'tracking.link_email' => <<<'TEMPLATE'
+Hello {{customer_name}},
+
+Your service is on the way for workorder {{workorder_number}}.
+
+Track the technician here: {{tracking_url}}
+
+{{#job_title}}
+Service: {{job_title}}
+{{/job_title}}
+
+{{#vehicle}}
+Vehicle: {{vehicle}}
+{{/vehicle}}
+
+{{#eta}}
+Estimated completion: {{eta}}
+{{/eta}}
+TEMPLATE,
+        'tracking.link_sms' => <<<'TEMPLATE'
+Hi {{customer_name}}, your service is on the way for workorder {{workorder_number}}. Track here: {{tracking_url}}
 TEMPLATE,
 
         // Warranty templates

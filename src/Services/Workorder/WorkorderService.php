@@ -7,6 +7,7 @@ use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Workorder;
 use App\Models\WorkorderJob;
+use App\Services\Financial\FinancialEntryService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -210,8 +211,15 @@ class WorkorderService
             throw new InvalidArgumentException('Workorder not found.');
         }
 
-        if ($workorder->status !== Workorder::STATUS_COMPLETED) {
-            throw new InvalidArgumentException('Only completed workorders can be converted to invoices.');
+        // Allow completed or ready_for_pickup statuses
+        $validStatuses = [Workorder::STATUS_COMPLETED, Workorder::STATUS_READY_FOR_PICKUP, Workorder::STATUS_GOA];
+        if (!in_array($workorder->status, $validStatuses, true)) {
+            throw new InvalidArgumentException('Only completed, ready-for-pickup, or GOA workorders can be converted to invoices.');
+        }
+
+        // Validate QC if enabled
+        if ($workorder->status !== Workorder::STATUS_GOA) {
+            $this->validateQCForInvoicing($workorderId);
         }
 
         // Check if invoice already exists
@@ -241,7 +249,8 @@ class WorkorderService
                 )
             SQL);
 
-            $total = $workorder->grand_total;
+            $isGoa = $workorder->status === Workorder::STATUS_GOA;
+            $total = $isGoa ? $workorder->goa_fee : $workorder->grand_total;
             $publicToken = bin2hex(random_bytes(20));
             $publicExpiry = date('Y-m-d H:i:s', strtotime('+30 days'));
 
@@ -254,11 +263,11 @@ class WorkorderService
                 'status' => 'pending',
                 'issue_date' => date('Y-m-d'),
                 'due_date' => $dueDate,
-                'subtotal' => $workorder->subtotal,
-                'tax' => $workorder->tax,
+                'subtotal' => $isGoa ? 0 : $workorder->subtotal,
+                'tax' => $isGoa ? 0 : $workorder->tax,
                 'total' => $total,
-                'shop_fee' => $workorder->shop_fee,
-                'hazmat_disposal_fee' => $workorder->hazmat_disposal_fee,
+                'shop_fee' => $isGoa ? 0 : $workorder->shop_fee,
+                'hazmat_disposal_fee' => $isGoa ? 0 : $workorder->hazmat_disposal_fee,
                 'balance_due' => $total,
                 'public_token' => $publicToken,
                 'public_token_expires_at' => $publicExpiry,
@@ -267,10 +276,16 @@ class WorkorderService
             $invoiceId = (int) $pdo->lastInsertId();
 
             // Copy workorder items to invoice
-            $this->copyWorkorderItemsToInvoice($invoiceId, $workorderId);
+            if (!$isGoa) {
+                $this->copyWorkorderItemsToInvoice($invoiceId, $workorderId);
+            }
 
             // Add extra fees as line items
-            $this->addExtraFeesToInvoice($invoiceId, $workorder);
+            if ($isGoa) {
+                $this->addGoaFeeToInvoice($invoiceId, $workorder);
+            } else {
+                $this->addExtraFeesToInvoice($invoiceId, $workorder);
+            }
 
             $pdo->commit();
 
@@ -286,6 +301,50 @@ class WorkorderService
             $pdo->rollBack();
             throw $exception;
         }
+    }
+
+    /**
+     * Mark a workorder as GOA (Gone On Arrival) and apply billing rules.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function markGoneOnArrival(int $workorderId, array $payload = [], ?int $actorId = null): Workorder
+    {
+        $workorder = $this->repository->find($workorderId);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found.');
+        }
+
+        $goaFee = $payload['goa_fee'] ?? $payload['goa_fee_amount'] ?? $workorder->call_out_fee ?? 0;
+        if (!is_numeric($goaFee)) {
+            throw new InvalidArgumentException('GOA fee must be a numeric value.');
+        }
+        $goaFee = max(0, (float) $goaFee);
+
+        $billingParty = $payload['goa_billing_party'] ?? $payload['goa_bill_to'] ?? $workorder->goa_billing_party ?? 'customer';
+        $billingParty = strtolower((string) $billingParty);
+        if (!in_array($billingParty, ['customer', 'motor_club'], true)) {
+            throw new InvalidArgumentException('GOA billing party must be customer or motor_club.');
+        }
+
+        $notes = $payload['notes'] ?? 'Marked GOA';
+        $clientEventId = $payload['client_event_id'] ?? null;
+
+        if ($workorder->status !== Workorder::STATUS_GOA) {
+            $this->repository->updateStatus($workorderId, Workorder::STATUS_GOA, $actorId, $notes, $clientEventId);
+        }
+
+        $this->repository->updateGoaDetails($workorderId, $goaFee, $billingParty);
+        $workorder = $this->repository->find($workorderId) ?? $workorder;
+
+        $this->log('workorder.goa_marked', $workorderId, $actorId, [
+            'goa_fee' => $goaFee,
+            'billing_party' => $billingParty,
+        ]);
+
+        $this->recordGoaLedgerEntry($workorder, $goaFee, $billingParty, $actorId);
+
+        return $workorder;
     }
 
     /**
@@ -638,6 +697,30 @@ class WorkorderService
         }
     }
 
+    private function addGoaFeeToInvoice(int $invoiceId, Workorder $workorder): void
+    {
+        $amount = $workorder->goa_fee;
+        if ($amount <= 0) {
+            return;
+        }
+
+        $pdo = $this->connection->pdo();
+        $description = 'GOA Fee';
+        if ($workorder->goa_billing_party) {
+            $description .= ' (' . ucwords(str_replace('_', ' ', $workorder->goa_billing_party)) . ')';
+        }
+
+        $stmt = $pdo->prepare(<<<SQL
+            INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, taxable, line_total)
+            VALUES (:invoice_id, 'fee', :description, 1, :amount, 0, :amount)
+        SQL);
+        $stmt->execute([
+            'invoice_id' => $invoiceId,
+            'description' => $description,
+            'amount' => $amount,
+        ]);
+    }
+
     private function recalculateWorkorderTotals(int $workorderId): void
     {
         $pdo = $this->connection->pdo();
@@ -674,6 +757,47 @@ class WorkorderService
             'grand_total' => $grandTotal,
             'id' => $workorderId,
         ]);
+    }
+
+    private function recordGoaLedgerEntry(Workorder $workorder, float $amount, string $billingParty, ?int $actorId): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+
+        $payerName = $billingParty === 'motor_club' ? 'Motor Club' : $this->getCustomerName($workorder->customer_id);
+        $reference = 'workorder-' . $workorder->id;
+        $entryService = new FinancialEntryService($this->connection, $this->audit);
+        $entryService->create([
+            'type' => 'income',
+            'category' => 'GOA Fee',
+            'reference' => $reference,
+            'purchase_order' => 'goa',
+            'amount' => $amount,
+            'entry_date' => date('Y-m-d'),
+            'vendor' => $payerName ?: 'Customer',
+            'description' => sprintf(
+                'GOA fee for workorder %s billed to %s.',
+                $workorder->number,
+                ucwords(str_replace('_', ' ', $billingParty))
+            ),
+            'idempotency_key' => 'workorder-goa-' . $workorder->id,
+        ], $actorId ?? 0);
+    }
+
+    private function getCustomerName(int $customerId): ?string
+    {
+        if ($customerId === 0) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT CONCAT(first_name, " ", last_name) AS name FROM customers WHERE id = :id'
+        );
+        $stmt->execute(['id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? trim((string) ($row['name'] ?? '')) : null;
     }
 
     /**
@@ -850,6 +974,50 @@ class WorkorderService
         $stmt->execute(['number' => $number]);
 
         return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Validate QC requirements before allowing invoice conversion.
+     * Checks if QC is enabled and if required, whether QC has passed.
+     */
+    private function validateQCForInvoicing(int $workorderId): void
+    {
+        $pdo = $this->connection->pdo();
+
+        // Check if QC is enabled
+        $stmt = $pdo->prepare("SELECT `value` FROM settings WHERE `key` = 'qc_enabled'");
+        $stmt->execute();
+        $qcEnabled = $stmt->fetchColumn();
+
+        if ($qcEnabled !== 'true' && $qcEnabled !== '1') {
+            return; // QC not enabled, skip validation
+        }
+
+        // Check if QC is required for invoicing
+        $stmt = $pdo->prepare("SELECT `value` FROM settings WHERE `key` = 'qc_required_for_invoice'");
+        $stmt->execute();
+        $qcRequired = $stmt->fetchColumn();
+
+        if ($qcRequired !== 'true' && $qcRequired !== '1') {
+            return; // QC not required for invoicing
+        }
+
+        // Check if QC has passed
+        $stmt = $pdo->prepare(<<<SQL
+            SELECT status FROM qc_checks
+            WHERE workorder_id = :workorder_id
+            ORDER BY id DESC LIMIT 1
+        SQL);
+        $stmt->execute(['workorder_id' => $workorderId]);
+        $qcStatus = $stmt->fetchColumn();
+
+        $passedStatuses = ['passed', 'passed_with_notes'];
+        if (!in_array($qcStatus, $passedStatuses, true)) {
+            throw new InvalidArgumentException(
+                'QC check must be passed before converting workorder to invoice. ' .
+                'Current QC status: ' . ($qcStatus ?: 'not initialized')
+            );
+        }
     }
 
     private function log(string $event, int $workorderId, ?int $actorId, array $context = []): void

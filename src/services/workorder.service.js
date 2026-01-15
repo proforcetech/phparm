@@ -1,4 +1,6 @@
 import api from './api'
+import { enqueueItem } from '../react/utils/offlineQueue'
+import offlineSync from '../react/services/offlineSync'
 
 export default {
   /**
@@ -48,8 +50,32 @@ export default {
    * @param {string} notes - Optional notes
    * @returns {Promise}
    */
-  updateStatus(id, status, notes = null) {
-    return api.patch(`/workorders/${id}/status`, { status, notes })
+  updateStatus(id, status, notes = null, options = {}) {
+    const { allowQueue = true, clientEventId = null, payload = {} } = options
+    const requestPayload = {
+      status,
+      notes,
+      client_event_id: clientEventId,
+      ...payload,
+    }
+    if (!allowQueue) {
+      return api.patch(`/workorders/${id}/status`, requestPayload)
+    }
+
+    const eventId = clientEventId || crypto.randomUUID()
+    enqueueItem('workorder_status', {
+      id,
+      status,
+      notes,
+      clientEventId: eventId,
+      payload,
+    })
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      return offlineSync.manualSync().then(() => ({ queued: true, client_event_id: eventId }))
+    }
+
+    return Promise.resolve({ queued: true, client_event_id: eventId })
   },
 
   /**
@@ -58,8 +84,11 @@ export default {
    * @param {number} technicianId - Technician user ID
    * @returns {Promise}
    */
-  assignTechnician(id, technicianId) {
-    return api.patch(`/workorders/${id}/assign`, { technician_id: technicianId })
+  assignTechnician(id, technicianId, recommendedDriver = null) {
+    return api.patch(`/workorders/${id}/assign`, {
+      technician_id: technicianId,
+      ...(recommendedDriver ? { recommended_driver: recommendedDriver } : {}),
+    })
   },
 
   /**
@@ -118,8 +147,28 @@ export default {
    * @param {string} status - New status
    * @returns {Promise}
    */
-  updateJobStatus(workorderId, jobId, status) {
-    return api.patch(`/workorders/${workorderId}/jobs/${jobId}/status`, { status })
+  updateJobStatus(workorderId, jobId, status, options = {}) {
+    const { allowQueue = true, clientEventId = null } = options
+    if (!allowQueue) {
+      return api.patch(`/workorders/${workorderId}/jobs/${jobId}/status`, {
+        status,
+        client_event_id: clientEventId,
+      })
+    }
+
+    const eventId = clientEventId || crypto.randomUUID()
+    enqueueItem('workorder_job_status', {
+      workorderId,
+      jobId,
+      status,
+      clientEventId: eventId,
+    })
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      return offlineSync.manualSync().then(() => ({ queued: true, client_event_id: eventId }))
+    }
+
+    return Promise.resolve({ queued: true, client_event_id: eventId })
   },
 
   /**
@@ -129,7 +178,104 @@ export default {
    * @param {number} technicianId - Technician user ID
    * @returns {Promise}
    */
-  assignJobTechnician(workorderId, jobId, technicianId) {
-    return api.patch(`/workorders/${workorderId}/jobs/${jobId}/assign`, { technician_id: technicianId })
+  assignJobTechnician(workorderId, jobId, technicianId, recommendedDriver = null) {
+    return api.patch(`/workorders/${workorderId}/jobs/${jobId}/assign`, {
+      technician_id: technicianId,
+      ...(recommendedDriver ? { recommended_driver: recommendedDriver } : {}),
+    })
+  },
+
+  /**
+   * Upload checkpoint photo for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {string} checkpointType
+   * @param {File} file
+   * @returns {Promise}
+   */
+  uploadJobCheckpoint(workorderId, jobId, checkpointType, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/checkpoints/${checkpointType}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  /**
+   * Get checkpoint summary for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @returns {Promise}
+   */
+  getJobCheckpointStatus(workorderId, jobId) {
+    return api.get(`/workorders/${workorderId}/jobs/${jobId}/checkpoints`)
+  },
+
+  /**
+   * Upload a damage photo for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {File} file
+   * @returns {Promise}
+   */
+  uploadJobDamagePhoto(workorderId, jobId, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/damage-photos`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  /**
+   * Get damage photo summary for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @returns {Promise}
+   */
+  getJobDamagePhotoStatus(workorderId, jobId) {
+    return api.get(`/workorders/${workorderId}/jobs/${jobId}/damage-photos`)
+  },
+
+  /**
+   * Create a damage report for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  createDamageReport(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/damage-reports`, payload)
+  },
+
+  /**
+   * List damage reports for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @returns {Promise}
+   */
+  getDamageReports(workorderId, jobId) {
+    return api.get(`/workorders/${workorderId}/jobs/${jobId}/damage-reports`)
+  },
+
+  /**
+   * Save vehicle intake details for a job
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  saveJobVehicleIntake(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/vehicle-intake`, payload)
+  },
+
+  /**
+   * Capture a job signature
+   * @param {number} workorderId
+   * @param {number} jobId
+   * @param {Object} payload
+   * @returns {Promise}
+   */
+  captureJobSignature(workorderId, jobId, payload) {
+    return api.post(`/workorders/${workorderId}/jobs/${jobId}/signature`, payload)
   }
 }

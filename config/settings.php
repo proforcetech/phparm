@@ -62,6 +62,18 @@ return [
             'description' => 'Mileage charge per unit used for mobile appointments.',
             'value' => 0.0,
         ],
+        'pricing.labor_taxable' => [
+            'group' => 'pricing',
+            'type' => 'boolean',
+            'description' => 'Whether labor charges are taxable by default.',
+            'value' => false,
+        ],
+        'pricing.fee_taxable' => [
+            'group' => 'pricing',
+            'type' => 'boolean',
+            'description' => 'Whether fees are taxable by default.',
+            'value' => false,
+        ],
         'integrations.stripe.public_key' => [
             'group' => 'integrations',
             'type' => 'string',
@@ -224,6 +236,12 @@ return [
             'description' => 'Minimum acceptable reCAPTCHA score (0.0 - 1.0) before processing public forms.',
             'value' => 0.5,
         ],
+        'security.mandatory_2fa_roles' => [
+            'group' => 'security',
+            'type' => 'json',
+            'description' => 'Roles that must enroll in two-factor authentication before accessing the app.',
+            'value' => ['admin', 'dispatcher'],
+        ],
         'integrations.partstech.api_base' => [
             'group' => 'integrations',
             'type' => 'string',
@@ -283,6 +301,30 @@ return [
             'type' => 'string',
             'description' => 'SMS body template for estimate sharing.',
             'value' => 'Hi {customer}, your estimate #{estimate_number} for {total} is ready. View: {link} - {shop_name}',
+        ],
+        'storage.notice.notice_of_claim' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for storage notice of claim PDFs.',
+            'value' => null,
+        ],
+        'storage.notice.lien_notice' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for storage lien notice PDFs.',
+            'value' => null,
+        ],
+        'storage.notice.tow_authorization' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for tow authorization forms.',
+            'value' => null,
+        ],
+        'storage.notice.lien_ack' => [
+            'group' => 'storage',
+            'type' => 'string',
+            'description' => 'HTML template for lien acknowledgment forms.',
+            'value' => null,
         ],
         'estimates.rejection_reasons' => [
             'group' => 'estimates',

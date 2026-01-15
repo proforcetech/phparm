@@ -76,6 +76,16 @@ class Request
             }
         }
 
+        // Handle Authorization header passed via Apache RewriteRule
+        // Apache prefixes env vars set via E= with REDIRECT_
+        if (!isset($headers['AUTHORIZATION'])) {
+            if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+                $headers['AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+            } elseif (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+                $headers['AUTHORIZATION'] = $_SERVER['HTTP_AUTHORIZATION'];
+            }
+        }
+
         if (isset($_SERVER['CONTENT_TYPE'])) {
             $headers['CONTENT-TYPE'] = $_SERVER['CONTENT_TYPE'];
         }

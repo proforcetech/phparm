@@ -8,6 +8,7 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(null)
+  const [impersonation, setImpersonation] = useState(null)
   const [portalConfig, setPortalConfig] = useState({
     apiBase: '/api',
     nonce: null,
@@ -22,9 +23,10 @@ export function AuthProvider({ children }) {
   const isAdmin = useMemo(() => user?.role === 'admin', [user])
   const portalReady = useMemo(() => isCustomer && !!portalConfig.nonce, [isCustomer, portalConfig])
 
-  const checkAuth = useCallback(() => {
+  const checkAuth = useCallback(async () => {
     const storedToken = localStorage.getItem('auth_token')
     const storedUser = localStorage.getItem('user')
+    const storedImpersonation = localStorage.getItem('impersonation')
     const storedNonce = localStorage.getItem('portal_nonce')
 
     if (storedToken && storedUser) {
@@ -32,8 +34,29 @@ export function AuthProvider({ children }) {
       setUser(JSON.parse(storedUser))
     }
 
+    if (storedImpersonation) {
+      setImpersonation(JSON.parse(storedImpersonation))
+    }
+
     if (storedNonce) {
       setPortalConfig((prev) => ({ ...prev, nonce: storedNonce }))
+    }
+
+    if (storedToken) {
+      const data = await authService.me()
+      if (data.user) {
+        setUser(data.user)
+        localStorage.setItem('user', JSON.stringify(data.user))
+      }
+
+      if (data.impersonation !== undefined) {
+        setImpersonation(data.impersonation)
+        if (data.impersonation) {
+          localStorage.setItem('impersonation', JSON.stringify(data.impersonation))
+        } else {
+          localStorage.removeItem('impersonation')
+        }
+      }
     }
   }, [])
 
@@ -43,6 +66,14 @@ export function AuthProvider({ children }) {
       if (data.user) {
         setUser(data.user)
         localStorage.setItem('user', JSON.stringify(data.user))
+      }
+      if (data.impersonation !== undefined) {
+        setImpersonation(data.impersonation)
+        if (data.impersonation) {
+          localStorage.setItem('impersonation', JSON.stringify(data.impersonation))
+        } else {
+          localStorage.removeItem('impersonation')
+        }
       }
       return data
     } catch (err) {
@@ -55,9 +86,11 @@ export function AuthProvider({ children }) {
     if (data.token && data.user) {
       setToken(data.token)
       setUser(data.user)
+      setImpersonation(null)
 
       localStorage.setItem('auth_token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
+      localStorage.removeItem('impersonation')
 
       if (data.api_base) {
         setPortalConfig((prev) => ({ ...prev, apiBase: data.api_base }))
@@ -147,10 +180,12 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null)
       setToken(null)
+      setImpersonation(null)
       setPortalConfig((prev) => ({ ...prev, nonce: null }))
       localStorage.removeItem('auth_token')
       localStorage.removeItem('user')
       localStorage.removeItem('portal_nonce')
+      localStorage.removeItem('impersonation')
       window.location.assign('/login')
     }
   }, [])
@@ -194,6 +229,21 @@ export function AuthProvider({ children }) {
       return data
     } catch (err) {
       setError(err.response?.data?.message || 'Password reset failed')
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const acceptInvite = useCallback(async (inviteToken, password) => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const data = await authService.acceptInvite(inviteToken, password)
+      return data
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invitation acceptance failed')
       throw err
     } finally {
       setLoading(false)
@@ -248,10 +298,58 @@ export function AuthProvider({ children }) {
     return data
   }, [isCustomer])
 
+  const stopImpersonation = useCallback(async () => {
+    const data = await authService.stopImpersonation()
+    if (data.user) {
+      setUser(data.user)
+      localStorage.setItem('user', JSON.stringify(data.user))
+    }
+    setImpersonation(data.impersonation ?? null)
+    if (data.impersonation) {
+      localStorage.setItem('impersonation', JSON.stringify(data.impersonation))
+    } else {
+      localStorage.removeItem('impersonation')
+    }
+    return data
+  }, [])
+
+  const hasPermission = useCallback((permission) => {
+    if (!user) return false
+    if (user.role?.toLowerCase() === 'admin') return true
+    const permissions = user.permissions ?? []
+    if (permissions.includes('*')) return true
+    if (permissions.includes(permission)) return true
+    return permissions.some((granted) => {
+      if (granted.endsWith('.*')) {
+        const prefix = granted.slice(0, -2)
+        return permission.startsWith(`${prefix}.`)
+      }
+      return false
+    })
+  }, [user])
+
+  const hasModule = useCallback((moduleName) => {
+    if (!user || !user.modules) return false
+    if (user.role?.toLowerCase() === 'admin') return true
+    return user.modules.includes(moduleName)
+  }, [user])
+
+  const hasModuleAccess = useCallback((moduleKey) => {
+    // Admins always have access
+    if (user?.role?.toLowerCase() === 'admin') return true
+    // Check if module is in user's accessible modules
+    if (user?.accessible_modules) {
+      return user.accessible_modules.includes(moduleKey)
+    }
+    // Fallback to hasModule for backwards compatibility
+    return hasModule(moduleKey)
+  }, [user, hasModule])
+
   const value = useMemo(
     () => ({
       user,
       token,
+      impersonation,
       portalConfig,
       loading,
       error,
@@ -269,8 +367,13 @@ export function AuthProvider({ children }) {
       register,
       requestPasswordReset,
       resetPassword,
+      acceptInvite,
       updateProfile,
       verifyTwoFactor,
+      stopImpersonation,
+      hasPermission,
+      hasModule,
+      hasModuleAccess,
     }),
     [
       bootstrapPortal,
@@ -284,15 +387,21 @@ export function AuthProvider({ children }) {
       login,
       logout,
       pendingChallenge,
+      impersonation,
       portalConfig,
       portalReady,
       register,
       requestPasswordReset,
       resetPassword,
+      acceptInvite,
       token,
       updateProfile,
       user,
       verifyTwoFactor,
+      stopImpersonation,
+      hasPermission,
+      hasModule,
+      hasModuleAccess,
     ]
   )
 

@@ -2,8 +2,10 @@
 
 namespace App\Services\User;
 
+use App\Services\ImportExport\CsvExportService;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\RolePermissions;
 use App\Support\Auth\TotpService;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -13,12 +15,21 @@ class UserController
     private UserRepository $repository;
     private AccessGate $gate;
     private TotpService $totpService;
+    private RolePermissions $roles;
+    private CsvExportService $csvExportService;
 
-    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService)
-    {
+    public function __construct(
+        UserRepository $repository,
+        AccessGate $gate,
+        TotpService $totpService,
+        RolePermissions $roles,
+        CsvExportService $csvExportService
+    ) {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->totpService = $totpService;
+        $this->roles = $roles;
+        $this->csvExportService = $csvExportService;
     }
 
     /**
@@ -73,7 +84,22 @@ class UserController
             'two_factor_type' => $u->two_factor_type ?? 'none',
             'created_at' => $u->created_at,
             'updated_at' => $u->updated_at,
+            'last_activity_at' => $u->last_activity_at,
         ], $users);
+    }
+
+    /**
+     * Export users
+     *
+     * @param array<string, mixed> $filters
+     */
+    public function exportUsers(User $user, array $filters = []): string
+    {
+        if (!$this->gate->can($user, 'users.view')) {
+            throw new UnauthorizedException('Cannot export users');
+        }
+
+        return $this->csvExportService->export('users', $filters);
     }
 
     /**
@@ -102,6 +128,7 @@ class UserController
             'two_factor_type' => $targetUser->two_factor_type ?? 'none',
             'created_at' => $targetUser->created_at,
             'updated_at' => $targetUser->updated_at,
+            'last_activity_at' => $targetUser->last_activity_at,
         ];
     }
 
@@ -135,10 +162,7 @@ class UserController
         }
 
         // Validate role
-        $validRoles = ['admin', 'manager', 'technician', 'customer'];
-        if (!in_array($data['role'], $validRoles, true)) {
-            throw new InvalidArgumentException('Invalid role');
-        }
+        $this->roles->validateRole($data['role']);
 
         // Check if email already exists
         if ($this->repository->findByEmail($data['email'])) {
@@ -160,6 +184,63 @@ class UserController
             'two_factor_type' => $newUser->two_factor_type ?? 'none',
             'created_at' => $newUser->created_at,
             'updated_at' => $newUser->updated_at,
+            'last_activity_at' => $newUser->last_activity_at,
+        ];
+    }
+
+    /**
+     * Invite a new user
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function inviteUser(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'users.invite')) {
+            throw new UnauthorizedException('Cannot invite users');
+        }
+
+        if (empty($data['name'])) {
+            throw new InvalidArgumentException('Name is required');
+        }
+
+        if (empty($data['email'])) {
+            throw new InvalidArgumentException('Email is required');
+        }
+
+        if (empty($data['role'])) {
+            throw new InvalidArgumentException('Role is required');
+        }
+
+        $this->roles->validateRole($data['role']);
+
+        if ($this->repository->findByEmail($data['email'])) {
+            throw new InvalidArgumentException('Email already exists');
+        }
+
+        $temporaryPassword = bin2hex(random_bytes(24));
+
+        $newUser = $this->repository->create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'role' => $data['role'],
+            'password' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
+            'email_verified' => false,
+            'two_factor_enabled' => false,
+            'two_factor_type' => 'none',
+        ]);
+
+        return [
+            'id' => $newUser->id,
+            'name' => $newUser->name,
+            'email' => $newUser->email,
+            'role' => $newUser->role,
+            'email_verified' => $newUser->email_verified,
+            'two_factor_enabled' => $newUser->two_factor_enabled,
+            'two_factor_type' => $newUser->two_factor_type ?? 'none',
+            'created_at' => $newUser->created_at,
+            'updated_at' => $newUser->updated_at,
+            'last_activity_at' => $newUser->last_activity_at,
         ];
     }
 
@@ -182,10 +263,7 @@ class UserController
 
         // Validate role if provided
         if (isset($data['role'])) {
-            $validRoles = ['admin', 'manager', 'technician', 'customer'];
-            if (!in_array($data['role'], $validRoles, true)) {
-                throw new InvalidArgumentException('Invalid role');
-            }
+            $this->roles->validateRole($data['role']);
         }
 
         // Check if email already exists (for different user)
@@ -427,6 +505,74 @@ class UserController
             'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending,
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
+        ];
+    }
+
+    /**
+     * Bulk deactivate users.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function bulkDeactivate(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'users.delete')) {
+            throw new UnauthorizedException('Cannot deactivate users');
+        }
+
+        $ids = $data['user_ids'] ?? [];
+        if (!is_array($ids) || empty($ids)) {
+            throw new InvalidArgumentException('User IDs are required');
+        }
+
+        $count = $this->repository->bulkDeactivate($ids, $user->id);
+        if ($count === 0) {
+            throw new InvalidArgumentException('No valid users selected');
+        }
+
+        return [
+            'message' => 'Users deactivated successfully',
+            'deactivated' => $count,
+        ];
+    }
+
+    /**
+     * Bulk update user roles.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function bulkUpdateRole(User $user, array $data): array
+    {
+        if (!$this->gate->can($user, 'users.update')) {
+            throw new UnauthorizedException('Cannot update user roles');
+        }
+
+        $ids = $data['user_ids'] ?? [];
+        $role = $data['role'] ?? '';
+
+        if (!is_array($ids) || empty($ids)) {
+            throw new InvalidArgumentException('User IDs are required');
+        }
+
+        if ($role === '') {
+            throw new InvalidArgumentException('Role is required');
+        }
+
+        $validRoles = ['admin', 'dispatcher', 'manager', 'technician', 'parts', 'roadside', 'cms', 'customer'];
+        if (!in_array($role, $validRoles, true)) {
+            throw new InvalidArgumentException('Invalid role');
+        }
+
+        $count = $this->repository->bulkUpdateRole($ids, $role);
+        if ($count === 0) {
+            throw new InvalidArgumentException('No valid users selected');
+        }
+
+        return [
+            'message' => 'User roles updated successfully',
+            'updated' => $count,
+            'role' => $role,
         ];
     }
 }

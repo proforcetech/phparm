@@ -7,6 +7,7 @@ use App\Models\Workorder;
 use App\Models\WorkorderJob;
 use App\Models\WorkorderItem;
 use App\Models\WorkorderStatusHistory;
+use App\Services\Workorder\WorkorderJobEvidenceService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -58,6 +59,9 @@ class WorkorderRepository
     {
         $clauses = [];
         $bindings = [];
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((SELECT MAX(created_at) FROM workorder_status_history wsh '
+            . 'WHERE wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status), '
+            . 'workorders.updated_at, workorders.created_at), NOW())';
 
         if (!empty($filters['status'])) {
             if (is_array($filters['status'])) {
@@ -109,6 +113,16 @@ class WorkorderRepository
             $bindings['created_to'] = $filters['created_to'];
         }
 
+        if (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '') {
+            $clauses[] = $ageExpression . ' >= :status_age_min_days';
+            $bindings['status_age_min_days'] = (int) $filters['status_age_min_days'];
+        }
+
+        if (array_key_exists('status_age_max_days', $filters) && $filters['status_age_max_days'] !== null && $filters['status_age_max_days'] !== '') {
+            $clauses[] = $ageExpression . ' <= :status_age_max_days';
+            $bindings['status_age_max_days'] = (int) $filters['status_age_max_days'];
+        }
+
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
         $sql = 'SELECT * FROM workorders ' . $where . ' ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset';
         $pdo = $this->connection->pdo();
@@ -134,6 +148,9 @@ class WorkorderRepository
     {
         $clauses = [];
         $bindings = [];
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((SELECT MAX(created_at) FROM workorder_status_history wsh '
+            . 'WHERE wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status), '
+            . 'workorders.updated_at, workorders.created_at), NOW())';
 
         if (!empty($filters['status'])) {
             if (is_array($filters['status'])) {
@@ -155,6 +172,16 @@ class WorkorderRepository
             $bindings['technician_id'] = (int) $filters['technician_id'];
         }
 
+        if (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '') {
+            $clauses[] = $ageExpression . ' >= :status_age_min_days';
+            $bindings['status_age_min_days'] = (int) $filters['status_age_min_days'];
+        }
+
+        if (array_key_exists('status_age_max_days', $filters) && $filters['status_age_max_days'] !== null && $filters['status_age_max_days'] !== '') {
+            $clauses[] = $ageExpression . ' <= :status_age_max_days';
+            $bindings['status_age_max_days'] = (int) $filters['status_age_max_days'];
+        }
+
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
         $sql = 'SELECT COUNT(*) FROM workorders ' . $where;
         $stmt = $this->connection->pdo()->prepare($sql);
@@ -168,7 +195,13 @@ class WorkorderRepository
         return (int) $stmt->fetchColumn();
     }
 
-    public function updateStatus(int $id, string $status, ?int $actorId = null, ?string $notes = null): ?Workorder
+    public function updateStatus(
+        int $id,
+        string $status,
+        ?int $actorId = null,
+        ?string $notes = null,
+        ?string $clientEventId = null
+    ): ?Workorder
     {
         $workorder = $this->find($id);
         if ($workorder === null) {
@@ -177,6 +210,10 @@ class WorkorderRepository
 
         if (!in_array($status, Workorder::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid status for workorder lifecycle.');
+        }
+
+        if ($clientEventId !== null && $this->statusEventExists($id, $clientEventId)) {
+            return $workorder;
         }
 
         if ($workorder->status === $status) {
@@ -200,12 +237,15 @@ class WorkorderRepository
         if ($status === Workorder::STATUS_COMPLETED) {
             $updateFields[] = 'completed_at = NOW()';
         }
+        if ($status === Workorder::STATUS_GOA) {
+            $updateFields[] = 'completed_at = NOW()';
+        }
 
         $stmt = $pdo->prepare('UPDATE workorders SET ' . implode(', ', $updateFields) . ' WHERE id = :id');
         $stmt->execute($params);
 
         // Record status history
-        $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes);
+        $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes, $clientEventId);
 
         $workorder = $this->find($id);
         $this->log('workorder.status_changed', $id, $actorId, [
@@ -217,7 +257,28 @@ class WorkorderRepository
         return $workorder;
     }
 
-    public function assignTechnician(int $id, ?int $technicianId, ?int $actorId = null): ?Workorder
+    public function updateGoaDetails(int $id, float $goaFee, ?string $billingParty): void
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            UPDATE workorders
+            SET goa_fee = :goa_fee,
+                goa_billing_party = :goa_billing_party,
+                updated_at = NOW()
+            WHERE id = :id
+        SQL);
+        $stmt->execute([
+            'goa_fee' => $goaFee,
+            'goa_billing_party' => $billingParty,
+            'id' => $id,
+        ]);
+    }
+
+    public function assignTechnician(
+        int $id,
+        ?int $technicianId,
+        ?int $actorId = null,
+        ?array $recommendedDriver = null
+    ): ?Workorder
     {
         $workorder = $this->find($id);
         if ($workorder === null) {
@@ -234,6 +295,7 @@ class WorkorderRepository
         $this->log('workorder.technician_assigned', $id, $actorId, [
             'previous_technician_id' => $previousTechnicianId,
             'new_technician_id' => $technicianId,
+            'recommended_driver' => $recommendedDriver,
         ]);
 
         return $this->find($id);
@@ -321,6 +383,8 @@ class WorkorderRepository
             throw new InvalidArgumentException('Invalid status for workorder job.');
         }
 
+        $this->assertCheckpointEvidence($jobId, $status);
+
         $updateFields = ['status = :status', 'updated_at = NOW()'];
         $params = ['status' => $status, 'id' => $jobId];
 
@@ -329,6 +393,9 @@ class WorkorderRepository
         }
 
         if ($status === WorkorderJob::STATUS_COMPLETED) {
+            $updateFields[] = 'completed_at = NOW()';
+        }
+        if ($status === WorkorderJob::STATUS_GOA) {
             $updateFields[] = 'completed_at = NOW()';
         }
 
@@ -349,6 +416,70 @@ class WorkorderRepository
         }
 
         return $row ? new WorkorderJob($row) : null;
+    }
+
+    private function assertCheckpointEvidence(int $jobId, string $status): void
+    {
+        if ($status !== WorkorderJob::STATUS_HOOKED) {
+            return;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT checkpoint_type, COUNT(*) as total
+            FROM job_checkpoint_media
+            WHERE workorder_job_id = :job_id
+            GROUP BY checkpoint_type
+        SQL);
+        $stmt->execute(['job_id' => $jobId]);
+
+        $counts = array_fill_keys(WorkorderJobEvidenceService::CHECKPOINT_TYPES, 0);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $type = (string) $row['checkpoint_type'];
+            if (array_key_exists($type, $counts)) {
+                $counts[$type] = (int) $row['total'];
+            }
+        }
+
+        $missing = [];
+        foreach ($counts as $type => $total) {
+            if ($total < 1) {
+                $missing[] = ucwords(str_replace('_', ' ', $type));
+            }
+        }
+
+        if ($missing) {
+            throw new InvalidArgumentException(
+                'Hooked status requires photo evidence. Missing: ' . implode(', ', $missing) . '.'
+            );
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_media WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $damagePhotoCount = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        if ($damagePhotoCount < WorkorderJobEvidenceService::DAMAGE_PHOTO_MINIMUM) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Hooked status requires at least %d damage photos. %d uploaded.',
+                    WorkorderJobEvidenceService::DAMAGE_PHOTO_MINIMUM,
+                    $damagePhotoCount
+                )
+            );
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_reports WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $damageReportCount = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        if ($damageReportCount < 1) {
+            throw new InvalidArgumentException(
+                'Hooked status requires a saved damage diagram report.'
+            );
+        }
     }
 
     public function assignJobTechnician(int $jobId, ?int $technicianId, ?int $actorId = null): ?WorkorderJob
@@ -390,11 +521,34 @@ class WorkorderRepository
         );
     }
 
-    private function recordStatusHistory(int $workorderId, ?string $fromStatus, string $toStatus, ?int $changedBy, ?string $notes): void
+    private function recordStatusHistory(
+        int $workorderId,
+        ?string $fromStatus,
+        string $toStatus,
+        ?int $changedBy,
+        ?string $notes,
+        ?string $clientEventId = null
+    ): void
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO workorder_status_history (workorder_id, from_status, to_status, changed_by, notes, created_at)
-            VALUES (:workorder_id, :from_status, :to_status, :changed_by, :notes, NOW())
+            INSERT INTO workorder_status_history (
+                workorder_id,
+                from_status,
+                to_status,
+                changed_by,
+                notes,
+                client_event_id,
+                created_at
+            )
+            VALUES (
+                :workorder_id,
+                :from_status,
+                :to_status,
+                :changed_by,
+                :notes,
+                :client_event_id,
+                NOW()
+            )
         SQL);
 
         $stmt->execute([
@@ -403,7 +557,24 @@ class WorkorderRepository
             'to_status' => $toStatus,
             'changed_by' => $changedBy,
             'notes' => $notes,
+            'client_event_id' => $clientEventId,
         ]);
+    }
+
+    private function statusEventExists(int $workorderId, string $clientEventId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT 1
+            FROM workorder_status_history
+            WHERE workorder_id = :workorder_id AND client_event_id = :client_event_id
+            LIMIT 1
+        SQL);
+        $stmt->execute([
+            'workorder_id' => $workorderId,
+            'client_event_id' => $clientEventId,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
     }
 
     private function mapWorkorder(array $row): Workorder
@@ -427,6 +598,8 @@ class WorkorderRepository
             'discounts' => (float) ($row['discounts'] ?? 0),
             'shop_fee' => (float) ($row['shop_fee'] ?? 0),
             'hazmat_disposal_fee' => (float) ($row['hazmat_disposal_fee'] ?? 0),
+            'goa_fee' => (float) ($row['goa_fee'] ?? 0),
+            'goa_billing_party' => $row['goa_billing_party'] ?? null,
             'grand_total' => (float) ($row['grand_total'] ?? 0),
             'internal_notes' => $row['internal_notes'] ?? null,
             'customer_notes' => $row['customer_notes'] ?? null,

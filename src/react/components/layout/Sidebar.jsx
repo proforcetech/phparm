@@ -1,56 +1,151 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import {
-  Bars3Icon,
-  CalendarIcon,
-  ChartBarIcon,
-  ClipboardDocumentCheckIcon,
-  ClipboardDocumentListIcon,
-  ClockIcon,
-  Cog6ToothIcon,
-  CreditCardIcon,
-  CubeIcon,
-  DocumentDuplicateIcon,
-  DocumentTextIcon,
-  ExclamationTriangleIcon,
-  FolderIcon,
-  GlobeAltIcon,
-  HomeIcon,
-  RectangleGroupIcon,
-  RectangleStackIcon,
-  ShieldCheckIcon,
-  Squares2X2Icon,
-  TruckIcon,
-  UserGroupIcon,
-  UsersIcon,
-} from '@heroicons/react/24/outline'
+import { ArchiveBoxIcon, Bars3Icon, CalendarIcon, ChartBarIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CreditCardIcon, CubeIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FolderIcon, GlobeAltIcon, HomeIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, Squares2X2Icon, TruckIcon, UserGroupIcon, UsersIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 
 const adminMenuItems = [
-  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon },
-  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon },
-  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon },
-  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
-  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
-  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon },
-  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon },
-  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon },
-  { path: '/cp/inventory/alerts', label: 'Inventory Alerts', icon: CubeIcon },
-  { path: '/cp/inventory', label: 'Inventory', icon: CubeIcon },
-  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon },
-  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon },
-  { path: '/cp/inspections/templates', label: 'Inspection Templates', icon: ClipboardDocumentCheckIcon },
-  { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
-  { path: '/cp/cms', label: 'CMS Dashboard', icon: GlobeAltIcon, section: 'cms' },
-  { path: '/cp/cms/pages', label: 'CMS Pages', icon: DocumentDuplicateIcon, section: 'cms' },
-  { path: '/cp/cms/categories', label: 'CMS Categories', icon: FolderIcon, section: 'cms' },
-  { path: '/cp/cms/menus', label: 'CMS Menus', icon: Bars3Icon, section: 'cms' },
-  { path: '/cp/cms/components', label: 'CMS Components', icon: Squares2X2Icon, section: 'cms' },
-  { path: '/cp/cms/templates', label: 'CMS Templates', icon: RectangleGroupIcon, section: 'cms' },
-  { path: '/cp/cms/404-manager', label: '404 & Redirects', icon: ExclamationTriangleIcon, section: 'cms' },
+  { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon, moduleKey: 'core' },
+  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon, moduleKey: 'appointments' },
+  { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
+  { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
+  { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
+  { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
+  { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
+  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
+  {
+    path: '/cp/inventory',
+    label: 'Inventory',
+    icon: CubeIcon,
+    moduleKey: 'inventory',
+    children: [
+      {
+        path: '/cp/inventory/alerts',
+        label: 'Inventory Alerts',
+        icon: CubeIcon,
+      },
+    ],
+  },
+  { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
+  {
+    path: '/cp/dispatch',
+    label: 'Dispatch',
+    icon: TruckIcon,
+    moduleKey: 'towing',
+    children: [
+      {
+        path: '/cp/dispatch',
+        label: 'Dispatch Board',
+        icon: TruckIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists',
+        label: 'Truck Checklists',
+        icon: ClipboardDocumentCheckIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists/logs',
+        label: 'Checklist Logs',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists/templates',
+        label: 'Checklist Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
+  {
+    path: '/cp/storage/impound-intake',
+    label: 'Storage',
+    icon: ArchiveBoxIcon,
+    moduleKey: 'impound',
+    children: [
+      {
+        path: '/cp/storage/impound-intake',
+        label: 'Impound Intake',
+        icon: ArchiveBoxIcon,
+      },
+      {
+        path: '/cp/storage/spot-checks',
+        label: 'Inventory Spot-Checks',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
+  { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
+  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
+  {
+    path: '/cp/inspections/work',
+    label: 'Inspections',
+    icon: ClipboardDocumentListIcon,
+    moduleKey: 'inspections',
+    children: [
+      {
+        path: '/cp/inspections/templates',
+        label: 'Inspection Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
+  { 
+    path: '/cp/cms', 
+    label: 'CMS Dashboard',
+    icon: GlobeAltIcon, 
+    section: 'cms', 
+    moduleKey: 'cms',
+    children: [
+      {
+        path: '/cp/cms/pages',
+        label: 'CMS Pages',
+        icon: DocumentDuplicateIcon,
+      },
+      {
+        path: '/cp/cms/categories',
+        label: 'CMS Categories',
+        icon: FolderIcon,
+      },
+      {
+        path: '/cp/cms/menus',
+        label: 'CMS Menus',
+        icon: Bars3Icon,
+      },
+      {
+        path: '/cp/cms/components',
+        label: 'CMS Components',
+        icon: Squares2X2Icon,
+      },
+      {
+        path: '/cp/cms/templates',
+        label: 'CMS Templates',
+        icon: RectangleGroupIcon,
+      },
+      {
+        path: '/cp/cms/404-manager',
+        label: '404 Manager',
+        icon: ExclamationTriangleIcon,
+      },
+    ],
+  },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
-  { path: '/cp/users', label: 'Users', icon: UsersIcon },
+  {
+    path: '/cp/users',
+    label: 'Users',
+    icon: UsersIcon,
+    children: [
+      {
+        path: '/cp/users/roles',
+        label: 'Roles',
+        icon: ShieldCheckIcon,
+      },
+      {
+        path: '/cp/users/groups',
+        label: 'User Groups',
+        icon: UserGroupIcon,
+      },
+    ],
+  },
 ]
 
 const technicianMenuItems = [
@@ -59,10 +154,12 @@ const technicianMenuItems = [
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
   { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  { path: '/cp/driver/truck-checklists', label: 'Truck Checklists', icon: ClipboardDocumentCheckIcon },
 ]
 
 const customerMenuItems = [
   { path: '/portal', label: 'Dashboard', icon: HomeIcon },
+  { path: '/portal/workorders', label: 'Communication Hub', icon: DocumentTextIcon },
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
@@ -85,8 +182,8 @@ const isActiveRoute = (currentPath, targetPath) => {
   return currentPath.startsWith(targetPath)
 }
 
-const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
-  const { user } = useAuthStore()
+const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
+  const { user, hasModuleAccess } = useAuthStore()
   const { pathname } = useLocation()
   const [isOpen, setIsOpen] = useState(true)
 
@@ -114,8 +211,21 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
       return technicianMenuItems
     }
 
-    return adminMenuItems
-  }, [type, user?.role])
+    // Admin users see all menu items - no filtering needed
+    if (user?.role === 'admin') {
+      return adminMenuItems
+    }
+
+    // For other staff roles, filter based on module access
+    return adminMenuItems.filter((item) => {
+      // Items without moduleKey are always shown (settings, users)
+      if (!item.moduleKey) {
+        return true
+      }
+      // Check if user has access to this module
+      return hasModuleAccess(item.moduleKey)
+    })
+  }, [type, user?.role, hasModuleAccess])
 
   const toggleSidebar = () => {
     setIsOpen((prev) => !prev)
@@ -130,16 +240,69 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
     [isOpen]
   )
 
+  const renderMenuItem = (item) => {
+    const Icon = item.icon
+    const isActive = isActiveRoute(pathname, item.path)
+    const isChildActive = item.children?.some((child) => isActiveRoute(pathname, child.path))
+    const isCurrentActive = isActive || isChildActive
+
+    return (
+      <div key={item.path} className="space-y-1">
+        <Link
+          to={item.path}
+          className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            isCurrentActive
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          }`}
+        >
+          {Icon ? <Icon className="h-5 w-5 mr-3" /> : null}
+          {item.label}
+        </Link>
+
+        {item.children?.length ? (
+          <div className="ml-6 space-y-1">
+            {item.children.map((child) => {
+              const ChildIcon = child.icon
+              const isChildItemActive = isActiveRoute(pathname, child.path)
+
+              return (
+                <Link
+                  key={child.path}
+                  to={child.path}
+                  className={`flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
+                    isChildItemActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
+                >
+                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-3" /> : null}
+                  {child.label}
+                </Link>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 bg-gray-900 w-64 transform transition-transform duration-300 ease-in-out z-30 ${
+        className={`fixed inset-y-0 left-0 bg-gray-900 w-64 ${
+          isCollapsed ? 'lg:w-20' : 'lg:w-64'
+        } transform transition-transform duration-300 ease-in-out z-30 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
-            <span className="text-lg font-semibold text-white">Menu</span>
+            <span
+              className={`text-lg font-semibold text-white ${isCollapsed ? 'lg:hidden' : ''}`}
+            >
+              Menu
+            </span>
             <button
               type="button"
               onClick={toggleSidebar}
@@ -157,25 +320,7 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin' }, ref) {
           </div>
 
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-            {menuItems.map((item) => {
-              const Icon = item.icon
-              const isActive = isActiveRoute(pathname, item.path)
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  <Icon className="h-5 w-5 mr-3" />
-                  {item.label}
-                </Link>
-              )}
-            )}
+            {menuItems.map((item) => renderMenuItem(item))}
           </nav>
         </div>
       </aside>

@@ -450,7 +450,7 @@ export default function VehicleForm() {
                 <Input
                   value={form.vin}
                   placeholder="1HGBH41JXMN109186"
-                  maxlength={30}
+                  maxLength={30}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, vin: value }))}
                 />
                 <p className="mt-1 text-xs text-gray-500">Optional - Enter vehicle identification number</p>
@@ -597,7 +597,7 @@ export default function VehicleForm() {
                 <Input
                   value={form.license_plate}
                   placeholder="ABC-1234"
-                  maxlength={30}
+                  maxLength={30}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, license_plate: value }))}
                 />
               </div>

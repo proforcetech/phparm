@@ -4,6 +4,7 @@ import Login from '../views/auth/Login'
 import CustomerLogin from '../views/auth/CustomerLogin'
 import ForgotPassword from '../views/auth/ForgotPassword'
 import ResetPassword from '../views/auth/ResetPassword'
+import AcceptInvite from '../views/auth/AcceptInvite'
 import Register from '../views/auth/Register'
 import AdminDashboard from '../views/dashboard/AdminDashboard'
 import StaffProfile from '../views/users/Profile'
@@ -16,6 +17,12 @@ import EstimateDetail from '../views/estimates/EstimateDetail'
 import EstimateEdit from '../views/estimates/EstimateEdit'
 import WorkorderList from '../views/workorders/WorkorderList'
 import WorkorderDetail from '../views/workorders/WorkorderDetail'
+import QCChecklist from '../views/workorders/QCChecklist'
+import DispatchView from '../views/dispatch/DispatchView'
+import DriverJobIntake from '../views/driver/DriverJobIntake'
+import TruckChecklistForm from '../views/driver/TruckChecklistForm'
+import TruckChecklistLogs from '../views/driver/TruckChecklistLogs'
+import TruckChecklistTemplates from '../views/driver/TruckChecklistTemplates'
 import BundleList from '../views/bundles/BundleList'
 import BundleForm from '../views/bundles/BundleForm'
 import AppointmentList from '../views/appointments/AppointmentList'
@@ -39,11 +46,23 @@ import InventoryList from '../views/inventory/InventoryList'
 import InventoryLookupManager from '../views/inventory/InventoryLookupManager'
 import InventoryForm from '../views/inventory/InventoryForm'
 import InventoryAlerts from '../views/inventory/InventoryAlerts'
+import InventoryStockOrders from '../views/inventory/InventoryStockOrders'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
+import WarrantyClaims from '../views/warranty/WarrantyClaims'
+import ImpoundIntake from '../views/storage/ImpoundIntake'
+import StorageFeeLedger from '../views/storage/StorageFeeLedger'
+import NoticeGeneration from '../views/storage/NoticeGeneration'
+import ReleaseChecklist from '../views/storage/ReleaseChecklist'
+import AuctionManagement from '../views/storage/AuctionManagement'
+import InventorySpotChecks from '../views/storage/InventorySpotChecks'
+import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
+import CustomerRetentionReport from '../views/reports/CustomerRetentionReport'
+import Reports from '../views/Reports'
+import AuditLogs from '../views/audit/AuditLogs'
 import SettingsLayout from '../views/settings/SettingsLayout'
 import SettingsPage from '../views/settings/SettingsPage'
 import SettingsShopProfile from '../views/settings/SettingsShopProfile'
@@ -51,14 +70,19 @@ import SettingsTerms from '../views/settings/SettingsTerms'
 import SettingsTemplates from '../views/settings/SettingsTemplates'
 import SettingsRejectionReasons from '../views/settings/SettingsRejectionReasons'
 import SettingsPricing from '../views/settings/SettingsPricing'
+import SettingsSecurity from '../views/settings/SettingsSecurity'
 import SettingsNotifications from '../views/settings/SettingsNotifications'
 import SettingsPayments from '../views/settings/SettingsPayments'
 import SettingsIntegrations from '../views/settings/SettingsIntegrations'
 import ServiceTypes from '../views/settings/ServiceTypes'
 import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
+import UserGroups from '../views/users/UserGroups'
+import RoleManagement from '../views/users/RoleManagement'
+import ModuleSettings from '../views/settings/ModuleSettings'
 import InspectionTemplates from '../views/inspections/TemplateManager'
 import TechnicianInspections from '../views/inspections/TechnicianInspections'
+import InspectionRecommendations from '../views/inspections/InspectionRecommendations'
 import CMSDashboard from '../views/cms/CMSDashboard'
 import CMSPageList from '../views/cms/CMSPageList'
 import CMSPageForm from '../views/cms/CMSPageForm'
@@ -81,8 +105,12 @@ import CustomerWarrantyClaims from '../views/customer-portal/WarrantyClaims'
 import CustomerWarrantyClaimDetail from '../views/customer-portal/WarrantyClaimDetail'
 import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
+import CustomerWorkorders from '../views/customer-portal/Workorders'
+import CustomerWorkorderTimeline from '../views/customer-portal/WorkorderTimeline'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
+import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
+import TrackingView from '../views/tracking/TrackingView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
@@ -98,9 +126,15 @@ const routePaths = {
 const authTokenKey = 'auth_token'
 
 const requireAuth = () => {
+  // Note: Using session-based authentication via cookies
+  // The actual auth check happens on the server side
+  // This is just a basic client-side check
   const token = localStorage.getItem(authTokenKey)
+  const user = localStorage.getItem('user')
 
-  if (!token) {
+  // Allow access if we have either a token or user data
+  // Server will validate the actual session
+  if (!token && !user) {
     return redirect(routePaths.login)
   }
 
@@ -109,8 +143,9 @@ const requireAuth = () => {
 
 const requireGuest = () => {
   const token = localStorage.getItem(authTokenKey)
+  const user = localStorage.getItem('user')
 
-  if (token) {
+  if (token || user) {
     return redirect(routePaths.dashboard)
   }
 
@@ -119,10 +154,6 @@ const requireGuest = () => {
 
 const PublicLayout = () => (
   <div className="react-app">
-    <header>
-      <h1>React migration staging</h1>
-      <p>Public route (matches Vue guest/public routes)</p>
-    </header>
     <Outlet />
   </div>
 )
@@ -132,12 +163,15 @@ const guestRoutes = [
   { path: '/customer-login', name: 'CustomerLogin', auth: 'guest', element: <CustomerLogin /> },
   { path: '/forgot-password', name: 'ForgotPassword', auth: 'guest', element: <ForgotPassword /> },
   { path: '/reset-password/:token', name: 'ResetPassword', auth: 'guest', element: <ResetPassword /> },
+  { path: '/accept-invite/:token', name: 'AcceptInvite', auth: 'guest', element: <AcceptInvite /> },
   { path: '/cp/register', name: 'Register', auth: 'guest', element: <Register /> },
 ]
 
 const publicRoutes = [
   { path: '/request-estimate', name: 'EstimateRequestForm', auth: 'public', element: <EstimateRequestPage /> },
   { path: '/estimate/view', name: 'PublicEstimateView', auth: 'public', element: <PublicEstimateView /> },
+  { path: '/track/:token', name: 'TrackingView', auth: 'public', element: <TrackingView /> },
+  { path: '/pay/:token', name: 'PublicPaymentPortal', auth: 'public', element: <PublicPaymentPortal /> },
   { path: '/customers/:id', name: 'CustomerPublicDetail', auth: 'public', element: <CustomerPublicDetail /> },
   { path: '/vehicles/:id', name: 'VehiclePublicDetail', auth: 'public', element: <VehiclePublicDetail /> },
   { path: '/vehicles/:id/edit', name: 'VehiclePublicEdit', auth: 'public', element: <VehiclePublicEdit /> },
@@ -157,6 +191,12 @@ const protectedRoutes = [
   { path: '/cp/estimates/:id/edit', name: 'EstimateEdit', auth: 'requiresAuth', element: <EstimateEdit /> },
   { path: '/cp/workorders', name: 'WorkorderList', auth: 'requiresAuth', element: <WorkorderList /> },
   { path: '/cp/workorders/:id', name: 'WorkorderDetail', auth: 'requiresAuth', element: <WorkorderDetail /> },
+  { path: '/cp/workorders/:id/qc-check', name: 'QCChecklist', auth: 'requiresAuth', element: <QCChecklist /> },
+  { path: '/cp/dispatch', name: 'Dispatch', auth: 'requiresAuth', element: <DispatchView /> },
+  { path: '/cp/driver/job-intake', name: 'DriverJobIntake', auth: 'requiresAuth', element: <DriverJobIntake /> },
+  { path: '/cp/driver/truck-checklists', name: 'TruckChecklists', auth: 'requiresAuth', element: <TruckChecklistForm /> },
+  { path: '/cp/driver/truck-checklists/logs', name: 'TruckChecklistLogs', auth: 'requiresAuth', element: <TruckChecklistLogs /> },
+  { path: '/cp/driver/truck-checklists/templates', name: 'TruckChecklistTemplates', auth: 'requiresAuth', element: <TruckChecklistTemplates /> },
   { path: '/cp/bundles', name: 'BundleList', auth: 'requiresAuth', element: <BundleList /> },
   { path: '/cp/bundles/create', name: 'BundleCreate', auth: 'requiresAuth', element: <BundleForm /> },
   { path: '/cp/bundles/:id/edit', name: 'BundleEdit', auth: 'requiresAuth', element: <BundleForm /> },
@@ -169,6 +209,7 @@ const protectedRoutes = [
   { path: '/cp/customers', name: 'CustomerList', auth: 'requiresAuth', element: <CustomerList /> },
   { path: '/cp/customers/create', name: 'CustomerCreate', auth: 'requiresAuth', element: <CustomerForm /> },
   { path: '/cp/customers/:id', name: 'CustomerDetail', auth: 'requiresAuth', element: <CustomerDetail /> },
+  { path: '/cp/customers/:id/edit', name: 'CustomerEdit', auth: 'requiresAuth', element: <CustomerForm /> },
   { path: '/cp/vehicle-master', name: 'VehicleMasterList', auth: 'requiresAuth', element: <VehicleMasterList /> },
   { path: '/cp/vehicle-master/create', name: 'VehicleMasterCreate', auth: 'requiresAuth', element: <VehicleMasterForm /> },
   { path: '/cp/vehicle-master/:id/edit', name: 'VehicleMasterEdit', auth: 'requiresAuth', element: <VehicleMasterForm /> },
@@ -183,17 +224,32 @@ const protectedRoutes = [
   { path: '/cp/inventory/create', name: 'InventoryCreate', auth: 'requiresAuth', element: <InventoryForm /> },
   { path: '/cp/inventory/:id/edit', name: 'InventoryEdit', auth: 'requiresAuth', element: <InventoryForm /> },
   { path: '/cp/inventory/alerts', name: 'InventoryAlerts', auth: 'requiresAuth', element: <InventoryAlerts /> },
+  { path: '/cp/inventory/stock-orders', name: 'InventoryStockOrders', auth: 'requiresAuth', element: <InventoryStockOrders /> },
   { path: '/cp/inventory/pull-requests', name: 'InventoryPullRequests', auth: 'requiresAuth', element: <InventoryPullRequests /> },
+  { path: '/cp/warranty', name: 'WarrantyClaims', auth: 'requiresAuth', element: <WarrantyClaims /> },
+  { path: '/cp/storage/impound-intake', name: 'ImpoundIntake', auth: 'requiresAuth', element: <ImpoundIntake /> },
+  { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
+  { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },
+  { path: '/cp/storage/release-checklist', name: 'StorageReleaseChecklist', auth: 'requiresAuth', element: <ReleaseChecklist /> },
+  { path: '/cp/storage/auction-management', name: 'AuctionManagement', auth: 'requiresAuth', element: <AuctionManagement /> },
+  { path: '/cp/storage/spot-checks', name: 'StorageSpotChecks', auth: 'requiresAuth', element: <InventorySpotChecks /> },
+  { path: '/cp/towing/pricing', name: 'TowingPricingMatrix', auth: 'requiresAuth', element: <TowingPricingMatrix /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
   { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/reports', name: 'FinancialReports', auth: 'requiresAuth', element: <FinancialReports /> },
+  { path: '/cp/reports/customer-retention', name: 'CustomerRetentionReport', auth: 'requiresAuth', element: <CustomerRetentionReport /> },
+  { path: '/cp/reports', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
+  { path: '/cp/audit', name: 'AuditLogs', auth: 'requiresAuth', element: <AuditLogs /> },
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
+  { path: '/cp/users/groups', name: 'UserGroups', auth: 'requiresAuth', element: <UserGroups /> },
+  { path: '/cp/users/roles', name: 'RoleManagement', auth: 'requiresAuth', element: <RoleManagement /> },
   { path: '/cp/users/:id', name: 'UserEdit', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/inspections/templates', name: 'InspectionTemplates', auth: 'requiresAuth', element: <InspectionTemplates /> },
   { path: '/cp/inspections/work', name: 'TechnicianInspections', auth: 'requiresAuth', element: <TechnicianInspections /> },
+  { path: '/cp/inspections/:id/recommendations', name: 'InspectionRecommendations', auth: 'requiresAuth', element: <InspectionRecommendations /> },
   { path: '/cp/cms', name: 'CMSDashboard', auth: 'requiresAuth', element: <CMSDashboard /> },
   { path: '/cp/cms/pages', name: 'CMSPageList', auth: 'requiresAuth', element: <CMSPageList /> },
   { path: '/cp/cms/pages/create', name: 'CMSPageCreate', auth: 'requiresAuth', element: <CMSPageForm /> },
@@ -221,18 +277,23 @@ const protectedRoutes = [
   { path: '/portal/warranty-claims/:id', name: 'CustomerWarrantyClaimDetail', auth: 'requiresAuth', element: <CustomerWarrantyClaimDetail /> },
   { path: '/portal/vehicles', name: 'CustomerVehicles', auth: 'requiresAuth', element: <CustomerVehicles /> },
   { path: '/portal/profile', name: 'CustomerProfile', auth: 'requiresAuth', element: <CustomerProfile /> },
+  { path: '/portal/workorders', name: 'CustomerWorkorders', auth: 'requiresAuth', element: <CustomerWorkorders /> },
+  { path: '/portal/workorders/:id', name: 'CustomerWorkorderTimeline', auth: 'requiresAuth', element: <CustomerWorkorderTimeline /> },
 ]
 
 const settingsRoutes = [
   { path: '/cp/settings', name: 'Settings', element: <SettingsPage /> },
+  { path: '/cp/settings/profile', name: 'SettingsShopProfile', element: <SettingsShopProfile /> },
   { path: '/cp/settings/terms', name: 'SettingsTerms', element: <SettingsTerms /> },
   { path: '/cp/settings/templates', name: 'SettingsTemplates', element: <SettingsTemplates /> },
   { path: '/cp/settings/rejection-reasons', name: 'SettingsRejectionReasons', element: <SettingsRejectionReasons /> },
   { path: '/cp/settings/pricing', name: 'SettingsPricing', element: <SettingsPricing /> },
+  { path: '/cp/settings/security', name: 'SettingsSecurity', element: <SettingsSecurity /> },
   { path: '/cp/settings/notifications', name: 'SettingsNotifications', element: <SettingsNotifications /> },
   { path: '/cp/settings/payments', name: 'SettingsPayments', element: <SettingsPayments /> },
   { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: <SettingsIntegrations /> },
   { path: '/cp/settings/services', name: 'ServiceTypes', element: <ServiceTypes /> },
+  { path: '/cp/settings/modules', name: 'ModuleSettings', element: <ModuleSettings /> },
 ]
 
 const withAuthLoader = (route) => ({
@@ -263,10 +324,12 @@ adminChildren.push({
   element: <SettingsLayout />,
   children: [
     { index: true, element: <SettingsPage /> },
+    { path: 'profile', element: <SettingsShopProfile /> },
     { path: 'terms', element: <SettingsTerms /> },
     { path: 'templates', element: <SettingsTemplates /> },
     { path: 'rejection-reasons', element: <SettingsRejectionReasons /> },
     { path: 'pricing', element: <SettingsPricing /> },
+    { path: 'security', element: <SettingsSecurity /> },
     { path: 'notifications', element: <SettingsNotifications /> },
     { path: 'payments', element: <SettingsPayments /> },
     { path: 'integrations', element: <SettingsIntegrations /> },

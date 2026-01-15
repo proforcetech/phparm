@@ -15,8 +15,10 @@ CREATE TABLE users (
     email_verified TINYINT(1) DEFAULT 0,
     customer_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL
+    updated_at TIMESTAMP NULL,
+    last_activity_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customers (
@@ -98,12 +100,36 @@ CREATE TABLE inventory_items (
     stock_quantity INT DEFAULT 0,
     low_stock_threshold INT DEFAULT 0,
     reorder_quantity INT DEFAULT 0,
+    reorder_point_override INT NULL,
+    reorder_point_override_reason VARCHAR(255) NULL,
+    reorder_point_override_updated_at TIMESTAMP NULL,
+    reorder_point_override_updated_by INT UNSIGNED NULL,
     cost DECIMAL(12,2) DEFAULT 0,
     sale_price DECIMAL(12,2) DEFAULT 0,
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
+    bin_location VARCHAR(160) NULL,
     vendor VARCHAR(160) NULL,
-    notes TEXT NULL
+    notes TEXT NULL,
+    FULLTEXT KEY idx_inventory_search (name, description),
+    INDEX idx_inventory_sku_prefix (sku(20)),
+    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_reorder_history_item (inventory_item_id),
+    INDEX idx_inventory_reorder_history_user (changed_by),
+    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
+        REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_lookups (
@@ -113,6 +139,26 @@ CREATE TABLE inventory_lookups (
     description TEXT NULL,
     is_parts_supplier TINYINT(1) DEFAULT 0,
     INDEX idx_inventory_lookups_type (type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE inventory_transactions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    quantity_before INT NOT NULL,
+    quantity_after INT NOT NULL,
+    quantity_change INT NOT NULL,
+    source VARCHAR(60) NOT NULL,
+    reference VARCHAR(120) NULL,
+    reason VARCHAR(255) NULL,
+    created_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_transactions_item (inventory_item_id),
+    INDEX idx_inventory_transactions_source (source),
+    INDEX idx_inventory_transactions_reference (reference),
+    CONSTRAINT fk_inventory_transactions_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_transactions_user FOREIGN KEY (created_by)
+        REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE estimates (
@@ -179,6 +225,7 @@ CREATE TABLE invoices (
     status VARCHAR(40) NOT NULL,
     issue_date DATE NOT NULL,
     due_date DATE NULL,
+    split_billing TINYINT(1) NOT NULL DEFAULT 0,
     subtotal DECIMAL(12,2) DEFAULT 0,
     tax DECIMAL(12,2) DEFAULT 0,
     total DECIMAL(12,2) DEFAULT 0,
@@ -220,6 +267,19 @@ CREATE TABLE payments (
     CONSTRAINT fk_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE invoice_payer_allocations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT UNSIGNED NOT NULL,
+    payer_role ENUM('primary', 'secondary') NOT NULL,
+    payer_name VARCHAR(160) NULL,
+    allocated_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    INDEX idx_invoice_payer_allocations_invoice (invoice_id),
+    INDEX idx_invoice_payer_allocations_role (payer_role),
+    CONSTRAINT fk_invoice_payer_allocations_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE appointments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
@@ -245,6 +305,8 @@ CREATE TABLE warranty_claims (
     subject VARCHAR(160) NOT NULL,
     description TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
+    financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
+    credit_received_amount DECIMAL(12,2) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_warranty_customer (customer_id),
@@ -300,6 +362,9 @@ CREATE TABLE time_entries (
     reviewed_by INT UNSIGNED NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    en_route_at DATETIME NULL,
+    on_site_at DATETIME NULL,
+    wrap_up_at DATETIME NULL,
     start_latitude DECIMAL(10,6) NULL,
     start_longitude DECIMAL(10,6) NULL,
     start_accuracy DECIMAL(10,2) NULL,
@@ -332,6 +397,9 @@ CREATE TABLE time_adjustments (
     previous_status VARCHAR(20) NULL,
     previous_started_at DATETIME NULL,
     previous_ended_at DATETIME NULL,
+    previous_en_route_at DATETIME NULL,
+    previous_on_site_at DATETIME NULL,
+    previous_wrap_up_at DATETIME NULL,
     previous_duration_minutes DECIMAL(10,2) NULL,
     previous_estimate_job_id INT NULL,
     previous_notes TEXT NULL,
@@ -339,6 +407,9 @@ CREATE TABLE time_adjustments (
     new_status VARCHAR(20) NULL,
     new_started_at DATETIME NULL,
     new_ended_at DATETIME NULL,
+    new_en_route_at DATETIME NULL,
+    new_on_site_at DATETIME NULL,
+    new_wrap_up_at DATETIME NULL,
     new_duration_minutes DECIMAL(10,2) NULL,
     new_estimate_job_id INT UNSIGNED NULL,
     new_notes TEXT NULL,

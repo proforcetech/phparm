@@ -169,6 +169,28 @@ class FinancialController
     }
 
     /**
+     * Summary metrics for financial reporting dashboard.
+     *
+     * @param array<string, mixed> $params
+     * @return array<string, mixed>
+     */
+    public function reportSummary(User $user, array $params): array
+    {
+        if (!$this->gate->can($user, 'financials.view')) {
+            throw new UnauthorizedException('Cannot view financial reports');
+        }
+
+        $startDate = $params['start_date'] ?? null;
+        $endDate = $params['end_date'] ?? null;
+
+        if (!$startDate || !$endDate) {
+            throw new InvalidArgumentException('start_date and end_date are required');
+        }
+
+        return $this->reports->summaryMetrics($startDate, $endDate);
+    }
+
+    /**
      * Export financial report
      *
      * @param array<string, mixed> $params

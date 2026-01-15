@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS workorders (
     estimate_id INT UNSIGNED NOT NULL,
     customer_id INT UNSIGNED NOT NULL,
     vehicle_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NULL,
     status VARCHAR(40) NOT NULL DEFAULT 'pending',
     priority VARCHAR(20) NOT NULL DEFAULT 'normal',
     assigned_technician_id INT UNSIGNED NULL,
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS workorders (
     INDEX idx_workorder_customer (customer_id),
     INDEX idx_workorder_vehicle (vehicle_id),
     INDEX idx_workorder_status (status),
+    INDEX idx_workorder_branch (branch_id),
     INDEX idx_workorder_technician (assigned_technician_id),
     CONSTRAINT fk_workorder_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
     CONSTRAINT fk_workorder_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
@@ -99,26 +101,104 @@ CREATE TABLE IF NOT EXISTS workorder_status_history (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Add sub-estimate support to estimates table
-ALTER TABLE estimates
-    ADD COLUMN parent_estimate_id INT UNSIGNED NULL AFTER parent_id,
-    ADD COLUMN workorder_id INT UNSIGNED NULL AFTER parent_estimate_id,
-    ADD COLUMN estimate_type VARCHAR(20) NOT NULL DEFAULT 'standard' AFTER status;
+SET @has_parent_estimate_id := (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'parent_estimate_id'
+);
+SET @parent_estimate_id_sql := IF(@has_parent_estimate_id = 0,
+    'ALTER TABLE estimates ADD COLUMN parent_estimate_id INT UNSIGNED NULL AFTER parent_id',
+    'SELECT 1');
+PREPARE parent_estimate_id_stmt FROM @parent_estimate_id_sql;
+EXECUTE parent_estimate_id_stmt;
+DEALLOCATE PREPARE parent_estimate_id_stmt;
+
+SET @has_workorder_id := (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'workorder_id'
+);
+SET @workorder_id_sql := IF(@has_workorder_id = 0,
+    'ALTER TABLE estimates ADD COLUMN workorder_id INT UNSIGNED NULL AFTER parent_estimate_id',
+    'SELECT 1');
+PREPARE workorder_id_stmt FROM @workorder_id_sql;
+EXECUTE workorder_id_stmt;
+DEALLOCATE PREPARE workorder_id_stmt;
+
+SET @has_estimate_type := (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND column_name = 'estimate_type'
+);
+SET @estimate_type_sql := IF(@has_estimate_type = 0,
+    'ALTER TABLE estimates ADD COLUMN estimate_type VARCHAR(20) NOT NULL DEFAULT ''standard'' AFTER status',
+    'SELECT 1');
+PREPARE estimate_type_stmt FROM @estimate_type_sql;
+EXECUTE estimate_type_stmt;
+DEALLOCATE PREPARE estimate_type_stmt;
 
 -- Add foreign keys for sub-estimate support (after estimates table is modified)
-ALTER TABLE estimates
-    ADD CONSTRAINT fk_estimate_parent_estimate FOREIGN KEY (parent_estimate_id) REFERENCES estimates (id),
-    ADD CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id);
+SET @has_fk_estimate_parent := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND constraint_name = 'fk_estimate_parent_estimate'
+);
+SET @fk_estimate_parent_sql := IF(@has_fk_estimate_parent = 0,
+    'ALTER TABLE estimates ADD CONSTRAINT fk_estimate_parent_estimate FOREIGN KEY (parent_estimate_id) REFERENCES estimates (id)',
+    'SELECT 1');
+PREPARE fk_estimate_parent_stmt FROM @fk_estimate_parent_sql;
+EXECUTE fk_estimate_parent_stmt;
+DEALLOCATE PREPARE fk_estimate_parent_stmt;
+
+SET @has_fk_estimate_workorder := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'estimates' AND constraint_name = 'fk_estimate_workorder'
+);
+SET @fk_estimate_workorder_sql := IF(@has_fk_estimate_workorder = 0,
+    'ALTER TABLE estimates ADD CONSTRAINT fk_estimate_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)',
+    'SELECT 1');
+PREPARE fk_estimate_workorder_stmt FROM @fk_estimate_workorder_sql;
+EXECUTE fk_estimate_workorder_stmt;
+DEALLOCATE PREPARE fk_estimate_workorder_stmt;
 
 -- Add workorder_id to invoices for linking
-ALTER TABLE invoices
-    ADD COLUMN workorder_id INT UNSIGNED NULL AFTER estimate_id;
+SET @has_invoice_workorder_id := (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'workorder_id'
+);
+SET @invoice_workorder_id_sql := IF(@has_invoice_workorder_id = 0,
+    'ALTER TABLE invoices ADD COLUMN workorder_id INT UNSIGNED NULL AFTER estimate_id',
+    'SELECT 1');
+PREPARE invoice_workorder_id_stmt FROM @invoice_workorder_id_sql;
+EXECUTE invoice_workorder_id_stmt;
+DEALLOCATE PREPARE invoice_workorder_id_stmt;
 
-ALTER TABLE invoices
-    ADD CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id);
+SET @has_fk_invoice_workorder := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND constraint_name = 'fk_invoice_workorder'
+);
+SET @fk_invoice_workorder_sql := IF(@has_fk_invoice_workorder = 0,
+    'ALTER TABLE invoices ADD CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id)',
+    'SELECT 1');
+PREPARE fk_invoice_workorder_stmt FROM @fk_invoice_workorder_sql;
+EXECUTE fk_invoice_workorder_stmt;
+DEALLOCATE PREPARE fk_invoice_workorder_stmt;
 
 -- Update time_entries to optionally link to workorder_jobs
-ALTER TABLE time_entries
-    ADD COLUMN workorder_job_id INT UNSIGNED NULL AFTER estimate_job_id;
+SET @has_time_entry_workorder_job_id := (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'time_entries' AND column_name = 'workorder_job_id'
+);
+SET @time_entry_workorder_job_id_sql := IF(@has_time_entry_workorder_job_id = 0,
+    'ALTER TABLE time_entries ADD COLUMN workorder_job_id INT UNSIGNED NULL AFTER estimate_job_id',
+    'SELECT 1');
+PREPARE time_entry_workorder_job_id_stmt FROM @time_entry_workorder_job_id_sql;
+EXECUTE time_entry_workorder_job_id_stmt;
+DEALLOCATE PREPARE time_entry_workorder_job_id_stmt;
 
-ALTER TABLE time_entries
-    ADD CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id);
+SET @has_fk_time_entry_workorder_job := (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE table_schema = DATABASE() AND table_name = 'time_entries' AND constraint_name = 'fk_time_entry_workorder_job'
+);
+SET @fk_time_entry_workorder_job_sql := IF(@has_fk_time_entry_workorder_job = 0,
+    'ALTER TABLE time_entries ADD CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY (workorder_job_id) REFERENCES workorder_jobs (id)',
+    'SELECT 1');
+PREPARE fk_time_entry_workorder_job_stmt FROM @fk_time_entry_workorder_job_sql;
+EXECUTE fk_time_entry_workorder_job_stmt;
+DEALLOCATE PREPARE fk_time_entry_workorder_job_stmt;

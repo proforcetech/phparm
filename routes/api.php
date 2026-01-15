@@ -10,6 +10,7 @@ use App\Support\Auth\JwtService;
 use App\Support\Auth\RolePermissions;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
+use App\Models\WorkorderJob;
 use App\Support\Security\RecaptchaVerifier;
 use App\Support\Security\LoginRateLimiter;
 use App\Support\Auth\TotpService;
@@ -17,6 +18,174 @@ use App\CMS\Controllers\CategoryController;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
 use App\CMS\Controllers\PageController;
+
+/**
+ * @param array<string, mixed> $notice
+ * @return array<string, mixed>
+ */
+function formatStorageNotice(array $notice): array
+{
+    $ownerName = trim((string) ($notice['business_name'] ?? ''));
+    if ($ownerName === '') {
+        $ownerName = trim(sprintf(
+            '%s %s',
+            (string) ($notice['first_name'] ?? ''),
+            (string) ($notice['last_name'] ?? '')
+        ));
+    }
+
+    $notice['owner_name'] = $ownerName;
+    $notice['owner_address'] = (string) ($notice['street'] ?? '');
+    $notice['owner_city'] = (string) ($notice['city'] ?? '');
+    $notice['owner_state'] = (string) ($notice['owner_state'] ?? '');
+    $notice['owner_zip'] = (string) ($notice['postal_code'] ?? '');
+    $notice['owner_phone'] = (string) ($notice['phone'] ?? '');
+
+    return $notice;
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function fetchStorageNotice(\PDO $pdo, int $id): ?array
+{
+    $sql = <<<SQL
+        SELECT
+            lien_notices.id,
+            lien_notices.notice_type,
+            lien_notices.notice_date,
+            lien_notices.due_date,
+            lien_notices.sent_date,
+            lien_notices.status,
+            impound_cases.case_number,
+            impound_cases.state_code,
+            impound_cases.impound_date,
+            impound_cases.intake_location,
+            impound_cases.status AS case_status,
+            customers.first_name,
+            customers.last_name,
+            customers.business_name,
+            customers.phone,
+            customers.street,
+            customers.city,
+            customers.state AS owner_state,
+            customers.postal_code,
+            customer_vehicles.year AS vehicle_year,
+            customer_vehicles.make AS vehicle_make,
+            customer_vehicles.model AS vehicle_model,
+            customer_vehicles.vin AS vehicle_vin,
+            customer_vehicles.license_plate AS vehicle_license_plate,
+            DATEDIFF(CURDATE(), DATE(impound_cases.impound_date)) AS days_held,
+            COALESCE(storage_rates.lien_notice_days, 0) AS lien_notice_days
+        FROM lien_notices
+        JOIN impound_cases ON impound_cases.id = lien_notices.impound_case_id
+        LEFT JOIN customers ON customers.id = impound_cases.customer_id
+        LEFT JOIN customer_vehicles ON customer_vehicles.id = impound_cases.customer_vehicle_id
+        LEFT JOIN (
+            SELECT rates.*
+            FROM storage_rates rates
+            INNER JOIN (
+                SELECT state_code, MAX(effective_date) AS effective_date
+                FROM storage_rates
+                WHERE status = 'active'
+                GROUP BY state_code
+            ) latest
+                ON latest.state_code = rates.state_code
+                AND latest.effective_date = rates.effective_date
+            WHERE rates.status = 'active'
+        ) storage_rates ON storage_rates.state_code = impound_cases.state_code
+        WHERE lien_notices.id = ?
+        LIMIT 1
+    SQL;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$id]);
+    $notice = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+
+    if (!$notice) {
+        return null;
+    }
+
+    return formatStorageNotice($notice);
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function fetchStorageNoticeDetails(\PDO $pdo, int $id): ?array
+{
+    $sql = <<<SQL
+        SELECT
+            lien_notices.id,
+            lien_notices.notice_type,
+            lien_notices.notice_date,
+            lien_notices.due_date,
+            lien_notices.sent_date,
+            lien_notices.status AS notice_status,
+            impound_cases.id AS impound_case_id,
+            impound_cases.case_number,
+            impound_cases.state_code,
+            impound_cases.impound_date,
+            impound_cases.intake_location,
+            impound_cases.status AS case_status,
+            impound_cases.gate_fee AS case_gate_fee,
+            impound_cases.daily_rate AS case_daily_rate,
+            impound_cases.after_hours_gate,
+            impound_cases.released_at,
+            customers.first_name,
+            customers.last_name,
+            customers.business_name,
+            customers.phone,
+            customers.street,
+            customers.city,
+            customers.state AS owner_state,
+            customers.postal_code,
+            customer_vehicles.year AS vehicle_year,
+            customer_vehicles.make AS vehicle_make,
+            customer_vehicles.model AS vehicle_model,
+            customer_vehicles.vin AS vehicle_vin,
+            customer_vehicles.license_plate AS vehicle_license_plate,
+            storage_rates.daily_rate AS rate_daily_rate,
+            storage_rates.gate_fee AS rate_gate_fee
+        FROM lien_notices
+        JOIN impound_cases ON impound_cases.id = lien_notices.impound_case_id
+        LEFT JOIN customers ON customers.id = impound_cases.customer_id
+        LEFT JOIN customer_vehicles ON customer_vehicles.id = impound_cases.customer_vehicle_id
+        LEFT JOIN (
+            SELECT rates.*
+            FROM storage_rates rates
+            INNER JOIN (
+                SELECT state_code, MAX(effective_date) AS effective_date
+                FROM storage_rates
+                WHERE status = 'active'
+                GROUP BY state_code
+            ) latest
+                ON latest.state_code = rates.state_code
+                AND latest.effective_date = rates.effective_date
+            WHERE rates.status = 'active'
+        ) storage_rates ON storage_rates.state_code = impound_cases.state_code
+        WHERE lien_notices.id = ?
+        LIMIT 1
+    SQL;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$id]);
+    $notice = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+
+    if (!$notice) {
+        return null;
+    }
+
+    $notice = formatStorageNotice($notice);
+    $notice['owner_address'] = $notice['owner_address'] ?? (string) ($notice['street'] ?? '');
+    $notice['owner_city'] = $notice['owner_city'] ?? (string) ($notice['city'] ?? '');
+    $notice['owner_zip'] = $notice['owner_zip'] ?? (string) ($notice['postal_code'] ?? '');
+    $notice['owner_phone'] = $notice['owner_phone'] ?? (string) ($notice['phone'] ?? '');
+
+    return $notice;
+}
 use App\Services\CMS\CMSCacheService;
 
 /**
@@ -28,9 +197,10 @@ use App\Services\CMS\CMSCacheService;
  */
 return function (Router $router, array $config, $connection) {
     $authConfig = $config['auth'];
+    $rolePermissions = RolePermissions::fromDatabase($connection, $authConfig['roles'] ?? []);
     $authService = new \App\Support\Auth\AuthService(
         $connection,
-        new RolePermissions($authConfig['roles']),
+        $rolePermissions,
         new \App\Support\Auth\PasswordResetRepository(
             $connection,
             (int) ($authConfig['passwords']['expire_minutes'] ?? 60)
@@ -41,6 +211,7 @@ return function (Router $router, array $config, $connection) {
         ),
         $authConfig
     );
+    $sessionManager = new \App\Support\Auth\UserSessionManager($connection);
 
     // Initialize JWT service for token generation
     $jwtConfig = $authConfig['jwt'] ?? [];
@@ -112,8 +283,41 @@ return function (Router $router, array $config, $connection) {
         return Response::json($result->toPayload($message, $error), $status);
     };
 
+    $resolveMandatoryTwoFactorRoles = function () use ($settingsRepository, $authConfig): array {
+        $defaultRoles = [];
+        foreach ($authConfig['roles'] ?? [] as $roleKey => $roleConfig) {
+            if (($roleConfig['requires_2fa'] ?? false) === true) {
+                $defaultRoles[] = $roleKey;
+            }
+        }
+
+        $configuredRoles = $settingsRepository->get('security.mandatory_2fa_roles', $defaultRoles);
+        if (!is_array($configuredRoles)) {
+            return $defaultRoles;
+        }
+
+        return $configuredRoles;
+    };
+
+    $enforceMandatoryTwoFactorSetup = function (\App\Models\User $user) use ($resolveMandatoryTwoFactorRoles, $connection): \App\Models\User {
+        $requiredRoles = $resolveMandatoryTwoFactorRoles();
+        if (!in_array($user->role, $requiredRoles, true) || $user->two_factor_enabled) {
+            return $user;
+        }
+
+        if ($user->two_factor_setup_pending) {
+            return $user;
+        }
+
+        $userRepo = new \App\Services\User\UserRepository($connection);
+        return $userRepo->requireTwoFactorSetup($user->id);
+    };
+
     // Apply global rate limiting (60 requests per minute per IP+path)
-    $router->middleware(Middleware::throttle(60, 60));
+    $router->middleware(Middleware::throttleWithOverrides(60, 60, [
+        '/api/time-tracking*' => ['max' => 240, 'decay' => 60],
+        '/api/messages*' => ['max' => 120, 'decay' => 60],
+    ]));
 
     // Health check (public)
     $router->get('/health', function (Request $request) use ($connection) {
@@ -136,13 +340,23 @@ return function (Router $router, array $config, $connection) {
     $paymentConfig = require __DIR__ . '/../config/payments.php';
 
     // Public security configuration
-    $router->get('/api/public/security/recaptcha', function () use ($recaptchaConfigLoader) {
-        $recaptchaConfig = $recaptchaConfigLoader();
-        return Response::json([
-            'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
-            'site_key' => $recaptchaConfig['site_key'] ?? null,
-            'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
-        ]);
+    $router->get('/api/public/security/recaptcha', function (Request $request) use ($recaptchaConfigLoader) {
+        try {
+            $recaptchaConfig = $recaptchaConfigLoader();
+            return Response::json([
+                'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
+                'site_key' => $recaptchaConfig['site_key'] ?? null,
+                'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
+            ]);
+        } catch (Throwable $e) {
+            error_log('Recaptcha config error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return Response::json([
+                'enabled' => false,
+                'site_key' => null,
+                'score_threshold' => 0.5,
+                'error' => 'Failed to load recaptcha configuration',
+            ], 500);
+        }
     });
 
     // Public vehicle data endpoints for estimate request form
@@ -473,7 +687,9 @@ return function (Router $router, array $config, $connection) {
         $recaptchaVerifier,
         $totpService,
         $loginLimiter,
-        $rateLimitResponse
+        $rateLimitResponse,
+        $sessionManager,
+        $enforceMandatoryTwoFactorSetup
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -529,6 +745,8 @@ return function (Router $router, array $config, $connection) {
             session_start();
         }
 
+        $user = $enforceMandatoryTwoFactorSetup($user);
+
         if ($user->two_factor_enabled && $user->two_factor_secret) {
             $challengeToken = bin2hex(random_bytes(32));
             $_SESSION['2fa_challenges'][$challengeToken] = [
@@ -546,6 +764,14 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $authService->recordLastActivity($user->id);
+
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
 
         // Generate JWT tokens
         $accessToken = $jwtService->generateToken($user);
@@ -567,7 +793,9 @@ return function (Router $router, array $config, $connection) {
         $recaptchaVerifier,
         $totpService,
         $loginLimiter,
-        $rateLimitResponse
+        $rateLimitResponse,
+        $sessionManager,
+        $enforceMandatoryTwoFactorSetup
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -623,6 +851,8 @@ return function (Router $router, array $config, $connection) {
             session_start();
         }
 
+        $user = $enforceMandatoryTwoFactorSetup($user);
+
         if ($user->two_factor_enabled && $user->two_factor_secret) {
             $challengeToken = bin2hex(random_bytes(32));
             $_SESSION['2fa_challenges'][$challengeToken] = [
@@ -641,6 +871,14 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $authService->recordLastActivity($user->id);
+
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
 
         // Generate JWT tokens
         $accessToken = $jwtService->generateToken($user);
@@ -658,7 +896,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
+    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -689,6 +927,14 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $authService->recordLastActivity($user->id);
+
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
 
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -703,7 +949,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService) {
+    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -735,6 +981,14 @@ return function (Router $router, array $config, $connection) {
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
+        $authService->recordLastActivity($user->id);
+
+        $sessionManager->recordSession(
+            $user->id,
+            session_id(),
+            $request->getClientIp(),
+            $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT')
+        );
 
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
@@ -768,23 +1022,172 @@ return function (Router $router, array $config, $connection) {
         return Response::json($result);
     })->middleware(Middleware::throttleStrict(10, 60));
 
-    $router->post('/api/auth/logout', function (Request $request) {
+    $router->post('/api/auth/logout', function (Request $request) use ($sessionManager) {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
+        }
+
+        if (isset($_SESSION['user_id'])) {
+            $sessionManager->revokeSessionBySessionId(
+                (int) $_SESSION['user_id'],
+                session_id(),
+                (int) $_SESSION['user_id']
+            );
         }
         session_destroy();
 
         return Response::json(['message' => 'Logged out successfully']);
     });
 
-    $router->get('/api/auth/me', function (Request $request) {
+    $buildImpersonationPayload = function (): ?array {
+        if (!isset($_SESSION['impersonation']['impersonator'], $_SESSION['impersonation']['impersonated'])) {
+            return null;
+        }
+
+        return [
+            'active' => true,
+            'impersonator' => $_SESSION['impersonation']['impersonator'],
+            'impersonated' => $_SESSION['impersonation']['impersonated'],
+            'started_at' => $_SESSION['impersonation']['started_at'] ?? null,
+        ];
+    };
+
+    $router->get('/api/auth/sessions', function (Request $request) use ($sessionManager) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
             return Response::unauthorized('Not authenticated');
         }
 
-        return Response::json(['user' => $user->toArray()]);
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $currentSessionId = session_id();
+        $sessions = $sessionManager->listSessions($user->id);
+
+        $sessions = array_map(function (array $session) use ($currentSessionId) {
+            $session['is_current'] = ($session['session_id'] ?? '') === $currentSessionId;
+            return $session;
+        }, $sessions);
+
+        return Response::json(['sessions' => $sessions]);
+    })->middleware(Middleware::auth());
+
+    $router->delete('/api/auth/sessions/{sessionId:[0-9]+}', function (Request $request) use ($sessionManager) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        $sessionId = $request->getAttribute('sessionId');
+        if ($sessionId === null) {
+            return Response::badRequest('Session ID required');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $revoked = $sessionManager->revokeSessionById($user->id, (int) $sessionId, $user->id);
+        if ($revoked === null) {
+            return Response::notFound('Session not found');
+        }
+
+        if (($revoked['session_id'] ?? '') === session_id()) {
+            session_destroy();
+        }
+
+        return Response::json(['message' => 'Session revoked']);
+    })->middleware(Middleware::auth());
+
+    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'impersonation' => $buildImpersonationPayload(),
+        ]);
+    })->middleware(Middleware::auth());
+
+    $router->post('/api/auth/impersonate', function (Request $request) use ($authService, $buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $impersonator = $user;
+        if (isset($_SESSION['impersonation']['impersonator'])) {
+            $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
+        }
+
+        if ($impersonator->role !== 'admin') {
+            return Response::json(['error' => 'Insufficient permissions'], 403);
+        }
+
+        $targetId = (int) $request->input('user_id');
+        if ($targetId <= 0) {
+            return Response::badRequest('Target user id is required.');
+        }
+
+        try {
+            $targetUser = $authService->findUserById($targetId);
+        } catch (\Throwable $e) {
+            return Response::json(['error' => 'User not found'], 404);
+        }
+
+        $_SESSION['impersonation'] = [
+            'impersonator_id' => $impersonator->id,
+            'impersonator' => $impersonator->toArray(),
+            'impersonated_id' => $targetUser->id,
+            'impersonated' => $targetUser->toArray(),
+            'started_at' => time(),
+        ];
+
+        $_SESSION['user_id'] = $targetUser->id;
+        $_SESSION['user'] = $targetUser->toArray();
+
+        return Response::json([
+            'user' => $targetUser->toArray(),
+            'impersonation' => $buildImpersonationPayload(),
+        ]);
+    })->middleware(Middleware::auth());
+
+    $router->post('/api/auth/impersonate/stop', function (Request $request) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['impersonation']['impersonator'])) {
+            return Response::badRequest('No active impersonation session.');
+        }
+
+        $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
+        unset($_SESSION['impersonation']);
+
+        $_SESSION['user_id'] = $impersonator->id;
+        $_SESSION['user'] = $impersonator->toArray();
+
+        return Response::json([
+            'user' => $impersonator->toArray(),
+            'impersonation' => null,
+        ]);
     })->middleware(Middleware::auth());
 
     // 2FA Setup Flow - Initiate setup by generating secret and QR code
@@ -1020,6 +1423,39 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Email verified successfully']);
     });
 
+    // Accept invitation and set password
+    $router->post('/api/auth/accept-invite', function (Request $request) use ($authService, $loginLimiter) {
+        $token = $request->input('token');
+        $password = $request->input('password');
+        $identifier = 'invite-token:' . (string) ($token ?? 'none');
+        $ip = LoginRateLimiter::clientIp($request);
+
+        $preCheck = $loginLimiter->check($identifier, $ip);
+        if (!$preCheck->allowed) {
+            $message = $preCheck->locked
+                ? 'Account temporarily locked due to too many failed attempts.'
+                : 'Too many invitation attempts. Please wait before retrying.';
+
+            return Response::json($preCheck->toPayload($message), 429);
+        }
+
+        if (!$token || !$password) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Token and password are required', 'validation_error'), 400);
+        }
+
+        $user = $authService->acceptInvitation((string) $token, (string) $password);
+
+        if ($user === null) {
+            $result = $loginLimiter->recordFailure($identifier, $ip);
+            return Response::json($result->toPayload('Invalid or expired invitation token', 'invalid_token'), 400);
+        }
+
+        $loginLimiter->recordSuccess($identifier, $ip);
+
+        return Response::json(['message' => 'Invitation accepted successfully']);
+    });
+
     // Resend verification email
     $router->post('/api/auth/resend-verification', function (Request $request) use ($authService, $connection, $authConfig) {
         $user = $request->getAttribute('user');
@@ -1175,8 +1611,100 @@ return Response::json([
         return Response::json($data);
     });
 
+    $partnerDispatchRegistry = new \App\Services\Integrations\PartnerDispatchAdapterRegistry([
+        new \App\Services\Integrations\AaaPartnerDispatchAdapter(),
+        new \App\Services\Integrations\GeicoPartnerDispatchAdapter(),
+        new \App\Services\Integrations\AgeroPartnerDispatchAdapter(),
+    ]);
+    $partnerDispatchService = new \App\Services\Integrations\PartnerDispatchService(
+        $connection,
+        $auditLogger,
+        $partnerDispatchRegistry,
+        new \App\Services\Integrations\PartnerEmailParser()
+    );
+    $partnerDispatchSyncService = new \App\Services\Integrations\PartnerDispatchSyncService(
+        $connection,
+        $auditLogger,
+        $partnerDispatchRegistry,
+        $config['partner_dispatch'] ?? []
+    );
+
+    $router->post('/api/integrations/partners/{partner}/dispatch', function (Request $request) use ($partnerDispatchService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $result = $partnerDispatchService->ingestApiDispatch($partner, $request->body());
+        $status = $result['status'] === 'failed' ? 422 : 201;
+
+        return Response::json($result, $status);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/accept', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $actorId = isset($body['actor_id']) ? (int) $body['actor_id'] : null;
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+        $result = $partnerDispatchSyncService->acceptDispatch($partner, $dispatchReference, $context, $actorId);
+        return Response::json($result, 200);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/decline', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $actorId = isset($body['actor_id']) ? (int) $body['actor_id'] : null;
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+        $result = $partnerDispatchSyncService->declineDispatch($partner, $dispatchReference, $context, $actorId);
+        return Response::json($result, 200);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/status', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $status = (string) ($body['status'] ?? '');
+        if ($status === '') {
+            return Response::badRequest('Status is required');
+        }
+
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+        $result = $partnerDispatchSyncService->syncStatus($partner, $dispatchReference, $status, $context);
+        return Response::json($result, 200);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/cancel', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+        $result = $partnerDispatchSyncService->cancelDispatch($partner, $dispatchReference, $context);
+        return Response::json($result, 200);
+    });
+
     // Initialize AccessGate for protected routes
-    $gate = new AccessGate(new RolePermissions($config['auth']['roles']));
+    $gate = new AccessGate($rolePermissions);
 
     $cmsCacheService = new CMSCacheService($config['cms'] ?? []);
     // CMS controllers reuse the same gate and connection
@@ -1312,6 +1840,10 @@ return Response::json([
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
+        $inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
+            $connection,
+            $auditLogger
+        );
 
         $router->get('/api/dashboard', function (Request $request) use ($dashboardController) {
             /** @var \App\Models\User|null $user */
@@ -1389,6 +1921,44 @@ return Response::json([
             }
 
             $data = $dashboardController->handleServiceTypeBreakdown($params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/dashboard/workorders/wip-aging', function (Request $request) use ($dashboardController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
+            $params = [
+                'role' => $user?->role,
+            ];
+
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $params['customer_id'] = $user->customer_id;
+            }
+
+            $requestedTechnician = $request->queryParam('technician_id');
+            if ($user?->role === 'technician') {
+                $params['technician_id'] = $user->id;
+            } elseif ($requestedTechnician !== null) {
+                $params['technician_id'] = (int) $requestedTechnician;
+            }
+
+            $data = $dashboardController->handleWipAging($params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/dashboard/inventory/pull-requests', function (Request $request) use ($inventoryPullRequestRepository) {
+            $statusesParam = $request->queryParam('statuses');
+            $statuses = $statusesParam
+                ? array_filter(array_map('trim', explode(',', $statusesParam)))
+                : [
+                    \App\Models\InventoryPullRequest::STATUS_PENDING,
+                    \App\Models\InventoryPullRequest::STATUS_ORDERED,
+                    \App\Models\InventoryPullRequest::STATUS_RECEIVED,
+                ];
+
+            $limit = (int) ($request->queryParam('limit') ?? 5);
+
+            $data = $inventoryPullRequestRepository->getDashboardNotifications($statuses, $limit);
             return Response::json($data);
         });
 
@@ -1585,6 +2155,7 @@ return Response::json([
             $vinDecoderService,
             $normalizationJob
         );
+        $customerVehicleService = new \App\Services\Customer\CustomerVehicleService($connection);
 
         $router->get('/api/vehicles/years', function (Request $request) use ($vehicleController) {
             $user = $request->getAttribute('user');
@@ -1648,15 +2219,24 @@ return Response::json([
             return Response::json($vehicleController->trims($user, $year, $make, $model, $engine, $transmission, $drive));
         });
 
-        $router->get('/api/vehicles', function (Request $request) use ($vehicleController) {
+        $router->get('/api/vehicles', function (Request $request) use ($customerVehicleService, $gate) {
             $user = $request->getAttribute('user');
             $filters = [
+                'customer_id' => $request->queryParam('customer_id'),
+                'customer_query' => $request->queryParam('customer_query'),
                 'year' => $request->queryParam('year'),
                 'make' => $request->queryParam('make'),
                 'model' => $request->queryParam('model'),
+                'term' => $request->queryParam('term'),
             ];
 
-            $data = $vehicleController->index($user, $filters);
+            if ($user?->role === 'customer' && $user->customer_id !== null) {
+                $filters['customer_id'] = $user->customer_id;
+                $filters['customer_query'] = null;
+            }
+
+            $gate->assert($user, 'vehicles.view');
+            $data = $customerVehicleService->searchVehicles($filters);
             return Response::json($data);
         });
 
@@ -1728,16 +2308,24 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
-        $inventoryController = new \App\Services\Inventory\InventoryItemController($inventoryRepository, $gate);
+        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
+        $lowStockService = new \App\Services\Inventory\InventoryLowStockService($inventoryRepository, $stockOrderRepository);
+        $inventoryController = new \App\Services\Inventory\InventoryItemController($inventoryRepository, $gate, null, $lowStockService);
         $inventoryLookupService = new \App\Services\Inventory\InventoryLookupService($connection);
         $inventoryLookupController = new \App\Services\Inventory\InventoryLookupController($inventoryLookupService, $gate);
+        $stockOrderController = new \App\Services\Inventory\InventoryStockOrderController($stockOrderRepository, $gate);
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
+            $lowStockParam = $request->queryParam('low_stock');
+            $lowStockOnly = $lowStockParam === 'true' || $request->queryParam('low_stock_only') === 'true';
             $filters = [
                 'query' => $request->queryParam('query'),
                 'category' => $request->queryParam('category'),
-                'low_stock_only' => $request->queryParam('low_stock') === 'true',
+                'location' => $request->queryParam('location'),
+                'low_stock_only' => $lowStockOnly,
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
 
             $data = $inventoryController->index($user, $filters);
@@ -1768,6 +2356,46 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/inventory/stock-orders', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'inventory_item_id' => $request->queryParam('inventory_item_id'),
+                'query' => $request->queryParam('query'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $stockOrderController->index($user, $params);
+
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/stock-orders/{id}', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $stockOrderController->show($user, $id);
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/stock-orders', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $data = $stockOrderController->store($user, $request->body());
+
+            return Response::created($data);
+        });
+
+        $router->put('/api/inventory/stock-orders/{id}', function (Request $request) use ($stockOrderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $data = $stockOrderController->update($user, $id, $request->body());
+
+            return Response::json($data);
+        });
+
         $router->get('/api/inventory/{type:categories|vendors|locations}', function (Request $request) use ($inventoryLookupController) {
             $user = $request->getAttribute('user');
             $type = (string) $request->getAttribute('type');
@@ -1776,6 +2404,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ];
 
             $data = $inventoryLookupController->index($user, $type, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/{id}/transactions', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $params = [
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $inventoryController->transactions($user, $id, $params);
             return Response::json($data);
         });
 
@@ -1925,6 +2565,39 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        // Find inventory by barcode or UPC
+        $router->get('/api/inventory/by-barcode', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $code = (string) $request->queryParam('code');
+            $scanType = (string) ($request->queryParam('scan_type') ?? 'inventory_lookup');
+            $workorderId = $request->queryParam('workorder_id') ? (int) $request->queryParam('workorder_id') : null;
+            $invoiceId = $request->queryParam('invoice_id') ? (int) $request->queryParam('invoice_id') : null;
+
+            if ($code === '') {
+                return Response::json(['error' => 'Barcode is required'], 422);
+            }
+
+            $data = $inventoryController->findByBarcode($user, $code, $scanType, $workorderId, $invoiceId);
+            return Response::json($data);
+        });
+
+        // Post version for barcode lookup (for scanner input)
+        $router->post('/api/inventory/scan-barcode', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $code = (string) ($body['code'] ?? '');
+            $scanType = (string) ($body['scan_type'] ?? 'inventory_lookup');
+            $workorderId = isset($body['workorder_id']) ? (int) $body['workorder_id'] : null;
+            $invoiceId = isset($body['invoice_id']) ? (int) $body['invoice_id'] : null;
+
+            if ($code === '') {
+                return Response::json(['error' => 'Barcode is required'], 422);
+            }
+
+            $data = $inventoryController->findByBarcode($user, $code, $scanType, $workorderId, $invoiceId);
+            return Response::json($data);
+        });
+
         // Vehicle compatibility routes
         $router->get('/api/inventory/{id}/vehicle-compatibility', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
@@ -1957,6 +2630,120 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $inventoryController->removeVehicleCompatibility($user, $id, $vehicleMasterId);
             return Response::noContent();
+        });
+
+        // Search parts with compatibility highlighting
+        $router->get('/api/inventory/search-with-compatibility', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'query' => $request->queryParam('query'),
+                'vehicle_master_id' => $request->queryParam('vehicle_master_id'),
+                'limit' => $request->queryParam('limit'),
+            ];
+
+            $data = $inventoryController->searchWithCompatibility($user, $params);
+            return Response::json(['data' => $data]);
+        });
+
+        // Get compatible parts for a vehicle
+        $router->get('/api/inventory/compatible-parts/{vehicleMasterId}', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $vehicleMasterId = (int) $request->getAttribute('vehicleMasterId');
+            $limit = (int) ($request->queryParam('limit') ?? 100);
+
+            $data = $inventoryController->getCompatibleParts($user, $vehicleMasterId, $limit);
+            return Response::json(['data' => $data]);
+        });
+    });
+
+    // Core Return Tracking routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $coreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+        $coreReturnController = new \App\Services\Inventory\CoreReturnController($coreReturnService, $gate);
+
+        // List core returns with filters
+        $router->get('/api/core-returns', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $params = $request->queryParams();
+            $data = $coreReturnController->index($user, $params);
+            return Response::json($data);
+        });
+
+        // Get core returns summary (for dashboard)
+        $router->get('/api/core-returns/summary', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $data = $coreReturnController->summary($user);
+            return Response::json($data);
+        });
+
+        // Get core tracking status
+        $router->get('/api/core-returns/status', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $data = $coreReturnController->status($user);
+            return Response::json($data);
+        });
+
+        // Get single core return
+        $router->get('/api/core-returns/{id}', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->show($user, $id);
+            return Response::json($data);
+        });
+
+        // Create core return
+        $router->post('/api/core-returns', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $data = $coreReturnController->store($user, $request->body());
+            return Response::json($data, 201);
+        });
+
+        // Receive core from customer
+        $router->post('/api/core-returns/{id}/receive-from-customer', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->receiveFromCustomer($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Credit customer for core
+        $router->post('/api/core-returns/{id}/credit-customer', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->creditCustomer($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Return core to vendor
+        $router->post('/api/core-returns/{id}/return-to-vendor', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->returnToVendor($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Record vendor credit
+        $router->post('/api/core-returns/{id}/vendor-credit', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->vendorCredit($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Waive core
+        $router->post('/api/core-returns/{id}/waive', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->waive($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Expire core
+        $router->post('/api/core-returns/{id}/expire', function (Request $request) use ($coreReturnController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $coreReturnController->expire($user, $id, $request->body());
+            return Response::json($data);
         });
     });
 
@@ -2063,6 +2850,138 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $workorderId = (int) $request->getAttribute('id');
             $data = $pullRequestController->getByWorkorder($user, $workorderId);
+            return Response::json($data);
+        });
+
+        // Parts Cart routes (PartsTech integration)
+        $partsTechAdapter = new \App\Services\Integrations\PartsTechAdapter($connection);
+        $partsCartService = new \App\Services\Inventory\PartsCartService($connection, $partsTechAdapter, $auditLogger);
+        $partsCartController = new \App\Services\Inventory\PartsCartController($partsCartService, $gate);
+
+        // Get or create parts cart for workorder
+        $router->get('/api/workorders/{id}/parts-cart', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $workorderId = (int) $request->getAttribute('id');
+            $data = $partsCartController->getOrCreate($user, $workorderId);
+            return Response::json($data);
+        });
+
+        // Get parts cart by ID
+        $router->get('/api/parts-carts/{id}', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->show($user, $id);
+            return Response::json($data);
+        });
+
+        // Add item to cart
+        $router->post('/api/parts-carts/{id}/items', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->addItem($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // Add item from inventory
+        $router->post('/api/parts-carts/{id}/items/from-inventory', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->addFromInventory($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // Add item from PartsTech
+        $router->post('/api/parts-carts/{id}/items/from-partstech', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->addFromPartsTech($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // Update cart item
+        $router->patch('/api/parts-carts/{cartId}/items/{itemId}', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $cartId = (int) $request->getAttribute('cartId');
+            $itemId = (int) $request->getAttribute('itemId');
+            $data = $partsCartController->updateItem($user, $cartId, $itemId, $request->body());
+            return Response::json($data);
+        });
+
+        // Remove cart item
+        $router->delete('/api/parts-carts/{cartId}/items/{itemId}', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $cartId = (int) $request->getAttribute('cartId');
+            $itemId = (int) $request->getAttribute('itemId');
+            $partsCartController->removeItem($user, $cartId, $itemId);
+            return Response::noContent();
+        });
+
+        // Submit cart for approval
+        $router->post('/api/parts-carts/{id}/submit', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->submit($user, $id);
+            return Response::json($data);
+        });
+
+        // Approve cart
+        $router->post('/api/parts-carts/{id}/approve', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->approve($user, $id);
+            return Response::json($data);
+        });
+
+        // Reject cart
+        $router->post('/api/parts-carts/{id}/reject', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->reject($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Place order
+        $router->post('/api/parts-carts/{id}/order', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->order($user, $id);
+            return Response::json($data);
+        });
+
+        // Mark as received
+        $router->post('/api/parts-carts/{id}/receive', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->receive($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Cancel cart
+        $router->post('/api/parts-carts/{id}/cancel', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $partsCartController->cancel($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // PartsTech search
+        $router->get('/api/parts-carts/partstech/search', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'q' => $request->queryParam('q'),
+                'year' => $request->queryParam('year'),
+                'make' => $request->queryParam('make'),
+                'model' => $request->queryParam('model'),
+                'limit' => $request->queryParam('limit'),
+            ];
+            $data = $partsCartController->searchPartsTech($user, $params);
+            return Response::json($data);
+        });
+
+        // PartsTech status
+        $router->get('/api/parts-carts/partstech/status', function (Request $request) use ($partsCartController) {
+            $user = $request->getAttribute('user');
+            $data = $partsCartController->partsTechStatus($user);
             return Response::json($data);
         });
     });
@@ -2479,6 +3398,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $publicInvoiceController = new \App\Services\Invoice\InvoicePublicController(
         new \App\Services\Invoice\InvoiceService($connection),
         new \App\Services\Invoice\PaymentProcessingService($connection, $publicGatewayFactory),
+        new \App\Services\Invoice\InvoicePublicPaymentTokenService($connection),
         new \App\Support\Pdf\InvoicePdfGenerator($connection)
     );
 
@@ -2511,6 +3431,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         header('Content-Length: ' . strlen($pdfContent));
         echo $pdfContent;
         exit;
+    });
+
+    $router->get('/api/track/{token}', function (Request $request) use ($connection) {
+        $trackingService = new \App\Services\Tracking\TrackingService($connection);
+        try {
+            $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
+            return Response::json($data);
+        } catch (\RuntimeException $exception) {
+            return Response::json(['error' => $exception->getMessage()], 410);
+        } catch (\InvalidArgumentException $exception) {
+            return Response::notFound($exception->getMessage());
+        }
     });
 
     // Public estimate rejection reasons
@@ -2817,6 +3749,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Support\Pdf\InvoicePdfGenerator($connection),
             $invoiceMessagingNotifications
         );
+        $onsitePaymentController = new \App\Services\Payments\OnsitePaymentController(
+            new \App\Services\Payments\OnsitePaymentService($connection, $gatewayFactory),
+            $gate
+        );
 
         $router->get('/api/invoices', function (Request $request) use ($invoiceController) {
             $user = $request->getAttribute('user');
@@ -2882,6 +3818,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->post('/api/payments/onsite', function (Request $request) use ($onsitePaymentController) {
+            $user = $request->getAttribute('user');
+            $data = $onsitePaymentController->createCharge($user, $request->body());
+            return Response::created($data);
+        });
+
         $router->get('/api/invoices/{id}/pdf', function (Request $request) use ($invoiceController, $config) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -2909,16 +3851,83 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+        $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
         $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
         );
+        $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+        $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+        $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+            $trackingNotificationConfig,
+            $trackingTemplateEngine,
+            $trackingLogs,
+            $auditLogger
+        );
+        $workorderTimeline = new \App\Services\Workorder\WorkorderTimelineService($connection);
+        $dispatchAuditService = new \App\Services\Dispatch\DispatchAuditService($connection);
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
+            $workorderEvidence,
+            $workorderTimeline,
             $gate,
-            $workorderMessagingNotifications
+            $workorderMessagingNotifications,
+            $dispatchAuditService
         );
+
+        // Status-driven notification service
+        $notificationEventService = new \App\Services\Notification\NotificationEventService(
+            $connection,
+            $trackingDispatcher
+        );
+        $trackingService = new \App\Services\Tracking\TrackingService(
+            $connection,
+            $trackingDispatcher,
+            $workorderMessagingNotifications,
+            $dispatchAuditService,
+            $notificationEventService
+        );
+        $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(
+            $connection,
+            $notificationEventService,
+            $auditLogger
+        );
+
+        $router->post('/api/tracking-links', function (Request $request) use ($trackingService) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $jobId = $body['job_id'] ?? null;
+            $expiresAt = $body['expires_at'] ?? null;
+
+            if (!$jobId) {
+                return Response::badRequest(['error' => 'job_id is required']);
+            }
+
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+            $data = $trackingService->issueLink((int) $jobId, $baseUrl, $expiresAt, $user?->id);
+            return Response::created($data);
+        });
+
+        $router->delete('/api/tracking-links/{token}', function (Request $request) use ($trackingService) {
+            $token = (string) $request->getAttribute('token');
+            $trackingService->revokeLink($token);
+            return Response::noContent();
+        });
+
+        $router->post('/api/tracking/jobs/{jobId}/location', function (Request $request) use ($trackingService) {
+            $jobId = (int) $request->getAttribute('jobId');
+            $body = $request->body();
+
+            if (!isset($body['location']) && !isset($body['lat']) && !isset($body['lng'])) {
+                return Response::badRequest(['error' => 'location is required']);
+            }
+
+            $location = is_array($body['location'] ?? null) ? $body['location'] : $body;
+            $data = $trackingService->recordLocation($jobId, $location);
+            return Response::json(['last_position' => $data]);
+        });
 
         $router->get('/api/workorders', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
@@ -2977,10 +3986,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
-        $router->patch('/api/workorders/{id}/status', function (Request $request) use ($workorderController) {
+        $router->patch('/api/workorders/{id}/status', function (Request $request) use ($workorderController, $workorderRepository, $workorderStatusNotifications) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
+
+            // Get current status before update
+            $before = $workorderRepository->find($id);
+            $previousStatus = $before?->status ?? '';
+
+            // Update status
             $data = $workorderController->updateStatus($user, $id, $request->body());
+
+            // Trigger status-driven notifications
+            $newStatus = $data['status'] ?? '';
+            if ($previousStatus !== $newStatus && $newStatus !== '') {
+                $workorderStatusNotifications->onStatusChange($id, $previousStatus, $newStatus, $user?->id);
+            }
+
             return Response::json($data);
         });
 
@@ -3026,11 +4048,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController) {
+        $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController, $trackingService) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $jobId = (int) $request->getAttribute('jobId');
             $data = $workorderController->updateJobStatus($user, $id, $jobId, $request->body());
+
+            $status = $request->body()['status'] ?? null;
+            if ($status === WorkorderJob::STATUS_IN_PROGRESS) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                $trackingService->sendTrackingLinkForJob($jobId, $baseUrl, $user?->id);
+            }
+
             return Response::json($data);
         });
 
@@ -3039,6 +4068,105 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
             $jobId = (int) $request->getAttribute('jobId');
             $data = $workorderController->assignJobTechnician($user, $id, $jobId, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/checkpoints/{checkpointType}', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $checkpointType = (string) $request->getAttribute('checkpointType');
+            $file = $request->file('file');
+            $data = $workorderController->uploadJobCheckpoint($user, $id, $jobId, $checkpointType, is_array($file) ? $file : []);
+            return Response::created($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $file = $request->file('file');
+            $data = $workorderController->uploadJobDamagePhoto($user, $id, $jobId, is_array($file) ? $file : []);
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->damagePhotoStatus($user, $id, $jobId);
+            return Response::json($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/checkpoints', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->checkpointStatus($user, $id, $jobId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/damage-reports', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->createDamageReport($user, $id, $jobId, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/damage-reports', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->listDamageReports($user, $id, $jobId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/vehicle-intake', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->recordVehicleIntake($user, $id, $jobId, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/signature', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->captureJobSignature(
+                $user,
+                $id,
+                $jobId,
+                $request->body(),
+                $request->getClientIp() ?? 'unknown',
+                $request->header('USER_AGENT')
+            );
+            return Response::created($data);
+        });
+    });
+
+    // Dispatch recommendation routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection) {
+        $dispatchRecommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection);
+
+        $router->get('/api/dispatch/suggestions', function (Request $request) use ($dispatchRecommendationService) {
+            $params = [
+                'dispatch_requirement_id' => $request->queryParam('dispatch_requirement_id'),
+                'job_category' => $request->queryParam('job_category'),
+                'scheduled_start' => $request->queryParam('scheduled_start'),
+                'estimated_duration_hours' => $request->queryParam('estimated_duration_hours'),
+                'required_capacity' => $request->queryParam('required_capacity'),
+                'required_equipment_class' => $request->queryParam('required_equipment_class'),
+                'equipment_requirements' => $request->queryParam('equipment_requirements'),
+                'required_certifications' => $request->queryParam('required_certifications'),
+                'pickup_latitude' => $request->queryParam('pickup_latitude'),
+                'pickup_longitude' => $request->queryParam('pickup_longitude'),
+                'dropoff_latitude' => $request->queryParam('dropoff_latitude'),
+                'dropoff_longitude' => $request->queryParam('dropoff_longitude'),
+            ];
+            $limit = (int) ($request->queryParam('limit') ?? 5);
+            $data = $dispatchRecommendationService->suggest($params, $limit);
             return Response::json($data);
         });
     });
@@ -3067,18 +4195,62 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $userController = new \App\Services\User\UserController(
         new \App\Services\User\UserRepository($connection),
         $gate,
-        $totpService
+        $totpService,
+        $rolePermissions,
+        new \App\Services\ImportExport\CsvExportService($connection)
     );
 
     // Role controller for role management
     $roleController = new \App\Services\Role\RoleController(
         new \App\Services\Role\RoleRepository($connection),
-        $gate
+        $gate,
+        $rolePermissions
     );
 
     $messagingController = new \App\Services\Messaging\MessagingController(
         new \App\Services\Messaging\MessagingService($connection),
         $gate
+    );
+
+    $maskedSmsConfig = require __DIR__ . '/../config/notifications.php';
+    $maskedSmsGateway = new \App\Services\Messaging\MaskedSmsGateway($maskedSmsConfig);
+    $maskedSmsService = new \App\Services\Messaging\MaskedSmsService(
+        $connection,
+        $maskedSmsGateway,
+        $maskedSmsConfig['sms']['masked_number'] ?? null
+    );
+    $maskedSmsController = new \App\Services\Messaging\MaskedSmsController($maskedSmsService, $gate);
+
+    $driverDispatchController = new \App\Services\Dispatch\DriverDispatchController(
+        $connection,
+        new \App\Services\Dispatch\DriverPushTokenService($connection),
+        new \App\Services\Dispatch\DriverJobOfferService($connection),
+        $gate
+    );
+
+    $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+    $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+    $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+    $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+        $trackingNotificationConfig,
+        $trackingTemplateEngine,
+        $trackingLogs,
+        $auditLogger
+    );
+    $trackingMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+        $connection,
+        new \App\Services\Messaging\MessagingService($connection)
+    );
+    $trackingNotificationEvents = new \App\Services\Notification\NotificationEventService(
+        $connection,
+        $trackingDispatcher
+    );
+    $trackingService = new \App\Services\Tracking\TrackingService(
+        $connection,
+        $trackingDispatcher,
+        $trackingMessagingNotifications,
+        new \App\Services\Dispatch\DispatchAuditService($connection),
+        $trackingNotificationEvents
     );
 
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
@@ -3090,7 +4262,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController) {
+    $router->post('/api/public/messages/job-sms/receive', function (Request $request) use ($maskedSmsController) {
+        $data = $maskedSmsController->receive($request->body());
+        return Response::json($data);
+    });
+
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController, $trackingService, $authService, $connection, $authConfig) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -3185,8 +4362,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'role' => $request->queryParam('role'),
                 'query' => $request->queryParam('query'),
+                'status' => $request->queryParam('status'),
+                'two_factor' => $request->queryParam('two_factor'),
             ];
             $data = $userController->listUsers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/users/export', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'role' => $request->queryParam('role'),
+                'query' => $request->queryParam('query'),
+            ];
+            $csv = $userController->exportUsers($user, $filters);
+
+            return new Response(
+                200,
+                [
+                    'Content-Type' => 'text/csv',
+                    'Content-Disposition' => 'attachment; filename="users_export_' . date('Y-m-d') . '.csv"'
+                ],
+                $csv
+            );
+        });
+
+        $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkDeactivate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/users/bulk-role', function (Request $request) use ($userController) {
+            $user = $request->getAttribute('user');
+            $data = $userController->bulkUpdateRole($user, $request->body());
             return Response::json($data);
         });
 
@@ -3201,6 +4410,43 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $userController->createUser($user, $request->body());
             return Response::created($data);
+        });
+
+        $router->post('/api/users/invite', function (Request $request) use ($userController, $authService, $connection, $authConfig) {
+            $user = $request->getAttribute('user');
+            $data = $userController->inviteUser($user, $request->body());
+            $token = $authService->issueVerificationToken($data['id']);
+
+            $notificationsConfig = require __DIR__ . '/../config/notifications.php';
+            $dispatcher = new \App\Support\Notifications\NotificationDispatcher(
+                $notificationsConfig,
+                new \App\Support\Notifications\TemplateEngine(),
+                new \App\Support\Notifications\NotificationLogRepository($connection)
+            );
+
+            $appUrl = env('APP_URL', 'http://localhost:8080');
+            $inviteUrl = $appUrl . '/accept-invite/' . urlencode($token->token);
+            $expiryHours = $authConfig['verification']['token_ttl_hours'] ?? 48;
+
+            try {
+                $dispatcher->sendMail(
+                    'auth.invitation',
+                    $data['email'],
+                    [
+                        'name' => $data['name'],
+                        'invite_url' => $inviteUrl,
+                        'expiry_hours' => $expiryHours,
+                    ],
+                    'You are invited to Auto Repair Shop Management'
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to send invitation email: ' . $e->getMessage());
+            }
+
+            return Response::created([
+                'user' => $data,
+                'message' => 'Invitation email has been sent',
+            ]);
         });
 
         $router->put('/api/users/{id}', function (Request $request) use ($userController) {
@@ -3282,44 +4528,456 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $messagingController->threads($user);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->post('/api/messages/threads', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->createThread($user, $request->body());
             return Response::created($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->get('/api/messages/threads/{id}/messages', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->messages($user, $threadId);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
 
         $router->post('/api/messages/threads/{id}/messages', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->postMessage($user, $threadId, $request->body());
             return Response::created($data);
-        });
+        })->middleware(Middleware::auth());
+
+        $router->post('/api/messages/threads/{id}/attachments', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $files = $request->file('files') ?? $request->file('file');
+            $data = $messagingController->postMessageWithAttachments(
+                $user,
+                $threadId,
+                $request->body(),
+                is_array($files) ? $files : []
+            );
+            return Response::created($data);
+        })->middleware(Middleware::auth());
 
         $router->post('/api/messages/threads/{id}/read', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $threadId = (int) $request->getAttribute('id');
             $data = $messagingController->markRead($user, $threadId);
             return Response::json($data);
-        });
+        })->middleware(Middleware::auth());
+
+        $router->get('/api/messages/threads/{id}/state', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $threadId = (int) $request->getAttribute('id');
+            $data = $messagingController->threadState($user, $threadId);
+            return Response::json($data);
+        })->middleware(Middleware::auth());
 
         $router->get('/api/messages/unread', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->unreadCounts($user);
             return Response::json($data);
+        })->middleware(Middleware::auth());
+
+        // Job-related masked SMS routes
+        $router->post('/api/jobs/{jobReference}/messages/sms', function (Request $request) use ($maskedSmsController) {
+            $user = $request->getAttribute('user');
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $data = $maskedSmsController->send($user, $jobReference, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver push tokens
+        $router->post('/api/driver/push-tokens', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $data = $driverDispatchController->registerPushToken($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver job offers
+        $router->get('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+            ];
+            $data = $driverDispatchController->listOffers($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $data = $driverDispatchController->createOffer($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController, $trackingService) {
+            $user = $request->getAttribute('user');
+            $offerId = (int) $request->getAttribute('id');
+            $data = $driverDispatchController->acceptOffer($user, $offerId);
+            $jobReference = $data['job_reference'] ?? null;
+            $jobType = $data['job_type'] ?? null;
+
+            if (is_string($jobReference) || is_numeric($jobReference)) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                try {
+                    if ($jobType === 'workorder') {
+                        $trackingService->sendTrackingLinkForWorkorder((int) $jobReference, $baseUrl, $user?->id);
+                    } elseif ($jobType === 'workorder_job') {
+                        $trackingService->sendTrackingLinkForJob((int) $jobReference, $baseUrl, $user?->id);
+                    }
+                } catch (\Throwable $exception) {
+                    error_log('Dispatch tracking link send failed: ' . $exception->getMessage());
+                }
+            }
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/job-offers/{id}/decline', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $offerId = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $data = $driverDispatchController->declineOffer(
+                $user,
+                $offerId,
+                $body['rejection_reason'] ?? null,
+                $body['rejection_notes'] ?? null
+            );
+            return Response::json($data);
+        });
+    });
+
+    // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $etaConfig = require __DIR__ . '/../config/dispatch.php';
+        $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
+        $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
+        $offerService = new \App\Services\Dispatch\DriverJobOfferService($connection);
+        $waterfallService = new \App\Services\Dispatch\WaterfallDispatchService($connection, $recommendationService, $offerService);
+        $geofencingService = new \App\Services\Dispatch\GeofencingService($connection);
+        $auditService = new \App\Services\Dispatch\DispatchAuditService($connection);
+
+        // Waterfall Dispatch Routes
+        $router->post('/api/dispatch/waterfall', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.initiate')) {
+                return Response::forbidden('Permission denied');
+            }
+            $data = $waterfallService->initiateWaterfall($request->body(), $user->id);
+            return Response::created($data);
+        });
+
+        $router->get('/api/dispatch/waterfall', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $data = $waterfallService->listActiveSequences();
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/dispatch/waterfall/{reference}', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $reference = (string) $request->getAttribute('reference');
+            $data = $waterfallService->getSequenceStatus($reference);
+            if ($data === null) {
+                return Response::notFound('Waterfall sequence not found');
+            }
+            return Response::json($data);
+        });
+
+        $router->post('/api/dispatch/waterfall/{id}/cancel', function (Request $request) use ($waterfallService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.waterfall.cancel')) {
+                return Response::forbidden('Permission denied');
+            }
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $data = $waterfallService->cancelSequence($id, $user->id, $body['reason'] ?? null);
+            return Response::json($data);
+        });
+
+        // Driver Location Routes
+        $router->post('/api/driver/location', function (Request $request) use ($etaService, $connection) {
+            $user = $request->getAttribute('user');
+            $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                ->resolveDriverProfile($user);
+            if ($driverProfile === null) {
+                return Response::forbidden('Driver profile not found');
+            }
+            $body = $request->body();
+            $id = $etaService->recordDriverLocation($driverProfile['id'], [
+                'latitude' => $body['latitude'],
+                'longitude' => $body['longitude'],
+                'accuracy' => $body['accuracy'] ?? null,
+                'altitude' => $body['altitude'] ?? null,
+                'speed' => $body['speed'] ?? null,
+                'heading' => $body['heading'] ?? null,
+                'source' => $body['source'] ?? 'gps',
+            ]);
+            return Response::created(['id' => $id]);
+        });
+
+        $router->get('/api/driver/location/current', function (Request $request) use ($etaService, $connection) {
+            $user = $request->getAttribute('user');
+            $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                ->resolveDriverProfile($user);
+            if ($driverProfile === null) {
+                return Response::forbidden('Driver profile not found');
+            }
+            $location = $etaService->getDriverCurrentLocation($driverProfile['id']);
+            return Response::json(['data' => $location]);
+        });
+
+        // Geofencing Routes
+        $router->post('/api/dispatch/geofences', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.geofences.create')) {
+                return Response::forbidden('Permission denied');
+            }
+            $body = $request->body();
+            $data = $geofencingService->createJobGeofence(
+                $body['job_reference'],
+                $body['job_type'] ?? 'workorder',
+                (float) $body['latitude'],
+                (float) $body['longitude'],
+                (int) ($body['radius_meters'] ?? 200),
+                $body['enter_action'] ?? 'mark_arrived',
+                $body['exit_action'] ?? null
+            );
+            return Response::created($data);
+        });
+
+        $router->get('/api/dispatch/geofences/{id}/check', function (Request $request) use ($geofencingService, $connection) {
+            $user = $request->getAttribute('user');
+            $geofenceId = (int) $request->getAttribute('id');
+            $driverProfileId = $request->queryParam('driver_profile_id');
+
+            if ($driverProfileId === null) {
+                $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                    ->resolveDriverProfile($user);
+                $driverProfileId = $driverProfile ? $driverProfile['id'] : null;
+            }
+
+            if ($driverProfileId === null) {
+                return Response::badRequest('Driver profile ID required');
+            }
+
+            $data = $geofencingService->isDriverInGeofence((int) $driverProfileId, $geofenceId);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->delete('/api/dispatch/geofences/{id}', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.geofences.delete')) {
+                return Response::forbidden('Permission denied');
+            }
+            $id = (int) $request->getAttribute('id');
+            $geofencingService->deactivateGeofence($id);
+            return Response::noContent();
+        });
+
+        // Idle Alerts Routes
+        $router->get('/api/dispatch/idle-alerts', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.alerts.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $data = $geofencingService->getActiveIdleAlerts();
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/dispatch/idle-alerts/{id}/acknowledge', function (Request $request) use ($geofencingService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.alerts.acknowledge')) {
+                return Response::forbidden('Permission denied');
+            }
+            $alertId = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $data = $geofencingService->acknowledgeIdleAlert($alertId, $user->id, $body['notes'] ?? null);
+            return Response::json($data);
+        });
+
+        // Rejection Reasons Routes
+        $router->get('/api/dispatch/rejection-reasons', function (Request $request) use ($auditService) {
+            $data = $auditService->getRejectionReasons();
+            return Response::json(['data' => $data]);
+        });
+
+        // Audit/Analytics Routes
+        $router->get('/api/dispatch/analytics/rejections', function (Request $request) use ($auditService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.analytics.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $daysBack = (int) ($request->queryParam('days') ?? 30);
+            $data = $auditService->analyzeRejectionPatterns($daysBack);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/dispatch/audit/{jobReference}', function (Request $request) use ($auditService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.audit.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $eventType = $request->queryParam('event_type');
+            $data = $auditService->getEventsForJob($jobReference, $eventType);
+            return Response::json(['data' => $data]);
+        });
+
+        // Job Density Heatmap Data
+        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.heatmap.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $date = $request->queryParam('date') ?? date('Y-m-d');
+            $hour = $request->queryParam('hour');
+
+            $sql = 'SELECT grid_lat, grid_lng, job_count, snapshot_hour
+                    FROM job_density_snapshots
+                    WHERE snapshot_date = :date';
+            $params = ['date' => $date];
+
+            if ($hour !== null) {
+                $sql .= ' AND snapshot_hour = :hour';
+                $params['hour'] = (int) $hour;
+            }
+
+            $stmt = $connection->pdo()->prepare($sql);
+            $stmt->execute($params);
+            $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json(['data' => $data, 'date' => $date]);
+        });
+
+        // Driver Certifications Routes
+        $router->get('/api/driver/certifications', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                ->resolveDriverProfile($user);
+            if ($driverProfile === null) {
+                return Response::forbidden('Driver profile not found');
+            }
+
+            $stmt = $connection->pdo()->prepare(
+                'SELECT * FROM driver_certifications WHERE driver_profile_id = :id ORDER BY certification_name'
+            );
+            $stmt->execute(['id' => $driverProfile['id']]);
+            $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $driverProfileId = $body['driver_profile_id'] ?? null;
+
+            // Allow self-submission or admin submission
+            if ($driverProfileId === null) {
+                $driverProfile = (new \App\Services\Dispatch\DriverDispatchController($connection, null, null, null))
+                    ->resolveDriverProfile($user);
+                $driverProfileId = $driverProfile ? $driverProfile['id'] : null;
+            } elseif (!$gate->can($user, 'dispatch.certifications.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            if ($driverProfileId === null) {
+                return Response::badRequest('Driver profile ID required');
+            }
+
+            $stmt = $connection->pdo()->prepare(
+                'INSERT INTO driver_certifications
+                    (driver_profile_id, certification_code, certification_name, issuing_authority,
+                     certificate_number, issued_date, expiry_date, status, verification_status, created_at)
+                 VALUES
+                    (:driver_id, :code, :name, :authority, :cert_num, :issued, :expiry, :status, :verification, NOW())
+                 ON DUPLICATE KEY UPDATE
+                    certification_name = VALUES(certification_name),
+                    issuing_authority = VALUES(issuing_authority),
+                    certificate_number = VALUES(certificate_number),
+                    issued_date = VALUES(issued_date),
+                    expiry_date = VALUES(expiry_date),
+                    updated_at = NOW()'
+            );
+
+            $stmt->execute([
+                'driver_id' => $driverProfileId,
+                'code' => strtoupper($body['certification_code']),
+                'name' => $body['certification_name'],
+                'authority' => $body['issuing_authority'] ?? null,
+                'cert_num' => $body['certificate_number'] ?? null,
+                'issued' => $body['issued_date'] ?? null,
+                'expiry' => $body['expiry_date'] ?? null,
+                'status' => 'active',
+                'verification' => 'pending',
+            ]);
+
+            return Response::created(['success' => true]);
+        });
+
+        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.certifications.verify')) {
+                return Response::forbidden('Permission denied');
+            }
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+
+            $stmt = $connection->pdo()->prepare(
+                'UPDATE driver_certifications
+                 SET verification_status = :status, verified_by = :user_id, verified_at = NOW(), updated_at = NOW()
+                 WHERE id = :id'
+            );
+            $stmt->execute([
+                'status' => $body['verified'] ? 'verified' : 'rejected',
+                'user_id' => $user->id,
+                'id' => $id,
+            ]);
+
+            return Response::json(['success' => true]);
+        });
+
+        // ETA Calculation Endpoint
+        $router->post('/api/dispatch/calculate-eta', function (Request $request) use ($etaService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.suggestions.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $body = $request->body();
+            $data = $etaService->calculateEta(
+                (float) $body['from_latitude'],
+                (float) $body['from_longitude'],
+                (float) $body['to_latitude'],
+                (float) $body['to_longitude'],
+                $body['driver_profile_id'] ?? null
+            );
+            return Response::json($data);
+        });
+
+        // Job Offer History for a Job
+        $router->get('/api/dispatch/jobs/{jobReference}/offers', function (Request $request) use ($offerService, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.offers.view')) {
+                return Response::forbidden('Permission denied');
+            }
+            $jobReference = (string) $request->getAttribute('jobReference');
+            $data = $offerService->getOffersForJob($jobReference);
+            return Response::json(['data' => $data]);
         });
     });
 
     // Inspection routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $settingsRepository) {
 
         $inspectionController = new \App\Services\Inspection\InspectionController(
             new \App\Services\Inspection\InspectionTemplateService($connection),
@@ -3379,7 +5037,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $file = $request->file('media') ?? [];
-            $data = $inspectionController->uploadMedia($user, $id, $file);
+            $clientToken = $request->input('client_token') ?? $request->header('X-Idempotency-Key');
+            $data = $inspectionController->uploadMedia($user, $id, $file, $clientToken);
             return Response::json($data);
         });
 
@@ -3421,6 +5080,218 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             header('Content-Length: ' . strlen($pdfContent));
             echo $pdfContent;
             exit;
+        });
+
+        // Inspection-to-Estimate Bridge routes
+        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection, null, $settingsRepository);
+        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate, $settingsRepository);
+
+        $router->get('/api/inspections/{id}/failed-items', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->failedItems($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->get('/api/inspections/{id}/recommendations', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->recommendations($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/add-to-estimate', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->addToEstimate($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/create-estimate', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->createEstimate($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/add-to-workorder', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            return $bridgeController->addToWorkorder($request, Response::create(), ['id' => $id]);
+        });
+
+        $router->post('/api/inspections/{id}/recommendations/{itemId}/decline', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            $itemId = (int) $request->getAttribute('itemId');
+            return $bridgeController->declineRecommendation($request, Response::create(), ['id' => $id, 'itemId' => $itemId]);
+        });
+
+        $router->post('/api/inspections/{id}/recommendations/{itemId}/defer', function (Request $request) use ($bridgeController) {
+            $id = (int) $request->getAttribute('id');
+            $itemId = (int) $request->getAttribute('itemId');
+            return $bridgeController->deferRecommendation($request, Response::create(), ['id' => $id, 'itemId' => $itemId]);
+        });
+    });
+
+    // Quality Control (QC) Checklist routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+
+        $qcService = new \App\Services\QualityControl\QCChecklistService($connection, $auditLogger);
+        $qcController = new \App\Services\QualityControl\QCChecklistController($qcService, $gate);
+
+        // Template endpoints
+        $router->get('/api/qc/templates', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $includeInactive = $request->queryParam('include_inactive') === 'true';
+            $data = $qcController->listTemplates($user, $includeInactive);
+            return Response::json($data);
+        });
+
+        $router->get('/api/qc/templates/{id}', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->showTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/qc/templates', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $data = $qcController->createTemplate($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Workorder QC endpoints
+        $router->get('/api/workorders/{id}/qc-check', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->getWorkorderCheck($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/workorders/{id}/qc-status', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->getQCStatus($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/qc-check/initialize', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->initializeCheck($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        // QC check item endpoints
+        $router->patch('/api/qc/checks/{id}/items', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->updateCheckItems($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/qc/checks/{checkId}/items/{itemId}', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $checkId = (int) $request->getAttribute('checkId');
+            $itemId = (int) $request->getAttribute('itemId');
+            $data = $qcController->updateCheckItem($user, $checkId, $itemId, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/qc/checks/{id}/complete', function (Request $request) use ($qcController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $qcController->completeCheck($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        // Truck checklist templates & entries
+        $truckChecklistService = new \App\Services\Dispatch\TruckChecklistService($connection);
+        $truckChecklistController = new \App\Services\Dispatch\TruckChecklistController($truckChecklistService, $gate);
+
+        $router->get('/api/truck-checklists/templates', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'checklist_type' => $request->queryParam('checklist_type'),
+                'include_inactive' => $request->queryParam('include_inactive', false),
+            ];
+            $data = $truckChecklistController->listTemplates($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/templates/default', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->queryParam('checklist_type', '');
+            $data = $truckChecklistController->defaultTemplate($user, $type);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->showTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/truck-checklists/templates', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $data = $truckChecklistController->createTemplate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->updateTemplate($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->deleteTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/entries', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'checklist_type' => $request->queryParam('checklist_type'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $truckChecklistController->listEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/entries/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->showEntry($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/truck-checklists/entries', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $data = $truckChecklistController->createEntry($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver shift enforcement for checklists
+        $driverShiftService = new \App\Services\Dispatch\DriverShiftService($connection, $truckChecklistService);
+        $driverShiftController = new \App\Services\Dispatch\DriverShiftController($driverShiftService, $gate, $connection);
+
+        $router->get('/api/driver/shifts/active', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $data = $driverShiftController->active($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/driver/shifts/start', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $data = $driverShiftController->start($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/driver/shifts/{id}/end', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $driverShiftController->end($user, $id, $request->body());
+            return Response::json($data);
         });
     });
 
@@ -3552,7 +5423,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Financial routes (Admin/Manager only)
-    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate, $settingsRepository) {
 
         $financialController = new \App\Services\Financial\FinancialController(
             new \App\Services\Financial\FinancialEntryService($connection),
@@ -3560,6 +5431,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $gate
         );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
+        $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
+            new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -3641,6 +5516,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/financial/reports/summary', function (Request $request) use ($financialController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $financialController->reportSummary($user, $params);
+            return Response::json($data);
+        });
+
         $router->get('/api/financial/reports/export', function (Request $request) use ($financialController) {
             $user = $request->getAttribute('user');
             $params = [
@@ -3665,6 +5550,65 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'search' => $request->queryParam('search'),
             ];
             $data = $financialController->exportEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'branch_id' => $request->queryParam('branch_id'),
+            ];
+            $data = $technicianMarginController->report($user, $params);
+            return Response::json($data);
+        });
+    });
+
+    // Customer retention report routes
+    $customerRetentionWebhookConfig = $config['customer_retention']['webhooks'] ?? [];
+    $customerRetentionWebhooks = new WebhookDispatcher(
+        !empty($customerRetentionWebhookConfig['enabled']) ? ($customerRetentionWebhookConfig['endpoints'] ?? []) : [],
+        (string) ($customerRetentionWebhookConfig['secret'] ?? ''),
+        (int) ($customerRetentionWebhookConfig['timeout'] ?? 5),
+        $auditLogger
+    );
+
+    $customerRetentionController = new \App\Services\Customer\CustomerRetentionReportController(
+        new \App\Services\Customer\CustomerRetentionReportService(
+            new \App\Services\Customer\CustomerRepository($connection),
+            $customerRetentionWebhooks
+        ),
+        $gate
+    );
+
+    $router->group([Middleware::auth()], function (Router $router) use ($customerRetentionController) {
+        $router->get('/api/reports/customer-retention', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'months' => $request->queryParam('months', 6),
+                'limit' => $request->queryParam('limit', 50),
+                'offset' => $request->queryParam('offset', 0),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $customerRetentionController->index($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/customer-retention/export', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'months' => $request->queryParam('months', 6),
+                'format' => $request->queryParam('format', 'csv'),
+                'query' => $request->queryParam('query'),
+            ];
+            $data = $customerRetentionController->export($user, $params);
+            return Response::json($data);
+        });
+
+        $router->post('/api/reports/customer-retention/hooks', function (Request $request) use ($customerRetentionController) {
+            $user = $request->getAttribute('user');
+            $data = $customerRetentionController->dispatchCampaign($user, $request->body());
             return Response::json($data);
         });
     });
@@ -3758,16 +5702,87 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $timeController->portal($user);
             return Response::json($data);
         });
+
+        // Labor Tasks routes (for granular labor clocking)
+        $laborTaskService = new \App\Services\TimeTracking\LaborTaskService($connection);
+        $laborTaskController = new \App\Services\TimeTracking\LaborTaskController($laborTaskService, $gate);
+
+        $router->get('/api/labor-tasks', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'search' => $request->queryParam('search'),
+                'is_active' => $request->queryParam('is_active'),
+                'service_type_id' => $request->queryParam('service_type_id'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 100),
+            ];
+            $data = $laborTaskController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/labor-tasks/active', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $data = $laborTaskController->active($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/labor-tasks/efficiency', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'technician_id' => $request->queryParam('technician_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'group_by' => $request->queryParam('group_by', 'technician'),
+            ];
+            $data = $laborTaskController->efficiencyReport($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/labor-tasks/{id}', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $laborTaskController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/labor-tasks', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $data = $laborTaskController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/labor-tasks/{id}', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $laborTaskController->update($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/labor-tasks/{id}', function (Request $request) use ($laborTaskController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $laborTaskController->destroy($user, $id);
+            return Response::json($data);
+        });
     });
 
     // Settings routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository, $auditLogger) {
 
         $settingsController = new \App\Services\Settings\SettingsController(
             $settingsRepository,
             $gate
         );
         $notificationTests = new \App\Services\Settings\NotificationTestService($settingsRepository);
+        $notificationConfig = require __DIR__ . '/../config/notifications.php';
+        $templateEngine = new \App\Support\Notifications\TemplateEngine();
+        $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+        $notifications = new \App\Support\Notifications\NotificationDispatcher(
+            $notificationConfig,
+            $templateEngine,
+            $notificationLogs
+        );
+        $templateManager = new \App\Services\Notification\TemplateManager($connection, $notifications);
 
         $router->get('/api/settings', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
@@ -3803,6 +5818,1370 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $settingsController->bulkUpdate($user, $request->body());
             return Response::json($data);
+        });
+
+        $router->get('/api/storage/fees', function (Request $request) use ($connection) {
+            $search = trim((string) $request->queryParam('search', ''));
+            $pdo = $connection->pdo();
+
+            $sql = <<<SQL
+                SELECT
+                    storage_fees.id,
+                    impound_cases.case_number,
+                    storage_fees.fee_date,
+                    storage_fees.fee_type,
+                    storage_fees.description,
+                    storage_fees.amount,
+                    storage_fees.status
+                FROM storage_fees
+                LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+            SQL;
+            $params = [];
+
+            if ($search !== '') {
+                $sql .= ' WHERE impound_cases.case_number LIKE :search';
+                $params['search'] = '%' . $search . '%';
+            }
+
+            $sql .= ' ORDER BY storage_fees.fee_date DESC, storage_fees.id DESC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $fees = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            return Response::json(['data' => $fees]);
+        });
+
+        $router->post('/api/storage/fees/automate', function (Request $request) use ($connection, $settingsRepository) {
+            $user = $request->getAttribute('user');
+            $payload = $request->body();
+            $asOfInput = $payload['as_of'] ?? null;
+            $asOf = $asOfInput ? new \DateTimeImmutable((string) $asOfInput) : new \DateTimeImmutable('now');
+            $asOf = $asOf->setTime(23, 59, 59);
+
+            $pdo = $connection->pdo();
+            $caseStmt = $pdo->prepare(
+                'SELECT id, case_number, impound_date AS intake_at, released_at, state_code, gate_fee, daily_rate, after_hours_gate
+                 FROM impound_cases
+                 WHERE impound_date <= :as_of'
+            );
+            $caseStmt->execute(['as_of' => $asOf->format('Y-m-d')]);
+            $cases = $caseStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $caseStmt->closeCursor();
+
+            if (!$cases) {
+                return Response::json(['created_fees' => 0, 'financial_entries' => 0]);
+            }
+
+            $rateStmt = $pdo->query(
+                "SELECT state_code, daily_rate, gate_fee, after_hours_multiplier, grace_period_hours, max_billable_days, effective_date
+                 FROM storage_rates
+                 WHERE status = 'active'
+                 ORDER BY state_code, effective_date DESC"
+            );
+            $rates = $rateStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $rateStmt->closeCursor();
+
+            $ratesByState = [];
+            foreach ($rates as $rate) {
+                $ratesByState[$rate['state_code']][] = $rate;
+            }
+
+            $defaultDailyRate = (float) $settingsRepository->get('storage.daily_fee', 0);
+            $defaultGateFee = (float) $settingsRepository->get('storage.gate_fee', 0);
+
+            $caseIds = array_map(static fn ($row) => (int) $row['id'], $cases);
+            $placeholders = implode(',', array_fill(0, count($caseIds), '?'));
+            $feeStmt = $pdo->prepare(
+                "SELECT id, impound_case_id, fee_date, fee_type, amount
+                 FROM storage_fees
+                 WHERE impound_case_id IN ({$placeholders})"
+            );
+            $feeStmt->execute($caseIds);
+            $existingFees = [];
+            foreach ($feeStmt->fetchAll(\PDO::FETCH_ASSOC) as $fee) {
+                $existingFees[$fee['impound_case_id']][$fee['fee_type']][$fee['fee_date']] = [
+                    'id' => (int) $fee['id'],
+                    'amount' => (float) $fee['amount'],
+                ];
+            }
+            $feeStmt->closeCursor();
+
+            $insertFeeStmt = $pdo->prepare(
+                'INSERT INTO storage_fees (impound_case_id, fee_date, fee_type, description, amount, status)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+            $createdFees = 0;
+            $createdFinancial = 0;
+
+            $resolveRate = static function (array $ratesByState, ?string $stateCode, \DateTimeImmutable $date): array {
+                if (!$stateCode || empty($ratesByState[$stateCode])) {
+                    return [];
+                }
+
+                $dateValue = $date->format('Y-m-d');
+                foreach ($ratesByState[$stateCode] as $rate) {
+                    if ($rate['effective_date'] <= $dateValue) {
+                        return $rate;
+                    }
+                }
+
+                return [];
+            };
+
+            $createFinancialEntry = function (
+                int $caseId,
+                int $feeId,
+                string $caseNumber,
+                string $feeType,
+                string $feeDate,
+                float $amount
+            ) use (&$createdFinancial, $financialEntryService, $user): void {
+                if ($amount <= 0) {
+                    return;
+                }
+
+                $idempotency = $feeId > 0 ? sprintf('storage-fee-%d', $feeId) : '';
+
+                $financialEntryService->create([
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $caseNumber,
+                    'purchase_order' => $caseNumber,
+                    'amount' => $amount,
+                    'entry_date' => $feeDate,
+                    'vendor' => 'Impound Storage',
+                    'description' => sprintf('%s for %s', $feeType, $caseNumber),
+                    'idempotency_key' => $idempotency ?: null,
+                ], $user->id);
+                $createdFinancial += 1;
+            };
+
+            $pdo->beginTransaction();
+            try {
+                foreach ($cases as $case) {
+                    $caseId = (int) $case['id'];
+                    $caseNumber = (string) ($case['case_number'] ?? '');
+                    $intakeAt = new \DateTimeImmutable((string) $case['intake_at']);
+                    $releaseAt = !empty($case['released_at'])
+                        ? new \DateTimeImmutable((string) $case['released_at'])
+                        : $asOf;
+
+                    if ($releaseAt < $intakeAt) {
+                        continue;
+                    }
+
+                    $rateForIntake = $resolveRate($ratesByState, $case['state_code'] ?? null, $intakeAt);
+                    $graceHours = (int) ($rateForIntake['grace_period_hours'] ?? 0);
+                    $maxBillableDays = (int) ($rateForIntake['max_billable_days'] ?? 0);
+                    $afterHoursMultiplier = (float) ($rateForIntake['after_hours_multiplier'] ?? 1.0);
+
+                    $startAt = $graceHours > 0 ? $intakeAt->modify(sprintf('+%d hours', $graceHours)) : $intakeAt;
+                    if ($startAt > $releaseAt) {
+                        continue;
+                    }
+
+                    $seconds = max(0, $releaseAt->getTimestamp() - $startAt->getTimestamp());
+                    $billableDays = (int) ceil($seconds / 86400);
+                    if ($maxBillableDays > 0 && $billableDays > $maxBillableDays) {
+                        $billableDays = $maxBillableDays;
+                    }
+
+                    $baseGateFee = (float) ($case['gate_fee'] ?? 0);
+                    if ($baseGateFee <= 0) {
+                        $baseGateFee = (float) ($rateForIntake['gate_fee'] ?? $defaultGateFee);
+                    }
+
+                    if ($baseGateFee > 0 && empty($existingFees[$caseId]['Gate Fee'])) {
+                        $insertFeeStmt->execute([
+                            $caseId,
+                            $intakeAt->format('Y-m-d'),
+                            'Gate Fee',
+                            'Automated gate fee',
+                            $baseGateFee,
+                            'posted',
+                        ]);
+                        $createdFees += 1;
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
+                    } elseif (!empty($existingFees[$caseId]['Gate Fee'])) {
+                        foreach ($existingFees[$caseId]['Gate Fee'] as $feeDate => $fee) {
+                            $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
+                        }
+                    }
+
+                    if (!empty($case['after_hours_gate']) && $baseGateFee > 0 && $afterHoursMultiplier > 1.0) {
+                        $afterHoursFee = round($baseGateFee * ($afterHoursMultiplier - 1.0), 2);
+                        if ($afterHoursFee > 0 && empty($existingFees[$caseId]['After Hours Fee'])) {
+                            $insertFeeStmt->execute([
+                                $caseId,
+                                $intakeAt->format('Y-m-d'),
+                                'After Hours Fee',
+                                'Automated after-hours fee',
+                                $afterHoursFee,
+                                'posted',
+                            ]);
+                            $createdFees += 1;
+                            $feeId = (int) $pdo->lastInsertId();
+                            $createFinancialEntry($caseId, $feeId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
+                        } elseif (!empty($existingFees[$caseId]['After Hours Fee'])) {
+                            foreach ($existingFees[$caseId]['After Hours Fee'] as $feeDate => $fee) {
+                                $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
+                            }
+                        }
+                    }
+
+                    for ($day = 0; $day < $billableDays; $day += 1) {
+                        $feeDate = $startAt->modify(sprintf('+%d days', $day))->format('Y-m-d');
+                        $existingDaily = $existingFees[$caseId]['Daily Storage'][$feeDate] ?? null;
+                        if ($existingDaily) {
+                            $createFinancialEntry($caseId, (int) $existingDaily['id'], $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
+                            continue;
+                        }
+
+                        $rateForDay = $resolveRate($ratesByState, $case['state_code'] ?? null, new \DateTimeImmutable($feeDate));
+                        $dailyRate = (float) ($case['daily_rate'] ?? 0);
+                        if ($dailyRate <= 0) {
+                            $dailyRate = (float) ($rateForDay['daily_rate'] ?? $defaultDailyRate);
+                        }
+
+                        if ($dailyRate <= 0) {
+                            continue;
+                        }
+
+                        $insertFeeStmt->execute([
+                            $caseId,
+                            $feeDate,
+                            'Daily Storage',
+                            'Automated daily storage fee',
+                            $dailyRate,
+                            'posted',
+                        ]);
+                        $createdFees += 1;
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
+                    }
+                }
+
+                $pdo->commit();
+            } catch (\Throwable $error) {
+                $pdo->rollBack();
+                throw $error;
+            }
+
+            return Response::json(['created_fees' => $createdFees, 'financial_entries' => $createdFinancial]);
+        });
+
+        $router->post('/api/storage/fees', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
+            $payload = $request->body();
+            $caseNumber = trim((string) ($payload['case_number'] ?? ''));
+            $feeDate = trim((string) ($payload['fee_date'] ?? ''));
+            $feeType = trim((string) ($payload['fee_type'] ?? ''));
+            $amount = (float) ($payload['amount'] ?? 0);
+            $status = trim((string) ($payload['status'] ?? 'posted'));
+            $description = $payload['description'] ?? null;
+
+            if ($caseNumber === '' || $feeDate === '' || $feeType === '') {
+                return Response::badRequest('Case number, fee date, and fee type are required.');
+            }
+
+            $pdo = $connection->pdo();
+            $stmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+            $stmt->execute([$caseNumber]);
+            $caseId = $stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if (!$caseId) {
+                return Response::badRequest('Impound case not found.');
+            }
+
+            $insert = $pdo->prepare(
+                'INSERT INTO storage_fees (impound_case_id, fee_date, fee_type, description, amount, status)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $insert->execute([$caseId, $feeDate, $feeType, $description, $amount, $status]);
+            $insert->closeCursor();
+
+            $id = (int) $pdo->lastInsertId();
+            $row = $pdo->prepare(
+                'SELECT storage_fees.id, impound_cases.case_number, storage_fees.fee_date, storage_fees.fee_type,
+                        storage_fees.description, storage_fees.amount, storage_fees.status
+                 FROM storage_fees
+                 LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+                 WHERE storage_fees.id = ?'
+            );
+            $row->execute([$id]);
+            $fee = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
+            return Response::created($fee);
+        });
+
+        $router->put('/api/storage/fees/{id}', function (Request $request) use ($connection) {
+            $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
+            $payload = $request->body();
+            $pdo = $connection->pdo();
+
+            $stmt = $pdo->prepare(
+                'SELECT storage_fees.id, storage_fees.impound_case_id, impound_cases.case_number,
+                        storage_fees.fee_date, storage_fees.fee_type, storage_fees.description,
+                        storage_fees.amount, storage_fees.status
+                 FROM storage_fees
+                 LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+                 WHERE storage_fees.id = ?'
+            );
+            $stmt->execute([$id]);
+            $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            if (!$existing) {
+                return Response::notFound('Storage fee not found.');
+            }
+
+            $caseNumber = trim((string) ($payload['case_number'] ?? $existing['case_number'] ?? ''));
+            if ($caseNumber === '') {
+                return Response::badRequest('Case number is required.');
+            }
+
+            $caseId = (int) $existing['impound_case_id'];
+            if ($caseNumber !== ($existing['case_number'] ?? '')) {
+                $caseStmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+                $caseStmt->execute([$caseNumber]);
+                $caseId = (int) $caseStmt->fetchColumn();
+                $caseStmt->closeCursor();
+
+                if (!$caseId) {
+                    return Response::badRequest('Impound case not found.');
+                }
+            }
+
+            $feeDate = trim((string) ($payload['fee_date'] ?? $existing['fee_date'] ?? ''));
+            $feeType = trim((string) ($payload['fee_type'] ?? $existing['fee_type'] ?? ''));
+            $description = $payload['description'] ?? $existing['description'];
+            $amount = array_key_exists('amount', $payload) ? (float) $payload['amount'] : (float) $existing['amount'];
+            $status = trim((string) ($payload['status'] ?? $existing['status'] ?? 'posted'));
+
+            if ($feeDate === '' || $feeType === '') {
+                return Response::badRequest('Fee date and fee type are required.');
+            }
+
+            $update = $pdo->prepare(
+                'UPDATE storage_fees
+                 SET impound_case_id = ?, fee_date = ?, fee_type = ?, description = ?, amount = ?, status = ?
+                 WHERE id = ?'
+            );
+            $update->execute([$caseId, $feeDate, $feeType, $description, $amount, $status, $id]);
+            $update->closeCursor();
+
+            $row = $pdo->prepare(
+                'SELECT storage_fees.id, impound_cases.case_number, storage_fees.fee_date, storage_fees.fee_type,
+                        storage_fees.description, storage_fees.amount, storage_fees.status
+                 FROM storage_fees
+                 LEFT JOIN impound_cases ON impound_cases.id = storage_fees.impound_case_id
+                 WHERE storage_fees.id = ?'
+            );
+            $row->execute([$id]);
+            $fee = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
+            return Response::json($fee);
+        });
+
+        $router->delete('/api/storage/fees/{id}', function (Request $request) use ($connection) {
+            $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
+            $pdo = $connection->pdo();
+            $existingStmt = $pdo->prepare('SELECT id FROM storage_fees WHERE id = ?');
+            $existingStmt->execute([$id]);
+            $feeId = $existingStmt->fetchColumn();
+            $existingStmt->closeCursor();
+
+            if (!$feeId) {
+                return Response::notFound('Storage fee not found.');
+            }
+
+            $stmt = $pdo->prepare('DELETE FROM storage_fees WHERE id = ?');
+            $stmt->execute([$id]);
+            $stmt->closeCursor();
+
+            if ($user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $feeId);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                if ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
+            return Response::noContent();
+        });
+
+        $router->get('/api/storage/notices', function (Request $request) use ($connection) {
+            $status = $request->queryParam('status');
+            $pdo = $connection->pdo();
+
+            $sql = <<<SQL
+                SELECT
+                    lien_notices.id,
+                    lien_notices.notice_type,
+                    lien_notices.notice_date,
+                    lien_notices.due_date,
+                    lien_notices.sent_date,
+                    lien_notices.status,
+                    impound_cases.case_number,
+                    impound_cases.state_code,
+                    impound_cases.impound_date,
+                    impound_cases.intake_location,
+                    impound_cases.status AS case_status,
+                    customers.first_name,
+                    customers.last_name,
+                    customers.business_name,
+                    customers.phone,
+                    customers.street,
+                    customers.city,
+                    customers.state AS owner_state,
+                    customers.postal_code,
+                    customer_vehicles.year AS vehicle_year,
+                    customer_vehicles.make AS vehicle_make,
+                    customer_vehicles.model AS vehicle_model,
+                    customer_vehicles.vin AS vehicle_vin,
+                    customer_vehicles.license_plate AS vehicle_license_plate,
+                    DATEDIFF(CURDATE(), DATE(impound_cases.impound_date)) AS days_held,
+                    COALESCE(storage_rates.lien_notice_days, 0) AS lien_notice_days
+                FROM lien_notices
+                JOIN impound_cases ON impound_cases.id = lien_notices.impound_case_id
+                LEFT JOIN customers ON customers.id = impound_cases.customer_id
+                LEFT JOIN customer_vehicles ON customer_vehicles.id = impound_cases.customer_vehicle_id
+                LEFT JOIN (
+                    SELECT rates.*
+                    FROM storage_rates rates
+                    INNER JOIN (
+                        SELECT state_code, MAX(effective_date) AS effective_date
+                        FROM storage_rates
+                        WHERE status = 'active'
+                        GROUP BY state_code
+                    ) latest
+                        ON latest.state_code = rates.state_code
+                        AND latest.effective_date = rates.effective_date
+                    WHERE rates.status = 'active'
+                ) storage_rates ON storage_rates.state_code = impound_cases.state_code
+            SQL;
+
+            $params = [];
+            if ($status) {
+                $sql .= ' WHERE lien_notices.status = :status';
+                $params['status'] = $status;
+            }
+
+            $sql .= ' ORDER BY lien_notices.notice_date DESC, lien_notices.id DESC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $notices = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            foreach ($notices as &$notice) {
+                $notice = formatStorageNotice($notice);
+            }
+            unset($notice);
+
+            return Response::json(['data' => $notices]);
+        });
+
+        $router->post('/api/storage/notices', function (Request $request) use ($connection) {
+            $payload = $request->body();
+            $caseNumber = trim((string) ($payload['case_number'] ?? ''));
+            $noticeType = trim((string) ($payload['notice_type'] ?? ''));
+            $noticeDate = trim((string) ($payload['notice_date'] ?? ''));
+            $dueDate = trim((string) ($payload['due_date'] ?? ''));
+
+            if ($caseNumber === '' || $noticeType === '') {
+                return Response::badRequest('Case number and notice type are required.');
+            }
+
+            $pdo = $connection->pdo();
+            $stmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+            $stmt->execute([$caseNumber]);
+            $caseId = $stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if (!$caseId) {
+                return Response::badRequest('Impound case not found.');
+            }
+
+            $existingStmt = $pdo->prepare(
+                'SELECT id FROM lien_notices WHERE impound_case_id = ? AND notice_type = ? LIMIT 1'
+            );
+            $existingStmt->execute([(int) $caseId, $noticeType]);
+            $existingNotice = $existingStmt->fetchColumn();
+            $existingStmt->closeCursor();
+
+            if ($existingNotice) {
+                return Response::badRequest('A notice of this type already exists for the case.');
+            }
+
+            $noticeDate = $noticeDate !== '' ? $noticeDate : date('Y-m-d');
+            $dueDate = $dueDate !== '' ? $dueDate : date('Y-m-d', strtotime('+10 days'));
+
+            $insert = $pdo->prepare(
+                'INSERT INTO lien_notices (impound_case_id, notice_type, notice_date, due_date, status)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            $insert->execute([(int) $caseId, $noticeType, $noticeDate, $dueDate, 'draft']);
+            $insert->closeCursor();
+
+            $noticeId = (int) $pdo->lastInsertId();
+            $notice = fetchStorageNotice($pdo, $noticeId);
+
+            return Response::created(['notice' => $notice]);
+        });
+
+        $router->post('/api/storage/notices/{id}/send', function (Request $request) use ($connection) {
+            $id = (int) $request->getAttribute('id');
+            $pdo = $connection->pdo();
+
+            $stmt = $pdo->prepare('SELECT id FROM lien_notices WHERE id = ?');
+            $stmt->execute([$id]);
+            $exists = $stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if (!$exists) {
+                return Response::notFound('Lien notice not found.');
+            }
+
+            $update = $pdo->prepare(
+                'UPDATE lien_notices
+                 SET status = ?, sent_date = ?, status_updated_at = NOW()
+                 WHERE id = ?'
+            );
+            $update->execute(['sent', date('Y-m-d'), $id]);
+            $update->closeCursor();
+
+            $notice = fetchStorageNotice($pdo, $id);
+
+            return Response::json(['notice' => $notice]);
+        });
+
+        $router->get('/api/storage/notices/{id}/pdf', function (Request $request) use ($connection, $settingsRepository) {
+            $id = (int) $request->getAttribute('id');
+            $pdo = $connection->pdo();
+            $detail = fetchStorageNoticeDetails($pdo, $id);
+
+            if (!$detail) {
+                return Response::notFound('Lien notice not found.');
+            }
+
+            $address = $settingsRepository->get('shop.address', []);
+            $shopAddress = '';
+            if (is_array($address)) {
+                $lines = array_filter([
+                    trim((string) ($address['street'] ?? '')),
+                    trim(sprintf(
+                        '%s%s%s',
+                        (string) ($address['city'] ?? ''),
+                        !empty($address['state']) ? ', ' . $address['state'] : '',
+                        !empty($address['postal_code']) ? ' ' . $address['postal_code'] : ''
+                    )),
+                    trim((string) ($address['country'] ?? '')),
+                ]);
+                $shopAddress = implode('<br>', $lines);
+            } elseif (is_string($address)) {
+                $shopAddress = $address;
+            }
+
+            $settings = [
+                'shop_name' => $settingsRepository->get('shop.name', 'Storage Facility'),
+                'shop_address' => $shopAddress,
+                'shop_phone' => $settingsRepository->get('shop.phone', ''),
+                'storage.notice.notice_of_claim' => $settingsRepository->get('storage.notice.notice_of_claim'),
+                'storage.notice.lien_notice' => $settingsRepository->get('storage.notice.lien_notice'),
+            ];
+
+            $case = [
+                'case_number' => $detail['case_number'],
+                'notice_date' => $detail['notice_date'],
+                'status' => $detail['case_status'],
+                'intake_location' => $detail['intake_location'],
+                'impound_date' => $detail['impound_date'],
+                'released_at' => $detail['released_at'],
+                'state_code' => $detail['state_code'],
+                'daily_rate' => $detail['case_daily_rate'],
+                'gate_fee' => $detail['case_gate_fee'],
+                'after_hours_gate' => (int) ($detail['after_hours_gate'] ?? 0) === 1,
+            ];
+
+            $owner = [
+                'name' => $detail['owner_name'],
+                'address' => $detail['owner_address'],
+                'city' => $detail['owner_city'],
+                'state' => $detail['owner_state'],
+                'zip' => $detail['owner_zip'],
+                'phone' => $detail['owner_phone'],
+            ];
+
+            $vehicle = [
+                'year' => $detail['vehicle_year'],
+                'make' => $detail['vehicle_make'],
+                'model' => $detail['vehicle_model'],
+                'vin' => $detail['vehicle_vin'],
+                'license_plate' => $detail['vehicle_license_plate'],
+            ];
+
+            $rate = [
+                'daily_rate' => $detail['rate_daily_rate'],
+                'gate_fee' => $detail['rate_gate_fee'],
+            ];
+
+            $notice = [
+                'notice_date' => $detail['notice_date'],
+                'due_date' => $detail['due_date'],
+                'notice_type' => $detail['notice_type'],
+            ];
+
+            $storageService = new \App\Services\Storage\StorageService();
+            $asOf = $detail['notice_date'] ? new \DateTimeImmutable($detail['notice_date']) : null;
+            $fees = $storageService->calculateAccruedFees($case, $rate, $asOf);
+
+            $generator = new \App\Support\Pdf\LienNoticePdfGenerator();
+            if ($detail['notice_type'] === 'Notice of Claim') {
+                $pdf = $generator->generateNoticeOfClaim($case, $owner, $vehicle, $fees, $settings);
+            } else {
+                $pdf = $generator->generateLienNotice($notice, $case, $owner, $vehicle, $fees, $settings);
+            }
+
+            return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
+        });
+
+        $router->get('/api/storage/impound-cases', function (Request $request) use ($connection) {
+            $pdo = $connection->pdo();
+            $search = trim((string) $request->query('search', ''));
+            $status = trim((string) $request->query('status', ''));
+            $auctionStatus = trim((string) $request->query('auction_status', ''));
+
+            $sql = <<<SQL
+                SELECT
+                    id,
+                    case_number,
+                    impound_date,
+                    state_code,
+                    status,
+                    status_updated_at,
+                    auction_status,
+                    auction_status_updated_at,
+                    intake_location,
+                    tow_agency,
+                    hold_release_contact,
+                    gate_fee,
+                    daily_rate,
+                    vin,
+                    vehicle_year,
+                    vehicle_make,
+                    vehicle_model,
+                    vehicle_trim,
+                    vehicle_weight_class,
+                    vin_decoded_at
+                FROM impound_cases
+            SQL;
+            $params = [];
+            $conditions = [];
+
+            if ($search !== '') {
+                $conditions[] = 'case_number LIKE :search';
+                $params['search'] = '%' . $search . '%';
+            }
+
+            if ($status !== '') {
+                $conditions[] = 'status = :status';
+                $params['status'] = $status;
+            }
+
+            if ($auctionStatus !== '') {
+                $conditions[] = 'auction_status = :auction_status';
+                $params['auction_status'] = $auctionStatus;
+            }
+
+            if ($conditions) {
+                $sql .= ' WHERE ' . implode(' AND ', $conditions);
+            }
+
+            $sql .= ' ORDER BY impound_date DESC, id DESC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $cases = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            return Response::json(['data' => $cases]);
+        });
+
+        $router->post('/api/storage/impound-cases', function (Request $request) use ($connection) {
+            $payload = $request->body();
+            $caseNumber = trim((string) ($payload['case_number'] ?? ''));
+            $impoundDate = trim((string) ($payload['impound_date'] ?? ''));
+            $stateCode = trim((string) ($payload['state_code'] ?? ''));
+
+            if ($caseNumber === '' || $impoundDate === '' || $stateCode === '') {
+                return Response::badRequest('Case number, impound date, and state are required.');
+            }
+
+            $status = trim((string) ($payload['status'] ?? 'open'));
+            $auctionStatus = trim((string) ($payload['auction_status'] ?? 'in_storage'));
+            $towAgency = $payload['tow_agency'] ?? null;
+            $intakeLocation = $payload['intake_location'] ?? null;
+            $holdReleaseContact = $payload['hold_release_contact'] ?? null;
+            $gateFee = (float) ($payload['gate_fee'] ?? 0);
+            $dailyRate = (float) ($payload['daily_rate'] ?? 0);
+            $impoundReason = $payload['impound_reason'] ?? null;
+            $notes = $payload['notes'] ?? null;
+            $vin = trim((string) ($payload['vin'] ?? ''));
+            $vin = $vin !== '' ? $vin : null;
+            $vehicleYear = isset($payload['vehicle_year']) && $payload['vehicle_year'] !== '' ? (int) $payload['vehicle_year'] : null;
+            $vehicleMake = isset($payload['vehicle_make']) && $payload['vehicle_make'] !== '' ? (string) $payload['vehicle_make'] : null;
+            $vehicleModel = isset($payload['vehicle_model']) && $payload['vehicle_model'] !== '' ? (string) $payload['vehicle_model'] : null;
+            $vehicleTrim = isset($payload['vehicle_trim']) && $payload['vehicle_trim'] !== '' ? (string) $payload['vehicle_trim'] : null;
+            $vehicleWeightClass = isset($payload['vehicle_weight_class']) && $payload['vehicle_weight_class'] !== ''
+                ? (string) $payload['vehicle_weight_class']
+                : null;
+            $vinDecoded = $payload['vin_decoded'] ?? null;
+            $vinOverrides = $payload['vin_overrides'] ?? null;
+            $vinDecodedPayload = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+            $vinOverridesPayload = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+            $vinDecodedAt = $vinDecodedPayload !== null ? (new \DateTimeImmutable())->format('Y-m-d H:i:s') : null;
+
+            $pdo = $connection->pdo();
+            $insert = $pdo->prepare(
+                'INSERT INTO impound_cases (
+                    case_number,
+                    state_code,
+                    impound_date,
+                    status,
+                    auction_status,
+                    intake_location,
+                    tow_agency,
+                    hold_release_contact,
+                    gate_fee,
+                    daily_rate,
+                    impound_reason,
+                    notes,
+                    vin,
+                    vehicle_year,
+                    vehicle_make,
+                    vehicle_model,
+                    vehicle_trim,
+                    vehicle_weight_class,
+                    vin_decoded,
+                    vin_decoded_at,
+                    vin_overrides
+                )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $insert->execute([
+                $caseNumber,
+                $stateCode,
+                $impoundDate,
+                $status,
+                $auctionStatus,
+                $intakeLocation,
+                $towAgency,
+                $holdReleaseContact,
+                $gateFee,
+                $dailyRate,
+                $impoundReason,
+                $notes,
+                $vin,
+                $vehicleYear,
+                $vehicleMake,
+                $vehicleModel,
+                $vehicleTrim,
+                $vehicleWeightClass,
+                $vinDecodedPayload,
+                $vinDecodedAt,
+                $vinOverridesPayload,
+            ]);
+            $insert->closeCursor();
+
+            $id = (int) $pdo->lastInsertId();
+            $row = $pdo->prepare(
+                'SELECT id, case_number, impound_date, state_code, status, status_updated_at, auction_status, auction_status_updated_at,
+                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate,
+                        vin, vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_weight_class, vin_decoded_at
+                 FROM impound_cases
+                 WHERE id = ?'
+            );
+            $row->execute([$id]);
+            $case = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            return Response::created($case);
+        });
+
+        $router->put('/api/storage/impound-cases/{id}', function (Request $request) use ($connection, $auditLogger) {
+            $id = (int) $request->getAttribute('id');
+            $payload = $request->body();
+            $pdo = $connection->pdo();
+
+            $stmt = $pdo->prepare('SELECT * FROM impound_cases WHERE id = ?');
+            $stmt->execute([$id]);
+            $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            if (!$existing) {
+                return Response::notFound('Impound case not found.');
+            }
+
+            $caseNumber = trim((string) ($payload['case_number'] ?? $existing['case_number'] ?? ''));
+            $impoundDate = trim((string) ($payload['impound_date'] ?? $existing['impound_date'] ?? ''));
+            $stateCode = trim((string) ($payload['state_code'] ?? $existing['state_code'] ?? ''));
+
+            if ($caseNumber === '' || $impoundDate === '' || $stateCode === '') {
+                return Response::badRequest('Case number, impound date, and state are required.');
+            }
+
+            $status = trim((string) ($payload['status'] ?? $existing['status'] ?? 'open'));
+            $auctionStatus = trim((string) ($payload['auction_status'] ?? $existing['auction_status'] ?? 'in_storage'));
+            $towAgency = $payload['tow_agency'] ?? $existing['tow_agency'];
+            $intakeLocation = $payload['intake_location'] ?? $existing['intake_location'];
+            $holdReleaseContact = $payload['hold_release_contact'] ?? $existing['hold_release_contact'];
+            $gateFee = array_key_exists('gate_fee', $payload) ? (float) $payload['gate_fee'] : (float) $existing['gate_fee'];
+            $dailyRate = array_key_exists('daily_rate', $payload) ? (float) $payload['daily_rate'] : (float) $existing['daily_rate'];
+            $impoundReason = $payload['impound_reason'] ?? $existing['impound_reason'];
+            $notes = $payload['notes'] ?? $existing['notes'];
+            $vin = array_key_exists('vin', $payload) ? trim((string) $payload['vin']) : ($existing['vin'] ?? null);
+            $vin = $vin === '' ? null : $vin;
+            $vehicleYear = array_key_exists('vehicle_year', $payload)
+                ? ($payload['vehicle_year'] !== '' ? (int) $payload['vehicle_year'] : null)
+                : ($existing['vehicle_year'] ?? null);
+            $vehicleMake = array_key_exists('vehicle_make', $payload)
+                ? (($payload['vehicle_make'] ?? '') !== '' ? (string) $payload['vehicle_make'] : null)
+                : ($existing['vehicle_make'] ?? null);
+            $vehicleModel = array_key_exists('vehicle_model', $payload)
+                ? (($payload['vehicle_model'] ?? '') !== '' ? (string) $payload['vehicle_model'] : null)
+                : ($existing['vehicle_model'] ?? null);
+            $vehicleTrim = array_key_exists('vehicle_trim', $payload)
+                ? (($payload['vehicle_trim'] ?? '') !== '' ? (string) $payload['vehicle_trim'] : null)
+                : ($existing['vehicle_trim'] ?? null);
+            $vehicleWeightClass = array_key_exists('vehicle_weight_class', $payload)
+                ? (($payload['vehicle_weight_class'] ?? '') !== '' ? (string) $payload['vehicle_weight_class'] : null)
+                : ($existing['vehicle_weight_class'] ?? null);
+            $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $vinDecodedPayload = $existing['vin_decoded'] ?? null;
+            $vinOverridesPayload = $existing['vin_overrides'] ?? null;
+            $vinDecodedAt = $existing['vin_decoded_at'] ?? null;
+            if (array_key_exists('vin_decoded', $payload)) {
+                $vinDecoded = $payload['vin_decoded'] ?? null;
+                $vinDecodedPayload = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+                $vinDecodedAt = $vinDecodedPayload !== null ? $now : null;
+            }
+            if (array_key_exists('vin_overrides', $payload)) {
+                $vinOverrides = $payload['vin_overrides'] ?? null;
+                $vinOverridesPayload = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+            }
+            $statusUpdatedAt = $existing['status_updated_at'];
+            $auctionStatusUpdatedAt = $existing['auction_status_updated_at'];
+
+            $user = $request->getAttribute('user');
+            $actorId = null;
+            if (is_object($user) && isset($user->id)) {
+                $actorId = $user->id;
+            } elseif (is_array($user) && isset($user['id'])) {
+                $actorId = $user['id'];
+            }
+
+            if ($status !== ($existing['status'] ?? '')) {
+                $statusUpdatedAt = $now;
+                $auditLogger->log(new \App\Support\Audit\AuditEntry(
+                    'impound.status_changed',
+                    'impound_case',
+                    (string) $id,
+                    $actorId,
+                    [
+                        'case_number' => $caseNumber,
+                        'from' => $existing['status'] ?? null,
+                        'to' => $status,
+                    ]
+                ));
+            }
+
+            if ($auctionStatus !== ($existing['auction_status'] ?? '')) {
+                $auctionStatusUpdatedAt = $now;
+                $auditLogger->log(new \App\Support\Audit\AuditEntry(
+                    'impound.auction_status_changed',
+                    'impound_case',
+                    (string) $id,
+                    $actorId,
+                    [
+                        'case_number' => $caseNumber,
+                        'from' => $existing['auction_status'] ?? null,
+                        'to' => $auctionStatus,
+                    ]
+                ));
+            }
+
+            $update = $pdo->prepare(
+                'UPDATE impound_cases
+                 SET case_number = ?, state_code = ?, impound_date = ?, status = ?, status_updated_at = ?, auction_status = ?, auction_status_updated_at = ?,
+                     intake_location = ?, tow_agency = ?, hold_release_contact = ?, gate_fee = ?, daily_rate = ?, impound_reason = ?, notes = ?,
+                     vin = ?, vehicle_year = ?, vehicle_make = ?, vehicle_model = ?, vehicle_trim = ?, vehicle_weight_class = ?,
+                     vin_decoded = ?, vin_decoded_at = ?, vin_overrides = ?
+                 WHERE id = ?'
+            );
+            $update->execute([
+                $caseNumber,
+                $stateCode,
+                $impoundDate,
+                $status,
+                $statusUpdatedAt,
+                $auctionStatus,
+                $auctionStatusUpdatedAt,
+                $intakeLocation,
+                $towAgency,
+                $holdReleaseContact,
+                $gateFee,
+                $dailyRate,
+                $impoundReason,
+                $notes,
+                $vin,
+                $vehicleYear,
+                $vehicleMake,
+                $vehicleModel,
+                $vehicleTrim,
+                $vehicleWeightClass,
+                $vinDecodedPayload,
+                $vinDecodedAt,
+                $vinOverridesPayload,
+                $id,
+            ]);
+            $update->closeCursor();
+
+            $row = $pdo->prepare(
+                'SELECT id, case_number, impound_date, state_code, status, status_updated_at, auction_status, auction_status_updated_at,
+                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate,
+                        vin, vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_weight_class, vin_decoded_at
+                 FROM impound_cases
+                 WHERE id = ?'
+            );
+            $row->execute([$id]);
+            $case = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            return Response::json($case);
+        });
+
+        $router->get('/api/auction/lots', function (Request $request) use ($connection) {
+            $search = trim((string) $request->queryParam('search', ''));
+            $status = trim((string) $request->queryParam('status', ''));
+            $pdo = $connection->pdo();
+
+            $sql = <<<SQL
+                SELECT
+                    auction_lots.id,
+                    auction_lots.impound_case_id,
+                    impound_cases.case_number,
+                    auction_lots.lot_number,
+                    auction_lots.status,
+                    auction_lots.status_updated_at,
+                    auction_lots.auction_date,
+                    auction_lots.sale_price,
+                    auction_lots.buyer_name,
+                    auction_lots.notes
+                FROM auction_lots
+                LEFT JOIN impound_cases ON impound_cases.id = auction_lots.impound_case_id
+            SQL;
+            $params = [];
+            $conditions = [];
+
+            if ($search !== '') {
+                $conditions[] = '(impound_cases.case_number LIKE :search OR auction_lots.lot_number LIKE :search)';
+                $params['search'] = '%' . $search . '%';
+            }
+
+            if ($status !== '') {
+                $conditions[] = 'auction_lots.status = :status';
+                $params['status'] = $status;
+            }
+
+            if ($conditions) {
+                $sql .= ' WHERE ' . implode(' AND ', $conditions);
+            }
+
+            $sql .= ' ORDER BY auction_lots.auction_date DESC, auction_lots.id DESC';
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $lots = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            return Response::json(['data' => $lots]);
+        });
+
+        $router->post('/api/auction/lots', function (Request $request) use ($connection) {
+            $payload = $request->body();
+            $caseNumber = trim((string) ($payload['case_number'] ?? ''));
+            $caseId = (int) ($payload['impound_case_id'] ?? 0);
+            $lotNumber = trim((string) ($payload['lot_number'] ?? ''));
+
+            if ($lotNumber === '') {
+                return Response::badRequest('Lot number is required.');
+            }
+
+            $pdo = $connection->pdo();
+            if ($caseId <= 0) {
+                if ($caseNumber === '') {
+                    return Response::badRequest('Case number is required.');
+                }
+                $stmt = $pdo->prepare('SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1');
+                $stmt->execute([$caseNumber]);
+                $caseId = (int) $stmt->fetchColumn();
+                $stmt->closeCursor();
+            }
+
+            if ($caseId <= 0) {
+                return Response::badRequest('Impound case not found.');
+            }
+
+            $status = trim((string) ($payload['status'] ?? 'scheduled'));
+            $auctionDate = $payload['auction_date'] ?? null;
+            $salePrice = array_key_exists('sale_price', $payload) ? (float) $payload['sale_price'] : null;
+            $buyerName = $payload['buyer_name'] ?? null;
+            $notes = $payload['notes'] ?? null;
+
+            $insert = $pdo->prepare(
+                'INSERT INTO auction_lots (impound_case_id, lot_number, status, auction_date, sale_price, buyer_name, notes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+            $insert->execute([
+                $caseId,
+                $lotNumber,
+                $status,
+                $auctionDate,
+                $salePrice,
+                $buyerName,
+                $notes,
+            ]);
+            $insert->closeCursor();
+
+            $id = (int) $pdo->lastInsertId();
+            $row = $pdo->prepare(
+                'SELECT auction_lots.id, auction_lots.impound_case_id, impound_cases.case_number, auction_lots.lot_number,
+                        auction_lots.status, auction_lots.status_updated_at, auction_lots.auction_date, auction_lots.sale_price,
+                        auction_lots.buyer_name, auction_lots.notes
+                 FROM auction_lots
+                 LEFT JOIN impound_cases ON impound_cases.id = auction_lots.impound_case_id
+                 WHERE auction_lots.id = ?'
+            );
+            $row->execute([$id]);
+            $lot = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            return Response::created($lot);
+        });
+
+        $router->put('/api/auction/lots/{id}', function (Request $request) use ($connection, $auditLogger) {
+            $id = (int) $request->getAttribute('id');
+            $payload = $request->body();
+            $pdo = $connection->pdo();
+
+            $stmt = $pdo->prepare(
+                'SELECT auction_lots.*, impound_cases.case_number
+                 FROM auction_lots
+                 LEFT JOIN impound_cases ON impound_cases.id = auction_lots.impound_case_id
+                 WHERE auction_lots.id = ?'
+            );
+            $stmt->execute([$id]);
+            $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            if (!$existing) {
+                return Response::notFound('Auction lot not found.');
+            }
+
+            $lotNumber = trim((string) ($payload['lot_number'] ?? $existing['lot_number'] ?? ''));
+            if ($lotNumber === '') {
+                return Response::badRequest('Lot number is required.');
+            }
+
+            $status = trim((string) ($payload['status'] ?? $existing['status'] ?? 'scheduled'));
+            $auctionDate = $payload['auction_date'] ?? $existing['auction_date'];
+            $salePrice = array_key_exists('sale_price', $payload) ? (float) $payload['sale_price'] : $existing['sale_price'];
+            $buyerName = $payload['buyer_name'] ?? $existing['buyer_name'];
+            $notes = $payload['notes'] ?? $existing['notes'];
+
+            $statusUpdatedAt = $existing['status_updated_at'];
+            if ($status !== ($existing['status'] ?? '')) {
+                $statusUpdatedAt = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+
+                $user = $request->getAttribute('user');
+                $actorId = null;
+                if (is_object($user) && isset($user->id)) {
+                    $actorId = $user->id;
+                } elseif (is_array($user) && isset($user['id'])) {
+                    $actorId = $user['id'];
+                }
+
+                $auditLogger->log(new \App\Support\Audit\AuditEntry(
+                    'auction_lot.status_changed',
+                    'auction_lot',
+                    (string) $id,
+                    $actorId,
+                    [
+                        'case_number' => $existing['case_number'] ?? null,
+                        'lot_number' => $lotNumber,
+                        'from' => $existing['status'] ?? null,
+                        'to' => $status,
+                    ]
+                ));
+            }
+
+            $update = $pdo->prepare(
+                'UPDATE auction_lots
+                 SET lot_number = ?, status = ?, status_updated_at = ?, auction_date = ?, sale_price = ?, buyer_name = ?, notes = ?
+                 WHERE id = ?'
+            );
+            $update->execute([
+                $lotNumber,
+                $status,
+                $statusUpdatedAt,
+                $auctionDate,
+                $salePrice,
+                $buyerName,
+                $notes,
+                $id,
+            ]);
+            $update->closeCursor();
+
+            $row = $pdo->prepare(
+                'SELECT auction_lots.id, auction_lots.impound_case_id, impound_cases.case_number, auction_lots.lot_number,
+                        auction_lots.status, auction_lots.status_updated_at, auction_lots.auction_date, auction_lots.sale_price,
+                        auction_lots.buyer_name, auction_lots.notes
+                 FROM auction_lots
+                 LEFT JOIN impound_cases ON impound_cases.id = auction_lots.impound_case_id
+                 WHERE auction_lots.id = ?'
+            );
+            $row->execute([$id]);
+            $lot = $row->fetch(\PDO::FETCH_ASSOC);
+            $row->closeCursor();
+
+            return Response::json($lot);
+        });
+
+        $router->get('/api/auction/reports/summary', function () use ($connection) {
+            $pdo = $connection->pdo();
+
+            $summaryStmt = $pdo->query(
+                'SELECT
+                    COUNT(*) AS total_lots,
+                    SUM(CASE WHEN status = \"scheduled\" THEN 1 ELSE 0 END) AS scheduled,
+                    SUM(CASE WHEN status = \"in_lot\" THEN 1 ELSE 0 END) AS in_lot,
+                    SUM(CASE WHEN status = \"sold\" THEN 1 ELSE 0 END) AS sold,
+                    SUM(CASE WHEN status = \"withdrawn\" THEN 1 ELSE 0 END) AS withdrawn,
+                    COALESCE(SUM(CASE WHEN status = \"sold\" THEN sale_price ELSE 0 END), 0) AS total_proceeds,
+                    COALESCE(AVG(CASE WHEN status = \"sold\" THEN sale_price END), 0) AS average_sale_price
+                 FROM auction_lots'
+            );
+            $summary = $summaryStmt->fetch(\PDO::FETCH_ASSOC);
+            $summaryStmt->closeCursor();
+
+            $statusStmt = $pdo->query(
+                'SELECT auction_status, COUNT(*) AS count
+                 FROM impound_cases
+                 GROUP BY auction_status'
+            );
+            $statusRows = $statusStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $statusStmt->closeCursor();
+
+            return Response::json([
+                'summary' => $summary ?: [],
+                'auction_status_breakdown' => $statusRows,
+            ]);
+        });
+
+        $router->post('/api/storage/templates/preview', function (Request $request) use ($settingsRepository) {
+            $payload = $request->body();
+            $templateKey = (string) ($payload['template_key'] ?? '');
+            $template = $payload['template'] ?? null;
+
+            if ($templateKey === '') {
+                return Response::badRequest('template_key is required.');
+            }
+
+            $address = $settingsRepository->get('shop.address', []);
+            $shopAddress = '';
+            if (is_array($address)) {
+                $lines = array_filter([
+                    trim((string) ($address['street'] ?? '')),
+                    trim(sprintf(
+                        '%s%s%s',
+                        (string) ($address['city'] ?? ''),
+                        !empty($address['state']) ? ', ' . $address['state'] : '',
+                        !empty($address['postal_code']) ? ' ' . $address['postal_code'] : ''
+                    )),
+                    trim((string) ($address['country'] ?? '')),
+                ]);
+                $shopAddress = implode('<br>', $lines);
+            } elseif (is_string($address)) {
+                $shopAddress = $address;
+            }
+
+            $settings = [
+                'shop_name' => $settingsRepository->get('shop.name', 'Storage Facility'),
+                'shop_address' => $shopAddress,
+                'shop_phone' => $settingsRepository->get('shop.phone', ''),
+            ];
+
+            if (is_string($template)) {
+                $settings[$templateKey] = $template;
+            } else {
+                $settings[$templateKey] = $settingsRepository->get($templateKey);
+            }
+
+            $case = [
+                'case_number' => 'IMP-2024-017',
+                'notice_date' => new \DateTimeImmutable('now'),
+                'status' => 'draft',
+                'intake_location' => 'Main Storage Yard',
+            ];
+            $owner = [
+                'name' => 'Alex Parker',
+                'address' => '1234 Market St',
+                'city' => 'Austin',
+                'state' => 'TX',
+                'zip' => '78701',
+                'phone' => '(512) 555-0172',
+            ];
+            $vehicle = [
+                'year' => '2019',
+                'make' => 'Honda',
+                'model' => 'Civic',
+                'vin' => '19XFC2F69KE000000',
+                'license_plate' => 'TX-9031',
+            ];
+            $fees = [
+                'billable_days' => 12,
+                'daily_rate' => 35.0,
+                'daily_amount' => 420.0,
+                'gate_fee' => 65.0,
+                'total' => 485.0,
+            ];
+            $notice = [
+                'notice_date' => new \DateTimeImmutable('now'),
+                'due_date' => (new \DateTimeImmutable('now'))->modify('+10 days'),
+                'notice_type' => 'Lien Notice',
+            ];
+
+            switch ($templateKey) {
+                case 'storage.notice.notice_of_claim':
+                    $generator = new \App\Support\Pdf\LienNoticePdfGenerator();
+                    $pdf = $generator->generateNoticeOfClaim($case, $owner, $vehicle, $fees, $settings);
+                    break;
+                case 'storage.notice.lien_notice':
+                    $generator = new \App\Support\Pdf\LienNoticePdfGenerator();
+                    $pdf = $generator->generateLienNotice($notice, $case, $owner, $vehicle, $fees, $settings);
+                    break;
+                case 'storage.notice.tow_authorization':
+                    $generator = new \App\Support\Pdf\StorageFormPdfGenerator();
+                    $pdf = $generator->generateTowAuthorization([
+                        'shop_name' => $settings['shop_name'],
+                        'shop_address' => $settings['shop_address'],
+                        'shop_phone' => $settings['shop_phone'],
+                        'notice_date' => (new \DateTimeImmutable('now'))->format('M d, Y'),
+                        'case_number' => $case['case_number'],
+                        'owner_name' => $owner['name'],
+                        'owner_address' => $owner['address'],
+                        'owner_city' => $owner['city'],
+                        'owner_state' => $owner['state'],
+                        'owner_zip' => $owner['zip'],
+                        'owner_phone' => $owner['phone'],
+                        'vehicle_year' => $vehicle['year'],
+                        'vehicle_make' => $vehicle['make'],
+                        'vehicle_model' => $vehicle['model'],
+                        'vehicle_vin' => $vehicle['vin'],
+                        'vehicle_license_plate' => $vehicle['license_plate'],
+                        'tow_provider' => 'Metro Tow Services',
+                        'intake_location' => $case['intake_location'],
+                    ], is_string($settings[$templateKey] ?? null) ? (string) $settings[$templateKey] : null);
+                    break;
+                case 'storage.notice.lien_ack':
+                    $generator = new \App\Support\Pdf\StorageFormPdfGenerator();
+                    $pdf = $generator->generateLienAcknowledgment([
+                        'shop_name' => $settings['shop_name'],
+                        'shop_address' => $settings['shop_address'],
+                        'shop_phone' => $settings['shop_phone'],
+                        'notice_date' => (new \DateTimeImmutable('now'))->format('M d, Y'),
+                        'case_number' => $case['case_number'],
+                        'owner_name' => $owner['name'],
+                        'vehicle_year' => $vehicle['year'],
+                        'vehicle_make' => $vehicle['make'],
+                        'vehicle_model' => $vehicle['model'],
+                        'vehicle_vin' => $vehicle['vin'],
+                        'vehicle_license_plate' => $vehicle['license_plate'],
+                        'fees_total' => '$' . number_format((float) $fees['total'], 2),
+                    ], is_string($settings[$templateKey] ?? null) ? (string) $settings[$templateKey] : null);
+                    break;
+                default:
+                    return Response::badRequest('Unknown template_key.');
+            }
+
+            return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
         });
 
         $router->post('/api/settings/notifications/smtp/test-connection', function (Request $request) use ($notificationTests) {
@@ -3855,6 +7234,45 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 error_log('Twilio test SMS failed: ' . $e->getMessage());
                 return Response::serverError('Failed to send test SMS.');
             }
+        });
+
+        $router->get('/api/notifications/templates', function () use ($templateManager) {
+            $templates = $templateManager->all();
+            return Response::json(['templates' => $templates]);
+        });
+
+        $router->put('/api/notifications/templates/{key}', function (Request $request) use ($templateManager) {
+            $key = (string) $request->getAttribute('key');
+            $payload = $request->body();
+            $subject = trim((string) ($payload['subject'] ?? ''));
+            $body = (string) ($payload['body'] ?? '');
+            $channel = (string) ($payload['channel'] ?? 'email');
+
+            if ($key === '' || $subject === '' || $body === '') {
+                return Response::badRequest('Template key, subject, and body are required.');
+            }
+
+            try {
+                $templateManager->save($key, [
+                    'subject' => $subject,
+                    'body' => $body,
+                    'channel' => $channel,
+                ]);
+            } catch (\InvalidArgumentException $e) {
+                return Response::badRequest($e->getMessage());
+            } catch (\Throwable $e) {
+                error_log('Template update failed: ' . $e->getMessage());
+                return Response::serverError('Failed to update template.');
+            }
+
+            return Response::json([
+                'template' => [
+                    'template_key' => $key,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'channel' => $channel,
+                ],
+            ]);
         });
     });
 
@@ -4548,6 +7966,292 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
             }
 
             return Response::notFound('Redirect not found');
+        });
+    });
+
+    // Towing Pricing Matrix routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $towingPricingController = new \App\Services\Towing\TowingPricingController(
+            new \App\Services\Towing\TowingPricingService($connection),
+            $gate
+        );
+
+        // Service Classes
+        $router->get('/api/towing/service-classes', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $filters = ['active' => $request->queryParam('active')];
+            $data = $towingPricingController->listServiceClasses($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/towing/service-classes/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->showServiceClass($user, $id);
+            return $data ? Response::json($data) : Response::notFound('Service class not found');
+        });
+
+        $router->post('/api/towing/service-classes', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->storeServiceClass($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/towing/service-classes/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->updateServiceClass($user, $id, $request->body());
+            return $data ? Response::json($data) : Response::notFound('Service class not found');
+        });
+
+        $router->delete('/api/towing/service-classes/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $towingPricingController->destroyServiceClass($user, $id);
+            return Response::noContent();
+        });
+
+        // Service Types
+        $router->get('/api/towing/service-types', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $filters = ['active' => $request->queryParam('active')];
+            $data = $towingPricingController->listServiceTypes($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/towing/service-types/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->showServiceType($user, $id);
+            return $data ? Response::json($data) : Response::notFound('Service type not found');
+        });
+
+        $router->post('/api/towing/service-types', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->storeServiceType($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/towing/service-types/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->updateServiceType($user, $id, $request->body());
+            return $data ? Response::json($data) : Response::notFound('Service type not found');
+        });
+
+        $router->delete('/api/towing/service-types/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $towingPricingController->destroyServiceType($user, $id);
+            return Response::noContent();
+        });
+
+        // Price Matrix
+        $router->get('/api/towing/pricing-matrix', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'service_class_id' => $request->queryParam('service_class_id'),
+                'service_type_id' => $request->queryParam('service_type_id'),
+                'is_active' => $request->queryParam('is_active'),
+            ];
+            $data = $towingPricingController->listPriceMatrix($user, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->get('/api/towing/pricing-matrix/full', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->getFullMatrix($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/towing/pricing-matrix/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->showPriceMatrix($user, $id);
+            return $data ? Response::json($data) : Response::notFound('Price matrix entry not found');
+        });
+
+        $router->post('/api/towing/pricing-matrix', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->storePriceMatrix($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/towing/pricing-matrix/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $towingPricingController->updatePriceMatrix($user, $id, $request->body());
+            return $data ? Response::json($data) : Response::notFound('Price matrix entry not found');
+        });
+
+        $router->post('/api/towing/pricing-matrix/upsert', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $data = $towingPricingController->upsertPriceMatrix($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/towing/pricing-matrix/bulk', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $entries = $body['entries'] ?? [];
+            $data = $towingPricingController->bulkUpsertPriceMatrix($user, $entries);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->delete('/api/towing/pricing-matrix/{id}', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $towingPricingController->destroyPriceMatrix($user, $id);
+            return Response::noContent();
+        });
+
+        // Calculate price endpoint
+        $router->post('/api/towing/calculate-price', function (Request $request) use ($towingPricingController) {
+            $user = $request->getAttribute('user');
+            $body = $request->body();
+            $classId = (int) ($body['service_class_id'] ?? 0);
+            $typeId = (int) ($body['service_type_id'] ?? 0);
+            $params = [
+                'loaded_miles' => $body['loaded_miles'] ?? 0,
+                'deadhead_miles' => $body['deadhead_miles'] ?? 0,
+                'after_hours' => $body['after_hours'] ?? false,
+                'accident_cleanup' => $body['accident_cleanup'] ?? false,
+                'winch' => $body['winch'] ?? false,
+                'storage_days' => $body['storage_days'] ?? 0,
+            ];
+            $data = $towingPricingController->calculatePrice($user, $classId, $typeId, $params);
+            return Response::json($data);
+        });
+    });
+
+    // =========================================================================
+    // Module Settings & User Groups Routes
+    // =========================================================================
+
+    // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
+            $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
+            return Response::json($moduleController->accessible($user));
+        });
+    });
+
+    // Admin-only module management routes
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+        $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
+        $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
+        $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);
+        $userGroupController = new \App\Services\UserGroup\UserGroupController($userGroupService, $gate);
+
+        // Module Settings
+        $router->get('/api/modules', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            return Response::json($moduleController->index($user));
+        });
+
+        $router->get('/api/modules/{key}', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            $key = $request->getAttribute('key');
+            return Response::json($moduleController->show($user, (string) $key));
+        });
+
+        $router->put('/api/modules/{key}', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            $key = $request->getAttribute('key');
+            return Response::json($moduleController->update($user, (string) $key, $request->body()));
+        });
+
+        $router->put('/api/modules', function (Request $request) use ($moduleController) {
+            $user = $request->getAttribute('user');
+            return Response::json($moduleController->bulkUpdate($user, $request->body()));
+        });
+
+        // User Groups
+        $router->get('/api/user-groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            return Response::json(['data' => $userGroupController->index($user)]);
+        });
+
+        $router->post('/api/user-groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            return Response::created($userGroupController->store($user, $request->body()));
+        });
+
+        $router->get('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($userGroupController->show($user, $id));
+        });
+
+        $router->put('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($userGroupController->update($user, $id, $request->body()));
+        });
+
+        $router->delete('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $userGroupController->destroy($user, $id);
+            return Response::noContent();
+        });
+
+        // User Group Members
+        $router->get('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json(['data' => $userGroupController->members($user, $id)]);
+        });
+
+        $router->post('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $userId = (int) ($body['user_id'] ?? 0);
+            $userGroupController->addMember($user, $id, $userId);
+            return Response::json(['success' => true]);
+        });
+
+        $router->delete('/api/user-groups/{groupId}/members/{userId}', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $groupId = (int) $request->getAttribute('groupId');
+            $userId = (int) $request->getAttribute('userId');
+            $userGroupController->removeMember($user, $groupId, $userId);
+            return Response::noContent();
+        });
+
+        $router->put('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $userIds = $body['user_ids'] ?? [];
+            $userGroupController->setMembers($user, $id, $userIds);
+            return Response::json(['success' => true]);
+        });
+
+        $router->get('/api/user-groups/{id}/non-members', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $search = $request->queryParam('search');
+            return Response::json(['data' => $userGroupController->nonMembers($user, $id, $search)]);
+        });
+
+        // User's groups
+        $router->get('/api/users/{id}/groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json(['data' => $userGroupController->userGroups($user, $id)]);
+        });
+
+        $router->put('/api/users/{id}/groups', function (Request $request) use ($userGroupController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $groupIds = $body['group_ids'] ?? [];
+            $userGroupController->setUserGroups($user, $id, $groupIds);
+            return Response::json(['success' => true]);
         });
     });
 };

@@ -219,11 +219,25 @@ class InspectionCompletionService
     /**
      * Persist uploaded media metadata
      */
-    public function attachMedia(int $reportId, string $path, string $mimeType, string $type, ?int $actorId = null): InspectionReportMedia
+    public function attachMedia(
+        int $reportId,
+        string $path,
+        string $mimeType,
+        string $type,
+        ?int $actorId = null,
+        ?string $clientToken = null
+    ): InspectionReportMedia
     {
+        if ($clientToken !== null) {
+            $existing = $this->findMediaByClientToken($reportId, $clientToken);
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO inspection_report_media (report_id, type, path, mime_type, uploaded_by, created_at)
-            VALUES (:report_id, :type, :path, :mime_type, :uploaded_by, NOW())
+            INSERT INTO inspection_report_media (report_id, type, path, mime_type, uploaded_by, client_token, created_at)
+            VALUES (:report_id, :type, :path, :mime_type, :uploaded_by, :client_token, NOW())
         SQL);
 
         $stmt->execute([
@@ -232,6 +246,7 @@ class InspectionCompletionService
             'path' => $path,
             'mime_type' => $mimeType,
             'uploaded_by' => $actorId,
+            'client_token' => $clientToken,
         ]);
 
         $mediaId = (int) $this->connection->pdo()->lastInsertId();
@@ -243,6 +258,7 @@ class InspectionCompletionService
             'path' => $path,
             'mime_type' => $mimeType,
             'uploaded_by' => $actorId,
+            'client_token' => $clientToken,
             'created_at' => date('Y-m-d H:i:s'),
         ]);
     }
@@ -264,11 +280,41 @@ class InspectionCompletionService
                 'path' => (string) $row['path'],
                 'mime_type' => (string) $row['mime_type'],
                 'uploaded_by' => $row['uploaded_by'] !== null ? (int) $row['uploaded_by'] : null,
+                'client_token' => $row['client_token'] ?? null,
                 'created_at' => $row['created_at'] ?? null,
             ]);
         }
 
         return $media;
+    }
+
+    public function findMediaByClientToken(int $reportId, string $clientToken): ?InspectionReportMedia
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT * FROM inspection_report_media
+            WHERE report_id = :report_id AND client_token = :client_token
+            LIMIT 1
+        SQL);
+        $stmt->execute([
+            'report_id' => $reportId,
+            'client_token' => $clientToken,
+        ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        return new InspectionReportMedia([
+            'id' => (int) $row['id'],
+            'report_id' => (int) $row['report_id'],
+            'type' => (string) $row['type'],
+            'path' => (string) $row['path'],
+            'mime_type' => (string) $row['mime_type'],
+            'uploaded_by' => $row['uploaded_by'] !== null ? (int) $row['uploaded_by'] : null,
+            'client_token' => $row['client_token'] ?? null,
+            'created_at' => $row['created_at'] ?? null,
+        ]);
     }
 
     /**

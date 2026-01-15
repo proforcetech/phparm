@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import Autocomplete from '../../components/ui/Autocomplete'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Table from '../../components/ui/Table'
+import { searchCustomers } from '../../../services/customer.service'
 import { decodeVin, listVehicles, validateVin } from '../../../services/vehicle.service'
 import { normalizeVinData } from '../../../utils/vin'
 
@@ -24,10 +26,28 @@ export default function VehicleList() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [vehicles, setVehicles] = useState([])
-  const [filters, setFilters] = useState({ year: '', make: '', model: '', term: '' })
+  const [filters, setFilters] = useState({
+    customer_id: null,
+    customer_query: '',
+    year: '',
+    make: '',
+    model: '',
+    term: '',
+  })
   const [vin, setVin] = useState('')
   const [vinResult, setVinResult] = useState(null)
   const [vinLoading, setVinLoading] = useState(false)
+
+  const searchCustomerOptions = useCallback(async (query) => {
+    if (!query) return []
+    try {
+      const data = await searchCustomers(query)
+      return Array.isArray(data) ? data : data?.data || []
+    } catch (error) {
+      console.error('Failed to search customers:', error)
+      return []
+    }
+  }, [])
 
   const loadVehicles = useCallback(async () => {
     setLoading(true)
@@ -142,7 +162,39 @@ export default function VehicleList() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <Autocomplete
+                  modelValue={filters.customer_id}
+                  label="Customer"
+                  placeholder="Search by name, email, phone, or ID"
+                  searchFn={searchCustomerOptions}
+                  itemValue={(item) => item.id}
+                  itemLabel={(item) => item.name || `Customer #${item.id}`}
+                  itemSubtext={(item) => `${item.email || 'No email'} • ${item.phone || 'No phone'}`}
+                  helperText="Select a customer to filter their vehicles"
+                  onSearchChange={(value) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      customer_id: null,
+                      customer_query: value,
+                    }))
+                  }
+                  onUpdateModelValue={(value) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      customer_id: value,
+                      customer_query: value ? '' : prev.customer_query,
+                    }))
+                  }
+                  onSelect={() =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      customer_query: '',
+                    }))
+                  }
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Year</label>
                 <Input
@@ -216,7 +268,7 @@ export default function VehicleList() {
               <label className="block text-sm font-medium text-gray-700">VIN</label>
               <Input
                 value={vin}
-                maxlength={17}
+                maxLength={17}
                 placeholder="Enter 17-character VIN"
                 onUpdateModelValue={(value) => setVin(value)}
               />

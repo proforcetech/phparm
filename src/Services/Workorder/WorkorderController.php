@@ -4,6 +4,7 @@ namespace App\Services\Workorder;
 
 use App\Models\User;
 use App\Models\Workorder;
+use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
@@ -13,19 +14,28 @@ class WorkorderController
 {
     private WorkorderRepository $repository;
     private WorkorderService $service;
+    private WorkorderJobEvidenceService $evidence;
+    private WorkorderTimelineService $timeline;
     private AccessGate $gate;
     private ?MessagingNotificationService $messagingNotifications;
+    private ?DispatchAuditService $dispatchAudit;
 
     public function __construct(
         WorkorderRepository $repository,
         WorkorderService $service,
+        WorkorderJobEvidenceService $evidence,
+        WorkorderTimelineService $timeline,
         AccessGate $gate,
-        ?MessagingNotificationService $messagingNotifications = null
+        ?MessagingNotificationService $messagingNotifications = null,
+        ?DispatchAuditService $dispatchAudit = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
+        $this->evidence = $evidence;
+        $this->timeline = $timeline;
         $this->gate = $gate;
         $this->messagingNotifications = $messagingNotifications;
+        $this->dispatchAudit = $dispatchAudit;
     }
 
     /**
@@ -129,6 +139,7 @@ class WorkorderController
 
         $status = $payload['status'] ?? null;
         $notes = $payload['notes'] ?? null;
+        $clientEventId = $payload['client_event_id'] ?? null;
 
         if (!$status) {
             throw new InvalidArgumentException('status is required');
@@ -141,7 +152,12 @@ class WorkorderController
         }
 
         $before = $this->repository->find($id);
-        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes);
+
+        if ($status === Workorder::STATUS_GOA) {
+            $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
+        } else {
+            $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
+        }
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
@@ -166,12 +182,14 @@ class WorkorderController
         $this->assertManageAccess($user);
 
         $technicianId = $payload['technician_id'] ?? null;
+        $recommendedDriver = $payload['recommended_driver'] ?? null;
 
         $before = $this->repository->find($id);
         $workorder = $this->repository->assignTechnician(
             $id,
             $technicianId ? (int) $technicianId : null,
-            $user->id
+            $user->id,
+            is_array($recommendedDriver) ? $recommendedDriver : null
         );
 
         if ($workorder === null) {
@@ -183,7 +201,34 @@ class WorkorderController
             'previous_technician_id' => $before?->assigned_technician_id,
             'new_technician_id' => $technicianId ? (int) $technicianId : null,
             'actor_id' => $user->id,
+            'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
+
+        if ($this->dispatchAudit !== null) {
+            $idempotencyKey = $this->dispatchAudit->generateIdempotencyKey(
+                'assignment',
+                'workorder',
+                $workorder->id,
+                $technicianId ?? 'unassigned'
+            );
+
+            $this->dispatchAudit->logEvent(
+                'dispatch.assignment_updated',
+                'workorder',
+                $workorder->id,
+                [
+                    'job_reference' => (string) $workorder->id,
+                    'driver_profile_id' => $recommendedDriver['driver_profile_id'] ?? null,
+                    'driver_user_id' => $technicianId ? (int) $technicianId : null,
+                    'previous_technician_id' => $before?->assigned_technician_id,
+                    'new_technician_id' => $technicianId ? (int) $technicianId : null,
+                    'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
+                    'result_status' => 'success',
+                ],
+                $idempotencyKey,
+                $user->id
+            );
+        }
 
         return $this->enrichWorkorder($workorder);
     }
@@ -298,12 +343,14 @@ class WorkorderController
             throw new InvalidArgumentException('Workorder not found');
         }
 
-        $history = $this->repository->getStatusHistory($id);
-        $subEstimates = $this->service->getSubEstimates($id);
+        if ($user->role === 'customer' && $user->customer_id !== null && $workorder->customer_id !== $user->customer_id) {
+            throw new UnauthorizedException('Cannot view another customer\'s workorder.');
+        }
+
+        $timeline = $this->timeline->build($id, $user->role === 'customer');
 
         return [
-            'status_history' => array_map(fn($h) => $h->toArray(), $history),
-            'sub_estimates' => array_map(fn($e) => $e->toArray(), $subEstimates),
+            'timeline' => $timeline,
         ];
     }
 
@@ -343,6 +390,7 @@ class WorkorderController
         $this->assertManageAccess($user);
 
         $technicianId = $payload['technician_id'] ?? null;
+        $recommendedDriver = $payload['recommended_driver'] ?? null;
 
         $beforeJob = $this->repository->findJob($jobId);
         $job = $this->repository->assignJobTechnician(
@@ -361,9 +409,170 @@ class WorkorderController
             'previous_technician_id' => $beforeJob?->assigned_technician_id,
             'new_technician_id' => $technicianId ? (int) $technicianId : null,
             'actor_id' => $user->id,
+            'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
 
         return $job->toArray();
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/checkpoints/{checkpointType}
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function uploadJobCheckpoint(User $user, int $id, int $jobId, string $checkpointType, array $file): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->storeCheckpointMedia($jobId, $checkpointType, $file, $user->id);
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/damage-photos
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function uploadJobDamagePhoto(User $user, int $id, int $jobId, array $file): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->storeDamagePhoto($jobId, $file, $user->id);
+    }
+
+    /**
+     * GET /api/workorders/{id}/jobs/{jobId}/damage-photos
+     * @return array<string, mixed>
+     */
+    public function damagePhotoStatus(User $user, int $id, int $jobId): array
+    {
+        $this->assertViewAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return [
+            'job_id' => $jobId,
+            'total' => $this->evidence->damagePhotoCount($jobId),
+        ];
+    }
+
+    /**
+     * GET /api/workorders/{id}/jobs/{jobId}/checkpoints
+     * @return array<string, mixed>
+     */
+    public function checkpointStatus(User $user, int $id, int $jobId): array
+    {
+        $this->assertViewAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return [
+            'job_id' => $jobId,
+            'checkpoints' => $this->evidence->checkpointSummary($jobId),
+        ];
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/damage-reports
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function createDamageReport(User $user, int $id, int $jobId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        $points = $payload['diagram_points'] ?? null;
+        if (!is_array($points)) {
+            throw new InvalidArgumentException('diagram_points is required');
+        }
+
+        $report = $this->evidence->createDamageReport(
+            $jobId,
+            $points,
+            $payload['notes'] ?? null,
+            $user->id,
+            isset($payload['reported_at']) ? (string) $payload['reported_at'] : null,
+            isset($payload['latitude']) ? (float) $payload['latitude'] : null,
+            isset($payload['longitude']) ? (float) $payload['longitude'] : null,
+            isset($payload['location_accuracy_meters']) ? (float) $payload['location_accuracy_meters'] : null
+        );
+
+        return $report->toArray();
+    }
+
+    /**
+     * GET /api/workorders/{id}/jobs/{jobId}/damage-reports
+     * @return array<int, array<string, mixed>>
+     */
+    public function listDamageReports(User $user, int $id, int $jobId): array
+    {
+        $this->assertViewAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return array_map(
+            static fn($report) => $report->toArray(),
+            $this->evidence->listDamageReports($jobId)
+        );
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/vehicle-intake
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function recordVehicleIntake(User $user, int $id, int $jobId, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        return $this->evidence->recordVehicleIntake($jobId, $id, $payload, $user->id);
+    }
+
+    /**
+     * POST /api/workorders/{id}/jobs/{jobId}/signature
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function captureJobSignature(User $user, int $id, int $jobId, array $payload, string $ipAddress, ?string $userAgent): array
+    {
+        $this->assertManageAccess($user);
+
+        $job = $this->repository->findJob($jobId);
+        if ($job === null || $job->workorder_id !== $id) {
+            throw new InvalidArgumentException('Workorder job not found');
+        }
+
+        $signature = $this->evidence->captureSignature($jobId, $payload, $ipAddress, $userAgent);
+
+        return $signature->toArray();
     }
 
     /**
@@ -401,8 +610,16 @@ class WorkorderController
      */
     private function extractFilters(array $params, User $user): array
     {
+        $status = $params['status'] ?? null;
+        if (is_string($status) && str_contains($status, ',')) {
+            $status = array_values(array_filter(array_map('trim', explode(',', $status))));
+            if (count($status) === 1) {
+                $status = $status[0];
+            }
+        }
+
         $filters = array_filter([
-            'status' => $params['status'] ?? null,
+            'status' => $status,
             'customer_id' => $params['customer_id'] ?? null,
             'vehicle_id' => $params['vehicle_id'] ?? null,
             'technician_id' => $params['technician_id'] ?? null,
@@ -410,6 +627,8 @@ class WorkorderController
             'term' => $params['term'] ?? null,
             'created_from' => $params['created_from'] ?? null,
             'created_to' => $params['created_to'] ?? null,
+            'status_age_min_days' => $params['status_age_min_days'] ?? null,
+            'status_age_max_days' => $params['status_age_max_days'] ?? null,
         ], fn($v) => $v !== null && $v !== '');
 
         // Customers can only see their own workorders
@@ -448,6 +667,7 @@ class WorkorderController
             Workorder::STATUS_ON_HOLD => 'On Hold',
             Workorder::STATUS_COMPLETED => 'Completed',
             Workorder::STATUS_CANCELLED => 'Cancelled',
+            Workorder::STATUS_GOA => 'GOA',
             default => ucfirst($status),
         };
     }
@@ -460,13 +680,17 @@ class WorkorderController
         }
 
         $allCompleted = true;
+        $allGoa = true;
         $anyInProgress = false;
 
         foreach ($jobs as $job) {
-            if ($job->status !== 'completed') {
+            if (!in_array($job->status, ['completed', 'goa'], true)) {
                 $allCompleted = false;
             }
-            if ($job->status === 'in_progress') {
+            if ($job->status !== 'goa') {
+                $allGoa = false;
+            }
+            if (in_array($job->status, ['in_progress', 'hooked', 'arrived'], true)) {
                 $anyInProgress = true;
             }
         }
@@ -477,10 +701,12 @@ class WorkorderController
         }
 
         // Auto-transition workorder status based on job statuses
-        if ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
-            $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed');
+        if ($allGoa && $workorder->status !== Workorder::STATUS_GOA) {
+            $this->service->markGoneOnArrival($workorderId, ['notes' => 'All jobs marked GOA'], $actorId);
+        } elseif ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
+            $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed', null);
         } elseif ($anyInProgress && $workorder->status === Workorder::STATUS_PENDING) {
-            $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started');
+            $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started', null);
         }
     }
 

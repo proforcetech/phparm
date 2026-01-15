@@ -74,7 +74,7 @@ class WarrantyManagementService
 
     public function transitionStatus(int $claimId, string $status, int $actorId, ?string $message = null): bool
     {
-        $allowed = ['open', 'reviewing', 'awaiting_customer', 'resolved', 'rejected'];
+        $allowed = ['defective', 'rma_requested', 'shipped', 'credit_received'];
         if (!in_array($status, $allowed, true)) {
             throw new InvalidArgumentException('Invalid warranty claim status.');
         }

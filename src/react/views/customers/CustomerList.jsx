@@ -70,6 +70,14 @@ export default function CustomerList() {
   }
 
   const hasNext = customers.length === perPage
+  const getCustomerDisplayName = (customer) => {
+    const firstName = customer?.first_name?.trim() || ''
+    const lastName = customer?.last_name?.trim() || ''
+    const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+    const companyName = customer?.company_name?.trim() || customer?.business_name?.trim() || ''
+
+    return customer?.name?.trim() || fullName || companyName || '—'
+  }
 
   return (
     <div className="space-y-6">
@@ -132,7 +140,7 @@ export default function CustomerList() {
                     <tr key={customer.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <Link to={`/cp/customers/${customer.id}`} className="text-primary-600 hover:text-primary-500 font-medium">
-                          {customer.name}
+                          {getCustomerDisplayName(customer)}
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">{customer.email || '—'}</td>
@@ -181,7 +189,7 @@ export default function CustomerList() {
         onClose={() => setDeleteModal({ open: false, customer: null })}
       >
         <p className="text-sm text-gray-600 mb-4">
-          Are you sure you want to delete <strong>{deleteModal.customer?.name}</strong>? This action cannot be undone.
+          Are you sure you want to delete <strong>{deleteModal.customer ? getCustomerDisplayName(deleteModal.customer) : 'this customer'}</strong>? This action cannot be undone.
         </p>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setDeleteModal({ open: false, customer: null })}>

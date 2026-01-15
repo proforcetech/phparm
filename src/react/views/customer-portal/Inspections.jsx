@@ -85,15 +85,22 @@ export default function Inspections() {
           </div>
           <div className="mt-3">
             <p className="font-semibold">Media</p>
-            <ul className="list-disc pl-5 text-sm">
+            <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {activeReport.media.map((media) => (
-                <li key={media.id}>
-                  <a href={media.path} className="text-indigo-600" target="_blank" rel="noreferrer">
-                    {media.type} - {media.path}
+                <div key={media.id} className="border rounded-lg p-2">
+                  {media.type === 'video' ? (
+                    <video className="w-full h-40 rounded object-cover" controls preload="metadata">
+                      <source src={media.path} type={media.mime_type} />
+                    </video>
+                  ) : (
+                    <img src={media.path} alt="Inspection media" className="w-full h-40 rounded object-cover" />
+                  )}
+                  <a href={media.path} className="mt-2 block text-xs text-indigo-600" target="_blank" rel="noreferrer">
+                    Open {media.type}
                   </a>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         </div>
       ) : null}

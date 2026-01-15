@@ -1,10 +1,17 @@
-import PlaceholderPage from '../PlaceholderPage'
+import SettingsFormShell from './SettingsFormShell'
+import { IntegrationsForm } from './SettingsFormSections'
 
 export default function SettingsIntegrations() {
   return (
-    <PlaceholderPage
-      title="Integrations settings"
-      description="React mirror of Vue /cp/settings/integrations."
-    />
+    <SettingsFormShell
+      title="Integrations"
+      description="Connect third-party platforms and configure advanced integrations."
+    >
+      {({ form, updateField }) => (
+        <div className="space-y-6">
+          <IntegrationsForm form={form} updateField={updateField} />
+        </div>
+      )}
+    </SettingsFormShell>
   )
 }

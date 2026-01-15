@@ -4,16 +4,19 @@ namespace App\Support\Pdf;
 
 use App\Models\Invoice;
 use App\Database\Connection;
+use App\Support\HtmlSanitizer;
 use PDO;
 
 class InvoicePdfGenerator extends PdfService
 {
     private Connection $connection;
+    private HtmlSanitizer $htmlSanitizer;
 
     public function __construct(Connection $connection)
     {
         parent::__construct();
         $this->connection = $connection;
+        $this->htmlSanitizer = new HtmlSanitizer();
     }
 
     /**
@@ -168,7 +171,7 @@ HTML;
 
     // Terms
     if (!empty($settings['invoice_terms'])) {
-        $sanitizedTerms = $this->sanitizeTermsHtml((string) $settings['invoice_terms']);
+        $sanitizedTerms = $this->htmlSanitizer->sanitize((string) $settings['invoice_terms']);
         if ($sanitizedTerms !== '') {
             $html .= '<div class="footer">'
                 . '<h3>Terms &amp; Conditions</h3>'
@@ -181,79 +184,6 @@ HTML;
 
     return $html;
 }
-
-    private function sanitizeTermsHtml(string $html): string
-    {
-        $allowedTags = ['p', 'br', 'strong', 'em', 'b', 'i', 'u', 'ul', 'ol', 'li', 'a'];
-        $allowedAttributes = ['a' => ['href', 'target', 'rel']];
-        $document = new \DOMDocument('1.0', 'UTF-8');
-        $previous = libxml_use_internal_errors(true);
-
-        $document->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-        $this->sanitizeNode($document, $allowedTags, $allowedAttributes);
-
-        $sanitized = $document->saveHTML() ?: '';
-        libxml_clear_errors();
-        libxml_use_internal_errors($previous);
-
-        return $sanitized;
-    }
-
-    /**
-     * @param array<string> $allowedTags
-     * @param array<string, array<string>> $allowedAttributes
-     */
-    private function sanitizeNode(\DOMNode $node, array $allowedTags, array $allowedAttributes): void
-    {
-        if ($node->nodeType === XML_ELEMENT_NODE) {
-            $tag = strtolower($node->nodeName);
-            if (!in_array($tag, $allowedTags, true)) {
-                $this->unwrapNode($node);
-                return;
-            }
-
-            if ($node->hasAttributes()) {
-                $allowed = $allowedAttributes[$tag] ?? [];
-                foreach (iterator_to_array($node->attributes) as $attribute) {
-                    if (!in_array($attribute->nodeName, $allowed, true)) {
-                        $node->removeAttribute($attribute->nodeName);
-                        continue;
-                    }
-
-                    if ($tag === 'a' && $attribute->nodeName === 'href') {
-                        $href = trim($attribute->nodeValue);
-                        if (!preg_match('/^(https?:|mailto:)/i', $href)) {
-                            $node->removeAttribute('href');
-                        }
-                    }
-                }
-
-                if ($tag === 'a' && $node->hasAttribute('href')) {
-                    $node->setAttribute('rel', 'noopener noreferrer');
-                    $node->setAttribute('target', '_blank');
-                }
-            }
-        }
-
-        foreach (iterator_to_array($node->childNodes) as $child) {
-            $this->sanitizeNode($child, $allowedTags, $allowedAttributes);
-        }
-    }
-
-    private function unwrapNode(\DOMNode $node): void
-    {
-        $parent = $node->parentNode;
-        if ($parent === null) {
-            $node->parentNode?->removeChild($node);
-            return;
-        }
-
-        while ($node->firstChild !== null) {
-            $parent->insertBefore($node->firstChild, $node);
-        }
-
-        $parent->removeChild($node);
-    }
 
     /**
      * @return array<string, mixed>

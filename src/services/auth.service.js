@@ -17,6 +17,9 @@ export const authService = {
     return response.data
   },
 
+  /**
+   * Verify two-factor authentication code
+   */
   async verifyTwoFactor(challengeToken, code, isCustomer = false) {
     const endpoint = isCustomer ? '/auth/customer-verify-2fa' : '/auth/verify-2fa'
     const response = await api.post(endpoint, { challenge_token: challengeToken, code })
@@ -56,11 +59,26 @@ export const authService = {
   },
 
   /**
+   * Accept invitation and set password
+   */
+  async acceptInvite(token, password) {
+    const response = await api.post('/auth/accept-invite', { token, password })
+    return response.data
+  },
+
+  /**
    * Get current user
    */
   async me() {
     const response = await api.get('/auth/me')
     return response.data
+  },
+
+  /**
+   * Get current user (alias for me)
+   */
+  async getCurrentUser() {
+    return this.me()
   },
 
   /**
@@ -84,6 +102,46 @@ export const authService = {
    */
   async completeTwoFactorSetup(code) {
     const response = await api.post('/auth/2fa/setup/complete', { code })
+    return response.data
+  },
+
+  /**
+   * Get accessible modules for current user
+   */
+  async getAccessibleModules() {
+    const response = await api.get('/modules/accessible')
+    return response.data
+  },
+
+  /**
+   * List active sessions for current user
+   */
+  async listSessions() {
+    const response = await api.get('/auth/sessions')
+    return response.data
+  },
+
+  /**
+   * Impersonate another user (admin only).
+   */
+  async impersonate(userId) {
+    const response = await api.post('/auth/impersonate', { user_id: userId })
+    return response.data
+  },
+
+  /**
+   * Revoke a session by ID
+   */
+  async revokeSession(sessionId) {
+    const response = await api.delete(`/auth/sessions/${sessionId}`)
+    return response.data
+  },
+
+  /**
+   * Stop impersonation and return to the original admin session.
+   */
+  async stopImpersonation() {
+    const response = await api.post('/auth/impersonate/stop')
     return response.data
   },
 }

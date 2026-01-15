@@ -7,6 +7,7 @@ use App\Models\InventoryPullRequest;
 use App\Support\Audit\AuditLogger;
 use App\Support\Audit\AuditEntry;
 use App\Services\Messaging\MessagingNotificationService;
+use App\Services\Inventory\InventoryTransactionRepository;
 use InvalidArgumentException;
 use PDO;
 
@@ -15,6 +16,7 @@ class InventoryPullRequestRepository
     private Connection $connection;
     private AuditLogger $auditLogger;
     private ?MessagingNotificationService $messagingNotifications;
+    private InventoryTransactionRepository $transactionRepository;
 
     public function __construct(
         Connection $connection,
@@ -24,6 +26,7 @@ class InventoryPullRequestRepository
         $this->connection = $connection;
         $this->auditLogger = $auditLogger;
         $this->messagingNotifications = $messagingNotifications;
+        $this->transactionRepository = new InventoryTransactionRepository($connection);
     }
 
     public function find(int $id): ?InventoryPullRequest
@@ -120,6 +123,78 @@ class InventoryPullRequestRepository
         }
 
         return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * @param string[] $statuses
+     * @return array{counts: array<string, int>, items: InventoryPullRequest[]}
+     */
+    public function getDashboardNotifications(array $statuses, int $limit = 5): array
+    {
+        $filteredStatuses = array_values(array_filter(
+            $statuses,
+            fn (string $status) => in_array($status, InventoryPullRequest::ALLOWED_STATUSES, true)
+        ));
+
+        if ($filteredStatuses === []) {
+            $filteredStatuses = [
+                InventoryPullRequest::STATUS_PENDING,
+                InventoryPullRequest::STATUS_ORDERED,
+                InventoryPullRequest::STATUS_RECEIVED,
+            ];
+        }
+
+        $placeholders = [];
+        foreach ($filteredStatuses as $index => $status) {
+            $placeholders[] = ':status_' . $index;
+        }
+        $placeholdersSql = implode(', ', $placeholders);
+
+        $counts = array_fill_keys($filteredStatuses, 0);
+        $countSql = "SELECT pr.status, COUNT(*) as count
+            FROM inventory_pull_requests pr
+            WHERE pr.status IN ($placeholdersSql)
+            GROUP BY pr.status";
+
+        $stmt = $this->connection->pdo()->prepare($countSql);
+        foreach ($filteredStatuses as $index => $status) {
+            $stmt->bindValue(':status_' . $index, $status);
+        }
+        $stmt->execute();
+
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $counts[$row['status']] = (int) $row['count'];
+        }
+
+        $sql = "SELECT pr.*,
+                w.number as workorder_number,
+                wj.title as job_description,
+                ii.name as inventory_item_name,
+                u1.name as requested_by_name,
+                u2.name as fulfilled_by_name
+            FROM inventory_pull_requests pr
+            LEFT JOIN workorders w ON pr.workorder_id = w.id
+            LEFT JOIN workorder_jobs wj ON pr.workorder_job_id = wj.id
+            LEFT JOIN inventory_items ii ON pr.inventory_item_id = ii.id
+            LEFT JOIN users u1 ON pr.requested_by = u1.id
+            LEFT JOIN users u2 ON pr.fulfilled_by = u2.id
+            WHERE pr.status IN ($placeholdersSql)
+            ORDER BY pr.created_at DESC
+            LIMIT :limit";
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($filteredStatuses as $index => $status) {
+            $stmt->bindValue(':status_' . $index, $status);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $items = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $items[] = $this->mapRow($row);
+        }
+
+        return ['counts' => $counts, 'items' => $items];
     }
 
     /**
@@ -282,7 +357,7 @@ class InventoryPullRequestRepository
 
         // Deduct from inventory if linked to inventory item
         if ($request->inventory_item_id) {
-            $this->deductFromInventory($request->inventory_item_id, $quantityFulfilled);
+            $this->deductFromInventory($request->inventory_item_id, $quantityFulfilled, $id, $actorId);
         }
 
         $this->log('pull_request.pulled', $id, $actorId, [
@@ -470,8 +545,14 @@ class InventoryPullRequestRepository
     /**
      * Deduct quantity from inventory
      */
-    private function deductFromInventory(int $itemId, int $quantity): void
+    private function deductFromInventory(int $itemId, int $quantity, int $pullRequestId, ?int $actorId): void
     {
+        $beforeStmt = $this->connection->pdo()->prepare(
+            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+        );
+        $beforeStmt->execute(['id' => $itemId]);
+        $quantityBefore = (int) ($beforeStmt->fetchColumn() ?? 0);
+
         $sql = "UPDATE inventory_items SET
                 stock_quantity = GREATEST(0, stock_quantity - :quantity),
                 updated_at = NOW()
@@ -481,6 +562,22 @@ class InventoryPullRequestRepository
             'quantity' => $quantity,
             'id' => $itemId,
         ]);
+
+        $afterStmt = $this->connection->pdo()->prepare(
+            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+        );
+        $afterStmt->execute(['id' => $itemId]);
+        $quantityAfter = (int) ($afterStmt->fetchColumn() ?? $quantityBefore);
+
+        $this->transactionRepository->record(
+            $itemId,
+            $quantityBefore,
+            $quantityAfter,
+            'pull_request',
+            sprintf('pull_request:%d', $pullRequestId),
+            'Inventory pull request fulfillment',
+            $actorId
+        );
     }
 
     /**

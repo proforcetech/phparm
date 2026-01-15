@@ -23,9 +23,9 @@ class UserRepository
     public function listByRole(string $role): array
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, created_at, updated_at
+            'SELECT id, name, email, role, active, created_at, updated_at, last_activity_at
              FROM users
-             WHERE role = :role
+             WHERE role = :role AND active = 1
              ORDER BY name ASC'
         );
         $stmt->execute(['role' => $role]);
@@ -46,9 +46,10 @@ class UserRepository
     public function searchByRole(string $role, string $query, int $limit = 10): array
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, created_at, updated_at
+            'SELECT id, name, email, role, active, created_at, updated_at, last_activity_at
              FROM users
              WHERE role = :role
+             AND active = 1
              AND (id = :exact_id OR name LIKE :query OR email LIKE :query)
              ORDER BY name ASC
              LIMIT :limit'
@@ -76,8 +77,18 @@ class UserRepository
      */
     public function list(array $filters = []): array
     {
-        $query = 'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE 1=1';
+        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at FROM users WHERE active = 1';
+        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE 1 = 1';
         $bindings = [];
+
+        $status = $filters['status'] ?? '';
+        if ($status === 'inactive') {
+            $query .= ' AND active = :active';
+            $bindings['active'] = 0;
+        } elseif ($status !== 'all') {
+            $query .= ' AND active = :active';
+            $bindings['active'] = 1;
+        }
 
         if (!empty($filters['role'])) {
             $query .= ' AND role = :role';
@@ -88,6 +99,17 @@ class UserRepository
             $query .= ' AND (id = :exact_id OR name LIKE :query OR email LIKE :query)';
             $bindings['exact_id'] = is_numeric($filters['query']) ? (int) $filters['query'] : 0;
             $bindings['query'] = '%' . $filters['query'] . '%';
+        }
+
+        if (!empty($filters['two_factor'])) {
+            $twoFactorMap = [
+                'enabled' => 1,
+                'disabled' => 0,
+            ];
+            if (array_key_exists($filters['two_factor'], $twoFactorMap)) {
+                $query .= ' AND two_factor_enabled = :two_factor_enabled';
+                $bindings['two_factor_enabled'] = $twoFactorMap[$filters['two_factor']];
+            }
         }
 
         $query .= ' ORDER BY created_at DESC';
@@ -109,9 +131,9 @@ class UserRepository
     public function find(int $id): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at
+            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
              FROM users
-             WHERE id = :id'
+             WHERE id = :id AND active = 1'
         );
         $stmt->execute(['id' => $id]);
 
@@ -129,9 +151,9 @@ class UserRepository
     public function findByEmail(string $email): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at
+            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
              FROM users
-             WHERE email = :email'
+             WHERE email = :email AND active = 1'
         );
         $stmt->execute(['email' => $email]);
 
@@ -151,8 +173,8 @@ class UserRepository
     public function create(array $data): User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, email_verified, two_factor_enabled, two_factor_type, created_at, updated_at)
-             VALUES (:name, :email, :password, :role, :email_verified, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, role, email_verified, active, two_factor_enabled, two_factor_type, created_at, updated_at)
+             VALUES (:name, :email, :password, :role, :email_verified, :active, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
         );
 
         $stmt->execute([
@@ -161,6 +183,7 @@ class UserRepository
             'password' => $data['password'], // Should be hashed before calling
             'role' => $data['role'] ?? 'customer',
             'email_verified' => $data['email_verified'] ?? false,
+            'active' => $data['active'] ?? true,
             'two_factor_enabled' => $data['two_factor_enabled'] ?? false,
             'two_factor_type' => $data['two_factor_type'] ?? 'none',
         ]);
@@ -204,6 +227,11 @@ class UserRepository
             $bindings['email_verified'] = $data['email_verified'];
         }
 
+        if (isset($data['active'])) {
+            $fields[] = 'active = :active';
+            $bindings['active'] = $data['active'];
+        }
+
 if (isset($data['two_factor_enabled'])) {
         $data['two_factor_enabled'] = $data['two_factor_enabled'] ? 1 : 0;
     } else {
@@ -238,7 +266,7 @@ if (isset($data['two_factor_enabled'])) {
      */
     public function delete(int $id): bool
     {
-        $stmt = $this->connection->pdo()->prepare('DELETE FROM users WHERE id = :id');
+        $stmt = $this->connection->pdo()->prepare('UPDATE users SET active = 0, updated_at = NOW() WHERE id = :id');
         $stmt->execute(['id' => $id]);
 
         return $stmt->rowCount() > 0;
@@ -295,5 +323,63 @@ if (isset($data['two_factor_enabled'])) {
         ]);
 
         return $this->find($id);
+    }
+
+    /**
+     * Bulk deactivate users.
+     *
+     * @param array<int, int> $ids
+     */
+    public function bulkDeactivate(array $ids, int $currentUserId): int
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $ids = array_values(array_filter($ids, static fn ($id) => $id > 0 && $id !== $currentUserId));
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $placeholders = [];
+        $bindings = [];
+        foreach ($ids as $index => $id) {
+            $key = 'id' . $index;
+            $placeholders[] = ':' . $key;
+            $bindings[$key] = $id;
+        }
+
+        $query = 'UPDATE users SET active = 0, updated_at = NOW() WHERE id IN (' . implode(',', $placeholders) . ')';
+        $stmt = $this->connection->pdo()->prepare($query);
+        $stmt->execute($bindings);
+
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Bulk update user roles.
+     *
+     * @param array<int, int> $ids
+     */
+    public function bulkUpdateRole(array $ids, string $role): int
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $ids = array_values(array_filter($ids, static fn ($id) => $id > 0));
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $placeholders = [];
+        $bindings = ['role' => $role];
+        foreach ($ids as $index => $id) {
+            $key = 'id' . $index;
+            $placeholders[] = ':' . $key;
+            $bindings[$key] = $id;
+        }
+
+        $query = 'UPDATE users SET role = :role, updated_at = NOW() WHERE id IN (' . implode(',', $placeholders) . ') AND active = 1';
+        $stmt = $this->connection->pdo()->prepare($query);
+        $stmt->execute($bindings);
+
+        return $stmt->rowCount();
     }
 }

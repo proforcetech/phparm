@@ -6,12 +6,18 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\JwtService;
+use App\Support\Auth\ModuleAccessService;
+use App\Support\Auth\RolePermissions;
 use App\Support\Auth\UnauthorizedException;
+use App\Support\Auth\UserSessionManager;
 
 class Middleware
 {
     private static ?RateLimiter $rateLimiter = null;
     private static ?JwtService $jwtService = null;
+    private static ?ModuleAccessService $moduleService = null;
+    private static ?UserSessionManager $sessionManager = null;
+    private static ?Connection $activityConnection = null;
 
     /**
      * Get or create the default rate limiter instance.
@@ -66,6 +72,123 @@ class Middleware
     }
 
     /**
+     * Get or create the module access service instance.
+     */
+    private static function getModuleService(): ModuleAccessService
+    {
+        if (self::$moduleService === null) {
+            $configPath = dirname(__DIR__, 3) . '/config/auth.php';
+            $config = file_exists($configPath) ? require $configPath : [];
+
+            // Create database connection
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            // Create role permissions and access gate
+            $rolePermissions = RolePermissions::fromDatabase($connection, $config['roles'] ?? []);
+            $gate = new AccessGate($rolePermissions);
+
+            self::$moduleService = new ModuleAccessService($connection, $gate);
+        }
+        return self::$moduleService;
+    }
+
+    /**
+     * Get or create the connection for activity tracking.
+     */
+    private static function getActivityConnection(): Connection
+    {
+        if (self::$activityConnection === null) {
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            self::$activityConnection = new Connection($dbConfig);
+        }
+
+        return self::$activityConnection;
+    }
+
+    /**
+     * Update the user's last activity timestamp.
+     */
+    private static function recordUserActivity(int $userId): void
+    {
+        $connection = self::getActivityConnection();
+        $stmt = $connection->pdo()->prepare('UPDATE users SET last_activity_at = NOW() WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
+    }
+
+    /**
+     * Set a custom module access service instance (for testing or custom configuration).
+     */
+    public static function setModuleService(ModuleAccessService $service): void
+    {
+        self::$moduleService = $service;
+    }
+
+    /**
+     * Get or create the user session manager instance.
+     */
+    private static function getSessionManager(): UserSessionManager
+    {
+        if (self::$sessionManager === null) {
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            self::$sessionManager = new UserSessionManager($connection);
+        }
+        return self::$sessionManager;
+    }
+
+    /**
+     * Require access to a specific module.
+     *
+     * This middleware checks:
+     * 1. Module is enabled at the shop level
+     * 2. User's groups don't have this module disabled
+     * 3. User has at least one permission in the module's permission prefix
+     *
+     * @param string $moduleKey The module key (e.g., 'towing', 'cms', 'inventory')
+     */
+    public static function module(string $moduleKey): callable
+    {
+        return function (Request $request, callable $next) use ($moduleKey) {
+            $user = $request->getAttribute('user');
+
+            if ($user === null) {
+                throw new UnauthorizedException('Authentication required');
+            }
+
+            if (!($user instanceof User)) {
+                throw new UnauthorizedException('Invalid user');
+            }
+
+            $moduleService = self::getModuleService();
+
+            // Check if module is enabled globally
+            if (!$moduleService->isModuleEnabled($moduleKey)) {
+                return Response::json([
+                    'error' => 'Module not available',
+                    'message' => "The '{$moduleKey}' module is not enabled.",
+                    'module' => $moduleKey,
+                ], 403);
+            }
+
+            // Check if user can access the module
+            if (!$moduleService->canUserAccessModule($user, $moduleKey)) {
+                return Response::json([
+                    'error' => 'Module access denied',
+                    'message' => "You do not have access to the '{$moduleKey}' module.",
+                    'module' => $moduleKey,
+                ], 403);
+            }
+
+            return $next($request);
+        };
+    }
+
+    /**
      * Authenticate user from session or bearer token
      */
     public static function auth(): callable
@@ -80,6 +203,16 @@ class Middleware
 
             // Try session-based auth
             if (isset($_SESSION['user_id'])) {
+                $sessionManager = self::getSessionManager();
+                $sessionId = session_id();
+                $ipAddress = $request->getClientIp();
+                $userAgent = $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT');
+
+                if (!$sessionManager->ensureSessionActive((int) $_SESSION['user_id'], $sessionId, $ipAddress, $userAgent)) {
+                    session_destroy();
+                    throw new UnauthorizedException('Session has been revoked');
+                }
+
                 // In a real implementation, fetch user from database
                 $user = $_SESSION['user'] ?? null;
             }
@@ -100,9 +233,15 @@ class Middleware
 
             // Store user in request
             if (is_array($user)) {
-                $request->setAttribute('user', new User($user));
+                $userModel = new User($user);
+                $request->setAttribute('user', $userModel);
             } else {
-                $request->setAttribute('user', $user);
+                $userModel = $user;
+                $request->setAttribute('user', $userModel);
+            }
+
+            if ($userModel instanceof User) {
+                self::recordUserActivity($userModel->id);
             }
 
             return $next($request);
@@ -199,8 +338,35 @@ class Middleware
      */
     public static function throttle(int $maxAttempts = 60, int $decaySeconds = 60): callable
     {
-        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds) {
-            $limiter = self::getRateLimiter()->withLimits($maxAttempts, $decaySeconds);
+        return self::throttleWithOverrides($maxAttempts, $decaySeconds);
+    }
+
+    /**
+     * Rate limiting with per-path overrides.
+     *
+     * @param int $maxAttempts Maximum requests per window (default: 60)
+     * @param int $decaySeconds Time window in seconds (default: 60)
+     * @param array<string, array{max?: int, decay?: int}> $overrides
+     */
+    public static function throttleWithOverrides(
+        int $maxAttempts = 60,
+        int $decaySeconds = 60,
+        array $overrides = []
+    ): callable {
+        return function (Request $request, callable $next) use ($maxAttempts, $decaySeconds, $overrides) {
+            $path = $request->path();
+            $effectiveMax = $maxAttempts;
+            $effectiveDecay = $decaySeconds;
+
+            foreach ($overrides as $pattern => $override) {
+                if (self::matchesRateLimitPath($path, $pattern)) {
+                    $effectiveMax = $override['max'] ?? $effectiveMax;
+                    $effectiveDecay = $override['decay'] ?? $effectiveDecay;
+                    break;
+                }
+            }
+
+            $limiter = self::getRateLimiter()->withLimits($effectiveMax, $effectiveDecay);
             $key = self::resolveRateLimitKey($request);
 
             if ($limiter->tooManyAttempts($key)) {
@@ -211,20 +377,20 @@ class Middleware
                     'retry_after' => $retryAfter,
                 ], 429)
                     ->withHeader('Retry-After', (string) $retryAfter)
-                    ->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                    ->withHeader('X-RateLimit-Limit', (string) $effectiveMax)
                     ->withHeader('X-RateLimit-Remaining', '0')
                     ->withHeader('X-RateLimit-Reset', (string) (time() + $retryAfter));
             }
 
             $hits = $limiter->hit($key);
-            $remaining = max(0, $maxAttempts - $hits);
+            $remaining = max(0, $effectiveMax - $hits);
 
             $response = $next($request);
 
             if ($response instanceof Response) {
-                $response->withHeader('X-RateLimit-Limit', (string) $maxAttempts)
+                $response->withHeader('X-RateLimit-Limit', (string) $effectiveMax)
                     ->withHeader('X-RateLimit-Remaining', (string) $remaining)
-                    ->withHeader('X-RateLimit-Reset', (string) (time() + $decaySeconds));
+                    ->withHeader('X-RateLimit-Reset', (string) (time() + $effectiveDecay));
             }
 
             return $response;
@@ -292,6 +458,19 @@ class Middleware
     private static function resolveRateLimitKey(Request $request): string
     {
         return 'ip:' . self::getClientIp($request) . ':' . $request->path();
+    }
+
+    /**
+     * Determine if the rate limit override pattern matches the request path.
+     */
+    private static function matchesRateLimitPath(string $path, string $pattern): bool
+    {
+        if (str_ends_with($pattern, '*')) {
+            $prefix = rtrim($pattern, '*');
+            return str_starts_with($path, $prefix);
+        }
+
+        return $path === $pattern;
     }
 
     /**

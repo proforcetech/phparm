@@ -3,9 +3,12 @@
 namespace App\Services\Invoice;
 
 use App\Database\Connection;
+use App\Models\Customer;
+use App\Models\CustomerVehicle;
 use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\ServiceType;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -61,6 +64,7 @@ class InvoiceService
                 'number' => $this->generateInvoiceNumber(),
                 'status' => 'pending',
                 'estimate_id' => $estimateId,
+                'split_billing' => false,
                 'issue_date' => date('Y-m-d'),
                 'public_token' => $this->generatePublicToken(),
                 'public_token_expires_at' => $this->calculatePublicExpiry(),
@@ -104,6 +108,7 @@ class InvoiceService
         $pdo->beginTransaction();
 
         try {
+            $splitBilling = !empty($payload['split_billing']);
             $invoiceId = $this->insertInvoice([
                 'customer_id' => $payload['customer_id'],
                 'vehicle_id' => $payload['vehicle_id'] ?? null,
@@ -113,12 +118,27 @@ class InvoiceService
                 'estimate_id' => $payload['estimate_id'] ?? null,
                 'due_date' => $payload['due_date'] ?? null,
                 'notes' => $payload['notes'] ?? null,
+                'split_billing' => $splitBilling,
                 'public_token' => $payload['public_token'] ?? $this->generatePublicToken(),
                 'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
             ]);
 
             $totals = $this->persistItems($invoiceId, $payload['items'], $payload['tax_rate'] ?? 0.0);
             $this->updateTotals($invoiceId, $totals);
+
+            if ($splitBilling) {
+                $allocations = $this->normalizePayerAllocations($payload['payer_allocations'] ?? []);
+                if (empty($allocations)) {
+                    throw new InvalidArgumentException('Payer allocations are required for split billing');
+                }
+
+                $allocationTotal = array_sum(array_column($allocations, 'allocated_amount'));
+                if (abs($allocationTotal - $totals['total']) > 0.01) {
+                    throw new InvalidArgumentException('Payer allocations must equal the invoice total');
+                }
+
+                $this->persistPayerAllocations($invoiceId, $allocations);
+            }
 
             $pdo->commit();
             $invoice = $this->fetchInvoice($invoiceId);
@@ -195,7 +215,7 @@ class InvoiceService
     {
         $clauses = [];
         $bindings = [];
-        $joins = '';
+        $joins = ['LEFT JOIN customers c ON c.id = invoices.customer_id'];
 
         if (!empty($filters['status']) && in_array($filters['status'], $this->allowedStatuses, true)) {
             $clauses[] = 'invoices.status = :status';
@@ -208,13 +228,16 @@ class InvoiceService
         }
 
         if (!empty($filters['technician_id'])) {
-            $joins = ' LEFT JOIN estimates e ON e.id = invoices.estimate_id';
+            $joins[] = 'LEFT JOIN estimates e ON e.id = invoices.estimate_id';
             $clauses[] = 'e.technician_id = :technician_id';
             $bindings['technician_id'] = (int) $filters['technician_id'];
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-        $sql = 'SELECT invoices.* FROM invoices' . $joins . ' ' . $where . ' ORDER BY invoices.issue_date DESC, invoices.id DESC LIMIT :limit OFFSET :offset';
+        $sql = 'SELECT invoices.*, CONCAT(c.first_name, " ", c.last_name) AS customer_name, '
+            . 'c.first_name AS customer_first_name, c.last_name AS customer_last_name '
+            . 'FROM invoices ' . implode(' ', $joins) . ' ' . $where
+            . ' ORDER BY invoices.issue_date DESC, invoices.id DESC LIMIT :limit OFFSET :offset';
         $stmt = $this->connection->pdo()->prepare($sql);
 
         foreach ($bindings as $key => $value) {
@@ -227,6 +250,7 @@ class InvoiceService
 
         $rows = array_map(static function ($row) {
             $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+            $row['split_billing'] = isset($row['split_billing']) ? (bool) $row['split_billing'] : false;
 
             return $row;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -237,6 +261,28 @@ class InvoiceService
     public function findById(int $id): ?Invoice
     {
         return $this->fetchInvoice($id);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findDetailedById(int $id): ?array
+    {
+        $invoice = $this->fetchInvoice($id);
+        if ($invoice === null) {
+            return null;
+        }
+
+        $data = $invoice->toArray();
+        $data['customer'] = $this->fetchCustomer($invoice->customer_id);
+        $data['vehicle'] = $invoice->vehicle_id ? $this->fetchVehicle($invoice->vehicle_id) : null;
+        $data['service_type'] = $invoice->service_type_id ? $this->fetchServiceType($invoice->service_type_id) : null;
+        $data['items'] = $this->fetchInvoiceItems($invoice->id);
+        $data['line_items'] = $data['items'];
+        $data['payments'] = $this->fetchPayments($invoice->id);
+        $data['payer_allocations'] = $this->fetchPayerAllocations($invoice->id);
+
+        return $data;
     }
 
     public function findByPublicToken(string $token): ?Invoice
@@ -252,6 +298,7 @@ class InvoiceService
         }
 
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+        $row['split_billing'] = isset($row['split_billing']) ? (bool) $row['split_billing'] : false;
 
         $invoice = new Invoice($row);
         if ($this->isPublicTokenExpired($invoice)) {
@@ -429,8 +476,8 @@ class InvoiceService
     private function insertInvoice(array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, issue_date, due_date, notes, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
-            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :issue_date, :due_date, :notes, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
+            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
+            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'],
@@ -442,6 +489,7 @@ class InvoiceService
             'issue_date' => $payload['issue_date'] ?? date('Y-m-d'),
             'due_date' => $payload['due_date'] ?? null,
             'notes' => $payload['notes'] ?? null,
+            'split_billing' => !empty($payload['split_billing']) ? 1 : 0,
             'public_token' => $payload['public_token'] ?? $this->generatePublicToken(),
             'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
         ]);
@@ -546,6 +594,186 @@ class InvoiceService
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
 
         return new Invoice($row);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchCustomer(int $customerId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM customers WHERE id = :id');
+        $stmt->execute(['id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $row['is_commercial'] = isset($row['is_commercial']) ? (bool) $row['is_commercial'] : false;
+        $row['tax_exempt'] = isset($row['tax_exempt']) ? (bool) $row['tax_exempt'] : false;
+
+        $customer = new Customer($row);
+        $data = $customer->toArray();
+        $data['name'] = $customer->business_name ?: trim($customer->first_name . ' ' . $customer->last_name);
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchVehicle(int $vehicleId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM customer_vehicles WHERE id = :id');
+        $stmt->execute(['id' => $vehicleId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $vehicle = new CustomerVehicle($row);
+
+        return $vehicle->toArray();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchServiceType(int $serviceTypeId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM service_types WHERE id = :id');
+        $stmt->execute(['id' => $serviceTypeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $serviceType = new ServiceType($row);
+
+        return $serviceType->toArray();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchInvoiceItems(int $invoiceId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM invoice_items WHERE invoice_id = :invoice_id ORDER BY id ASC'
+        );
+        $stmt->execute(['invoice_id' => $invoiceId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_map(static function (array $row): array {
+            if (array_key_exists('taxable', $row)) {
+                $row['taxable'] = (bool) $row['taxable'];
+            }
+
+            foreach (['quantity', 'unit_price', 'list_price', 'line_total'] as $field) {
+                if (array_key_exists($field, $row)) {
+                    $row[$field] = (float) $row[$field];
+                }
+            }
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $allocations
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizePayerAllocations(array $allocations): array
+    {
+        $normalized = [];
+
+        foreach ($allocations as $allocation) {
+            if (!is_array($allocation)) {
+                continue;
+            }
+
+            $role = $allocation['payer_role'] ?? $allocation['role'] ?? null;
+            if (!in_array($role, ['primary', 'secondary'], true)) {
+                throw new InvalidArgumentException('Payer role must be primary or secondary');
+            }
+
+            $amount = (float) ($allocation['allocated_amount'] ?? $allocation['amount'] ?? 0);
+            if ($amount < 0) {
+                throw new InvalidArgumentException('Payer allocation amount cannot be negative');
+            }
+
+            $name = trim((string) ($allocation['payer_name'] ?? $allocation['name'] ?? ''));
+
+            $normalized[] = [
+                'payer_role' => $role,
+                'payer_name' => $name !== '' ? $name : null,
+                'allocated_amount' => $amount,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $allocations
+     */
+    private function persistPayerAllocations(int $invoiceId, array $allocations): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT INTO invoice_payer_allocations (invoice_id, payer_role, payer_name, allocated_amount) '
+            . 'VALUES (:invoice_id, :payer_role, :payer_name, :allocated_amount)'
+        );
+
+        foreach ($allocations as $allocation) {
+            $stmt->execute([
+                'invoice_id' => $invoiceId,
+                'payer_role' => $allocation['payer_role'],
+                'payer_name' => $allocation['payer_name'],
+                'allocated_amount' => $allocation['allocated_amount'],
+            ]);
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchPayerAllocations(int $invoiceId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM invoice_payer_allocations WHERE invoice_id = :invoice_id ORDER BY id ASC'
+        );
+        $stmt->execute(['invoice_id' => $invoiceId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_map(static function (array $row): array {
+            if (array_key_exists('allocated_amount', $row)) {
+                $row['allocated_amount'] = (float) $row['allocated_amount'];
+            }
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchPayments(int $invoiceId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM payments WHERE invoice_id = :invoice_id ORDER BY created_at DESC, id DESC'
+        );
+        $stmt->execute(['invoice_id' => $invoiceId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return array_map(static function (array $row): array {
+            if (array_key_exists('amount', $row)) {
+                $row['amount'] = (float) $row['amount'];
+            }
+
+            return $row;
+        }, $rows);
     }
 
     private function fetchEstimate(int $id): ?Estimate

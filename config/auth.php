@@ -24,17 +24,32 @@ return [
         'admin' => [
             'label' => 'Admin',
             'description' => 'Full control across all modules',
+            'requires_2fa' => true,
             'permissions' => ['*'],
+        ],
+        'dispatcher' => [
+            'label' => 'Dispatcher',
+            'description' => 'Coordinate dispatch operations and roadside workflows',
+            'requires_2fa' => true,
+            'permissions' => [
+                'dispatch.*',
+                'roadside.*',
+                'messages.*',
+                'truck_checklists.view',
+                'driver_shifts.view',
+            ],
         ],
         'manager' => [
             'label' => 'Manager',
             'description' => 'Manage shop operations, estimates, workorders, invoices, schedules, inventory',
+            'requires_2fa' => false,
             'permissions' => [
                 'users.view', 'users.create', 'users.update', 'users.delete', 'users.invite',
                 'customers.*', 'vehicles.*', 'estimates.*', 'workorders.*', 'invoices.*', 'payments.*', 'appointments.*',
                 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*',
                 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*', 'messages.*',
-                'roadside.*',
+                'roadside.*', 'dispatch.*',
+                'truck_checklists.*', 'driver_shifts.*',
                 // Full CMS access (matches admin for CMS operations)
                 'cms.*'
             ],
@@ -42,6 +57,7 @@ return [
         'technician' => [
             'label' => 'Technician',
             'description' => 'Work estimates, workorders, inspections, jobs, and time tracking',
+            'requires_2fa' => false,
             'permissions' => [
                 'customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update',
                 'workorders.view', 'workorders.manage',
@@ -53,27 +69,38 @@ return [
                 'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete',
                 'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete',
                 'cms.dashboard.view',
-                'cms.templates.view', 'messages.*'
+                'cms.templates.view', 'messages.*',
+                'dispatch.offers.view', 'dispatch.offers.accept', 'dispatch.tokens.manage',
+                'truck_checklists.view', 'truck_checklists.complete',
+                'driver_shifts.view', 'driver_shifts.start', 'driver_shifts.end',
             ],
         ],
         'parts' => [
             'label' => 'Parts',
             'description' => 'Manage inventory alerts and pull/order requests',
+            'requires_2fa' => false,
             'permissions' => [
                 'inventory.view',
+                'inventory.edit',
+                'inventory.adjust',
                 'inventory.*',
             ],
         ],
         'roadside' => [
             'label' => 'Roadside',
             'description' => 'Roadside assistance access (placeholder)',
+            'requires_2fa' => false,
             'permissions' => [
                 'roadside.*',
+                'dispatch.*',
+                'truck_checklists.view',
+                'driver_shifts.view',
             ],
         ],
         'cms' => [
             'label' => 'CMS',
             'description' => 'Manage CMS content, 404 logs, and redirects',
+            'requires_2fa' => false,
             'permissions' => [
                 'cms.*',
             ],
@@ -81,6 +108,7 @@ return [
         'customer' => [
             'label' => 'Customer',
             'description' => 'Customer portal scoped to their profile and documents',
+            'requires_2fa' => false,
             'permissions' => [
                 'portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.workorders', 'portal.invoices', 'portal.warranty', 'portal.reminders',
                 'workorders.view'

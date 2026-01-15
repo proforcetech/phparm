@@ -19,6 +19,10 @@ export default function Login() {
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState(null)
   const [recaptchaEnabled, setRecaptchaEnabled] = useState(false)
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('')
+  const [recaptchaReady, setRecaptchaReady] = useState(false)
+  const [recaptchaLoading, setRecaptchaLoading] = useState(false)
+  const [recaptchaLoadError, setRecaptchaLoadError] = useState(null)
+  const [recaptchaAttempt, setRecaptchaAttempt] = useState(0)
 
   const isVerifying = useMemo(() => !!pendingChallenge, [pendingChallenge])
 
@@ -39,19 +43,33 @@ export default function Login() {
       if (existingScript) {
         if (window.grecaptcha) {
           resolve(window.grecaptcha)
+        } else if (existingScript.dataset.recaptchaStatus === 'error') {
+          existingScript.remove()
         } else {
           existingScript.addEventListener('load', handleLoad, { once: true })
+          existingScript.addEventListener(
+            'error',
+            () => reject(new Error('Failed to load reCAPTCHA script')),
+            { once: true }
+          )
+          return
         }
-        return
       }
 
       const script = document.createElement('script')
       script.id = RECAPTCHA_SCRIPT_ID
+      script.dataset.recaptchaStatus = 'loading'
       script.src = `https://www.google.com/recaptcha/api.js?render=${recaptchaSiteKey}`
       script.async = true
       script.defer = true
-      script.onload = handleLoad
-      script.onerror = reject
+      script.onload = () => {
+        script.dataset.recaptchaStatus = 'loaded'
+        handleLoad()
+      }
+      script.onerror = () => {
+        script.dataset.recaptchaStatus = 'error'
+        reject(new Error('Failed to load reCAPTCHA script'))
+      }
       document.head.appendChild(script)
     })
 
@@ -61,7 +79,12 @@ export default function Login() {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('expired') === '1' && params.get('message')) {
-      setSessionExpiredMessage(params.get('message'))
+      const message = params.get('message')
+      console.warn('[Auth] Session expired message from URL:', { message, fullUrl: window.location.href })
+      setSessionExpiredMessage(message)
+      // Clear the query params from URL to prevent stale messages on page refresh
+      const cleanUrl = window.location.pathname
+      window.history.replaceState({}, '', cleanUrl)
     }
   }, [location.search])
 
@@ -80,6 +103,47 @@ export default function Login() {
 
     loadSettings()
   }, [])
+
+  useEffect(() => {
+    if (!recaptchaEnabled || !recaptchaSiteKey) {
+      setRecaptchaReady(false)
+      setRecaptchaLoading(false)
+      setRecaptchaLoadError(null)
+      return
+    }
+
+    let isActive = true
+    setRecaptchaLoading(true)
+    setRecaptchaLoadError(null)
+
+    loadRecaptcha()
+      .then((grecaptcha) => {
+        if (!grecaptcha?.ready || !grecaptcha?.execute) {
+          throw new Error('reCAPTCHA is not available')
+        }
+
+        return new Promise((resolve) => {
+          grecaptcha.ready(resolve)
+        })
+      })
+      .then(() => {
+        if (!isActive) return
+        setRecaptchaReady(true)
+      })
+      .catch((err) => {
+        if (!isActive) return
+        setRecaptchaReady(false)
+        setRecaptchaLoadError(err)
+      })
+      .finally(() => {
+        if (!isActive) return
+        setRecaptchaLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
+  }, [loadRecaptcha, recaptchaEnabled, recaptchaSiteKey, recaptchaAttempt])
 
   const handleChange = (field) => (event) => {
     const value = field === 'remember' ? event.target.checked : event.target.value
@@ -108,16 +172,26 @@ export default function Login() {
           throw new Error('reCAPTCHA is not configured')
         }
 
-        const grecaptcha = await loadRecaptcha()
-
-        if (!grecaptcha?.execute) {
-          throw new Error('reCAPTCHA is not available')
+        if (recaptchaLoadError) {
+          throw new Error('Unable to load reCAPTCHA. Please refresh and try again.')
         }
 
-        token = await grecaptcha.execute(recaptchaSiteKey, { action: 'login' })
+        if (!recaptchaReady) {
+          throw new Error('reCAPTCHA is still loading. Please wait a moment and try again.')
+        }
 
-        if (!token) {
-          throw new Error('Failed to verify reCAPTCHA. Please try again.')
+        if (recaptchaReady) {
+          const grecaptcha = await loadRecaptcha()
+
+          if (!grecaptcha?.execute) {
+            throw new Error('reCAPTCHA is not available')
+          }
+
+          token = await grecaptcha.execute(recaptchaSiteKey, { action: 'login' })
+
+          if (!token) {
+            throw new Error('Failed to verify reCAPTCHA. Please try again.')
+          }
         }
       }
 
@@ -132,6 +206,8 @@ export default function Login() {
   }
 
   const displayError = errorMessage || error
+  const disableSubmit =
+    loading || (!isVerifying && recaptchaEnabled && !recaptchaReady && !recaptchaLoadError)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -244,12 +320,37 @@ export default function Login() {
           <div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={disableSubmit}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{loading ? 'Logging in...' : 'Sign in'}</span>
+              <span>
+                {loading
+                  ? 'Logging in...'
+                  : !isVerifying && recaptchaEnabled && !recaptchaReady
+                    ? 'Loading security check...'
+                    : 'Sign in'}
+              </span>
             </button>
           </div>
+
+          {!isVerifying && recaptchaEnabled && (recaptchaLoading || recaptchaLoadError) ? (
+            <div className="text-xs text-gray-500 text-center space-y-2">
+              <p>
+                {recaptchaLoadError
+                  ? 'Trouble loading reCAPTCHA. You can retry or continue to sign in.'
+                  : 'Loading reCAPTCHA...'}
+              </p>
+              {recaptchaLoadError ? (
+                <button
+                  type="button"
+                  onClick={() => setRecaptchaAttempt((prev) => prev + 1)}
+                  className="text-primary-600 hover:text-primary-500 font-medium"
+                >
+                  Retry security check
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="text-center">
             <Link to="/customer-login" className="text-sm text-primary-600 hover:text-primary-500">
