@@ -5083,8 +5083,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Inspection-to-Estimate Bridge routes
-        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection);
-        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate);
+        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection, null, $settingsRepository);
+        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate, $settingsRepository);
 
         $router->get('/api/inspections/{id}/failed-items', function (Request $request) use ($bridgeController) {
             $id = (int) $request->getAttribute('id');
