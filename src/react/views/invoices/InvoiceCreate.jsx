@@ -61,7 +61,7 @@ export default function InvoiceCreate() {
     try {
       const response = await api.get('/settings')
       const settings = response.data || {}
-      const laborRate = Number(settings['pricing.labor_rate']) || 0
+      const laborRate = Number(settings['pricing.labor_rate']?.value) || 0
       setPricingSettings({ laborRate })
       setLineItems((prev) => {
         if (prev.length === 1 && prev[0].unit_price === 0 && !prev[0].description) {

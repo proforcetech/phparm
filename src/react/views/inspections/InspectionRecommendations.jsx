@@ -39,7 +39,7 @@ export default function InspectionRecommendations() {
     try {
       const response = await api.get('/settings')
       const settings = response.data || {}
-      const rate = Number(settings['pricing.labor_rate']) || 0
+      const rate = Number(settings['pricing.labor_rate']?.value) || 0
       setLaborRate(rate.toFixed(2))
     } catch (err) {
       console.error('Failed to load pricing settings', err)
