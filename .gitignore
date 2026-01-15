@@ -27,6 +27,9 @@ Thumbs.db
 # Cache
 /storage/cache/
 
+# temp files
+/storage/temp/
+
 # Uploads
 /storage/uploads/
 /storage/public/
