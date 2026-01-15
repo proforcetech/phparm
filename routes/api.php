@@ -340,13 +340,23 @@ return function (Router $router, array $config, $connection) {
     $paymentConfig = require __DIR__ . '/../config/payments.php';
 
     // Public security configuration
-    $router->get('/api/public/security/recaptcha', function () use ($recaptchaConfigLoader) {
-        $recaptchaConfig = $recaptchaConfigLoader();
-        return Response::json([
-            'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
-            'site_key' => $recaptchaConfig['site_key'] ?? null,
-            'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
-        ]);
+    $router->get('/api/public/security/recaptcha', function (Request $request) use ($recaptchaConfigLoader) {
+        try {
+            $recaptchaConfig = $recaptchaConfigLoader();
+            return Response::json([
+                'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
+                'site_key' => $recaptchaConfig['site_key'] ?? null,
+                'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
+            ]);
+        } catch (Throwable $e) {
+            error_log('Recaptcha config error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return Response::json([
+                'enabled' => false,
+                'site_key' => null,
+                'score_threshold' => 0.5,
+                'error' => 'Failed to load recaptcha configuration',
+            ], 500);
+        }
     });
 
     // Public vehicle data endpoints for estimate request form
