@@ -6072,6 +6072,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $settingsRepository,
             $gate
         );
+        $bankFeedRepository = new \App\Services\BankFeeds\BankFeedRepository($connection);
+        $bankFeedProviders = new \App\Services\BankFeeds\BankFeedProviderFactory();
+        $bankFeedService = new \App\Services\BankFeeds\BankFeedService(
+            $settingsRepository,
+            $bankFeedProviders,
+            $bankFeedRepository
+        );
+        $bankFeedController = new \App\Services\BankFeeds\BankFeedController($bankFeedService, $gate);
         $notificationTests = new \App\Services\Settings\NotificationTestService($settingsRepository);
         $notificationConfig = require __DIR__ . '/../config/notifications.php';
         $templateEngine = new \App\Support\Notifications\TemplateEngine();
@@ -6116,6 +6124,24 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->put('/api/settings', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
             $data = $settingsController->bulkUpdate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/bank-feeds/status', function (Request $request) use ($bankFeedController) {
+            $user = $request->getAttribute('user');
+            $data = $bankFeedController->status($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/bank-feeds/authorize', function (Request $request) use ($bankFeedController) {
+            $user = $request->getAttribute('user');
+            $data = $bankFeedController->authorize($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/bank-feeds/sync', function (Request $request) use ($bankFeedController) {
+            $user = $request->getAttribute('user');
+            $data = $bankFeedController->sync($user);
             return Response::json($data);
         });
 
