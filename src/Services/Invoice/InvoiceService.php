@@ -219,6 +219,7 @@ class InvoiceService
         $clauses = [];
         $bindings = [];
         $joins = ['LEFT JOIN customers c ON c.id = invoices.customer_id'];
+        $joinedEstimates = false;
 
         if (!empty($filters['status']) && in_array($filters['status'], $this->allowedStatuses, true)) {
             $clauses[] = 'invoices.status = :status';
@@ -232,8 +233,19 @@ class InvoiceService
 
         if (!empty($filters['technician_id'])) {
             $joins[] = 'LEFT JOIN estimates e ON e.id = invoices.estimate_id';
+            $joinedEstimates = true;
             $clauses[] = 'e.technician_id = :technician_id';
             $bindings['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        if (!empty($filters['branch_id'])) {
+            if (!$joinedEstimates) {
+                $joins[] = 'LEFT JOIN estimates e ON e.id = invoices.estimate_id';
+                $joinedEstimates = true;
+            }
+            $joins[] = 'LEFT JOIN workorders w ON w.id = COALESCE(invoices.workorder_id, e.workorder_id)';
+            $clauses[] = 'w.branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';

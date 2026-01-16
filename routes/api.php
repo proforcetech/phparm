@@ -1852,6 +1852,9 @@ return Response::json([
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
+        $branchController = new \App\Services\Branch\BranchController(
+            new \App\Services\Branch\BranchRepository($connection)
+        );
         $inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
             $connection,
             $auditLogger
@@ -1879,6 +1882,13 @@ return Response::json([
                 $params['technician_id'] = (int) $requestedTechnician;
             }
 
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
+            }
+
             $data = $dashboardController->handleKpis($params);
             return Response::json($data);
         });
@@ -1903,6 +1913,13 @@ return Response::json([
                 $params['technician_id'] = $user->id;
             } elseif ($requestedTechnician !== null) {
                 $params['technician_id'] = (int) $requestedTechnician;
+            }
+
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
             }
 
             $data = $dashboardController->handleMonthlyTrends($params);
@@ -1932,6 +1949,13 @@ return Response::json([
                 $params['technician_id'] = (int) $requestedTechnician;
             }
 
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
+            }
+
             $data = $dashboardController->handleServiceTypeBreakdown($params);
             return Response::json($data);
         });
@@ -1954,7 +1978,23 @@ return Response::json([
                 $params['technician_id'] = (int) $requestedTechnician;
             }
 
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
+            }
+
             $data = $dashboardController->handleWipAging($params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/branches', function (Request $request) use ($branchController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $data = $branchController->index($user, $branchId);
             return Response::json($data);
         });
 
@@ -3771,6 +3811,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'status' => $request->queryParam('status'),
                 'customer_id' => $request->queryParam('customer_id'),
+                'branch_id' => $request->queryParam('branch_id'),
                 'limit' => $request->queryParam('limit'),
                 'offset' => $request->queryParam('offset'),
             ];
@@ -3780,6 +3821,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             } elseif ($user?->role === 'technician') {
                 $filters['technician_id'] = $user->id;
             }
+
+            $requestedBranch = $filters['branch_id'] ?? null;
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            $filters['branch_id'] = $branchId;
+
             $data = $invoiceController->index($user, $filters);
             return Response::json($data);
         });
@@ -4295,11 +4342,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'customer_id' => $request->queryParam('customer_id'),
                 'technician_id' => $request->queryParam('technician_id'),
                 'date' => $request->queryParam('date'),
+                'branch_id' => $request->queryParam('branch_id'),
             ];
 
             if ($user?->role === 'technician') {
                 $filters['technician_id'] = $user->id;
             }
+
+            $requestedBranch = $filters['branch_id'] ?? null;
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            $filters['branch_id'] = $branchId;
+
             $data = $appointmentController->index($user, $filters);
             return Response::json($data);
         });
