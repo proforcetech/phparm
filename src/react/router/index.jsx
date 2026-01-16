@@ -60,6 +60,7 @@ import InventorySpotChecks from '../views/storage/InventorySpotChecks'
 import DocumentVault from '../views/documents/DocumentVault'
 import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
+import Reconciliation from '../views/financial/Reconciliation'
 import AccountCategories from '../views/financial/AccountCategories'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
@@ -250,6 +251,7 @@ const protectedRoutes = [
   { path: '/cp/storage/spot-checks', name: 'StorageSpotChecks', auth: 'requiresAuth', element: <InventorySpotChecks /> },
   { path: '/cp/towing/pricing', name: 'TowingPricingMatrix', auth: 'requiresAuth', element: <TowingPricingMatrix /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
+  { path: '/cp/financial/reconciliation', name: 'FinancialReconciliation', auth: 'requiresAuth', element: <Reconciliation /> },
   { path: '/cp/financial/categories', name: 'FinancialCategories', auth: 'requiresAuth', element: <AccountCategories /> },
   { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
