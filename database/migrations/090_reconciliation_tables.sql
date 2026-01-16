@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_bank_transactions (
     description VARCHAR(255) NOT NULL,
     reference VARCHAR(255) NULL,
     amount DECIMAL(12,2) NOT NULL,
-    created_by UNSIGNED INT NULL,
+    created_by INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_recon_bank_session (session_id),
     INDEX idx_recon_bank_date (transaction_date),
