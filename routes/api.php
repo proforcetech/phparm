@@ -7971,9 +7971,29 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'status' => $request->queryParam('status'),
                 'search' => $request->queryParam('search'),
+                'folder' => $request->queryParam('folder'),
+                'tag' => $request->queryParam('tag'),
             ];
 
             $data = $cmsMediaController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/cms/media/metadata', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->metadata($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media/bulk', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->bulkUpdate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media/folders/rename', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->renameFolder($user, $request->body());
             return Response::json($data);
         });
 

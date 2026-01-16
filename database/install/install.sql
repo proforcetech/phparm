@@ -850,6 +850,8 @@ CREATE TABLE cms_media (
     size_bytes INT UNSIGNED NULL,
     title VARCHAR(255) NULL,
     alt_text VARCHAR(255) NULL,
+    folder VARCHAR(255) NULL,
+    tags JSON NULL,
     status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
     published_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

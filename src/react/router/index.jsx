@@ -98,6 +98,7 @@ import CMSComponentList from '../views/cms/CMSComponentList'
 import CMSComponentForm from '../views/cms/CMSComponentForm'
 import CMSTemplateList from '../views/cms/CMSTemplateList'
 import CMSTemplateForm from '../views/cms/CMSTemplateForm'
+import CMSMediaLibrary from '../views/cms/CMSMediaLibrary'
 import NotFoundManager from '../views/cms/NotFoundManager'
 import CustomerPortalDashboard from '../views/customer-portal/Dashboard'
 import CustomerPortalInvoices from '../views/customer-portal/Invoices'
@@ -275,6 +276,7 @@ const protectedRoutes = [
   { path: '/cp/cms/menus', name: 'CMSMenuList', auth: 'requiresAuth', element: <CMSMenuList /> },
   { path: '/cp/cms/menus/create', name: 'CMSMenuCreate', auth: 'requiresAuth', element: <CMSMenuForm /> },
   { path: '/cp/cms/menus/:id', name: 'CMSMenuEdit', auth: 'requiresAuth', element: <CMSMenuForm /> },
+  { path: '/cp/cms/media', name: 'CMSMediaLibrary', auth: 'requiresAuth', element: <CMSMediaLibrary /> },
   { path: '/cp/cms/components', name: 'CMSComponentList', auth: 'requiresAuth', element: <CMSComponentList /> },
   { path: '/cp/cms/components/create', name: 'CMSComponentCreate', auth: 'requiresAuth', element: <CMSComponentForm /> },
   { path: '/cp/cms/components/:id', name: 'CMSComponentEdit', auth: 'requiresAuth', element: <CMSComponentForm /> },
