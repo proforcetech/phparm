@@ -66,8 +66,15 @@ class DispatchRecommendationService
         $certificationsByDriver = $this->fetchVerifiedCertifications();
         $workloadByDriver = $this->fetchDriverWorkloads($referenceTime);
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
+        $driverLocations = $this->resolveDriverLocations($drivers);
+        $bulkEtas = $this->resolveBulkEtas(
+            $driverLocations,
+            $requirement['pickup_latitude'] ?? null,
+            $requirement['pickup_longitude'] ?? null
+        );
         $activeDropoffsByDriver = $this->fetchActiveJobDropoffs();
         $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
+        $leaveByUserId = $this->fetchApprovedLeaveByUserIds(array_column($drivers, 'user_id'), $referenceTime);
 
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
@@ -76,6 +83,24 @@ class DispatchRecommendationService
         foreach ($drivers as $driver) {
             $driverId = $driver['id'];
             $exclusionReasons = [];
+            $leave = $leaveByUserId[$driver['user_id']] ?? null;
+
+            if ($leave !== null) {
+                $excludedDrivers[] = [
+                    'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
+                    'reason' => 'on_leave',
+                    'details' => [
+                        'leave_type' => $leave['leave_type'] ?? null,
+                        'start_at' => $leave['start_at'] ?? null,
+                        'end_at' => $leave['end_at'] ?? null,
+                    ],
+                ];
+                if ($this->enforceHardFilters) {
+                    continue;
+                }
+                $exclusionReasons[] = 'on_leave';
+            }
 
             // Check certifications (from both profile and certification table)
             $profileCertifications = $driver['certifications'] ?? [];
@@ -121,7 +146,7 @@ class DispatchRecommendationService
             }
 
             // Get driver's current location (real-time or base)
-            $driverLocation = $this->getDriverLocation($driver);
+            $driverLocation = $driverLocations[$driverId] ?? $this->getDriverLocation($driver);
 
             // Calculate distance
             $distanceKm = $this->calculateDistanceKm(
@@ -137,7 +162,8 @@ class DispatchRecommendationService
                 $driverLocation,
                 $requirement['pickup_latitude'] ?? null,
                 $requirement['pickup_longitude'] ?? null,
-                $driverId
+                $driverId,
+                $bulkEtas[$driverId] ?? null
             );
             $etaScore = $this->scoreEta($etaData['eta_minutes']);
 
@@ -207,6 +233,7 @@ class DispatchRecommendationService
                 'availability_status' => $driver['availability_status'],
                 'distance_km' => $distanceKm,
                 'eta_minutes' => $etaData['eta_minutes'],
+                'raw_eta_minutes' => $etaData['raw_eta_minutes'],
                 'traffic_factor' => $etaData['traffic_factor'],
                 'equipment' => $equipmentResult['equipment'],
                 'equipment_compatible' => $equipmentResult['is_compatible'],
@@ -435,16 +462,67 @@ class DispatchRecommendationService
         ];
     }
 
+    private function resolveDriverLocations(array $drivers): array
+    {
+        $locations = [];
+
+        foreach ($drivers as $driver) {
+            $locations[$driver['id']] = $this->getDriverLocation($driver);
+        }
+
+        return $locations;
+    }
+
+    private function resolveBulkEtas(array $driverLocations, ?float $destLat, ?float $destLng): array
+    {
+        if ($this->etaService === null || !$this->useRealTimeEta || $destLat === null || $destLng === null) {
+            return [];
+        }
+
+        $drivers = [];
+        foreach ($driverLocations as $driverId => $location) {
+            if ($location['latitude'] === null || $location['longitude'] === null) {
+                continue;
+            }
+            $drivers[] = [
+                'driver_profile_id' => $driverId,
+                'latitude' => $location['latitude'],
+                'longitude' => $location['longitude'],
+            ];
+        }
+
+        if (count($drivers) === 0) {
+            return [];
+        }
+
+        return $this->etaService->calculateBulkEtas($drivers, $destLat, $destLng);
+    }
+
     /**
      * Calculate ETA with traffic awareness.
      */
-    private function calculateEtaWithTraffic(array $location, ?float $destLat, ?float $destLng, int $driverId): array
+    private function calculateEtaWithTraffic(
+        array $location,
+        ?float $destLat,
+        ?float $destLng,
+        int $driverId,
+        ?array $bulkEta = null
+    ): array
     {
         if ($destLat === null || $destLng === null || $location['latitude'] === null) {
-            return ['eta_minutes' => null, 'traffic_factor' => 1.0, 'source' => 'unavailable'];
+            return [
+                'eta_minutes' => null,
+                'raw_eta_minutes' => null,
+                'traffic_factor' => 1.0,
+                'source' => 'unavailable',
+            ];
         }
 
         if ($this->etaService !== null && $this->useRealTimeEta) {
+            if ($bulkEta !== null) {
+                return $bulkEta;
+            }
+
             return $this->etaService->calculateEta(
                 $location['latitude'],
                 $location['longitude'],
@@ -460,6 +538,7 @@ class DispatchRecommendationService
 
         return [
             'eta_minutes' => $etaMinutes,
+            'raw_eta_minutes' => $etaMinutes,
             'distance_km' => $distance,
             'traffic_factor' => 1.0,
             'source' => 'estimated',
@@ -747,6 +826,47 @@ class DispatchRecommendationService
         }
 
         return $byDriver;
+    }
+
+    /**
+     * @param int[] $userIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchApprovedLeaveByUserIds(array $userIds, DateTimeImmutable $referenceTime): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $sql = 'SELECT lr.leave_type, lr.start_at, lr.end_at, e.user_id '
+            . 'FROM leave_requests lr '
+            . 'INNER JOIN employees e ON e.id = lr.employee_id '
+            . 'WHERE lr.status = ? '
+            . 'AND lr.start_at <= ? '
+            . 'AND lr.end_at >= ? '
+            . 'AND e.user_id IN (' . $placeholders . ') '
+            . 'ORDER BY lr.start_at ASC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $params = array_merge(
+            ['approved', $referenceTime->format('Y-m-d H:i:s'), $referenceTime->format('Y-m-d H:i:s')],
+            $userIds
+        );
+
+        foreach ($params as $index => $value) {
+            $stmt->bindValue($index + 1, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+
+        $stmt->execute();
+
+        $leaves = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $userId = (int) $row['user_id'];
+            $leaves[$userId] = $row;
+        }
+
+        return $leaves;
     }
 
     private function findRequirement(int $id): ?array

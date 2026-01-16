@@ -390,6 +390,8 @@ CREATE TABLE time_entries (
     reviewed_by INT UNSIGNED NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    payroll_included TINYINT(1) NOT NULL DEFAULT 0,
+    payroll_included_at DATETIME NULL,
     en_route_at DATETIME NULL,
     on_site_at DATETIME NULL,
     wrap_up_at DATETIME NULL,
@@ -951,6 +953,21 @@ CREATE TABLE cms_pages (
     CONSTRAINT fk_cms_pages_footer_component FOREIGN KEY (footer_component_id) REFERENCES cms_components(id) ON DELETE SET NULL,
     CONSTRAINT fk_cms_pages_category FOREIGN KEY (category_id) REFERENCES cms_categories(id) ON DELETE SET NULL,
     CONSTRAINT fk_cms_pages_template FOREIGN KEY (template_id) REFERENCES cms_templates (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cms_search_index (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    source_type VARCHAR(32) NOT NULL,
+    source_id INT UNSIGNED NOT NULL,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    slug VARCHAR(255) NULL,
+    summary TEXT NULL,
+    content LONGTEXT NULL,
+    status VARCHAR(50) NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_cms_search_source (source_type, source_id),
+    INDEX idx_cms_search_status (status),
+    FULLTEXT KEY ft_cms_search_text (title, summary, content)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- CMS settings table for configuration
