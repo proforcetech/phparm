@@ -238,7 +238,9 @@ alert('Hi');
 
 ## Caching
 
-The rendering service caches rendered pages for 1 hour by default. Cache is automatically invalidated when:
+The rendering service caches rendered pages for 1 hour by default and supports stale-while-revalidate. When the fresh TTL expires, cached HTML can still be served while a background refresh updates the stored HTML.
+
+Cache is automatically invalidated when:
 
 - Page is updated
 - Page is published/unpublished
