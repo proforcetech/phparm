@@ -7,6 +7,7 @@ import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
+import Textarea from '../../components/ui/Textarea'
 import userService from '../../../services/user.service'
 import roleService from '../../../services/role.service'
 import { useToast } from '../../stores/toast.jsx'
@@ -24,6 +25,14 @@ const twoFactorDescriptions = {
   email: 'User will receive verification codes via email',
 }
 
+const payStructureOptions = [
+  { label: 'Select pay structure', value: '' },
+  { label: 'Hourly', value: 'Hourly' },
+  { label: 'Flat Rate', value: 'Flat Rate' },
+  { label: 'Commission', value: 'Commission' },
+  { label: 'Salary', value: 'Salary' },
+]
+
 export default function UserForm() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -38,6 +47,12 @@ export default function UserForm() {
     role: 'technician',
     email_verified: false,
     two_factor_type: 'none',
+    employee: {
+      hire_date: '',
+      emergency_contact: '',
+      pay_structure: '',
+      skills: '',
+    },
   })
 
   const [errors, setErrors] = useState({
@@ -54,6 +69,13 @@ export default function UserForm() {
   const getRoleLabel = (role) => roleInfo[role]?.label || role
   const getRoleDescription = (role) => roleInfo[role]?.description || ''
   const getRolePermissions = (role) => roleInfo[role]?.permissions || []
+
+  const parseSkills = (value) => value
+    .split(/[,\n]/)
+    .map((skill) => skill.trim())
+    .filter(Boolean)
+
+  const formatSkills = (skills) => (Array.isArray(skills) ? skills.join(', ') : '')
 
   const validateForm = () => {
     let isValid = true
@@ -101,6 +123,12 @@ export default function UserForm() {
         email_verified: form.email_verified,
         two_factor_type: form.two_factor_type,
         two_factor_enabled: form.two_factor_type !== 'none',
+        employee: {
+          hire_date: form.employee.hire_date || null,
+          emergency_contact: form.employee.emergency_contact || null,
+          pay_structure: form.employee.pay_structure || null,
+          skills: parseSkills(form.employee.skills || ''),
+        },
       }
 
       if (form.password) {
@@ -142,6 +170,12 @@ export default function UserForm() {
         email_verified: user.email_verified,
         two_factor_type: user.two_factor_type || 'none',
         password: '',
+        employee: {
+          hire_date: user.employee?.hire_date || '',
+          emergency_contact: user.employee?.emergency_contact || '',
+          pay_structure: user.employee?.pay_structure || '',
+          skills: formatSkills(user.employee?.skills),
+        },
       })
     } catch (error) {
       console.error('Failed to load user:', error)
@@ -311,6 +345,59 @@ export default function UserForm() {
                   </div>
                 </div>
               </div>
+            </div>
+          </Card>
+
+          <Card>
+            <h3 className="text-lg font-medium text-gray-900">Employee Profile</h3>
+            <p className="mt-1 text-sm text-gray-500">Store employment details for payroll and HR workflows.</p>
+
+            <div className="mt-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  modelValue={form.employee.hire_date}
+                  type="date"
+                  label="Hire Date"
+                  onUpdateModelValue={(value) => setForm((prev) => ({
+                    ...prev,
+                    employee: { ...prev.employee, hire_date: value },
+                  }))}
+                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pay Structure</label>
+                  <Select
+                    modelValue={form.employee.pay_structure}
+                    options={payStructureOptions}
+                    onUpdateModelValue={(value) => setForm((prev) => ({
+                      ...prev,
+                      employee: { ...prev.employee, pay_structure: value },
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <Textarea
+                label="Emergency Contact"
+                placeholder="Name, relationship, and phone number"
+                modelValue={form.employee.emergency_contact}
+                rows={3}
+                onUpdateModelValue={(value) => setForm((prev) => ({
+                  ...prev,
+                  employee: { ...prev.employee, emergency_contact: value },
+                }))}
+              />
+
+              <Textarea
+                label="Skills"
+                helperText="List skills separated by commas (e.g., Level 3 Tech, Heavy Duty Towing)."
+                placeholder="Level 3 Tech, Heavy Duty Towing"
+                modelValue={form.employee.skills}
+                rows={3}
+                onUpdateModelValue={(value) => setForm((prev) => ({
+                  ...prev,
+                  employee: { ...prev.employee, skills: value },
+                }))}
+              />
             </div>
           </Card>
 

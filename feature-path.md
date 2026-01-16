@@ -239,7 +239,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: Create an Employee model linked 1:1 to the User model.
+[x] New Model: Create an Employee model linked 1:1 to the User model.
 [ ] Fields: Store hire_date, emergency_contact, pay_structure (Hourly, Flat Rate, Commission, Salary), and skills (e.g., "Level 3 Tech", "Heavy Duty Towing").
 
 [ ] Document Vault: storage for contracts, certifications (ASE, WreckMaster), and expiration dates for driver's licenses.

@@ -4197,7 +4197,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate,
         $totpService,
         $rolePermissions,
-        new \App\Services\ImportExport\CsvExportService($connection)
+        new \App\Services\ImportExport\CsvExportService($connection),
+        new \App\Services\Employee\EmployeeRepository($connection)
     );
 
     // Role controller for role management
