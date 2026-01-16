@@ -525,6 +525,8 @@ class CMSApiController
         $this->requireEditAccess($user);
 
         $pdo = $this->connection->pdo();
+        $existing = $this->getComponent($user, $id);
+        $existingSlug = $existing['slug'] ?? null;
 
         $this->validateComponentData($data);
 
@@ -564,6 +566,9 @@ class CMSApiController
 
         // Invalidate cache
         $this->invalidateComponentCache($data['slug'] ?? '');
+        if ($existingSlug && $existingSlug !== ($data['slug'] ?? $existingSlug)) {
+            $this->invalidateComponentCache($existingSlug);
+        }
         $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
 
         $component = $this->getComponent($user, $id);
@@ -1184,6 +1189,7 @@ class CMSApiController
         $stmt->execute(['key' => '%component_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('component:' . $slug);
+        $this->invalidateAllPageCache();
     }
 
     /**
@@ -1221,6 +1227,13 @@ class CMSApiController
         $this->cacheService?->forgetPrefix('template:' . $slug);
     }
 
+    private function invalidateAllPageCache(): void
+    {
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare("DELETE FROM {$this->table('cache')} WHERE cache_key LIKE :key");
+        $stmt->execute(['key' => '%page_%']);
+
+        $this->cacheService?->forgetPrefix('page:');
     private function validateComponentData(array $data): void
     {
         $type = $data['type'] ?? 'custom';
