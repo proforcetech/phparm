@@ -379,6 +379,8 @@ export default function InventoryList() {
                     ) : (
                       <div className="mt-2 text-xs text-gray-400">No core balance</div>
                     )}
+                  </div>
+                ),
                 forecast: ({ row }) => (
                   <div className="text-sm text-gray-800">
                     <div>
@@ -423,7 +425,7 @@ export default function InventoryList() {
                 <Button disabled={!hasNextPage} variant="secondary" onClick={nextPage}>Next</Button> 
               </div> 
             </div> 
-          </div> >
+          </div>
         </Card>
                   
         <Card className="space-y-3">
