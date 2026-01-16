@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import Alert from '../../components/ui/Alert'
@@ -154,15 +154,18 @@ export default function AdminDashboard() {
     buckets: [],
   })
   const [branches, setBranches] = useState([])
-  const [branchId, setBranchId] = useState('')
+  const [branchScope, setBranchScope] = useState('all')
   const [revenueChartData, setRevenueChartData] = useState({ labels: [], datasets: [] })
   const [serviceTypeChartData, setServiceTypeChartData] = useState({ labels: [], datasets: [] })
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState(null)
+  const branchScopeInitialized = useRef(false)
 
   const technicianId = useMemo(() => (user?.role === 'technician' ? user.id : null), [user])
   const technicianParams = useMemo(() => (technicianId ? { technician_id: technicianId } : {}), [technicianId])
-  const branchParams = useMemo(() => (branchId ? { branch_id: branchId } : {}), [branchId])
+  const branchParams = useMemo(() => (
+    branchScope === 'current' && user?.branch_id ? { branch_id: user.branch_id } : {}
+  ), [branchScope, user?.branch_id])
   const chartRange = useMemo(() => {
     const endDate = new Date()
     const startDate = new Date()
@@ -179,6 +182,16 @@ export default function AdminDashboard() {
       .then((data) => setBranches(Array.isArray(data) ? data : []))
       .catch(() => toast.error('Failed to load branches'))
   }, [toast])
+
+  useEffect(() => {
+    if (branchScopeInitialized.current) {
+      return
+    }
+    if (user?.branch_id) {
+      setBranchScope('current')
+    }
+    branchScopeInitialized.current = true
+  }, [user])
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -199,8 +212,8 @@ export default function AdminDashboard() {
           .catch(() => ({})),
         dashboardService.getRecentInvoices(5, { ...technicianParams, ...branchParams }).catch(() => []),
         dashboardService.getRecentAppointments(5, { ...technicianParams, ...branchParams }).catch(() => []),
-        dashboardService.getInventoryLowStockTile(5).catch(() => null),
-        dashboardService.getInventoryPullRequests(5).catch(() => null),
+        dashboardService.getInventoryLowStockTile(5, { ...branchParams }).catch(() => null),
+        dashboardService.getInventoryPullRequests(5, { ...branchParams }).catch(() => null),
         dashboardService.getWipAging({ ...technicianParams, ...branchParams }).catch(() => null),
         dashboardService
           .getMonthlyTrendsChart({ start: chartRange.start, end: chartRange.end, ...technicianParams, ...branchParams })
@@ -297,16 +310,22 @@ export default function AdminDashboard() {
     }
   }, [branchParams, chartRange.end, chartRange.start, technicianParams, toast])
 
-  const branchOptions = useMemo(
-    () => [
-      { value: '', label: 'All branches' },
-      ...branches.map((branch) => ({
-        value: branch.id,
-        label: branch.label,
-      })),
-    ],
-    [branches],
-  )
+  const currentBranchLabel = useMemo(() => {
+    if (!user?.branch_id) {
+      return null
+    }
+    const match = branches.find((branch) => Number(branch.id) === Number(user.branch_id))
+    return match?.label || `#${user.branch_id}`
+  }, [branches, user?.branch_id])
+
+  const branchOptions = useMemo(() => {
+    const options = [{ value: 'all', label: 'All Locations' }]
+    if (user?.branch_id) {
+      const label = currentBranchLabel ? `Current Branch (${currentBranchLabel})` : 'Current Branch'
+      options.push({ value: 'current', label })
+    }
+    return options
+  }, [currentBranchLabel, user?.branch_id])
 
   useEffect(() => {
     loadDashboard()
@@ -318,11 +337,14 @@ export default function AdminDashboard() {
       status: wipStatusParam,
       status_age_min_days: String(bucket.min_days ?? 0),
     })
+    if (branchScope === 'current' && user?.branch_id) {
+      params.set('branch_id', String(user.branch_id))
+    }
     if (bucket.max_days !== null && bucket.max_days !== undefined) {
       params.set('status_age_max_days', String(bucket.max_days))
     }
     return `/cp/workorders?${params.toString()}`
-  }, [wipStatusParam])
+  }, [branchScope, user?.branch_id, wipStatusParam])
 
   return (
     <div>
@@ -344,10 +366,10 @@ export default function AdminDashboard() {
           <Card>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Branch</label>
+                <label className="block text-sm font-medium text-gray-700">Location</label>
                 <Select
-                  modelValue={branchId}
-                  onUpdateModelValue={setBranchId}
+                  modelValue={branchScope}
+                  onUpdateModelValue={setBranchScope}
                   options={branchOptions}
                   placeholder=""
                 />

@@ -4,6 +4,7 @@ namespace App\Services\Inventory;
 
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\BranchScope;
 use App\Support\Auth\UnauthorizedException;
 use App\Services\Inventory\InventoryLowStockService;
 use App\Services\Inventory\InventoryTransactionRepository;
@@ -81,11 +82,15 @@ class InventoryItemController
     /**
      * @return array<string, mixed>
      */
-    public function lowStockTile(User $user, int $limit = 5): array
+    /**
+     * @param array<string, mixed> $params
+     * @return array<string, mixed>
+     */
+    public function lowStockTile(User $user, int $limit = 5, array $params = []): array
     {
         $this->assertViewAccess($user);
 
-        return $this->lowStockService->tile($limit, $this->resolveBranchFilter($user));
+        return $this->lowStockService->tile($limit, $this->resolveBranchFilter($user, $params));
     }
 
     /**
@@ -522,15 +527,15 @@ class InventoryItemController
      */
     private function resolveBranchFilter(User $user, array $params = []): ?int
     {
-        if ($user->role !== 'admin') {
-            return $user->branch_id;
-        }
-
         if (!array_key_exists('branch_id', $params)) {
-            return null;
+            return BranchScope::resolveBranchId($user, null);
         }
 
-        return $params['branch_id'] !== '' && $params['branch_id'] !== null ? (int) $params['branch_id'] : null;
+        $requestedBranch = $params['branch_id'] !== '' && $params['branch_id'] !== null
+            ? (int) $params['branch_id']
+            : null;
+
+        return BranchScope::resolveBranchId($user, $requestedBranch);
     }
 
     /**
@@ -538,15 +543,15 @@ class InventoryItemController
      */
     private function resolveBranchAssignment(User $user, array $data): ?int
     {
-        if ($user->role !== 'admin') {
-            return $user->branch_id;
-        }
-
         if (!array_key_exists('branch_id', $data)) {
-            return null;
+            return BranchScope::resolveBranchId($user, null);
         }
 
-        return $data['branch_id'] !== '' && $data['branch_id'] !== null ? (int) $data['branch_id'] : null;
+        $requestedBranch = $data['branch_id'] !== '' && $data['branch_id'] !== null
+            ? (int) $data['branch_id']
+            : null;
+
+        return BranchScope::resolveBranchId($user, $requestedBranch);
     }
 
     private function assertBranchAccess(User $user, ?int $branchId): void
