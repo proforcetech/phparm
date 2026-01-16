@@ -86,6 +86,11 @@ class CategoryController
     {
         $this->gate->assert($user, 'cms.categories.create');
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
+        }
+
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
@@ -113,6 +118,11 @@ class CategoryController
         $existing = $this->find($id);
         if ($existing === null) {
             return null;
+        }
+
+        $requestedStatus = $data['status'] ?? $existing->status ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
         }
 
         $payload = $this->preparePayload($data, false, $existing);
@@ -218,7 +228,7 @@ class CategoryController
     {
         $name = $data['name'] ?? $existing?->name ?? 'Untitled Category';
         $slugSource = $data['slug'] ?? $name;
-        $status = $data['status'] ?? $existing?->status ?? 'published';
+        $status = $data['status'] ?? $existing?->status ?? 'draft';
 
         return [
             'name' => (string) $name,
@@ -240,5 +250,10 @@ class CategoryController
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
         return trim($value ?: uniqid('category-'), '-');
+    }
+
+    private function assertPublishAccess(User $user): void
+    {
+        $this->gate->assert($user, 'cms.categories.publish');
     }
 }

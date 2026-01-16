@@ -212,6 +212,11 @@ class CMSApiController
     {
         $this->requireEditAccess($user);
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->requirePublishAccess($user);
+        }
+
         $pdo = $this->connection->pdo();
 
         // Generate slug if not provided
@@ -258,6 +263,16 @@ class CMSApiController
     public function updatePage(?User $user, int $id, array $data): array
     {
         $this->requireEditAccess($user);
+
+        $existing = $this->getPage($user, $id);
+        if ($existing === null) {
+            throw new \RuntimeException('Page not found');
+        }
+
+        $requestedStatus = $data['status'] ?? $existing['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->requirePublishAccess($user);
+        }
 
         $pdo = $this->connection->pdo();
 
@@ -306,7 +321,7 @@ class CMSApiController
      */
     public function publishPage(?User $user, int $id): array
     {
-        $this->requireEditAccess($user);
+        $this->requirePublishAccess($user);
 
         $pdo = $this->connection->pdo();
 
@@ -933,6 +948,12 @@ class CMSApiController
         // Use AccessGate for consistent permission checking
         $this->gate->assert($user, 'cms.*');
         // Initialize CMS session after successful access check
+        $this->authBridge->initializeCMSSession($user);
+    }
+
+    private function requirePublishAccess(?User $user): void
+    {
+        $this->gate->assert($user, 'cms.pages.publish');
         $this->authBridge->initializeCMSSession($user);
     }
 
