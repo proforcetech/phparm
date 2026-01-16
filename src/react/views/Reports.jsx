@@ -5,7 +5,9 @@ import LineChart from '../components/charts/LineChart'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Input from '../components/ui/Input'
+import Select from '../components/ui/Select'
 import FinancialReports from './financial/Reports'
+import branchesService from '../../services/branches.service'
 import reportsService from '../../services/reports.service'
 import { useToast } from '../stores/toast.jsx'
 
@@ -26,6 +28,7 @@ function TechnicianMargins() {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [filters, setFilters] = useState({ start_date: '', end_date: '', branch_id: '' })
+  const [branches, setBranches] = useState([])
   const [report, setReport] = useState({
     data: [],
     summary: {
@@ -46,6 +49,13 @@ function TechnicianMargins() {
     const startDate = monthAgo.toISOString().slice(0, 10)
     setFilters({ start_date: startDate, end_date: endDate, branch_id: '' })
   }, [])
+
+  useEffect(() => {
+    branchesService
+      .list()
+      .then((data) => setBranches(Array.isArray(data) ? data : []))
+      .catch(() => toast.error('Failed to load branches'))
+  }, [toast])
 
   useEffect(() => {
     if (filters.start_date && filters.end_date) {
@@ -157,6 +167,17 @@ function TechnicianMargins() {
     },
   }
 
+  const branchOptions = useMemo(
+    () => [
+      { value: '', label: 'All branches' },
+      ...branches.map((branch) => ({
+        value: branch.id,
+        label: branch.label,
+      })),
+    ],
+    [branches],
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -184,11 +205,11 @@ function TechnicianMargins() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Branch (optional)</label>
-            <Input
+            <Select
               modelValue={filters.branch_id}
-              type="number"
-              placeholder="Branch ID"
               onUpdateModelValue={(value) => setFilters((prev) => ({ ...prev, branch_id: value }))}
+              options={branchOptions}
+              placeholder=""
             />
           </div>
           <div className="flex items-end">

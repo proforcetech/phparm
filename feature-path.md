@@ -339,4 +339,4 @@ The current implementation appears to handle basic CRUD operations but may strug
 [ ] Data Structure: Add branch_id to almost every major table (Users, Inventory, Invoices, Workorders).
 [ ] Inventory Transfer: A workflow to move parts from "Main St Branch" to "Downtown Branch" without buying/selling.
 [ ] Reporting: Ability to filter Dashboards by "Current Branch" vs "All Locations".
-[ ] Tenant Scoping: Ensure a user at Branch A cannot accidentally see or edit Branch B's workorders (unless they are a Regional Manager).
+[x] Tenant Scoping: Ensure a user at Branch A cannot accidentally see or edit Branch B's workorders (unless they are a Regional Manager).

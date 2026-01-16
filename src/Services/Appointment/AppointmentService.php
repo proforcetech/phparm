@@ -112,30 +112,43 @@ class AppointmentService
      */
     public function list(array $filters = []): array
     {
-        $sql = 'SELECT * FROM appointments WHERE 1=1';
+        $sql = 'SELECT a.* FROM appointments a';
         $params = [];
+        $joins = [];
+        $clauses = ['1=1'];
 
         if (!empty($filters['status'])) {
-            $sql .= ' AND status = :status';
+            $clauses[] = 'a.status = :status';
             $params['status'] = $filters['status'];
         }
 
         if (!empty($filters['customer_id'])) {
-            $sql .= ' AND customer_id = :customer_id';
+            $clauses[] = 'a.customer_id = :customer_id';
             $params['customer_id'] = $filters['customer_id'];
         }
 
         if (!empty($filters['technician_id'])) {
-            $sql .= ' AND technician_id = :technician_id';
+            $clauses[] = 'a.technician_id = :technician_id';
             $params['technician_id'] = $filters['technician_id'];
         }
 
         if (!empty($filters['date'])) {
-            $sql .= ' AND DATE(start_time) = :start_date';
+            $clauses[] = 'DATE(a.start_time) = :start_date';
             $params['start_date'] = $filters['date'];
         }
 
-        $sql .= ' ORDER BY start_time DESC';
+        if (!empty($filters['branch_id'])) {
+            $joins[] = 'LEFT JOIN estimates e ON e.id = a.estimate_id';
+            $joins[] = 'LEFT JOIN workorders w ON w.id = e.workorder_id';
+            $clauses[] = 'w.branch_id = :branch_id';
+            $params['branch_id'] = (int) $filters['branch_id'];
+        }
+
+        if ($joins) {
+            $sql .= ' ' . implode(' ', $joins);
+        }
+
+        $sql .= ' WHERE ' . implode(' AND ', $clauses) . ' ORDER BY a.start_time DESC';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($params);
