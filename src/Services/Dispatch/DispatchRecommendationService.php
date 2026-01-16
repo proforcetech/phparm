@@ -68,6 +68,7 @@ class DispatchRecommendationService
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
         $activeDropoffsByDriver = $this->fetchActiveJobDropoffs();
         $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
+        $leaveByUserId = $this->fetchApprovedLeaveByUserIds(array_column($drivers, 'user_id'), $referenceTime);
 
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
@@ -76,6 +77,24 @@ class DispatchRecommendationService
         foreach ($drivers as $driver) {
             $driverId = $driver['id'];
             $exclusionReasons = [];
+            $leave = $leaveByUserId[$driver['user_id']] ?? null;
+
+            if ($leave !== null) {
+                $excludedDrivers[] = [
+                    'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
+                    'reason' => 'on_leave',
+                    'details' => [
+                        'leave_type' => $leave['leave_type'] ?? null,
+                        'start_at' => $leave['start_at'] ?? null,
+                        'end_at' => $leave['end_at'] ?? null,
+                    ],
+                ];
+                if ($this->enforceHardFilters) {
+                    continue;
+                }
+                $exclusionReasons[] = 'on_leave';
+            }
 
             // Check certifications (from both profile and certification table)
             $profileCertifications = $driver['certifications'] ?? [];
@@ -747,6 +766,47 @@ class DispatchRecommendationService
         }
 
         return $byDriver;
+    }
+
+    /**
+     * @param int[] $userIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchApprovedLeaveByUserIds(array $userIds, DateTimeImmutable $referenceTime): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $sql = 'SELECT lr.leave_type, lr.start_at, lr.end_at, e.user_id '
+            . 'FROM leave_requests lr '
+            . 'INNER JOIN employees e ON e.id = lr.employee_id '
+            . 'WHERE lr.status = ? '
+            . 'AND lr.start_at <= ? '
+            . 'AND lr.end_at >= ? '
+            . 'AND e.user_id IN (' . $placeholders . ') '
+            . 'ORDER BY lr.start_at ASC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $params = array_merge(
+            ['approved', $referenceTime->format('Y-m-d H:i:s'), $referenceTime->format('Y-m-d H:i:s')],
+            $userIds
+        );
+
+        foreach ($params as $index => $value) {
+            $stmt->bindValue($index + 1, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+
+        $stmt->execute();
+
+        $leaves = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $userId = (int) $row['user_id'];
+            $leaves[$userId] = $row;
+        }
+
+        return $leaves;
     }
 
     private function findRequirement(int $id): ?array
