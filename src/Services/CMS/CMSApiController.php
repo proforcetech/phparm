@@ -478,10 +478,10 @@ class CMSApiController
 
         $stmt = $pdo->prepare("
             INSERT INTO {$this->table('components')} (
-                name, slug, type, description, content, css, javascript,
+                name, slug, type, description, content, css, javascript, css_assets, js_assets,
                 cache_ttl, is_active, created_by, updated_by, created_at, updated_at
             ) VALUES (
-                :name, :slug, :type, :description, :content, :css, :javascript,
+                :name, :slug, :type, :description, :content, :css, :javascript, :css_assets, :js_assets,
                 :cache_ttl, :is_active, :created_by, :updated_by, NOW(), NOW()
             )
         ");
@@ -494,6 +494,8 @@ class CMSApiController
             'content' => $data['content'] ?? '',
             'css' => $data['css'] ?? '',
             'javascript' => $data['javascript'] ?? '',
+            'css_assets' => $data['css_assets'] ?? '',
+            'js_assets' => $data['js_assets'] ?? '',
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
             'created_by' => $user->id,
@@ -535,6 +537,8 @@ class CMSApiController
                 content = :content,
                 css = :css,
                 javascript = :javascript,
+                css_assets = :css_assets,
+                js_assets = :js_assets,
                 cache_ttl = :cache_ttl,
                 is_active = :is_active,
                 updated_by = :updated_by,
@@ -551,6 +555,8 @@ class CMSApiController
             'content' => $data['content'] ?? '',
             'css' => $data['css'] ?? '',
             'javascript' => $data['javascript'] ?? '',
+            'css_assets' => $data['css_assets'] ?? '',
+            'js_assets' => $data['js_assets'] ?? '',
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
             'updated_by' => $user->id,

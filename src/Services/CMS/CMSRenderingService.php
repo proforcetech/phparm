@@ -8,6 +8,7 @@ use App\CMS\Models\Template;
 use App\Database\Connection;
 use App\Services\Dispatch\TrafficAwareEtaService;
 use App\Support\Notifications\TemplateEngine;
+use App\Services\CMS\CMSAssetBundler;
 use PDO;
 
 class CMSRenderingService
@@ -15,6 +16,11 @@ class CMSRenderingService
     private Connection $connection;
     private TemplateEngine $templateEngine;
     private ?CMSCacheService $cache;
+    private ?CMSAssetBundler $assetBundler;
+    /**
+     * @var array{css: array<int, string>, js: array<int, string>}
+     */
+    private array $componentAssets = ['css' => [], 'js' => []];
     private CMSDynamicComponentService $dynamicComponents;
 
     public function __construct(Connection $connection, ?CMSCacheService $cache = null)
@@ -22,6 +28,7 @@ class CMSRenderingService
         $this->connection = $connection;
         $this->templateEngine = new TemplateEngine();
         $this->cache = $cache;
+        $this->assetBundler = $this->initializeAssetBundler();
         $this->dynamicComponents = new CMSDynamicComponentService(
             $connection,
             new TrafficAwareEtaService($connection, $this->loadDispatchConfig()['eta'] ?? [])
@@ -64,6 +71,8 @@ class CMSRenderingService
 
     public function renderPageContent(Page $page): ?string
     {
+        $this->resetComponentAssets();
+
         if ($page->template_id === null) {
             return $this->renderBasicPage($page);
         }
@@ -91,7 +100,17 @@ class CMSRenderingService
         $data = $this->loadDynamicComponents($template->structure, $data);
         $html = $this->templateEngine->render($data['__template'], $data);
 
-        return $this->injectAssets($html, $page, $template->default_css ?? '', $page->custom_css ?? '', $template->default_js ?? '', $page->custom_js ?? '');
+        $bundleTags = $this->buildComponentBundleTags($page);
+
+        return $this->injectAssets(
+            $html,
+            $page,
+            $template->default_css ?? '',
+            $page->custom_css ?? '',
+            $template->default_js ?? '',
+            $page->custom_js ?? '',
+            $bundleTags
+        );
     }
 
 private function loadDynamicComponents(string $template, array $data): array
@@ -126,10 +145,23 @@ private function extractComponentSlugs(string $template): array
     return $slugs;
 }
 
-    private function injectAssets(string $html, Page $page, string $templateCss, string $pageCss, string $templateJs, string $pageJs): string
+    /**
+     * @param array{css?: string, js?: string} $bundleTags
+     */
+    private function injectAssets(
+        string $html,
+        Page $page,
+        string $templateCss,
+        string $pageCss,
+        string $templateJs,
+        string $pageJs,
+        array $bundleTags = []
+    ): string
     {
         // Inject meta tags
         $metaTags = '';
+        $cssBundleTags = $bundleTags['css'] ?? '';
+        $jsBundleTags = $bundleTags['js'] ?? '';
 
         // Add title tag if not already present in the HTML
         if (stripos($html, '<title>') === false) {
@@ -146,6 +178,8 @@ private function extractComponentSlugs(string $template): array
             $metaTags .= '<meta name="keywords" content="' . htmlspecialchars($page->meta_keywords) . '">' . "\n";
         }
 
+        if (trim($cssBundleTags) !== '') {
+            $metaTags .= $cssBundleTags;
         if ($page->canonical_url && !$this->hasCanonicalLink($html)) {
             $metaTags .= '<link rel="canonical" href="' . htmlspecialchars($page->canonical_url) . '">' . "\n";
         }
@@ -203,9 +237,15 @@ private function extractComponentSlugs(string $template): array
 
         if (trim($js) !== '') {
             $scriptBlock = "<script>\n" . $js . "\n</script>";
+            $jsOutput = $jsBundleTags . $scriptBlock;
+        } else {
+            $jsOutput = $jsBundleTags;
+        }
+
+        if (trim($jsOutput) !== '') {
             $html = (stripos($html, '</body>') !== false)
-                ? str_ireplace('</body>', $scriptBlock . "\n</body>", $html)
-                : $html . $scriptBlock;
+                ? str_ireplace('</body>', $jsOutput . "\n</body>", $html)
+                : $html . $jsOutput;
         }
 
         return $html;
@@ -240,6 +280,7 @@ private function extractComponentSlugs(string $template): array
 
     private function renderComponent(Component $component): string
     {
+        $this->collectComponentAssets($component);
         if ($this->isDynamicComponent($component)) {
             return $this->renderDynamicComponent($component);
         }
@@ -257,6 +298,81 @@ private function extractComponentSlugs(string $template): array
         return $html;
     }
 
+    private function initializeAssetBundler(): ?CMSAssetBundler
+    {
+        if (!defined('CMS_ASSETS') || !defined('CMS_CACHE')) {
+            return null;
+        }
+
+        return new CMSAssetBundler(CMS_ASSETS, CMS_CACHE, '/cms/assets');
+    }
+
+    private function resetComponentAssets(): void
+    {
+        $this->componentAssets = ['css' => [], 'js' => []];
+    }
+
+    /**
+     * @param array{css: array<int, string>, js: array<int, string>} $assets
+     */
+    private function mergeComponentAssets(array $assets): void
+    {
+        foreach ($assets as $type => $entries) {
+            foreach ($entries as $entry) {
+                $this->componentAssets[$type][] = $entry;
+            }
+        }
+    }
+
+    private function collectComponentAssets(Component $component): void
+    {
+        $this->mergeComponentAssets([
+            'css' => $this->parseAssetList($component->css_assets ?? null),
+            'js' => $this->parseAssetList($component->js_assets ?? null),
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function parseAssetList(?string $assets): array
+    {
+        if ($assets === null) {
+            return [];
+        }
+
+        $assets = trim($assets);
+        if ($assets === '') {
+            return [];
+        }
+
+        $parts = preg_split('/[\r\n,]+/', $assets);
+        if ($parts === false) {
+            return [];
+        }
+
+        $entries = array_map('trim', $parts);
+        $entries = array_filter($entries, static fn (string $entry) => $entry !== '');
+
+        return array_values($entries);
+    }
+
+    /**
+     * @return array{css: string, js: string}
+     */
+    private function buildComponentBundleTags(Page $page): array
+    {
+        if ($this->assetBundler === null) {
+            return ['css' => '', 'js' => ''];
+        }
+
+        $pageKey = $page->slug !== '' ? $page->slug : ('page-' . $page->id);
+
+        return $this->assetBundler->buildAssetTags(
+            $pageKey,
+            $this->componentAssets['css'],
+            $this->componentAssets['js']
+        );
     private function renderDynamicComponent(Component $component): string
     {
         $cacheKey = null;

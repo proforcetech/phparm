@@ -464,6 +464,8 @@ CREATE TABLE `cms_components` (
     `content` LONGTEXT NOT NULL,
     `css` TEXT NULL,
     `javascript` TEXT NULL,
+    `css_assets` TEXT NULL,
+    `js_assets` TEXT NULL,
     `is_active` TINYINT(1) DEFAULT 1,
     `cache_ttl` INT UNSIGNED DEFAULT 3600 COMMENT 'Cache time-to-live in seconds',
     `created_by` INT UNSIGNED NULL,

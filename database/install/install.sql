@@ -888,6 +888,8 @@ CREATE TABLE cms_components (
     content LONGTEXT NULL,
     css LONGTEXT NULL,
     javascript LONGTEXT NULL,
+    css_assets LONGTEXT NULL,
+    js_assets LONGTEXT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     cache_ttl INT UNSIGNED NOT NULL DEFAULT 0,
     created_by INT UNSIGNED NULL,
