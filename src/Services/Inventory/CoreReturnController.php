@@ -117,7 +117,7 @@ class CoreReturnController
     {
         $this->gate->assert($user, 'inventory.*');
 
-        return $this->service->receiveFromCustomer($id, $user->id, $data['notes'] ?? null);
+        return $this->service->receiveFromCustomer($id, $user->id, $data);
     }
 
     /**
