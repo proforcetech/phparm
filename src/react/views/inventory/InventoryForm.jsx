@@ -8,18 +8,28 @@ import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import inventoryMetaService from '../../../services/inventory-meta.service'
 import inventoryService from '../../../services/inventory.service'
+import { useAuthStore } from '../../stores/auth.jsx'
 
 const emptyForm = {
   name: '',
   sku: '',
   category: '',
   location: '',
+  bin_location: '',
   vendor: '',
   reorder_quantity: 0,
+  reorder_point_override: null,
+  reorder_point_override_reason: '',
+  usage_rate_30d: 0,
+  suggested_reorder_point: 0,
+  effective_reorder_point: 0,
   stock_quantity: 0,
   low_stock_threshold: 0,
   markup: null,
   cost: 0,
+  core_cost: '',
+  core_price: '',
+  core_eligible: false,
   sale_price: 0,
   notes: '',
 }
@@ -38,10 +48,14 @@ const calculateSalePrice = (costValue, markupValue) => {
 export default function InventoryForm() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const { hasPermission } = useAuthStore()
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
   const [form, setForm] = useState({ ...emptyForm })
+  const [transactions, setTransactions] = useState([])
+  const [transactionsLoading, setTransactionsLoading] = useState(false)
+  const [transactionsError, setTransactionsError] = useState('')
 
   const [categoryOptions, setCategoryOptions] = useState([])
   const [locationOptions, setLocationOptions] = useState([])
@@ -54,6 +68,12 @@ export default function InventoryForm() {
   const isInitializing = useRef(true)
 
   const isEditing = Boolean(id)
+  const canCreate = hasPermission('inventory.create')
+  const canEdit = hasPermission('inventory.edit')
+  const canAdjust = hasPermission('inventory.adjust')
+  const canManageOverrides = hasPermission('inventory.manage')
+  const canSave = isEditing ? canEdit : canCreate
+  const canAdjustStock = !isEditing || canAdjust
 
   const goBack = () => navigate('/cp/inventory')
 
@@ -89,6 +109,21 @@ export default function InventoryForm() {
     return nextForm
   }
 
+  const loadTransactions = async () => {
+    if (!id) return
+    setTransactionsLoading(true)
+    setTransactionsError('')
+    try {
+      const data = await inventoryService.getTransactions(id, { limit: 25 })
+      setTransactions(data)
+    } catch (err) {
+      console.error(err)
+      setTransactionsError('Could not load transaction history.')
+    } finally {
+      setTransactionsLoading(false)
+    }
+  }
+
   useEffect(() => {
     const loadData = async () => {
       const nextForm = await loadItem()
@@ -97,6 +132,9 @@ export default function InventoryForm() {
         loadLookup('locations', setLocationOptions, nextForm || form),
         loadLookup('vendors', setVendorOptions, nextForm || form),
       ])
+      if (id) {
+        await loadTransactions()
+      }
       isInitializing.current = false
     }
 
@@ -123,11 +161,19 @@ export default function InventoryForm() {
 
   const save = async (event) => {
     event.preventDefault()
+    if (!canSave) {
+      setError('You do not have permission to save inventory items.')
+      return
+    }
     setSaving(true)
     setError('')
     setSuccess('')
     try {
       const payload = { ...form }
+      if (!canManageOverrides) {
+        delete payload.reorder_point_override
+        delete payload.reorder_point_override_reason
+      }
       if (isEditing && id) {
         await inventoryService.update(id, payload)
         setSuccess('Inventory item updated.')
@@ -219,6 +265,15 @@ export default function InventoryForm() {
               ) : null}
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700">Bin location</label>
+              <Input
+                modelValue={form.bin_location}
+                placeholder="Aisle 1, Shelf B"
+                helperText="Format: Aisle 1, Shelf B"
+                onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, bin_location: value }))}
+              />
+            </div>
+            <div>
               <div className="flex items-center justify-between text-sm font-medium text-gray-700">
                 <span>Vendor</span>
                 <Link className="text-indigo-600 hover:text-indigo-500" to="/cp/inventory/vendors">Manage</Link>
@@ -252,6 +307,56 @@ export default function InventoryForm() {
             </div>
           </div>
 
+          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Stock forecasting</h3>
+                <p className="text-xs text-slate-500">Based on workorders completed in the last 30 days.</p>
+              </div>
+              <div className="text-sm text-slate-700">
+                <div>
+                  <span className="font-semibold">Usage rate:</span>{' '}
+                  {Number(form.usage_rate_30d || 0).toFixed(2)} / day
+                </div>
+                <div>
+                  <span className="font-semibold">Suggested reorder point:</span>{' '}
+                  {form.suggested_reorder_point ?? 0}
+                </div>
+                <div className="text-xs text-slate-500">
+                  Effective reorder point:{' '}
+                  {form.effective_reorder_point ?? form.suggested_reorder_point ?? 0}
+                  {form.reorder_point_override !== null ? ' (override)' : ''}
+                </div>
+              </div>
+            </div>
+
+            {canManageOverrides ? (
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Manager override</label>
+                  <Input
+                    modelValue={form.reorder_point_override ?? ''}
+                    type="number"
+                    min="0"
+                    placeholder="Leave blank to use suggested"
+                    onUpdateModelValue={(value) => setForm((prev) => ({
+                      ...prev,
+                      reorder_point_override: value === '' ? null : Number(value)
+                    }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Override reason</label>
+                  <Input
+                    modelValue={form.reorder_point_override_reason || ''}
+                    placeholder="Optional reason for audit trail"
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, reorder_point_override_reason: value }))}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <label className="block text-sm font-medium text-gray-700">Stock quantity</label>
@@ -260,6 +365,8 @@ export default function InventoryForm() {
                 type="number"
                 min="0"
                 placeholder="50"
+                disabled={!canAdjustStock}
+                helperText={!canAdjustStock ? 'You do not have permission to adjust stock quantities.' : ''}
                 onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, stock_quantity: Number(value) }))}
               />
             </div>
@@ -309,6 +416,50 @@ export default function InventoryForm() {
             </div>
           </div>
 
+          <div className="rounded-md border border-gray-200 p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Core tracking</p>
+                <p className="text-xs text-gray-500">Track refundable core charges for this item.</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={Boolean(form.core_eligible)}
+                  onChange={(event) => setForm((prev) => ({ ...prev, core_eligible: event.target.checked }))}
+                />
+                Core eligible
+              </label>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Core cost (vendor)</label>
+                <Input
+                  modelValue={form.core_cost ?? ''}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  disabled={!form.core_eligible}
+                  onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, core_cost: value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Core price (customer)</label>
+                <Input
+                  modelValue={form.core_price ?? ''}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  disabled={!form.core_eligible}
+                  onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, core_price: value }))}
+                />
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700">Notes</label>
             <textarea
@@ -323,16 +474,76 @@ export default function InventoryForm() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm text-gray-600">Fields marked with * are required. Pricing and stock will sync to alerts.</p>
+              {!canSave ? <p className="text-sm text-red-600">You do not have permission to save inventory items.</p> : null}
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
               {success ? <p className="text-sm text-green-600">{success}</p> : null}
             </div>
             <div className="flex gap-3">
               <Button type="button" variant="secondary" onClick={goBack}>Cancel</Button>
-              <Button type="submit" loading={saving}>{isEditing ? 'Update item' : 'Create item'}</Button>
+              {canSave ? (
+                <Button type="submit" loading={saving}>{isEditing ? 'Update item' : 'Create item'}</Button>
+              ) : null}
             </div>
           </div>
         </form>
       </Card>
+
+      {isEditing ? (
+        <Card className="mt-6 max-w-5xl">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Transaction history</h2>
+            <p className="text-sm text-gray-500">Track inventory quantity changes for this item.</p>
+          </div>
+          {transactionsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Loading size="sm" />
+              <span>Loading transactions...</span>
+            </div>
+          ) : null}
+          {!transactionsLoading && transactionsError ? (
+            <p className="text-sm text-red-600">{transactionsError}</p>
+          ) : null}
+          {!transactionsLoading && !transactionsError && transactions.length === 0 ? (
+            <p className="text-sm text-gray-500">No transactions logged yet.</p>
+          ) : null}
+          {!transactionsLoading && !transactionsError && transactions.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Change</th>
+                    <th className="px-3 py-2">Before</th>
+                    <th className="px-3 py-2">After</th>
+                    <th className="px-3 py-2">Source</th>
+                    <th className="px-3 py-2">Reference</th>
+                    <th className="px-3 py-2">Reason</th>
+                    <th className="px-3 py-2">User</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {transactions.map((row) => (
+                    <tr key={row.id}>
+                      <td className="px-3 py-2 text-gray-700">
+                        {row.created_at ? new Date(row.created_at).toLocaleString() : '—'}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-gray-900">
+                        {row.quantity_change > 0 ? `+${row.quantity_change}` : row.quantity_change}
+                      </td>
+                      <td className="px-3 py-2 text-gray-700">{row.quantity_before}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.quantity_after}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.source}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.reference || '—'}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.reason || '—'}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.created_by_name || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
     </div>
   )
 }

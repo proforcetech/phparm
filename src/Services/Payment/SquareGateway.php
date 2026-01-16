@@ -133,6 +133,7 @@ class SquareGateway implements PaymentGatewayInterface
                     'status' => $this->normalizeStatus($payment->getStatus()),
                     'amount' => $payment->getAmountMoney()->getAmount() / 100,
                     'currency' => $payment->getAmountMoney()->getCurrency(),
+                    'payment_method' => $paymentData['source_id'] ?? null,
                     'receipt_url' => $payment->getReceiptUrl(),
                     'created_at' => $payment->getCreatedAt(),
                 ];
@@ -332,6 +333,7 @@ class SquareGateway implements PaymentGatewayInterface
             'transaction_id' => $payment['id'] ?? '',
             'amount' => ($payment['amount_money']['amount'] ?? 0) / 100,
             'currency' => $payment['amount_money']['currency'] ?? 'USD',
+            'payment_method' => $payment['source_type'] ?? null,
             'status' => $this->normalizeStatus($payment['status'] ?? 'PENDING'),
             'order_id' => $payment['order_id'] ?? null,
             'handled' => true,
@@ -349,6 +351,7 @@ class SquareGateway implements PaymentGatewayInterface
             'transaction_id' => $payment['id'] ?? '',
             'amount' => ($payment['amount_money']['amount'] ?? 0) / 100,
             'currency' => $payment['amount_money']['currency'] ?? 'USD',
+            'payment_method' => $payment['source_type'] ?? null,
             'status' => $this->normalizeStatus($payment['status'] ?? 'PENDING'),
             'order_id' => $payment['order_id'] ?? null,
             'handled' => true,

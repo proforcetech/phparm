@@ -52,11 +52,11 @@ export default {
   /**
    * Mark core as received from customer
    * @param {number} id - Core return ID
-   * @param {string|null} notes - Optional notes
+   * @param {Object} payload - Receive details
    * @returns {Promise}
    */
-  async receiveFromCustomer(id, notes = null) {
-    const response = await api.post(`/core-returns/${id}/receive-from-customer`, { notes })
+  async receiveFromCustomer(id, payload = {}) {
+    const response = await api.post(`/core-returns/${id}/receive-from-customer`, payload)
     return response.data
   },
 

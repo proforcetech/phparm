@@ -13,6 +13,8 @@ class InvoiceItem extends BaseModel
     public float $quantity;
     public float $unit_price;
     public float $list_price = 0.0;
+    public ?float $core_price = null;
+    public ?int $core_return_id = null;
     public bool $taxable = true;
     public float $line_total = 0.0;
 }

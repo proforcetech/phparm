@@ -9,6 +9,9 @@ use PDO;
 
 class InventoryItemRepository
 {
+    private const FORECAST_WINDOW_DAYS = 30;
+    private const FORECAST_LEAD_TIME_DAYS = 14;
+
     private Connection $connection;
     private InventoryItemValidator $validator;
     private ?bool $hasIsTrackedColumn = null;
@@ -31,6 +34,11 @@ class InventoryItemRepository
     {
         $this->connection = $connection;
         $this->validator = $validator ?? new InventoryItemValidator();
+    }
+
+    public function getConnection(): Connection
+    {
+        return $this->connection;
     }
 
     /**
@@ -101,6 +109,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$id] = $item;
 
         return $item;
@@ -123,6 +132,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$item->id] = $item;
 
         return $item;
@@ -160,6 +170,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$item->id] = $item;
 
         return $item;
@@ -251,11 +262,17 @@ class InventoryItemRepository
             'stock_quantity' => $this->resolveColumn('stock_quantity', 'quantity'),
             'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
             'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
+            'reorder_point_override' => $this->resolveColumn('reorder_point_override'),
+            'reorder_point_override_reason' => $this->resolveColumn('reorder_point_override_reason'),
             'cost' => 'cost',
+            'core_cost' => $this->resolveColumn('core_cost'),
+            'core_price' => $this->resolveColumn('core_price'),
+            'core_eligible' => $this->resolveColumn('is_core_eligible', 'core_eligible'),
             'sale_price' => $this->resolveColumn('sale_price', 'price'),
             'list_price' => $this->resolveColumn('list_price'),
             'markup' => 'markup',
             'location' => 'location',
+            'bin_location' => 'bin_location',
             'vendor' => 'vendor',
             'notes' => 'notes',
         ];
@@ -293,7 +310,7 @@ class InventoryItemRepository
     /**
      * @param array<string, mixed> $data
      */
-    public function update(int $id, array $data): ?InventoryItem
+    public function update(int $id, array $data, ?int $actorId = null): ?InventoryItem
     {
         $existing = $this->find($id);
         if ($existing === null) {
@@ -301,6 +318,8 @@ class InventoryItemRepository
         }
 
         $payload = $this->validator->validate(array_merge($existing->toArray(), $data));
+        $overrideChanged = $payload['reorder_point_override'] !== $existing->reorder_point_override
+            || $payload['reorder_point_override_reason'] !== $existing->reorder_point_override_reason;
         $columnMap = [
             'name' => 'name',
             'description' => 'description',
@@ -310,11 +329,17 @@ class InventoryItemRepository
             'stock_quantity' => $this->resolveColumn('stock_quantity', 'quantity'),
             'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
             'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
+            'reorder_point_override' => $this->resolveColumn('reorder_point_override'),
+            'reorder_point_override_reason' => $this->resolveColumn('reorder_point_override_reason'),
             'cost' => 'cost',
+            'core_cost' => $this->resolveColumn('core_cost'),
+            'core_price' => $this->resolveColumn('core_price'),
+            'core_eligible' => $this->resolveColumn('is_core_eligible', 'core_eligible'),
             'sale_price' => $this->resolveColumn('sale_price', 'price'),
             'list_price' => $this->resolveColumn('list_price'),
             'markup' => 'markup',
             'location' => 'location',
+            'bin_location' => 'bin_location',
             'vendor' => 'vendor',
             'notes' => 'notes',
         ];
@@ -335,10 +360,31 @@ class InventoryItemRepository
             $params['is_tracked'] = isset($payload['is_tracked']) ? (int) (bool) $payload['is_tracked'] : 1;
         }
 
+        if ($overrideChanged) {
+            if ($this->columnExists('reorder_point_override_updated_at')) {
+                $setClauses[] = 'reorder_point_override_updated_at = NOW()';
+            }
+            if ($this->columnExists('reorder_point_override_updated_by')) {
+                $setClauses[] = 'reorder_point_override_updated_by = :reorder_point_override_updated_by';
+                $params['reorder_point_override_updated_by'] = $actorId;
+            }
+        }
+
         $sql = 'UPDATE inventory_items SET ' . implode(', ', $setClauses) . ' WHERE id = :id';
         $this->connection->pdo()->prepare($sql)->execute($params);
 
+        if ($overrideChanged && $actorId !== null) {
+            $this->logReorderPointOverrideChange(
+                $id,
+                $existing->reorder_point_override,
+                $payload['reorder_point_override'],
+                $payload['reorder_point_override_reason'],
+                $actorId
+            );
+        }
+
         $item = new InventoryItem(array_merge($payload, ['id' => $id]));
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
         $this->cache[$id] = $item;
         $this->listCache = [];
 
@@ -387,6 +433,7 @@ class InventoryItemRepository
             $this->cache[$item->id] = $item;
         }
 
+        $this->attachForecasting($results);
         $this->listCache[$cacheKey] = $results;
 
         return $results;
@@ -442,15 +489,18 @@ class InventoryItemRepository
         }
 
         if (isset($filters['query']) && $filters['query'] !== '') {
-            $clauses[] = '(name LIKE :query OR sku LIKE :query)';
-            $bindings['query'] = $filters['query'] . '%';
+            $clauses[] = $this->buildSearchClause($filters['query'], $bindings, '');
         }
 
         if (!empty($filters['low_stock_only'])) {
-            $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
-            $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
-            if ($stockColumn !== null && $thresholdColumn !== null) {
-                $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+            if ($this->columnExists('is_low_stock')) {
+                $clauses[] = 'is_low_stock = 1';
+            } else {
+                $stockColumn = $this->resolveColumn('stock_quantity', 'quantity');
+                $thresholdColumn = $this->resolveColumn('low_stock_threshold', 'reorder_threshold');
+                if ($stockColumn !== null && $thresholdColumn !== null) {
+                    $clauses[] = "({$stockColumn} <= {$thresholdColumn})";
+                }
             }
 
             // Only include tracked items in low stock alerts
@@ -460,6 +510,42 @@ class InventoryItemRepository
         }
 
         return [$clauses, $bindings];
+    }
+
+    /**
+     * @param array<string, mixed> $bindings
+     */
+    private function buildSearchClause(string $query, array &$bindings, string $tableAlias = 'i'): string
+    {
+        $prefix = $tableAlias !== '' ? $tableAlias . '.' : '';
+        $bindings['fulltext'] = $this->buildFullTextQuery($query);
+        $bindings['sku_prefix'] = $query . '%';
+
+        $conditions = [];
+        $conditions[] = 'MATCH(' . $prefix . 'name, ' . $prefix . 'description) AGAINST (:fulltext IN BOOLEAN MODE)';
+        $conditions[] = $prefix . 'sku LIKE :sku_prefix';
+
+        if ($this->columnExists('manufacturer_part_number')) {
+            $bindings['mpn_prefix'] = $query . '%';
+            $conditions[] = $prefix . 'manufacturer_part_number LIKE :mpn_prefix';
+        }
+
+        return '(' . implode(' OR ', $conditions) . ')';
+    }
+
+    private function buildFullTextQuery(string $query): string
+    {
+        $tokens = preg_split('/\s+/', trim($query)) ?: [];
+        $terms = [];
+        foreach ($tokens as $token) {
+            $token = preg_replace('/[^\p{L}\p{N}_]+/u', '', $token) ?? '';
+            if ($token === '') {
+                continue;
+            }
+            $terms[] = $token . '*';
+        }
+
+        return $terms ? implode(' ', $terms) : $query;
     }
 
     /**
@@ -474,16 +560,126 @@ class InventoryItemRepository
             ? (int) $row['low_stock_threshold']
             : (int) ($row['reorder_threshold'] ?? 0);
         $row['reorder_quantity'] = (int) ($row['reorder_quantity'] ?? 0);
+        $row['reorder_point_override'] = array_key_exists('reorder_point_override', $row)
+            ? ($row['reorder_point_override'] !== null ? (int) $row['reorder_point_override'] : null)
+            : null;
+        $row['reorder_point_override_reason'] = $row['reorder_point_override_reason'] ?? null;
+        $row['reorder_point_override_updated_at'] = $row['reorder_point_override_updated_at'] ?? null;
+        $row['reorder_point_override_updated_by'] = isset($row['reorder_point_override_updated_by'])
+            ? (int) $row['reorder_point_override_updated_by']
+            : null;
         $row['cost'] = (float) ($row['cost'] ?? 0);
         $row['sale_price'] = isset($row['sale_price'])
             ? (float) $row['sale_price']
             : (float) ($row['price'] ?? 0);
         $row['list_price'] = (float) ($row['list_price'] ?? 0);
+        $row['core_cost'] = array_key_exists('core_cost', $row) && $row['core_cost'] !== null
+            ? (float) $row['core_cost']
+            : null;
+        $row['core_price'] = array_key_exists('core_price', $row) && $row['core_price'] !== null
+            ? (float) $row['core_price']
+            : null;
+        $row['core_eligible'] = (bool) ($row['is_core_eligible'] ?? $row['core_eligible'] ?? 0);
         $row['manufacturer_part_number'] = $row['manufacturer_part_number'] ?? null;
         $row['markup'] = isset($row['markup']) && $row['markup'] !== null ? (float) $row['markup'] : null;
         $row['is_tracked'] = (bool) ($row['is_tracked'] ?? 1);
+        $row['is_low_stock'] = (bool) ($row['is_low_stock'] ?? 0);
 
         return new InventoryItem($row);
+    }
+
+    /**
+     * @param array<int, InventoryItem> $items
+     */
+    private function attachForecasting(array $items): void
+    {
+        if (!$items) {
+            return;
+        }
+
+        $ids = array_map(static fn (InventoryItem $item) => $item->id, $items);
+        $usageTotals = $this->getUsageTotals($ids);
+        foreach ($items as $item) {
+            $this->applyForecasting($item, $usageTotals);
+        }
+    }
+
+    /**
+     * @param array<int, int> $inventoryIds
+     * @return array<int, float>
+     */
+    private function getUsageTotals(array $inventoryIds): array
+    {
+        if ($inventoryIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($inventoryIds), '?'));
+        $startDate = (new \DateTimeImmutable('-' . self::FORECAST_WINDOW_DAYS . ' days'))->format('Y-m-d H:i:s');
+
+        $sql = "SELECT wi.inventory_item_id, SUM(wi.quantity) AS usage_quantity
+                FROM workorder_items wi
+                INNER JOIN workorder_jobs wj ON wi.workorder_job_id = wj.id
+                INNER JOIN workorders w ON wj.workorder_id = w.id
+                WHERE wi.inventory_item_id IN ({$placeholders})
+                  AND w.status = ?
+                  AND w.completed_at IS NOT NULL
+                  AND w.completed_at >= ?
+                GROUP BY wi.inventory_item_id";
+        $params = array_merge($inventoryIds, ['completed', $startDate]);
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        $totals = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $inventoryId = (int) $row['inventory_item_id'];
+            $totals[$inventoryId] = (float) $row['usage_quantity'];
+        }
+
+        return $totals;
+    }
+
+    /**
+     * @param array<int, float> $usageTotals
+     */
+    private function applyForecasting(InventoryItem $item, array $usageTotals): void
+    {
+        $usageQuantity = $usageTotals[$item->id] ?? 0.0;
+        $usageRate = self::FORECAST_WINDOW_DAYS > 0
+            ? $usageQuantity / self::FORECAST_WINDOW_DAYS
+            : 0.0;
+
+        $suggested = (int) ceil($usageRate * self::FORECAST_LEAD_TIME_DAYS);
+        if ($suggested < $item->low_stock_threshold) {
+            $suggested = $item->low_stock_threshold;
+        }
+
+        $item->usage_rate_30d = round($usageRate, 2);
+        $item->suggested_reorder_point = $suggested;
+        $item->effective_reorder_point = $item->reorder_point_override !== null
+            ? (int) $item->reorder_point_override
+            : $suggested;
+        $item->reorder_point_source = $item->reorder_point_override !== null ? 'override' : 'suggested';
+    }
+
+    private function logReorderPointOverrideChange(
+        int $inventoryItemId,
+        ?int $previousOverride,
+        ?int $newOverride,
+        ?string $reason,
+        int $actorId
+    ): void {
+        $sql = 'INSERT INTO inventory_reorder_point_history
+                (inventory_item_id, previous_override, new_override, reason, changed_by, created_at)
+                VALUES
+                (:inventory_item_id, :previous_override, :new_override, :reason, :changed_by, NOW())';
+        $this->connection->pdo()->prepare($sql)->execute([
+            'inventory_item_id' => $inventoryItemId,
+            'previous_override' => $previousOverride,
+            'new_override' => $newOverride,
+            'reason' => $reason,
+            'changed_by' => $actorId,
+        ]);
     }
 
     /**
@@ -496,17 +692,8 @@ class InventoryItemRepository
      */
     public function searchForParts(string $query, ?int $vehicleMasterId = null, int $limit = 20): array
     {
-        $bindings = ['query' => '%' . $query . '%'];
-
-        // Build search conditions for all searchable fields
-        $searchConditions = '(i.name LIKE :query OR i.sku LIKE :query OR i.description LIKE :query';
-
-        // Include manufacturer_part_number if column exists
-        if ($this->columnExists('manufacturer_part_number')) {
-            $searchConditions .= ' OR i.manufacturer_part_number LIKE :query';
-        }
-
-        $searchConditions .= ')';
+        $bindings = [];
+        $searchConditions = $this->buildSearchClause($query, $bindings);
 
         if ($vehicleMasterId !== null) {
             // Search only parts compatible with the specified vehicle
@@ -627,14 +814,8 @@ class InventoryItemRepository
      */
     public function searchWithCompatibility(string $query, int $vehicleMasterId, int $limit = 20): array
     {
-        $bindings = ['query' => '%' . $query . '%', 'vehicle_master_id' => $vehicleMasterId];
-
-        // Build search conditions
-        $searchConditions = '(i.name LIKE :query OR i.sku LIKE :query OR i.description LIKE :query';
-        if ($this->columnExists('manufacturer_part_number')) {
-            $searchConditions .= ' OR i.manufacturer_part_number LIKE :query';
-        }
-        $searchConditions .= ')';
+        $bindings = ['vehicle_master_id' => $vehicleMasterId];
+        $searchConditions = $this->buildSearchClause($query, $bindings);
 
         // Use LEFT JOIN to get all matching parts with compatibility flag
         $sql = 'SELECT i.*,

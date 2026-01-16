@@ -7,6 +7,8 @@ use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Workorder;
 use App\Models\WorkorderJob;
+use App\Services\Inventory\CoreReturnService;
+use App\Services\Financial\FinancialEntryService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -18,15 +20,18 @@ class WorkorderService
     private Connection $connection;
     private WorkorderRepository $repository;
     private ?AuditLogger $audit;
+    private CoreReturnService $coreReturns;
 
     public function __construct(
         Connection $connection,
         WorkorderRepository $repository,
+        CoreReturnService $coreReturns,
         ?AuditLogger $audit = null
     ) {
         $this->connection = $connection;
         $this->repository = $repository;
         $this->audit = $audit;
+        $this->coreReturns = $coreReturns;
     }
 
     /**
@@ -211,13 +216,15 @@ class WorkorderService
         }
 
         // Allow completed or ready_for_pickup statuses
-        $validStatuses = [Workorder::STATUS_COMPLETED, Workorder::STATUS_READY_FOR_PICKUP];
+        $validStatuses = [Workorder::STATUS_COMPLETED, Workorder::STATUS_READY_FOR_PICKUP, Workorder::STATUS_GOA];
         if (!in_array($workorder->status, $validStatuses, true)) {
-            throw new InvalidArgumentException('Only completed or ready-for-pickup workorders can be converted to invoices.');
+            throw new InvalidArgumentException('Only completed, ready-for-pickup, or GOA workorders can be converted to invoices.');
         }
 
         // Validate QC if enabled
-        $this->validateQCForInvoicing($workorderId);
+        if ($workorder->status !== Workorder::STATUS_GOA) {
+            $this->validateQCForInvoicing($workorderId);
+        }
 
         // Check if invoice already exists
         $existingInvoice = $this->findInvoiceByWorkorderId($workorderId);
@@ -246,7 +253,8 @@ class WorkorderService
                 )
             SQL);
 
-            $total = $workorder->grand_total;
+            $isGoa = $workorder->status === Workorder::STATUS_GOA;
+            $total = $isGoa ? $workorder->goa_fee : $workorder->grand_total;
             $publicToken = bin2hex(random_bytes(20));
             $publicExpiry = date('Y-m-d H:i:s', strtotime('+30 days'));
 
@@ -259,11 +267,11 @@ class WorkorderService
                 'status' => 'pending',
                 'issue_date' => date('Y-m-d'),
                 'due_date' => $dueDate,
-                'subtotal' => $workorder->subtotal,
-                'tax' => $workorder->tax,
+                'subtotal' => $isGoa ? 0 : $workorder->subtotal,
+                'tax' => $isGoa ? 0 : $workorder->tax,
                 'total' => $total,
-                'shop_fee' => $workorder->shop_fee,
-                'hazmat_disposal_fee' => $workorder->hazmat_disposal_fee,
+                'shop_fee' => $isGoa ? 0 : $workorder->shop_fee,
+                'hazmat_disposal_fee' => $isGoa ? 0 : $workorder->hazmat_disposal_fee,
                 'balance_due' => $total,
                 'public_token' => $publicToken,
                 'public_token_expires_at' => $publicExpiry,
@@ -272,10 +280,16 @@ class WorkorderService
             $invoiceId = (int) $pdo->lastInsertId();
 
             // Copy workorder items to invoice
-            $this->copyWorkorderItemsToInvoice($invoiceId, $workorderId);
+            if (!$isGoa) {
+            $this->copyWorkorderItemsToInvoice($invoiceId, $workorderId, (int) $workorder->customer_id, $actorId);
+            }
 
             // Add extra fees as line items
-            $this->addExtraFeesToInvoice($invoiceId, $workorder);
+            if ($isGoa) {
+                $this->addGoaFeeToInvoice($invoiceId, $workorder);
+            } else {
+                $this->addExtraFeesToInvoice($invoiceId, $workorder);
+            }
 
             $pdo->commit();
 
@@ -291,6 +305,50 @@ class WorkorderService
             $pdo->rollBack();
             throw $exception;
         }
+    }
+
+    /**
+     * Mark a workorder as GOA (Gone On Arrival) and apply billing rules.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function markGoneOnArrival(int $workorderId, array $payload = [], ?int $actorId = null): Workorder
+    {
+        $workorder = $this->repository->find($workorderId);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found.');
+        }
+
+        $goaFee = $payload['goa_fee'] ?? $payload['goa_fee_amount'] ?? $workorder->call_out_fee ?? 0;
+        if (!is_numeric($goaFee)) {
+            throw new InvalidArgumentException('GOA fee must be a numeric value.');
+        }
+        $goaFee = max(0, (float) $goaFee);
+
+        $billingParty = $payload['goa_billing_party'] ?? $payload['goa_bill_to'] ?? $workorder->goa_billing_party ?? 'customer';
+        $billingParty = strtolower((string) $billingParty);
+        if (!in_array($billingParty, ['customer', 'motor_club'], true)) {
+            throw new InvalidArgumentException('GOA billing party must be customer or motor_club.');
+        }
+
+        $notes = $payload['notes'] ?? 'Marked GOA';
+        $clientEventId = $payload['client_event_id'] ?? null;
+
+        if ($workorder->status !== Workorder::STATUS_GOA) {
+            $this->repository->updateStatus($workorderId, Workorder::STATUS_GOA, $actorId, $notes, $clientEventId);
+        }
+
+        $this->repository->updateGoaDetails($workorderId, $goaFee, $billingParty);
+        $workorder = $this->repository->find($workorderId) ?? $workorder;
+
+        $this->log('workorder.goa_marked', $workorderId, $actorId, [
+            'goa_fee' => $goaFee,
+            'billing_party' => $billingParty,
+        ]);
+
+        $this->recordGoaLedgerEntry($workorder, $goaFee, $billingParty, $actorId);
+
+        return $workorder;
     }
 
     /**
@@ -536,13 +594,25 @@ class WorkorderService
 
         $position = 0;
         foreach ($items as $item) {
+            $inventoryItem = null;
+            $corePrice = null;
+            if (!empty($item['inventory_item_id'])) {
+                $inventoryItem = $this->fetchInventoryItemCoreDetails((int) $item['inventory_item_id']);
+                if ($inventoryItem && $this->isCoreEligible($inventoryItem)) {
+                    $corePrice = $this->calculateCoreAmount(
+                        $inventoryItem['core_price'] ?? null,
+                        (float) ($item['quantity'] ?? 0)
+                    );
+                }
+            }
+
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO workorder_items (
-                    workorder_job_id, estimate_item_id, type, description,
-                    quantity, unit_price, list_price, taxable, line_total, position
+                    workorder_job_id, estimate_item_id, type, sku, inventory_item_id, description,
+                    quantity, unit_price, list_price, core_price, taxable, line_total, position
                 ) VALUES (
-                    :workorder_job_id, :estimate_item_id, :type, :description,
-                    :quantity, :unit_price, :list_price, :taxable, :line_total, :position
+                    :workorder_job_id, :estimate_item_id, :type, :sku, :inventory_item_id, :description,
+                    :quantity, :unit_price, :list_price, :core_price, :taxable, :line_total, :position
                 )
             SQL);
 
@@ -550,10 +620,13 @@ class WorkorderService
                 'workorder_job_id' => $workorderJobId,
                 'estimate_item_id' => (int) $item['id'],
                 'type' => $item['type'],
+                'sku' => $item['sku'] ?? null,
+                'inventory_item_id' => $item['inventory_item_id'] ?? null,
                 'description' => $item['description'],
                 'quantity' => (float) $item['quantity'],
                 'unit_price' => (float) $item['unit_price'],
                 'list_price' => isset($item['list_price']) ? (float) $item['list_price'] : null,
+                'core_price' => $corePrice,
                 'taxable' => (int) $item['taxable'],
                 'line_total' => (float) $item['line_total'],
                 'position' => $position,
@@ -563,7 +636,7 @@ class WorkorderService
         }
     }
 
-    private function copyWorkorderItemsToInvoice(int $invoiceId, int $workorderId): void
+    private function copyWorkorderItemsToInvoice(int $invoiceId, int $workorderId, int $customerId, ?int $actorId): void
     {
         $pdo = $this->connection->pdo();
 
@@ -581,9 +654,9 @@ class WorkorderService
         foreach ($items as $item) {
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO invoice_items (
-                    invoice_id, type, description, quantity, unit_price, list_price, taxable, line_total
+                    invoice_id, type, sku, inventory_item_id, description, quantity, unit_price, list_price, core_price, taxable, line_total
                 ) VALUES (
-                    :invoice_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :line_total
+                    :invoice_id, :type, :sku, :inventory_item_id, :description, :quantity, :unit_price, :list_price, :core_price, :taxable, :line_total
                 )
             SQL);
 
@@ -592,13 +665,25 @@ class WorkorderService
             $stmt->execute([
                 'invoice_id' => $invoiceId,
                 'type' => $item['type'],
+                'sku' => $item['sku'] ?? null,
+                'inventory_item_id' => $item['inventory_item_id'] ?? null,
                 'description' => $description,
                 'quantity' => (float) $item['quantity'],
                 'unit_price' => (float) $item['unit_price'],
                 'list_price' => isset($item['list_price']) ? (float) $item['list_price'] : null,
+                'core_price' => isset($item['core_price']) ? (float) $item['core_price'] : null,
                 'taxable' => (int) $item['taxable'],
                 'line_total' => (float) $item['line_total'],
             ]);
+
+            $invoiceItemId = (int) $pdo->lastInsertId();
+            $this->maybeCreateCoreReturnForWorkorderItem(
+                array_merge($item, ['description' => $description]),
+                $invoiceId,
+                $invoiceItemId,
+                $customerId,
+                $actorId
+            );
         }
     }
 
@@ -643,6 +728,121 @@ class WorkorderService
         }
     }
 
+    private function addGoaFeeToInvoice(int $invoiceId, Workorder $workorder): void
+    {
+        $amount = $workorder->goa_fee;
+        if ($amount <= 0) {
+            return;
+        }
+
+        $pdo = $this->connection->pdo();
+        $description = 'GOA Fee';
+        if ($workorder->goa_billing_party) {
+            $description .= ' (' . ucwords(str_replace('_', ' ', $workorder->goa_billing_party)) . ')';
+        }
+
+        $stmt = $pdo->prepare(<<<SQL
+            INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, taxable, line_total)
+            VALUES (:invoice_id, 'fee', :description, 1, :amount, 0, :amount)
+        SQL);
+        $stmt->execute([
+            'invoice_id' => $invoiceId,
+            'description' => $description,
+            'amount' => $amount,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchInventoryItemCoreDetails(int $inventoryItemId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, name, sku, vendor, core_cost, core_price, is_core_eligible FROM inventory_items WHERE id = :id'
+        );
+        $stmt->execute(['id' => $inventoryItemId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
+    }
+
+    private function isCoreEligible(array $inventoryItem): bool
+    {
+        return (bool) ($inventoryItem['is_core_eligible'] ?? $inventoryItem['core_eligible'] ?? false);
+    }
+
+    private function calculateCoreAmount($value, float $quantity): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return (float) $value * max(0, $quantity);
+    }
+
+    private function maybeCreateCoreReturnForWorkorderItem(
+        array $item,
+        int $invoiceId,
+        int $invoiceItemId,
+        int $customerId,
+        ?int $actorId
+    ): void {
+        if (!$this->coreReturns->isEnabled()) {
+            return;
+        }
+
+        $inventoryItemId = (int) ($item['inventory_item_id'] ?? 0);
+        if ($inventoryItemId === 0) {
+            return;
+        }
+
+        $inventoryItem = $this->fetchInventoryItemCoreDetails($inventoryItemId);
+        if ($inventoryItem === null || !$this->isCoreEligible($inventoryItem)) {
+            return;
+        }
+
+        $quantity = (float) ($item['quantity'] ?? 0);
+        $corePrice = $item['core_price'] ?? $this->calculateCoreAmount($inventoryItem['core_price'] ?? null, $quantity);
+        if ($corePrice !== null) {
+            $corePrice = (float) $corePrice;
+        }
+        $coreCost = $this->calculateCoreAmount($inventoryItem['core_cost'] ?? null, $quantity);
+        if ($coreCost !== null) {
+            $coreCost = (float) $coreCost;
+        }
+
+        $coreReturn = $this->coreReturns->create([
+            'invoice_id' => $invoiceId,
+            'invoice_item_id' => $invoiceItemId,
+            'inventory_item_id' => $inventoryItemId,
+            'part_description' => $item['description'] ?? $inventoryItem['name'],
+            'sku' => $item['sku'] ?? $inventoryItem['sku'] ?? null,
+            'core_cost' => $coreCost ?? 0,
+            'core_price' => $corePrice ?? 0,
+            'customer_id' => $customerId,
+            'vendor' => $inventoryItem['vendor'] ?? null,
+        ], $actorId);
+
+        if (!empty($coreReturn['id'])) {
+            $this->connection->pdo()->prepare(
+                'UPDATE invoice_items SET core_return_id = :core_return_id, core_price = :core_price WHERE id = :id'
+            )->execute([
+                'core_return_id' => (int) $coreReturn['id'],
+                'core_price' => $corePrice ?? 0,
+                'id' => $invoiceItemId,
+            ]);
+
+            if (!empty($item['id'])) {
+                $this->connection->pdo()->prepare(
+                    'UPDATE workorder_items SET core_return_id = :core_return_id WHERE id = :id'
+                )->execute([
+                    'core_return_id' => (int) $coreReturn['id'],
+                    'id' => (int) $item['id'],
+                ]);
+            }
+        }
+    }
+
     private function recalculateWorkorderTotals(int $workorderId): void
     {
         $pdo = $this->connection->pdo();
@@ -679,6 +879,47 @@ class WorkorderService
             'grand_total' => $grandTotal,
             'id' => $workorderId,
         ]);
+    }
+
+    private function recordGoaLedgerEntry(Workorder $workorder, float $amount, string $billingParty, ?int $actorId): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+
+        $payerName = $billingParty === 'motor_club' ? 'Motor Club' : $this->getCustomerName($workorder->customer_id);
+        $reference = 'workorder-' . $workorder->id;
+        $entryService = new FinancialEntryService($this->connection, $this->audit);
+        $entryService->create([
+            'type' => 'income',
+            'category' => 'GOA Fee',
+            'reference' => $reference,
+            'purchase_order' => 'goa',
+            'amount' => $amount,
+            'entry_date' => date('Y-m-d'),
+            'vendor' => $payerName ?: 'Customer',
+            'description' => sprintf(
+                'GOA fee for workorder %s billed to %s.',
+                $workorder->number,
+                ucwords(str_replace('_', ' ', $billingParty))
+            ),
+            'idempotency_key' => 'workorder-goa-' . $workorder->id,
+        ], $actorId ?? 0);
+    }
+
+    private function getCustomerName(int $customerId): ?string
+    {
+        if ($customerId === 0) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT CONCAT(first_name, " ", last_name) AS name FROM customers WHERE id = :id'
+        );
+        $stmt->execute(['id' => $customerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? trim((string) ($row['name'] ?? '')) : null;
     }
 
     /**

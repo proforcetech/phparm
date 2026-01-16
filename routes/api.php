@@ -340,13 +340,23 @@ return function (Router $router, array $config, $connection) {
     $paymentConfig = require __DIR__ . '/../config/payments.php';
 
     // Public security configuration
-    $router->get('/api/public/security/recaptcha', function () use ($recaptchaConfigLoader) {
-        $recaptchaConfig = $recaptchaConfigLoader();
-        return Response::json([
-            'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
-            'site_key' => $recaptchaConfig['site_key'] ?? null,
-            'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
-        ]);
+    $router->get('/api/public/security/recaptcha', function (Request $request) use ($recaptchaConfigLoader) {
+        try {
+            $recaptchaConfig = $recaptchaConfigLoader();
+            return Response::json([
+                'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
+                'site_key' => $recaptchaConfig['site_key'] ?? null,
+                'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
+            ]);
+        } catch (Throwable $e) {
+            error_log('Recaptcha config error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return Response::json([
+                'enabled' => false,
+                'site_key' => null,
+                'score_threshold' => 0.5,
+                'error' => 'Failed to load recaptcha configuration',
+            ], 500);
+        }
     });
 
     // Public vehicle data endpoints for estimate request form
@@ -678,7 +688,8 @@ return function (Router $router, array $config, $connection) {
         $totpService,
         $loginLimiter,
         $rateLimitResponse,
-        $sessionManager
+        $sessionManager,
+        $enforceMandatoryTwoFactorSetup
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -783,7 +794,8 @@ return function (Router $router, array $config, $connection) {
         $totpService,
         $loginLimiter,
         $rateLimitResponse,
-        $sessionManager
+        $sessionManager,
+        $enforceMandatoryTwoFactorSetup
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -1027,6 +1039,19 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Logged out successfully']);
     });
 
+    $buildImpersonationPayload = function (): ?array {
+        if (!isset($_SESSION['impersonation']['impersonator'], $_SESSION['impersonation']['impersonated'])) {
+            return null;
+        }
+
+        return [
+            'active' => true,
+            'impersonator' => $_SESSION['impersonation']['impersonator'],
+            'impersonated' => $_SESSION['impersonation']['impersonated'],
+            'started_at' => $_SESSION['impersonation']['started_at'] ?? null,
+        ];
+    };
+
     $router->get('/api/auth/sessions', function (Request $request) use ($sessionManager) {
         $user = $request->getAttribute('user');
 
@@ -1034,7 +1059,6 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Not authenticated');
         }
 
-    $buildImpersonationPayload = function (): ?array {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
@@ -1051,19 +1075,6 @@ return function (Router $router, array $config, $connection) {
     })->middleware(Middleware::auth());
 
     $router->delete('/api/auth/sessions/{sessionId:[0-9]+}', function (Request $request) use ($sessionManager) {
-        if (!isset($_SESSION['impersonation']['impersonator'], $_SESSION['impersonation']['impersonated'])) {
-            return null;
-        }
-
-        return [
-            'active' => true,
-            'impersonator' => $_SESSION['impersonation']['impersonator'],
-            'impersonated' => $_SESSION['impersonation']['impersonated'],
-            'started_at' => $_SESSION['impersonation']['started_at'] ?? null,
-        ];
-    };
-
-    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
@@ -1073,17 +1084,6 @@ return function (Router $router, array $config, $connection) {
         $sessionId = $request->getAttribute('sessionId');
         if ($sessionId === null) {
             return Response::badRequest('Session ID required');
-        return Response::json([
-            'user' => $user->toArray(),
-            'impersonation' => $buildImpersonationPayload(),
-        ]);
-    })->middleware(Middleware::auth());
-
-    $router->post('/api/auth/impersonate', function (Request $request) use ($authService, $buildImpersonationPayload) {
-        $user = $request->getAttribute('user');
-
-        if (!$user) {
-            return Response::unauthorized('Not authenticated');
         }
 
         if (session_status() === PHP_SESSION_NONE) {
@@ -1102,7 +1102,30 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Session revoked']);
     })->middleware(Middleware::auth());
 
-    $router->get('/api/auth/me', function (Request $request) {
+    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        return Response::json([
+            'user' => $user->toArray(),
+            'impersonation' => $buildImpersonationPayload(),
+        ]);
+    })->middleware(Middleware::auth());
+
+    $router->post('/api/auth/impersonate', function (Request $request) use ($authService, $buildImpersonationPayload) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $impersonator = $user;
         if (isset($_SESSION['impersonation']['impersonator'])) {
             $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
@@ -1633,6 +1656,21 @@ return Response::json([
         return Response::json($result, 200);
     });
 
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/decline', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $actorId = isset($body['actor_id']) ? (int) $body['actor_id'] : null;
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+        $result = $partnerDispatchSyncService->declineDispatch($partner, $dispatchReference, $context, $actorId);
+        return Response::json($result, 200);
+    });
+
     $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/status', function (Request $request) use ($partnerDispatchSyncService) {
         if (!$request->isJson()) {
             return Response::badRequest('JSON payload required');
@@ -1648,6 +1686,20 @@ return Response::json([
 
         $context = is_array($body['context'] ?? null) ? $body['context'] : [];
         $result = $partnerDispatchSyncService->syncStatus($partner, $dispatchReference, $status, $context);
+        return Response::json($result, 200);
+    });
+
+    $router->post('/api/integrations/partners/{partner}/dispatch/{dispatchReference}/cancel', function (Request $request) use ($partnerDispatchSyncService) {
+        if (!$request->isJson()) {
+            return Response::badRequest('JSON payload required');
+        }
+
+        $partner = (string) $request->getAttribute('partner');
+        $dispatchReference = (string) $request->getAttribute('dispatchReference');
+        $body = $request->body();
+        $context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+        $result = $partnerDispatchSyncService->cancelDispatch($partner, $dispatchReference, $context);
         return Response::json($result, 200);
     });
 
@@ -2253,7 +2305,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inventory routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
         $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
@@ -2265,10 +2317,15 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
+            $lowStockParam = $request->queryParam('low_stock');
+            $lowStockOnly = $lowStockParam === 'true' || $request->queryParam('low_stock_only') === 'true';
             $filters = [
                 'query' => $request->queryParam('query'),
                 'category' => $request->queryParam('category'),
-                'low_stock_only' => $request->queryParam('low_stock') === 'true',
+                'location' => $request->queryParam('location'),
+                'low_stock_only' => $lowStockOnly,
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
 
             $data = $inventoryController->index($user, $filters);
@@ -2347,6 +2404,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ];
 
             $data = $inventoryLookupController->index($user, $type, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/{id}/transactions', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $params = [
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $inventoryController->transactions($user, $id, $params);
             return Response::json($data);
         });
 
@@ -2918,7 +2987,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Roadside assistance routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
@@ -3364,10 +3433,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         exit;
     });
 
-    $router->get('/track/{token}', function (Request $request) use ($connection) {
+    $router->get('/api/track/{token}', function (Request $request) use ($connection) {
         $trackingService = new \App\Services\Tracking\TrackingService($connection);
-        $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
-        return Response::json($data);
+        try {
+            $data = $trackingService->getTrackingView((string) $request->getAttribute('token'));
+            return Response::json($data);
+        } catch (\RuntimeException $exception) {
+            return Response::json(['error' => $exception->getMessage()], 410);
+        } catch (\InvalidArgumentException $exception) {
+            return Response::notFound($exception->getMessage());
+        }
     });
 
     // Public estimate rejection reasons
@@ -3790,12 +3865,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $trackingLogs,
             $auditLogger
         );
+        $workorderTimeline = new \App\Services\Workorder\WorkorderTimelineService($connection);
+        $dispatchAuditService = new \App\Services\Dispatch\DispatchAuditService($connection);
         $workorderController = new \App\Services\Workorder\WorkorderController(
             $workorderRepository,
             $workorderService,
             $workorderEvidence,
+            $workorderTimeline,
             $gate,
-            $workorderMessagingNotifications
+            $workorderMessagingNotifications,
+            $dispatchAuditService
         );
 
         // Status-driven notification service
@@ -3807,7 +3886,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $connection,
             $trackingDispatcher,
             $workorderMessagingNotifications,
-            new \App\Services\Dispatch\DispatchAuditService($connection),
+            $dispatchAuditService,
             $notificationEventService
         );
         $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(
@@ -4002,6 +4081,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
+        $router->post('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $file = $request->file('file');
+            $data = $workorderController->uploadJobDamagePhoto($user, $id, $jobId, is_array($file) ? $file : []);
+            return Response::created($data);
+        });
+
+        $router->get('/api/workorders/{id}/jobs/{jobId}/damage-photos', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->damagePhotoStatus($user, $id, $jobId);
+            return Response::json($data);
+        });
+
         $router->get('/api/workorders/{id}/jobs/{jobId}/checkpoints', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -4023,6 +4119,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
             $jobId = (int) $request->getAttribute('jobId');
             $data = $workorderController->listDamageReports($user, $id, $jobId);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/jobs/{jobId}/vehicle-intake', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $jobId = (int) $request->getAttribute('jobId');
+            $data = $workorderController->recordVehicleIntake($user, $id, $jobId, $request->body());
             return Response::json($data);
         });
 
@@ -4081,9 +4185,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $connection,
         new \App\Services\Messaging\MessagingService($connection)
     );
+    $leaveRequestService = new \App\Services\Leave\LeaveRequestService($connection);
     $appointmentController = new \App\Services\Appointment\AppointmentController(
-        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks, $appointmentMessagingNotifications),
-        new \App\Services\Appointment\AvailabilityService($connection),
+        new \App\Services\Appointment\AppointmentService(
+            $connection,
+            $appointmentAudit,
+            $appointmentWebhooks,
+            $appointmentMessagingNotifications,
+            $leaveRequestService
+        ),
+        new \App\Services\Appointment\AvailabilityService($connection, $leaveRequestService),
         $gate
     );
 
@@ -4092,8 +4203,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         new \App\Services\User\UserRepository($connection),
         $gate,
         $totpService,
-        $rolePermissions
-        new \App\Services\ImportExport\CsvExportService($connection)
+        $rolePermissions,
+        new \App\Services\ImportExport\CsvExportService($connection),
+        new \App\Services\Employee\EmployeeRepository($connection)
     );
 
     // Role controller for role management
@@ -4124,6 +4236,31 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate
     );
 
+    $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
+    $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
+    $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
+    $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
+        $trackingNotificationConfig,
+        $trackingTemplateEngine,
+        $trackingLogs,
+        $auditLogger
+    );
+    $trackingMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+        $connection,
+        new \App\Services\Messaging\MessagingService($connection)
+    );
+    $trackingNotificationEvents = new \App\Services\Notification\NotificationEventService(
+        $connection,
+        $trackingDispatcher
+    );
+    $trackingService = new \App\Services\Tracking\TrackingService(
+        $connection,
+        $trackingDispatcher,
+        $trackingMessagingNotifications,
+        new \App\Services\Dispatch\DispatchAuditService($connection),
+        $trackingNotificationEvents
+    );
+
     $router->get('/api/public/appointments/availability', function (Request $request) use ($appointmentController) {
         $params = [
             'date' => $request->queryParam('date'),
@@ -4138,7 +4275,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         return Response::json($data);
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController) {
+    $router->group([Middleware::auth()], function (Router $router) use ($appointmentController, $userController, $roleController, $messagingController, $maskedSmsController, $driverDispatchController, $trackingService, $authService, $connection, $authConfig) {
         $router->get('/api/appointments', function (Request $request) use ($appointmentController) {
             $user = $request->getAttribute('user');
             $filters = [
@@ -4256,6 +4393,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 ],
                 $csv
             );
+        });
+
         $router->post('/api/users/bulk-deactivate', function (Request $request) use ($userController) {
             $user = $request->getAttribute('user');
             $data = $userController->bulkDeactivate($user, $request->body());
@@ -4484,10 +4623,25 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
-        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController) {
+        $router->post('/api/dispatch/job-offers/{id}/accept', function (Request $request) use ($driverDispatchController, $trackingService) {
             $user = $request->getAttribute('user');
             $offerId = (int) $request->getAttribute('id');
             $data = $driverDispatchController->acceptOffer($user, $offerId);
+            $jobReference = $data['job_reference'] ?? null;
+            $jobType = $data['job_type'] ?? null;
+
+            if (is_string($jobReference) || is_numeric($jobReference)) {
+                $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+                try {
+                    if ($jobType === 'workorder') {
+                        $trackingService->sendTrackingLinkForWorkorder((int) $jobReference, $baseUrl, $user?->id);
+                    } elseif ($jobType === 'workorder_job') {
+                        $trackingService->sendTrackingLinkForJob((int) $jobReference, $baseUrl, $user?->id);
+                    }
+                } catch (\Throwable $exception) {
+                    error_log('Dispatch tracking link send failed: ' . $exception->getMessage());
+                }
+            }
             return Response::json($data);
         });
 
@@ -4506,7 +4660,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $etaConfig = require __DIR__ . '/../config/dispatch.php';
         $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
         $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
@@ -4688,7 +4842,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Job Density Heatmap Data
-        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.heatmap.view')) {
                 return Response::forbidden('Permission denied');
@@ -4731,7 +4885,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['data' => $data]);
         });
 
-        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $body = $request->body();
             $driverProfileId = $body['driver_profile_id'] ?? null;
@@ -4779,7 +4933,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.certifications.verify')) {
                 return Response::forbidden('Permission denied');
@@ -4831,7 +4985,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inspection routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $settingsRepository) {
 
         $inspectionController = new \App\Services\Inspection\InspectionController(
             new \App\Services\Inspection\InspectionTemplateService($connection),
@@ -4937,8 +5091,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Inspection-to-Estimate Bridge routes
-        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection);
-        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate);
+        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection, null, $settingsRepository);
+        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate, $settingsRepository);
 
         $router->get('/api/inspections/{id}/failed-items', function (Request $request) use ($bridgeController) {
             $id = (int) $request->getAttribute('id');
@@ -5049,10 +5203,108 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $qcController->completeCheck($user, $id, $request->body());
             return Response::json($data);
         });
+
+        // Truck checklist templates & entries
+        $truckChecklistService = new \App\Services\Dispatch\TruckChecklistService($connection);
+        $truckChecklistController = new \App\Services\Dispatch\TruckChecklistController($truckChecklistService, $gate);
+
+        $router->get('/api/truck-checklists/templates', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'checklist_type' => $request->queryParam('checklist_type'),
+                'include_inactive' => $request->queryParam('include_inactive', false),
+            ];
+            $data = $truckChecklistController->listTemplates($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/templates/default', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $type = (string) $request->queryParam('checklist_type', '');
+            $data = $truckChecklistController->defaultTemplate($user, $type);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->showTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/truck-checklists/templates', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $data = $truckChecklistController->createTemplate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->updateTemplate($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/truck-checklists/templates/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->deleteTemplate($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/entries', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'checklist_type' => $request->queryParam('checklist_type'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $truckChecklistController->listEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/truck-checklists/entries/{id}', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $truckChecklistController->showEntry($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/truck-checklists/entries', function (Request $request) use ($truckChecklistController) {
+            $user = $request->getAttribute('user');
+            $data = $truckChecklistController->createEntry($user, $request->body());
+            return Response::created($data);
+        });
+
+        // Driver shift enforcement for checklists
+        $driverShiftService = new \App\Services\Dispatch\DriverShiftService($connection, $truckChecklistService);
+        $driverShiftController = new \App\Services\Dispatch\DriverShiftController($driverShiftService, $gate, $connection);
+
+        $router->get('/api/driver/shifts/active', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $data = $driverShiftController->active($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/driver/shifts/start', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $data = $driverShiftController->start($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/driver/shifts/{id}/end', function (Request $request) use ($driverShiftController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $driverShiftController->end($user, $id, $request->body());
+            return Response::json($data);
+        });
     });
 
     // Warranty routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $warrantyMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
@@ -5114,7 +5366,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Credit Account routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $creditController = new \App\Services\Credit\CreditAccountController(
             new \App\Services\Credit\CreditAccountService($connection),
@@ -5178,17 +5430,289 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
-    // Financial routes (Admin/Manager only)
-    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate) {
+    // Document Vault routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.view')) {
+                return Response::forbidden('Permission denied');
+            }
 
+            $search = trim((string) $request->queryParam('search', ''));
+            $type = $request->queryParam('type');
+            $status = $request->queryParam('status');
+            $expiringDays = (int) $request->queryParam('expiring_days', 30);
+            if ($expiringDays <= 0) {
+                $expiringDays = 30;
+            }
+
+            $expiringDate = date('Y-m-d', strtotime('+' . $expiringDays . ' days'));
+            $conditions = [];
+            $params = ['expiring_date' => $expiringDate];
+
+            if ($search !== '') {
+                $conditions[] = '(d.title LIKE :search OR d.category LIKE :search OR d.document_number LIKE :search OR d.issuing_authority LIKE :search)';
+                $params['search'] = '%' . $search . '%';
+            }
+
+            if (!empty($type)) {
+                $conditions[] = 'd.document_type = :type';
+                $params['type'] = $type;
+            }
+
+            if (!empty($status)) {
+                if ($status === 'expired') {
+                    $conditions[] = 'd.expiration_date IS NOT NULL AND d.expiration_date < CURDATE()';
+                } elseif ($status === 'expiring') {
+                    $conditions[] = 'd.expiration_date IS NOT NULL AND d.expiration_date >= CURDATE() AND d.expiration_date <= :expiring_date';
+                } elseif ($status === 'active') {
+                    $conditions[] = '(d.expiration_date IS NULL OR d.expiration_date > :expiring_date)';
+                }
+            }
+
+            $sql = <<<SQL
+                SELECT
+                    d.*,
+                    u.name AS uploaded_by_name,
+                    CASE
+                        WHEN d.expiration_date IS NULL THEN 'active'
+                        WHEN d.expiration_date < CURDATE() THEN 'expired'
+                        WHEN d.expiration_date <= :expiring_date THEN 'expiring'
+                        ELSE 'active'
+                    END AS expiry_status,
+                    CASE
+                        WHEN d.expiration_date IS NULL THEN NULL
+                        ELSE DATEDIFF(d.expiration_date, CURDATE())
+                    END AS days_until_expiration
+                FROM document_vault_documents d
+                LEFT JOIN users u ON u.id = d.uploaded_by
+            SQL;
+
+            if (!empty($conditions)) {
+                $sql .= ' WHERE ' . implode(' AND ', $conditions);
+            }
+
+            $sql .= ' ORDER BY CASE WHEN d.expiration_date IS NULL THEN 1 ELSE 0 END, d.expiration_date ASC, d.created_at DESC';
+
+            $stmt = $connection->pdo()->prepare($sql);
+            $stmt->execute($params);
+            $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json([
+                'data' => $data,
+                'meta' => [
+                    'expiring_days' => $expiringDays,
+                ],
+            ]);
+        });
+
+        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate, $auditLogger) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $expiringDays = (int) $request->queryParam('expiring_days', 30);
+            if ($expiringDays <= 0) {
+                $expiringDays = 30;
+            }
+
+            $expiringDate = date('Y-m-d', strtotime('+' . $expiringDays . ' days'));
+            $stmt = $connection->pdo()->prepare(
+                'SELECT
+                    SUM(CASE WHEN expiration_date IS NOT NULL AND expiration_date < CURDATE() THEN 1 ELSE 0 END) AS expired_count,
+                    SUM(CASE WHEN expiration_date IS NOT NULL AND expiration_date >= CURDATE() AND expiration_date <= :expiring_date THEN 1 ELSE 0 END) AS expiring_count,
+                    SUM(CASE WHEN expiration_date IS NOT NULL THEN 1 ELSE 0 END) AS tracked_count,
+                    COUNT(*) AS total_count
+                 FROM document_vault_documents'
+            );
+            $stmt->execute(['expiring_date' => $expiringDate]);
+            $summary = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
+
+            return Response::json([
+                'data' => $summary,
+                'meta' => [
+                    'expiring_days' => $expiringDays,
+                ],
+            ]);
+        });
+
+        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $body = $request->body();
+            $file = $request->file('file');
+            $title = trim((string) ($body['title'] ?? ''));
+            $documentType = trim((string) ($body['document_type'] ?? ''));
+
+            if ($title === '' || $documentType === '') {
+                return Response::badRequest('Title and document type are required');
+            }
+
+            if (!is_array($file) || empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+                return Response::badRequest('A document file is required');
+            }
+
+            $uploadDir = dirname(__DIR__) . '/public/uploads/document-vault';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+                return Response::serverError('Unable to prepare upload directory');
+            }
+
+            $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+            $filename = 'doc_' . uniqid('', true) . ($extension ? '.' . $extension : '');
+            $destination = $uploadDir . '/' . $filename;
+
+            if (!move_uploaded_file($file['tmp_name'], $destination)) {
+                return Response::serverError('Unable to store document');
+            }
+
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo ? finfo_file($finfo, $destination) : null;
+            if ($finfo) {
+                finfo_close($finfo);
+            }
+
+            $relativePath = '/uploads/document-vault/' . $filename;
+
+            $stmt = $connection->pdo()->prepare(
+                'INSERT INTO document_vault_documents
+                    (title, document_type, category, issuing_authority, document_number, issued_date, expiration_date, notes,
+                     file_name, file_path, mime_type, file_size, uploaded_by, created_at, updated_at)
+                 VALUES
+                    (:title, :document_type, :category, :issuing_authority, :document_number, :issued_date, :expiration_date, :notes,
+                     :file_name, :file_path, :mime_type, :file_size, :uploaded_by, NOW(), NOW())'
+            );
+
+            $stmt->execute([
+                'title' => $title,
+                'document_type' => $documentType,
+                'category' => $body['category'] ?? null,
+                'issuing_authority' => $body['issuing_authority'] ?? null,
+                'document_number' => $body['document_number'] ?? null,
+                'issued_date' => $body['issued_date'] ?? null,
+                'expiration_date' => $body['expiration_date'] ?? null,
+                'notes' => $body['notes'] ?? null,
+                'file_name' => $file['name'] ?? $filename,
+                'file_path' => $relativePath,
+                'mime_type' => $mimeType,
+                'file_size' => $file['size'] ?? null,
+                'uploaded_by' => $user->id,
+            ]);
+
+            return Response::created(['success' => true]);
+        });
+
+        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $file = $request->file('file');
+
+            $fields = [
+                'title' => $body['title'] ?? null,
+                'document_type' => $body['document_type'] ?? null,
+                'category' => $body['category'] ?? null,
+                'issuing_authority' => $body['issuing_authority'] ?? null,
+                'document_number' => $body['document_number'] ?? null,
+                'issued_date' => $body['issued_date'] ?? null,
+                'expiration_date' => $body['expiration_date'] ?? null,
+                'notes' => $body['notes'] ?? null,
+            ];
+
+            $updates = [];
+            $params = ['id' => $id];
+
+            foreach ($fields as $column => $value) {
+                if ($value !== null) {
+                    $updates[] = $column . ' = :' . $column;
+                    $params[$column] = $value;
+                }
+            }
+
+            if (is_array($file) && !empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
+                $uploadDir = dirname(__DIR__) . '/public/uploads/document-vault';
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+                    return Response::serverError('Unable to prepare upload directory');
+                }
+
+                $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+                $filename = 'doc_' . uniqid('', true) . ($extension ? '.' . $extension : '');
+                $destination = $uploadDir . '/' . $filename;
+
+                if (!move_uploaded_file($file['tmp_name'], $destination)) {
+                    return Response::serverError('Unable to store document');
+                }
+
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo ? finfo_file($finfo, $destination) : null;
+                if ($finfo) {
+                    finfo_close($finfo);
+                }
+
+                $updates[] = 'file_name = :file_name';
+                $updates[] = 'file_path = :file_path';
+                $updates[] = 'mime_type = :mime_type';
+                $updates[] = 'file_size = :file_size';
+                $params['file_name'] = $file['name'] ?? $filename;
+                $params['file_path'] = '/uploads/document-vault/' . $filename;
+                $params['mime_type'] = $mimeType;
+                $params['file_size'] = $file['size'] ?? null;
+            }
+
+            if (empty($updates)) {
+                return Response::badRequest('No fields to update');
+            }
+
+            $updates[] = 'updated_at = NOW()';
+
+            $sql = 'UPDATE document_vault_documents SET ' . implode(', ', $updates) . ' WHERE id = :id';
+            $stmt = $connection->pdo()->prepare($sql);
+            $stmt->execute($params);
+
+            return Response::json(['success' => true]);
+        });
+
+        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $stmt = $connection->pdo()->prepare('DELETE FROM document_vault_documents WHERE id = :id');
+            $stmt->execute(['id' => $id]);
+
+            return Response::noContent();
+        });
+    });
+
+    // Financial routes (Admin/Manager only)
+    $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate, $settingsRepository) {
+
+        $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
         $financialController = new \App\Services\Financial\FinancialController(
-            new \App\Services\Financial\FinancialEntryService($connection),
+            $financialEntryService,
             new \App\Services\Financial\FinancialReportService($connection),
+            $gate
+        );
+        $cashDrawerController = new \App\Services\Financial\CashDrawerController(
+            new \App\Services\Financial\CashDrawerService($connection, $financialEntryService),
             $gate
         );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
         $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
             new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
+            $gate
+        );
+        $leaveReportController = new \App\Services\Reports\LeaveReportController(
+            new \App\Services\Reports\LeaveReportService($connection),
             $gate
         );
 
@@ -5201,11 +5725,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->get('/api/financial/categories/{type:purchase|expense|income}', function (Request $request) use ($financialCategoryController) {
+        $router->get('/api/financial/categories/{type:asset|liability|income|expense|equity}', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
             $type = (string) $request->getAttribute('type');
             $data = $financialCategoryController->index($user, ['type' => $type]);
             return Response::json($data);
+        });
+
+        $router->post('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $data = $financialCategoryController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $financialCategoryController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::json(['message' => 'Category not found'], 404);
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $deleted = $financialCategoryController->destroy($user, $id);
+            return Response::json(['deleted' => $deleted]);
         });
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
@@ -5309,6 +5858,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/financial/cash-drawer/active', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $data = $cashDrawerController->active($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/cash-drawer/start', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $data = $cashDrawerController->start($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/financial/cash-drawer/{id}/close', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cashDrawerController->close($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-drawer/closeouts', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status', 'closed'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $cashDrawerController->closeouts($user, $filters);
+            return Response::json($data);
+        });
+
         $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
             $user = $request->getAttribute('user');
             $params = [
@@ -5317,6 +5896,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'branch_id' => $request->queryParam('branch_id'),
             ];
             $data = $technicianMarginController->report($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/leave-summary', function (Request $request) use ($leaveReportController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'employee_id' => $request->queryParam('employee_id'),
+            ];
+            $data = $leaveReportController->summary($user, $params);
             return Response::json($data);
         });
     });
@@ -5370,13 +5960,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Time Tracking routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
+        $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection, $auditLogger);
         $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
+        $payrollExportService = new \App\Services\Payroll\PayrollExportService(
+            $connection,
+            new \App\Support\SettingsRepository($connection)
+        );
 
         $timeController = new \App\Services\TimeTracking\TimeTrackingController(
             $timeTrackingService,
             new \App\Services\TimeTracking\TechnicianPortalService($connection, $timeTrackingService),
+            $gate
+        );
+
+        $payrollExportController = new \App\Services\Payroll\PayrollExportController(
+            $payrollExportService,
             $gate
         );
 
@@ -5447,6 +6047,69 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $leaveRequestService = new \App\Services\LeaveRequests\LeaveRequestService($connection);
+        $leaveAuditService = new \App\Services\Approval\ApprovalAuditService($connection);
+        $leaveController = new \App\Services\LeaveRequests\LeaveRequestController(
+            $leaveRequestService,
+            $leaveAuditService
+        );
+
+        $router->get('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'user_id' => $request->queryParam('user_id'),
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/leave-requests/mine', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->mine($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $data = $leaveController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/approve', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->approve($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/reject', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->reject($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
         $router->get('/api/time-tracking/technician/jobs', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->assignedJobs($user);
@@ -5456,6 +6119,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/time-tracking/technician/portal', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->portal($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $payrollExportController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $data = $payrollExportController->export($user, $request->body());
             return Response::json($data);
         });
 
@@ -5523,7 +6202,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Settings routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository, $auditLogger) {
 
         $settingsController = new \App\Services\Settings\SettingsController(
             $settingsRepository,
@@ -5689,6 +6368,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $createFinancialEntry = function (
                 int $caseId,
+                int $feeId,
                 string $caseNumber,
                 string $feeType,
                 string $feeDate,
@@ -5698,8 +6378,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     return;
                 }
 
-                $idempotency = sprintf('storage-fee-%d-%s-%s', $caseId, strtolower(str_replace(' ', '-', $feeType)), $feeDate);
-                $idempotency = substr($idempotency, 0, 120);
+                $idempotency = $feeId > 0 ? sprintf('storage-fee-%d', $feeId) : '';
 
                 $financialEntryService->create([
                     'type' => 'income',
@@ -5710,7 +6389,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     'entry_date' => $feeDate,
                     'vendor' => 'Impound Storage',
                     'description' => sprintf('%s for %s', $feeType, $caseNumber),
-                    'idempotency_key' => $idempotency,
+                    'idempotency_key' => $idempotency ?: null,
                 ], $user->id);
                 $createdFinancial += 1;
             };
@@ -5760,10 +6439,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                             'posted',
                         ]);
                         $createdFees += 1;
-                        $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Gate Fee', $intakeAt->format('Y-m-d'), $baseGateFee);
                     } elseif (!empty($existingFees[$caseId]['Gate Fee'])) {
                         foreach ($existingFees[$caseId]['Gate Fee'] as $feeDate => $fee) {
-                            $createFinancialEntry($caseId, $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
+                            $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'Gate Fee', $feeDate, (float) $fee['amount']);
                         }
                     }
 
@@ -5779,10 +6459,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                                 'posted',
                             ]);
                             $createdFees += 1;
-                            $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
+                            $feeId = (int) $pdo->lastInsertId();
+                            $createFinancialEntry($caseId, $feeId, $caseNumber, 'After Hours Fee', $intakeAt->format('Y-m-d'), $afterHoursFee);
                         } elseif (!empty($existingFees[$caseId]['After Hours Fee'])) {
                             foreach ($existingFees[$caseId]['After Hours Fee'] as $feeDate => $fee) {
-                                $createFinancialEntry($caseId, $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
+                                $createFinancialEntry($caseId, (int) $fee['id'], $caseNumber, 'After Hours Fee', $feeDate, (float) $fee['amount']);
                             }
                         }
                     }
@@ -5791,7 +6472,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                         $feeDate = $startAt->modify(sprintf('+%d days', $day))->format('Y-m-d');
                         $existingDaily = $existingFees[$caseId]['Daily Storage'][$feeDate] ?? null;
                         if ($existingDaily) {
-                            $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
+                            $createFinancialEntry($caseId, (int) $existingDaily['id'], $caseNumber, 'Daily Storage', $feeDate, (float) $existingDaily['amount']);
                             continue;
                         }
 
@@ -5814,7 +6495,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                             'posted',
                         ]);
                         $createdFees += 1;
-                        $createFinancialEntry($caseId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
+                        $feeId = (int) $pdo->lastInsertId();
+                        $createFinancialEntry($caseId, $feeId, $caseNumber, 'Daily Storage', $feeDate, $dailyRate);
                     }
                 }
 
@@ -5828,6 +6510,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         $router->post('/api/storage/fees', function (Request $request) use ($connection) {
+            $user = $request->getAttribute('user');
             $payload = $request->body();
             $caseNumber = trim((string) ($payload['case_number'] ?? ''));
             $feeDate = trim((string) ($payload['fee_date'] ?? ''));
@@ -5869,11 +6552,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $fee = $row->fetch(\PDO::FETCH_ASSOC);
             $row->closeCursor();
 
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
             return Response::created($fee);
         });
 
         $router->put('/api/storage/fees/{id}', function (Request $request) use ($connection) {
             $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
             $payload = $request->body();
             $pdo = $connection->pdo();
 
@@ -5939,19 +6651,61 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $fee = $row->fetch(\PDO::FETCH_ASSOC);
             $row->closeCursor();
 
+            if ($fee && $user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $fee['id']);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                $description = $fee['description'] ?: sprintf('%s for %s', $fee['fee_type'], $fee['case_number']);
+                $payload = [
+                    'type' => 'income',
+                    'category' => 'Storage Fees',
+                    'reference' => $fee['case_number'],
+                    'purchase_order' => $fee['case_number'],
+                    'amount' => (float) $fee['amount'],
+                    'entry_date' => $fee['fee_date'],
+                    'vendor' => 'Impound Storage',
+                    'description' => $description,
+                ];
+
+                if ($fee['status'] === 'posted' && (float) $fee['amount'] > 0) {
+                    if ($existingEntry) {
+                        $financialEntryService->update($existingEntry->id, $payload, $user->id);
+                    } else {
+                        $payload['idempotency_key'] = $idempotency;
+                        $financialEntryService->create($payload, $user->id);
+                    }
+                } elseif ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
+            }
+
             return Response::json($fee);
         });
 
         $router->delete('/api/storage/fees/{id}', function (Request $request) use ($connection) {
             $id = (int) $request->getAttribute('id');
+            $user = $request->getAttribute('user');
             $pdo = $connection->pdo();
+            $existingStmt = $pdo->prepare('SELECT id FROM storage_fees WHERE id = ?');
+            $existingStmt->execute([$id]);
+            $feeId = $existingStmt->fetchColumn();
+            $existingStmt->closeCursor();
+
+            if (!$feeId) {
+                return Response::notFound('Storage fee not found.');
+            }
+
             $stmt = $pdo->prepare('DELETE FROM storage_fees WHERE id = ?');
             $stmt->execute([$id]);
-            $deleted = $stmt->rowCount() > 0;
             $stmt->closeCursor();
 
-            if (!$deleted) {
-                return Response::notFound('Storage fee not found.');
+            if ($user) {
+                $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
+                $idempotency = sprintf('storage-fee-%d', (int) $feeId);
+                $existingEntry = $financialEntryService->fetchByIdempotencyKey($idempotency);
+                if ($existingEntry) {
+                    $financialEntryService->delete($existingEntry->id, $user->id);
+                }
             }
 
             return Response::noContent();
@@ -5959,10 +6713,6 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/storage/notices', function (Request $request) use ($connection) {
             $status = $request->queryParam('status');
-        $router->get('/api/storage/impound-cases', function (Request $request) use ($connection) {
-            $search = trim((string) $request->queryParam('search', ''));
-            $status = trim((string) $request->queryParam('status', ''));
-            $auctionStatus = trim((string) $request->queryParam('auction_status', ''));
             $pdo = $connection->pdo();
 
             $sql = <<<SQL
@@ -6195,6 +6945,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
 
             return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
+        });
+
+        $router->get('/api/storage/impound-cases', function (Request $request) use ($connection) {
+            $pdo = $connection->pdo();
+            $search = trim((string) $request->query('search', ''));
+            $status = trim((string) $request->query('status', ''));
+            $auctionStatus = trim((string) $request->query('auction_status', ''));
+
+            $sql = <<<SQL
+                SELECT
                     id,
                     case_number,
                     impound_date,
@@ -6207,7 +6967,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     tow_agency,
                     hold_release_contact,
                     gate_fee,
-                    daily_rate
+                    daily_rate,
+                    vin,
+                    vehicle_year,
+                    vehicle_make,
+                    vehicle_model,
+                    vehicle_trim,
+                    vehicle_weight_class,
+                    vin_decoded_at
                 FROM impound_cases
             SQL;
             $params = [];
@@ -6261,11 +7028,47 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $dailyRate = (float) ($payload['daily_rate'] ?? 0);
             $impoundReason = $payload['impound_reason'] ?? null;
             $notes = $payload['notes'] ?? null;
+            $vin = trim((string) ($payload['vin'] ?? ''));
+            $vin = $vin !== '' ? $vin : null;
+            $vehicleYear = isset($payload['vehicle_year']) && $payload['vehicle_year'] !== '' ? (int) $payload['vehicle_year'] : null;
+            $vehicleMake = isset($payload['vehicle_make']) && $payload['vehicle_make'] !== '' ? (string) $payload['vehicle_make'] : null;
+            $vehicleModel = isset($payload['vehicle_model']) && $payload['vehicle_model'] !== '' ? (string) $payload['vehicle_model'] : null;
+            $vehicleTrim = isset($payload['vehicle_trim']) && $payload['vehicle_trim'] !== '' ? (string) $payload['vehicle_trim'] : null;
+            $vehicleWeightClass = isset($payload['vehicle_weight_class']) && $payload['vehicle_weight_class'] !== ''
+                ? (string) $payload['vehicle_weight_class']
+                : null;
+            $vinDecoded = $payload['vin_decoded'] ?? null;
+            $vinOverrides = $payload['vin_overrides'] ?? null;
+            $vinDecodedPayload = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+            $vinOverridesPayload = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+            $vinDecodedAt = $vinDecodedPayload !== null ? (new \DateTimeImmutable())->format('Y-m-d H:i:s') : null;
 
             $pdo = $connection->pdo();
             $insert = $pdo->prepare(
-                'INSERT INTO impound_cases (case_number, state_code, impound_date, status, auction_status, intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate, impound_reason, notes)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO impound_cases (
+                    case_number,
+                    state_code,
+                    impound_date,
+                    status,
+                    auction_status,
+                    intake_location,
+                    tow_agency,
+                    hold_release_contact,
+                    gate_fee,
+                    daily_rate,
+                    impound_reason,
+                    notes,
+                    vin,
+                    vehicle_year,
+                    vehicle_make,
+                    vehicle_model,
+                    vehicle_trim,
+                    vehicle_weight_class,
+                    vin_decoded,
+                    vin_decoded_at,
+                    vin_overrides
+                )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $insert->execute([
                 $caseNumber,
@@ -6280,13 +7083,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $dailyRate,
                 $impoundReason,
                 $notes,
+                $vin,
+                $vehicleYear,
+                $vehicleMake,
+                $vehicleModel,
+                $vehicleTrim,
+                $vehicleWeightClass,
+                $vinDecodedPayload,
+                $vinDecodedAt,
+                $vinOverridesPayload,
             ]);
             $insert->closeCursor();
 
             $id = (int) $pdo->lastInsertId();
             $row = $pdo->prepare(
                 'SELECT id, case_number, impound_date, state_code, status, status_updated_at, auction_status, auction_status_updated_at,
-                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate
+                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate,
+                        vin, vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_weight_class, vin_decoded_at
                  FROM impound_cases
                  WHERE id = ?'
             );
@@ -6328,8 +7141,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $dailyRate = array_key_exists('daily_rate', $payload) ? (float) $payload['daily_rate'] : (float) $existing['daily_rate'];
             $impoundReason = $payload['impound_reason'] ?? $existing['impound_reason'];
             $notes = $payload['notes'] ?? $existing['notes'];
-
+            $vin = array_key_exists('vin', $payload) ? trim((string) $payload['vin']) : ($existing['vin'] ?? null);
+            $vin = $vin === '' ? null : $vin;
+            $vehicleYear = array_key_exists('vehicle_year', $payload)
+                ? ($payload['vehicle_year'] !== '' ? (int) $payload['vehicle_year'] : null)
+                : ($existing['vehicle_year'] ?? null);
+            $vehicleMake = array_key_exists('vehicle_make', $payload)
+                ? (($payload['vehicle_make'] ?? '') !== '' ? (string) $payload['vehicle_make'] : null)
+                : ($existing['vehicle_make'] ?? null);
+            $vehicleModel = array_key_exists('vehicle_model', $payload)
+                ? (($payload['vehicle_model'] ?? '') !== '' ? (string) $payload['vehicle_model'] : null)
+                : ($existing['vehicle_model'] ?? null);
+            $vehicleTrim = array_key_exists('vehicle_trim', $payload)
+                ? (($payload['vehicle_trim'] ?? '') !== '' ? (string) $payload['vehicle_trim'] : null)
+                : ($existing['vehicle_trim'] ?? null);
+            $vehicleWeightClass = array_key_exists('vehicle_weight_class', $payload)
+                ? (($payload['vehicle_weight_class'] ?? '') !== '' ? (string) $payload['vehicle_weight_class'] : null)
+                : ($existing['vehicle_weight_class'] ?? null);
             $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $vinDecodedPayload = $existing['vin_decoded'] ?? null;
+            $vinOverridesPayload = $existing['vin_overrides'] ?? null;
+            $vinDecodedAt = $existing['vin_decoded_at'] ?? null;
+            if (array_key_exists('vin_decoded', $payload)) {
+                $vinDecoded = $payload['vin_decoded'] ?? null;
+                $vinDecodedPayload = is_array($vinDecoded) ? json_encode($vinDecoded, JSON_THROW_ON_ERROR) : null;
+                $vinDecodedAt = $vinDecodedPayload !== null ? $now : null;
+            }
+            if (array_key_exists('vin_overrides', $payload)) {
+                $vinOverrides = $payload['vin_overrides'] ?? null;
+                $vinOverridesPayload = is_array($vinOverrides) ? json_encode($vinOverrides, JSON_THROW_ON_ERROR) : null;
+            }
             $statusUpdatedAt = $existing['status_updated_at'];
             $auctionStatusUpdatedAt = $existing['auction_status_updated_at'];
 
@@ -6374,7 +7215,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $update = $pdo->prepare(
                 'UPDATE impound_cases
                  SET case_number = ?, state_code = ?, impound_date = ?, status = ?, status_updated_at = ?, auction_status = ?, auction_status_updated_at = ?,
-                     intake_location = ?, tow_agency = ?, hold_release_contact = ?, gate_fee = ?, daily_rate = ?, impound_reason = ?, notes = ?
+                     intake_location = ?, tow_agency = ?, hold_release_contact = ?, gate_fee = ?, daily_rate = ?, impound_reason = ?, notes = ?,
+                     vin = ?, vehicle_year = ?, vehicle_make = ?, vehicle_model = ?, vehicle_trim = ?, vehicle_weight_class = ?,
+                     vin_decoded = ?, vin_decoded_at = ?, vin_overrides = ?
                  WHERE id = ?'
             );
             $update->execute([
@@ -6392,13 +7235,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $dailyRate,
                 $impoundReason,
                 $notes,
+                $vin,
+                $vehicleYear,
+                $vehicleMake,
+                $vehicleModel,
+                $vehicleTrim,
+                $vehicleWeightClass,
+                $vinDecodedPayload,
+                $vinDecodedAt,
+                $vinOverridesPayload,
                 $id,
             ]);
             $update->closeCursor();
 
             $row = $pdo->prepare(
                 'SELECT id, case_number, impound_date, state_code, status, status_updated_at, auction_status, auction_status_updated_at,
-                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate
+                        intake_location, tow_agency, hold_release_contact, gate_fee, daily_rate,
+                        vin, vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_weight_class, vin_decoded_at
                  FROM impound_cases
                  WHERE id = ?'
             );
@@ -6859,7 +7712,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Audit routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $auditController = new \App\Services\Audit\AuditController(
             new \App\Services\Audit\AuditLogViewerService($connection),
@@ -7552,7 +8405,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Towing Pricing Matrix routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $towingPricingController = new \App\Services\Towing\TowingPricingController(
             new \App\Services\Towing\TowingPricingService($connection),
             $gate
@@ -7711,8 +8564,8 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     // =========================================================================
 
     // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
             $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
@@ -7721,7 +8574,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Admin-only module management routes
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
         $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);

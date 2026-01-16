@@ -118,7 +118,7 @@ export default function VehicleMasterForm() {
                   value={form.make}
                   required
                   placeholder="Ford"
-                  maxlength={120}
+                  maxLength={120}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, make: value }))}
                 />
               </div>
@@ -128,7 +128,7 @@ export default function VehicleMasterForm() {
                   value={form.model}
                   required
                   placeholder="F-150"
-                  maxlength={120}
+                  maxLength={120}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, model: value }))}
                 />
               </div>
@@ -141,7 +141,7 @@ export default function VehicleMasterForm() {
                   value={form.engine}
                   required
                   placeholder="5.0L V8"
-                  maxlength={120}
+                  maxLength={120}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, engine: value }))}
                 />
               </div>
@@ -151,7 +151,7 @@ export default function VehicleMasterForm() {
                   value={form.transmission}
                   required
                   placeholder="10-Speed Automatic"
-                  maxlength={120}
+                  maxLength={120}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, transmission: value }))}
                 />
               </div>
@@ -161,7 +161,7 @@ export default function VehicleMasterForm() {
                   value={form.drive}
                   required
                   placeholder="4WD"
-                  maxlength={20}
+                  maxLength={20}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, drive: value }))}
                 />
               </div>
@@ -170,7 +170,7 @@ export default function VehicleMasterForm() {
                 <Input
                   value={form.trim}
                   placeholder="Lariat"
-                  maxlength={120}
+                  maxLength={120}
                   onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, trim: value }))}
                 />
                 <p className="mt-1 text-xs text-gray-500">Optional</p>

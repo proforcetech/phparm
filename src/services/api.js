@@ -80,6 +80,14 @@ api.interceptors.response.use(
       // Prevent multiple simultaneous logout attempts
       isHandlingSessionExpiration = true
 
+      // Log the intercepted auth failure for debugging
+      console.warn('[Auth] Session expiration detected:', {
+        status,
+        url: error.config?.url,
+        method: error.config?.method,
+        responseData: responseData,
+      })
+
       // Check user role before clearing to determine which login page to use
       const storedUser = localStorage.getItem('user')
       let isCustomer = false

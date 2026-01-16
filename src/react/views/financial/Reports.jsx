@@ -6,6 +6,8 @@ import LineChart from '../../components/charts/LineChart'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
+import Select from '../../components/ui/Select'
+import Modal from '../../components/ui/Modal'
 import financialService from '../../../services/financial.service'
 import { useToast } from '../../stores/toast.jsx'
 
@@ -13,7 +15,7 @@ export default function Reports() {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState({
-    summary: { income: 0, expense: 0, purchase: 0 },
+    summary: { asset: 0, liability: 0, income: 0, expense: 0, equity: 0 },
     net: 0,
     monthly: [],
   })
@@ -27,8 +29,15 @@ export default function Reports() {
     inventory: { on_hand: 0, total_cost: 0, total_value: 0 },
     service_type_stats: [],
   })
-  const [totals, setTotals] = useState({ income: 0, expense: 0, purchase: 0 })
+  const [cashDrawerLoading, setCashDrawerLoading] = useState(false)
+  const [cashDrawer, setCashDrawer] = useState({ active: null, closeouts: [] })
+  const [showStartDrawer, setShowStartDrawer] = useState(false)
+  const [showCloseDrawer, setShowCloseDrawer] = useState(false)
+  const [startDrawerForm, setStartDrawerForm] = useState({ start_float: '', notes: '' })
+  const [closeDrawerForm, setCloseDrawerForm] = useState({ end_float: '', notes: '' })
+  const [totals, setTotals] = useState({ asset: 0, liability: 0, income: 0, expense: 0, equity: 0 })
   const [filters, setFilters] = useState({ start_date: '', end_date: '', category: '' })
+  const [categoryOptions, setCategoryOptions] = useState([])
 
   useEffect(() => {
     const today = new Date()
@@ -40,8 +49,17 @@ export default function Reports() {
   }, [])
 
   useEffect(() => {
+    financialService
+      .listCategories()
+      .then((data) => setCategoryOptions(data || []))
+      .catch(() => toast.error('Failed to load categories'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     if (filters.start_date && filters.end_date) {
       fetchReport()
+      fetchCashDrawer()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.start_date, filters.end_date])
@@ -60,9 +78,11 @@ export default function Reports() {
           monthly: res.monthly || [],
         })
         setTotals({
+          asset: res.summary.asset || 0,
+          liability: res.summary.liability || 0,
           income: res.summary.income || 0,
           expense: res.summary.expense || 0,
-          purchase: res.summary.purchase || 0,
+          equity: res.summary.equity || 0,
         })
         setReportSummary({
           range: summaryRes.range || [],
@@ -98,6 +118,49 @@ export default function Reports() {
       .catch(() => toast.error('Failed to export report'))
   }
 
+  const fetchCashDrawer = () => {
+    setCashDrawerLoading(true)
+    Promise.all([
+      financialService.cashDrawerActive(),
+      financialService.cashDrawerCloseouts({ start_date: filters.start_date, end_date: filters.end_date }),
+    ])
+      .then(([active, closeouts]) => {
+        setCashDrawer({ active: active || null, closeouts: closeouts || [] })
+      })
+      .catch(() => toast.error('Failed to load cash drawer closeouts'))
+      .finally(() => {
+        setCashDrawerLoading(false)
+      })
+  }
+
+  const startCashDrawer = () => {
+    financialService
+      .cashDrawerStart({ ...startDrawerForm })
+      .then(() => {
+        toast.success('Cash drawer session started')
+        setShowStartDrawer(false)
+        setStartDrawerForm({ start_float: '', notes: '' })
+        fetchCashDrawer()
+      })
+      .catch(() => toast.error('Failed to start cash drawer session'))
+  }
+
+  const closeCashDrawer = () => {
+    if (!cashDrawer.active?.id) {
+      toast.error('No active cash drawer session')
+      return
+    }
+    financialService
+      .cashDrawerClose(cashDrawer.active.id, { ...closeDrawerForm })
+      .then(() => {
+        toast.success('Cash drawer session closed')
+        setShowCloseDrawer(false)
+        setCloseDrawerForm({ end_float: '', notes: '' })
+        fetchCashDrawer()
+      })
+      .catch(() => toast.error('Failed to close cash drawer session'))
+  }
+
   const chartData = useMemo(() => {
     if (!report.monthly || report.monthly.length === 0) {
       return { labels: [], datasets: [] }
@@ -117,9 +180,19 @@ export default function Reports() {
           backgroundColor: 'rgba(239, 68, 68, 0.8)',
         },
         {
-          label: 'Purchases',
-          data: report.monthly.map((row) => row.summary.purchase),
-          backgroundColor: 'rgba(249, 115, 22, 0.8)',
+          label: 'Assets',
+          data: report.monthly.map((row) => row.summary.asset),
+          backgroundColor: 'rgba(59, 130, 246, 0.8)',
+        },
+        {
+          label: 'Liabilities',
+          data: report.monthly.map((row) => row.summary.liability),
+          backgroundColor: 'rgba(234, 88, 12, 0.8)',
+        },
+        {
+          label: 'Equity',
+          data: report.monthly.map((row) => row.summary.equity),
+          backgroundColor: 'rgba(99, 102, 241, 0.8)',
         },
       ],
     }
@@ -148,10 +221,24 @@ export default function Reports() {
           tension: 0.3,
         },
         {
-          label: 'Purchases',
-          data: reportSummary.ytd_trends.map((row) => row.purchase),
-          borderColor: 'rgba(249, 115, 22, 0.9)',
-          backgroundColor: 'rgba(249, 115, 22, 0.2)',
+          label: 'Assets',
+          data: reportSummary.ytd_trends.map((row) => row.asset),
+          borderColor: 'rgba(59, 130, 246, 0.9)',
+          backgroundColor: 'rgba(59, 130, 246, 0.2)',
+          tension: 0.3,
+        },
+        {
+          label: 'Liabilities',
+          data: reportSummary.ytd_trends.map((row) => row.liability),
+          borderColor: 'rgba(234, 88, 12, 0.9)',
+          backgroundColor: 'rgba(234, 88, 12, 0.2)',
+          tension: 0.3,
+        },
+        {
+          label: 'Equity',
+          data: reportSummary.ytd_trends.map((row) => row.equity),
+          borderColor: 'rgba(99, 102, 241, 0.9)',
+          backgroundColor: 'rgba(99, 102, 241, 0.2)',
           tension: 0.3,
         },
       ],
@@ -199,13 +286,16 @@ export default function Reports() {
   }
 
   const formatCurrency = (value) => `$${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const formatType = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Unassigned')
+  const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '—')
+  const formatUserLabel = (row) => row?.opened_by_name || row?.closed_by_name || '—'
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Financial Reports</h1>
-          <p className="text-sm text-gray-600">Monthly breakdowns of income, expenses, and purchases with CSV export.</p>
+          <p className="text-sm text-gray-600">Monthly breakdowns by account type with CSV export.</p>
         </div>
         <Button variant="secondary" onClick={exportReport}>Export CSV</Button>
       </div>
@@ -240,8 +330,15 @@ export default function Reports() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Category</label>
-            <Input
+            <Select
               modelValue={filters.category}
+              options={[
+                { label: 'All Categories', value: '' },
+                ...categoryOptions.map((category) => ({
+                  label: `${category.name} (${formatType(category.type)})`,
+                  value: category.name,
+                })),
+              ]}
               onUpdateModelValue={(value) => setFilters((prev) => ({ ...prev, category: value }))}
             />
           </div>
@@ -251,7 +348,101 @@ export default function Reports() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Card className="space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Cash Drawer Closeouts</h2>
+            <p className="text-sm text-gray-600">Track starting floats, reconciliation totals, and over/shorts by shift.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowStartDrawer(true)}
+              disabled={!!cashDrawer.active}
+            >
+              Start Shift
+            </Button>
+            <Button
+              onClick={() => setShowCloseDrawer(true)}
+              disabled={!cashDrawer.active}
+            >
+              Close Shift
+            </Button>
+          </div>
+        </div>
+
+        {cashDrawerLoading ? (
+          <p className="text-sm text-gray-500">Loading cash drawer data...</p>
+        ) : cashDrawer.active ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs uppercase text-gray-500">Shift Started</p>
+              <p className="text-sm font-medium text-gray-900">{formatDateTime(cashDrawer.active.started_at)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-gray-500">Start Float</p>
+              <p className="text-sm font-medium text-gray-900">{formatCurrency(cashDrawer.active.start_float)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-gray-500">Cash Sales</p>
+              <p className="text-sm font-medium text-gray-900">{formatCurrency(cashDrawer.active.cash_sales)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-gray-500">Expected Cash</p>
+              <p className="text-sm font-medium text-gray-900">{formatCurrency(cashDrawer.active.expected_cash)}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No active cash drawer session. Start a shift to track floats.</p>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Shift Closeout Report</h3>
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Closed At</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cashier</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Start Float</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cash Sales</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Expected</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Counted</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Over/Short</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {cashDrawer.closeouts.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="px-4 py-2 text-sm text-gray-900">{formatDateTime(row.ended_at)}</td>
+                <td className="px-4 py-2 text-sm text-gray-600">{formatUserLabel(row)}</td>
+                <td className="px-4 py-2 text-sm text-right">{formatCurrency(row.start_float)}</td>
+                <td className="px-4 py-2 text-sm text-right">{formatCurrency(row.cash_sales)}</td>
+                <td className="px-4 py-2 text-sm text-right">{formatCurrency(row.expected_cash)}</td>
+                <td className="px-4 py-2 text-sm text-right">{formatCurrency(row.end_float)}</td>
+                <td className={`px-4 py-2 text-sm text-right ${row.over_short >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(row.over_short)}
+                </td>
+              </tr>
+            ))}
+            {!cashDrawer.closeouts.length && !cashDrawerLoading ? (
+              <tr>
+                <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={7}>No closeouts in range.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <Card>
+          <p className="text-sm text-gray-500">Assets</p>
+          <p className="text-2xl font-semibold text-blue-600">{formatCurrency(totals.asset)}</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-gray-500">Liabilities</p>
+          <p className="text-2xl font-semibold text-orange-600">{formatCurrency(totals.liability)}</p>
+        </Card>
         <Card>
           <p className="text-sm text-gray-500">Income</p>
           <p className="text-2xl font-semibold text-green-600">{formatCurrency(totals.income)}</p>
@@ -261,8 +452,8 @@ export default function Reports() {
           <p className="text-2xl font-semibold text-red-600">{formatCurrency(totals.expense)}</p>
         </Card>
         <Card>
-          <p className="text-sm text-gray-500">Purchases</p>
-          <p className="text-2xl font-semibold text-orange-500">{formatCurrency(totals.purchase)}</p>
+          <p className="text-sm text-gray-500">Equity</p>
+          <p className="text-2xl font-semibold text-indigo-600">{formatCurrency(totals.equity)}</p>
         </Card>
       </div>
 
@@ -394,7 +585,9 @@ export default function Reports() {
               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Income</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Expenses</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Purchases</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Assets</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Liabilities</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Equity</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Net</th>
             </tr>
           </thead>
@@ -404,7 +597,9 @@ export default function Reports() {
                 <td className="px-4 py-2 text-sm text-gray-900">{row.month}</td>
                 <td className="px-4 py-2 text-sm text-right">${row.summary.income.toFixed(2)}</td>
                 <td className="px-4 py-2 text-sm text-right">${row.summary.expense.toFixed(2)}</td>
-                <td className="px-4 py-2 text-sm text-right">${row.summary.purchase.toFixed(2)}</td>
+                <td className="px-4 py-2 text-sm text-right">${row.summary.asset.toFixed(2)}</td>
+                <td className="px-4 py-2 text-sm text-right">${row.summary.liability.toFixed(2)}</td>
+                <td className="px-4 py-2 text-sm text-right">${row.summary.equity.toFixed(2)}</td>
                 <td className={`px-4 py-2 text-sm text-right ${row.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   ${row.net.toFixed(2)}
                 </td>
@@ -412,12 +607,72 @@ export default function Reports() {
             ))}
             {!report.monthly.length && !loading ? (
               <tr>
-                <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={5}>No data found.</td>
+                <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={7}>No data found.</td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </Card>
+
+      <Modal
+        open={showStartDrawer}
+        title="Start Cash Drawer Shift"
+        onClose={() => setShowStartDrawer(false)}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Starting Float</label>
+            <Input
+              type="number"
+              modelValue={startDrawerForm.start_float}
+              onUpdateModelValue={(value) => setStartDrawerForm((prev) => ({ ...prev, start_float: value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Notes</label>
+            <textarea
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              rows={3}
+              value={startDrawerForm.notes}
+              onChange={(event) => setStartDrawerForm((prev) => ({ ...prev, notes: event.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowStartDrawer(false)}>Cancel</Button>
+            <Button onClick={startCashDrawer}>Start Shift</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showCloseDrawer}
+        title="Close Cash Drawer Shift"
+        onClose={() => setShowCloseDrawer(false)}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Ending Cash Count</label>
+            <Input
+              type="number"
+              modelValue={closeDrawerForm.end_float}
+              onUpdateModelValue={(value) => setCloseDrawerForm((prev) => ({ ...prev, end_float: value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Notes</label>
+            <textarea
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              rows={3}
+              value={closeDrawerForm.notes}
+              onChange={(event) => setCloseDrawerForm((prev) => ({ ...prev, notes: event.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowCloseDrawer(false)}>Cancel</Button>
+            <Button onClick={closeCashDrawer}>Close Shift</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -173,7 +173,13 @@ class PaymentProcessingService
      *
      * @return array<string, mixed> Refund details
      */
-    public function refundPayment(int $invoiceId, string $transactionId, float $amount, string $reason = ''): array
+    public function refundPayment(
+        int $invoiceId,
+        string $transactionId,
+        float $amount,
+        string $reason = '',
+        ?string $refundMethod = null
+    ): array
     {
         // Get payment record to determine which gateway was used
         $payment = $this->getPaymentByTransaction($transactionId);
@@ -181,7 +187,20 @@ class PaymentProcessingService
             throw new InvalidArgumentException('Payment not found');
         }
 
-        $provider = $payment['method'] ?? 'stripe';
+        $provider = $payment['gateway'] ?? $payment['method'] ?? 'stripe';
+        $originalMethod = strtolower((string) ($payment['method'] ?? $payment['gateway'] ?? ''));
+        $requestedMethod = $refundMethod !== null ? strtolower(trim($refundMethod)) : '';
+
+        if ($requestedMethod === '') {
+            throw new InvalidArgumentException('payment_method is required');
+        }
+
+        if ($originalMethod !== '' && $requestedMethod !== $originalMethod) {
+            $methodLabel = $payment['method'] ?? $payment['gateway'] ?? 'original method';
+            throw new InvalidArgumentException(
+                sprintf('Refund method must match original payment method (%s).', $methodLabel)
+            );
+        }
 
         try {
             $gateway = $this->gatewayFactory->create($provider);
@@ -242,21 +261,28 @@ class PaymentProcessingService
         $status = $paymentData['status'] ?? 'pending';
         $amount = (float) ($paymentData['amount'] ?? 0);
         $transactionId = $paymentData['transaction_id'] ?? null;
+        $method = (string) ($paymentData['payment_method'] ?? $paymentData['method'] ?? $provider);
+        $reference = $paymentData['reference'] ?? $transactionId;
+        $metadata = $paymentData;
+        $metadata['original_method'] = $method;
+        $metadata['original_gateway'] = $provider;
 
         // Insert or update payment record
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata, created_at) '
-            . 'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata, CURRENT_TIMESTAMP) '
-            . 'ON DUPLICATE KEY UPDATE status = :status, metadata = :metadata'
+            'INSERT INTO payments (invoice_id, gateway, method, transaction_id, amount, reference, status, metadata, paid_at, created_at) '
+            . 'VALUES (:invoice_id, :gateway, :method, :transaction_id, :amount, :reference, :status, :metadata, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
+            . 'ON DUPLICATE KEY UPDATE status = :status, metadata = :metadata, method = :method, gateway = :gateway'
         );
 
         $stmt->execute([
             'invoice_id' => $invoiceId,
             'amount' => $amount,
-            'method' => $provider,
-            'reference' => $transactionId,
+            'gateway' => $provider,
+            'method' => $method,
+            'transaction_id' => $transactionId,
+            'reference' => $reference,
             'status' => $status,
-            'metadata' => json_encode($paymentData),
+            'metadata' => json_encode($metadata),
         ]);
 
         // Update invoice status based on payment
@@ -316,7 +342,9 @@ class PaymentProcessingService
      */
     private function getPaymentByTransaction(string $transactionId): ?array
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM payments WHERE reference = :reference');
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM payments WHERE reference = :reference OR transaction_id = :reference'
+        );
         $stmt->execute(['reference' => $transactionId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 

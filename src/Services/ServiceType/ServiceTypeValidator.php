@@ -21,13 +21,13 @@ class ServiceTypeValidator
             throw new InvalidArgumentException('Service type name must be 120 characters or fewer.');
         }
 
-        $alias = isset($data['alias']) && $data['alias'] !== '' ? trim((string) $data['alias']) : null;
-        if ($alias !== null && mb_strlen($alias) > 120) {
+        $alias = isset($data['alias']) && $data['alias'] !== '' ? trim((string) $data['alias']) : '';
+        if ($alias !== '' && mb_strlen($alias) > 120) {
             throw new InvalidArgumentException('Alias must be 120 characters or fewer.');
         }
 
-        $color = isset($data['color']) && $data['color'] !== '' ? trim((string) $data['color']) : null;
-        if ($color !== null) {
+        $color = isset($data['color']) && $data['color'] !== '' ? trim((string) $data['color']) : '';
+        if ($color !== '') {
             if (!preg_match('/^#?[0-9A-Fa-f]{6}$/', $color)) {
                 throw new InvalidArgumentException('Color must be a valid 6-digit hex code.');
             }
@@ -35,8 +35,8 @@ class ServiceTypeValidator
             $color = str_starts_with($color, '#') ? $color : '#' . $color;
         }
 
-        $icon = isset($data['icon']) && $data['icon'] !== '' ? trim((string) $data['icon']) : null;
-        if ($icon !== null && mb_strlen($icon) > 120) {
+        $icon = isset($data['icon']) && $data['icon'] !== '' ? trim((string) $data['icon']) : '';
+        if ($icon !== '' && mb_strlen($icon) > 120) {
             throw new InvalidArgumentException('Icon must be 120 characters or fewer.');
         }
 

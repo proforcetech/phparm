@@ -77,6 +77,18 @@ const statusOptions = [
   { value: 'waived', label: 'Waived' },
 ]
 
+const sellableOptions = [
+  { value: 'yes', label: 'Yes - Restock to inventory' },
+  { value: 'no', label: 'No - Move to defective bin' },
+]
+
+const warrantyStatusOptions = [
+  { value: 'defective', label: 'Defective' },
+  { value: 'rma_requested', label: 'RMA Requested' },
+  { value: 'shipped', label: 'Shipped' },
+  { value: 'credit_received', label: 'Credit Received' },
+]
+
 export default function CoreReturns() {
   const { success, error: toastError } = useToast()
 
@@ -97,6 +109,9 @@ export default function CoreReturns() {
   const [actionType, setActionType] = useState(null)
   const [actionNotes, setActionNotes] = useState('')
   const [creditAmount, setCreditAmount] = useState('')
+  const [sellable, setSellable] = useState(true)
+  const [warrantyStatus, setWarrantyStatus] = useState('defective')
+  const [warrantyReason, setWarrantyReason] = useState('')
   const [processing, setProcessing] = useState(false)
 
   const loadCoreReturns = useCallback(async () => {
@@ -148,6 +163,9 @@ export default function CoreReturns() {
     setActionType(action)
     setActionNotes('')
     setCreditAmount(core.core_cost?.toString() || '')
+    setSellable(true)
+    setWarrantyStatus('defective')
+    setWarrantyReason('')
     setShowActionModal(true)
   }
 
@@ -157,7 +175,12 @@ export default function CoreReturns() {
     try {
       switch (actionType) {
         case 'receive':
-          await coreReturnService.receiveFromCustomer(selectedCore.id, actionNotes || null)
+          await coreReturnService.receiveFromCustomer(selectedCore.id, {
+            notes: actionNotes || null,
+            sellable,
+            warranty_status: sellable ? null : warrantyStatus,
+            warranty_reason: sellable ? null : warrantyReason,
+          })
           success('Core marked as received from customer')
           break
         case 'credit_customer':
@@ -456,6 +479,26 @@ export default function CoreReturns() {
                   <p className="text-green-600 font-medium">{formatCurrency(selectedCore.vendor_credit_amount)}</p>
                 </div>
               )}
+              {selectedCore.return_sellable !== null && (
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Sellable</label>
+                  <p className="text-gray-900">
+                    {Number(selectedCore.return_sellable) === 1 ? 'Yes - Restocked' : 'No - Defective'}
+                  </p>
+                </div>
+              )}
+              {selectedCore.warranty_follow_up_status && (
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Warranty Follow-up Status</label>
+                  <p className="text-gray-900">{selectedCore.warranty_follow_up_status}</p>
+                </div>
+              )}
+              {selectedCore.warranty_follow_up_reason && (
+                <div className="col-span-2">
+                  <label className="text-sm font-medium text-gray-500">Warranty Follow-up Reason</label>
+                  <p className="text-gray-900 whitespace-pre-wrap">{selectedCore.warranty_follow_up_reason}</p>
+                </div>
+              )}
             </div>
 
             {selectedCore.history && selectedCore.history.length > 0 && (
@@ -511,6 +554,44 @@ export default function CoreReturns() {
               </div>
             )}
 
+            {actionType === 'receive' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Is the returned core sellable?</label>
+                  <Select
+                    value={sellable ? 'yes' : 'no'}
+                    options={sellableOptions}
+                    onChange={(e) => setSellable(e.target.value === 'yes')}
+                  />
+                </div>
+                {!sellable && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Warranty Follow-up Status
+                      </label>
+                      <Select
+                        value={warrantyStatus}
+                        options={warrantyStatusOptions}
+                        onChange={(e) => setWarrantyStatus(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Warranty Follow-up Reason
+                      </label>
+                      <Textarea
+                        value={warrantyReason}
+                        rows={3}
+                        placeholder="Document why this core is not sellable..."
+                        onUpdateModelValue={setWarrantyReason}
+                      />
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
               <Textarea
@@ -528,7 +609,11 @@ export default function CoreReturns() {
             <Button
               onClick={performAction}
               loading={processing}
-              disabled={processing || (actionType === 'vendor_credit' && !creditAmount)}
+              disabled={
+                processing ||
+                (actionType === 'vendor_credit' && !creditAmount) ||
+                (actionType === 'receive' && !sellable && (!warrantyStatus || !warrantyReason.trim()))
+              }
             >
               Confirm
             </Button>

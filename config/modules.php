@@ -142,7 +142,7 @@ return [
             'default_enabled' => true,
             'can_disable' => true,
             'permissions_prefix' => ['time.*'],
-            'routes' => ['/cp/time', '/cp/time-logs'],
+            'routes' => ['/cp/time', '/cp/time-logs', '/cp/leave-requests'],
             'sidebar_keys' => ['time', 'time-logs'],
             'depends_on' => ['core'],
         ],
@@ -219,6 +219,18 @@ return [
             'depends_on' => ['core'],
         ],
 
+        'documents' => [
+            'label' => 'Document Vault',
+            'description' => 'Store contracts, certifications, and compliance documents with expiration tracking',
+            'icon' => 'document-duplicate',
+            'default_enabled' => true,
+            'can_disable' => true,
+            'permissions_prefix' => ['documents.*'],
+            'routes' => ['/cp/document-vault'],
+            'sidebar_keys' => ['document-vault'],
+            'depends_on' => ['core'],
+        ],
+
         'financial' => [
             'label' => 'Financial Management',
             'description' => 'Vendor management, purchase tracking, and expense reporting',
@@ -242,6 +254,7 @@ return [
         'inventory',
         'inspections',
         'time_tracking',
+        'documents',
         'reports',
     ],
 

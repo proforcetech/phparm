@@ -228,6 +228,7 @@ class OfflineSyncService {
             allowQueue: false,
             clientEventId: item.payload.clientEventId,
             location: item.payload.location ?? null,
+            payload: item.payload.payload,
           }
         )
 

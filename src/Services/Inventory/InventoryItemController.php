@@ -6,10 +6,12 @@ use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use App\Services\Inventory\InventoryLowStockService;
+use App\Services\Inventory\InventoryTransactionRepository;
 
 class InventoryItemController
 {
     private InventoryItemRepository $repository;
+    private InventoryTransactionRepository $transactionRepository;
     private AccessGate $gate;
     private InventoryCsvService $csvService;
     private InventoryLowStockService $lowStockService;
@@ -18,13 +20,15 @@ class InventoryItemController
         InventoryItemRepository $repository,
         AccessGate $gate,
         ?InventoryCsvService $csvService = null,
-        ?InventoryLowStockService $lowStockService = null
+        ?InventoryLowStockService $lowStockService = null,
+        ?InventoryTransactionRepository $transactionRepository = null
     )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->csvService = $csvService ?? new InventoryCsvService($repository);
         $this->lowStockService = $lowStockService ?? new InventoryLowStockService($repository);
+        $this->transactionRepository = $transactionRepository ?? new InventoryTransactionRepository($repository->getConnection());
     }
 
     /**
@@ -95,6 +99,19 @@ class InventoryItemController
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function transactions(User $user, int $id, array $params = []): array
+    {
+        $this->assertViewAccess($user);
+
+        $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 50;
+        $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
+
+        return $this->transactionRepository->listByItem($id, $limit, $offset);
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
@@ -115,9 +132,36 @@ class InventoryItemController
     public function update(User $user, int $id, array $data): ?array
     {
         $this->assertManageAccess($user);
-        $this->gate->assert($user, 'inventory.update');
+        $this->assertEditAccess($user);
 
-        $item = $this->repository->update($id, $data);
+        if (array_key_exists('reorder_point_override', $data) || array_key_exists('reorder_point_override_reason', $data)) {
+            $this->gate->assert($user, 'inventory.manage');
+        }
+
+        $existing = $this->repository->find($id);
+        $incomingQuantity = null;
+        if ($existing !== null && array_key_exists('stock_quantity', $data)) {
+            $incomingQuantity = (int) $data['stock_quantity'];
+            if ($incomingQuantity !== (int) $existing->stock_quantity) {
+                $this->assertAdjustAccess($user);
+            }
+        }
+
+        $item = $this->repository->update($id, $data, $user->id);
+
+        if ($existing !== null && $incomingQuantity !== null && $item !== null) {
+            if ($incomingQuantity !== (int) $existing->stock_quantity) {
+                $this->transactionRepository->record(
+                    $id,
+                    (int) $existing->stock_quantity,
+                    (int) $item->stock_quantity,
+                    'manual_adjustment',
+                    null,
+                    $data['adjustment_reason'] ?? 'Manual adjustment',
+                    $user->id
+                );
+            }
+        }
 
         return $item?->toArray();
     }
@@ -381,7 +425,23 @@ class InventoryItemController
 
     private function assertManageAccess(User $user): void
     {
-        $this->gate->assert($user, 'inventory.*');
+        $permissions = [
+            'inventory.*',
+            'inventory.create',
+            'inventory.edit',
+            'inventory.adjust',
+            'inventory.update',
+            'inventory.delete',
+            'inventory.import',
+        ];
+
+        foreach ($permissions as $permission) {
+            if ($this->gate->can($user, $permission)) {
+                return;
+            }
+        }
+
+        throw new UnauthorizedException('User lacks permission to manage inventory.');
     }
 
     private function assertViewAccess(User $user): void
@@ -391,5 +451,23 @@ class InventoryItemController
         }
 
         throw new UnauthorizedException('User lacks permission to view inventory.');
+    }
+
+    private function assertEditAccess(User $user): void
+    {
+        if ($this->gate->can($user, 'inventory.edit') || $this->gate->can($user, 'inventory.*')) {
+            return;
+        }
+
+        throw new UnauthorizedException('User lacks permission to edit inventory.');
+    }
+
+    private function assertAdjustAccess(User $user): void
+    {
+        if ($this->gate->can($user, 'inventory.adjust') || $this->gate->can($user, 'inventory.*')) {
+            return;
+        }
+
+        throw new UnauthorizedException('User lacks permission to adjust inventory.');
     }
 }

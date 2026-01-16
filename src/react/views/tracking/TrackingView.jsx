@@ -25,7 +25,7 @@ const TrackingView = () => {
   const fetchTracking = async () => {
     try {
       setError(null)
-      const response = await fetch(`/track/${token}`)
+      const response = await fetch(`/api/track/${token}`)
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.error || 'Unable to load tracking details.')

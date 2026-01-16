@@ -16,6 +16,11 @@ export default {
     return response.data
   },
 
+  async getTransactions(id, params = {}) {
+    const response = await api.get(`/inventory/${id}/transactions`, { params })
+    return response.data
+  },
+
   async create(payload) {
     const response = await api.post('/inventory', payload)
     return response.data
@@ -220,6 +225,9 @@ export default {
       'low_stock_threshold',
       'reorder_quantity',
       'cost',
+      'core_cost',
+      'core_price',
+      'core_eligible',
       'sale_price',
       'markup',
       'location',
@@ -236,6 +244,9 @@ export default {
       '10',
       '50',
       '25.00',
+      '10.00',
+      '15.00',
+      'true',
       '49.99',
       '100',
       'Aisle 3',

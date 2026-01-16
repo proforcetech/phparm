@@ -9,6 +9,7 @@ use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\ServiceType;
+use App\Services\Inventory\CoreReturnService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -19,6 +20,7 @@ class InvoiceService
 {
     private Connection $connection;
     private ?AuditLogger $audit;
+    private CoreReturnService $coreReturns;
 
     /**
      * @var string[]
@@ -26,10 +28,11 @@ class InvoiceService
     private array $allowedStatuses = ['pending', 'sent', 'partial', 'paid', 'void', 'uncollectible'];
     private int $publicTtlDays = 30;
 
-    public function __construct(Connection $connection, ?AuditLogger $audit = null)
+    public function __construct(Connection $connection, CoreReturnService $coreReturns, ?AuditLogger $audit = null)
     {
         $this->connection = $connection;
         $this->audit = $audit;
+        $this->coreReturns = $coreReturns;
     }
 
     public function createFromEstimate(int $estimateId, array $itemIds, int $actorId): ?Invoice
@@ -70,7 +73,7 @@ class InvoiceService
                 'public_token_expires_at' => $this->calculatePublicExpiry(),
             ]);
 
-            $totals = $this->appendEstimateItems($invoiceId, $items);
+            $totals = $this->appendEstimateItems($invoiceId, $items, (int) $estimate->customer_id, $actorId);
             $totals = $this->appendEstimateExtras($invoiceId, $estimate, $totals);
             $this->updateTotals($invoiceId, $totals);
             $this->syncInvoiceBalance($invoiceId);
@@ -123,7 +126,7 @@ class InvoiceService
                 'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
             ]);
 
-            $totals = $this->persistItems($invoiceId, $payload['items'], $payload['tax_rate'] ?? 0.0);
+            $totals = $this->persistItems($invoiceId, $payload['items'], $payload['tax_rate'] ?? 0.0, (int) $payload['customer_id'], $actorId);
             $this->updateTotals($invoiceId, $totals);
 
             if ($splitBilling) {
@@ -317,20 +320,36 @@ class InvoiceService
     /**
      * @return array<string, float>
      */
-    private function appendEstimateItems(int $invoiceId, array $items): array
+    private function appendEstimateItems(int $invoiceId, array $items, int $customerId, ?int $actorId): array
     {
         $totals = ['subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0];
         foreach ($items as $row) {
             $lineTotal = (float) ($row['line_total'] ?? 0.0);
             $tax = !empty($row['taxable']) ? $lineTotal * 0.1 : 0.0;
-            $this->insertInvoiceItem($invoiceId, [
+            $description = $row['job_title'] . ' - ' . $row['description'];
+            $invoiceItemId = $this->insertInvoiceItem($invoiceId, [
                 'type' => $row['type'] ?? 'service',
-                'description' => $row['job_title'] . ' - ' . $row['description'],
+                'sku' => $row['sku'] ?? null,
+                'inventory_item_id' => $row['inventory_item_id'] ?? null,
+                'description' => $description,
                 'quantity' => $row['quantity'],
                 'unit_price' => $row['unit_price'],
+                'list_price' => $row['list_price'] ?? null,
                 'taxable' => $row['taxable'],
                 'line_total' => $lineTotal,
             ]);
+            $this->maybeCreateCoreReturnForInvoiceItem(
+                $invoiceId,
+                $invoiceItemId,
+                [
+                    'description' => $description,
+                    'sku' => $row['sku'] ?? null,
+                    'inventory_item_id' => $row['inventory_item_id'] ?? null,
+                    'quantity' => $row['quantity'],
+                ],
+                $customerId,
+                $actorId
+            );
             $totals['subtotal'] += $lineTotal;
             $totals['tax'] += $tax;
         }
@@ -361,7 +380,7 @@ class InvoiceService
                 throw new InvalidArgumentException('No approved items found for merge');
             }
 
-            $addedTotals = $this->appendEstimateItems($invoiceId, $items);
+            $addedTotals = $this->appendEstimateItems($invoiceId, $items, (int) $invoice->customer_id, $actorId);
             $addedTotals = $this->appendEstimateExtras($invoiceId, $estimate, $addedTotals);
 
             $combinedTotals = [
@@ -436,7 +455,8 @@ class InvoiceService
         $clauses[] = "COALESCE(ei.status, 'pending') = 'approved'";
 
         $itemsStmt = $this->connection->pdo()->prepare(
-            'SELECT ej.title AS job_title, ei.description, ei.quantity, ei.unit_price, ei.taxable, ei.type, ei.line_total ' .
+            'SELECT ej.title AS job_title, ei.description, ei.quantity, ei.unit_price, ei.taxable, ei.type, ei.line_total, ' .
+            'ei.sku, ei.inventory_item_id, ei.list_price ' .
             'FROM estimate_jobs ej JOIN estimate_items ei ON ej.id = ei.estimate_job_id ' .
             'WHERE ' . implode(' AND ', $clauses)
         );
@@ -449,21 +469,36 @@ class InvoiceService
      * @param array<int, array<string, mixed>> $items
      * @return array<string, float>
      */
-    private function persistItems(int $invoiceId, array $items, float $taxRate): array
+    private function persistItems(int $invoiceId, array $items, float $taxRate, int $customerId, ?int $actorId): array
     {
         $totals = ['subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0];
         foreach ($items as $item) {
             $lineTotal = ((float) ($item['quantity'] ?? 0)) * ((float) ($item['unit_price'] ?? 0));
             $taxable = (bool) ($item['taxable'] ?? false);
             $tax = $taxable ? $lineTotal * $taxRate : 0.0;
-            $this->insertInvoiceItem($invoiceId, [
+            $invoiceItemId = $this->insertInvoiceItem($invoiceId, [
                 'type' => $item['type'] ?? 'line_item',
+                'sku' => $item['sku'] ?? null,
+                'inventory_item_id' => $item['inventory_item_id'] ?? null,
                 'description' => $item['description'] ?? 'Line Item',
                 'quantity' => $item['quantity'] ?? 0,
                 'unit_price' => $item['unit_price'] ?? 0.0,
+                'list_price' => $item['list_price'] ?? null,
                 'taxable' => $taxable,
                 'line_total' => $lineTotal,
             ]);
+            $this->maybeCreateCoreReturnForInvoiceItem(
+                $invoiceId,
+                $invoiceItemId,
+                [
+                    'description' => $item['description'] ?? 'Line Item',
+                    'sku' => $item['sku'] ?? null,
+                    'inventory_item_id' => $item['inventory_item_id'] ?? null,
+                    'quantity' => $item['quantity'] ?? 0,
+                ],
+                $customerId,
+                $actorId
+            );
             $totals['subtotal'] += $lineTotal;
             $totals['tax'] += $tax;
         }
@@ -500,13 +535,9 @@ class InvoiceService
     /**
      * @param array<string, mixed> $payload
      */
-    private function insertInvoiceItem(int $invoiceId, array $payload): void
+    private function insertInvoiceItem(int $invoiceId, array $payload): int
     {
-        $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, list_price, taxable, line_total) '
-            . 'VALUES (:invoice_id, :type, :description, :quantity, :unit_price, :list_price, :taxable, :line_total)'
-        );
-        $stmt->execute([
+        $fields = [
             'invoice_id' => $invoiceId,
             'type' => $payload['type'],
             'description' => $payload['description'],
@@ -515,7 +546,30 @@ class InvoiceService
             'list_price' => (float) ($payload['list_price'] ?? 0),
             'taxable' => $payload['taxable'] ? 1 : 0,
             'line_total' => $payload['line_total'],
-        ]);
+        ];
+
+        if (array_key_exists('sku', $payload)) {
+            $fields['sku'] = $payload['sku'];
+        }
+        if (array_key_exists('inventory_item_id', $payload)) {
+            $fields['inventory_item_id'] = $payload['inventory_item_id'];
+        }
+        if (array_key_exists('core_price', $payload)) {
+            $fields['core_price'] = $payload['core_price'];
+        }
+        if (array_key_exists('core_return_id', $payload)) {
+            $fields['core_return_id'] = $payload['core_return_id'];
+        }
+
+        $columns = implode(', ', array_keys($fields));
+        $placeholders = ':' . implode(', :', array_keys($fields));
+
+        $stmt = $this->connection->pdo()->prepare(
+            "INSERT INTO invoice_items ({$columns}) VALUES ({$placeholders})"
+        );
+        $stmt->execute($fields);
+
+        return (int) $this->connection->pdo()->lastInsertId();
     }
 
     private function updateTotals(int $invoiceId, array $totals): void
@@ -530,6 +584,85 @@ class InvoiceService
             'balance_due' => $totals['total'],
             'id' => $invoiceId,
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchInventoryItemCoreDetails(int $inventoryItemId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, name, sku, vendor, core_cost, core_price, is_core_eligible FROM inventory_items WHERE id = :id'
+        );
+        $stmt->execute(['id' => $inventoryItemId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
+    }
+
+    private function isCoreEligible(array $inventoryItem): bool
+    {
+        return (bool) ($inventoryItem['is_core_eligible'] ?? $inventoryItem['core_eligible'] ?? false);
+    }
+
+    private function calculateCoreAmount($value, float $quantity): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return (float) $value * max(0, $quantity);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function maybeCreateCoreReturnForInvoiceItem(
+        int $invoiceId,
+        int $invoiceItemId,
+        array $item,
+        int $customerId,
+        ?int $actorId
+    ): void {
+        if (!$this->coreReturns->isEnabled()) {
+            return;
+        }
+
+        $inventoryItemId = (int) ($item['inventory_item_id'] ?? 0);
+        if ($inventoryItemId === 0) {
+            return;
+        }
+
+        $inventoryItem = $this->fetchInventoryItemCoreDetails($inventoryItemId);
+        if ($inventoryItem === null || !$this->isCoreEligible($inventoryItem)) {
+            return;
+        }
+
+        $quantity = (float) ($item['quantity'] ?? 0);
+        $corePrice = $this->calculateCoreAmount($inventoryItem['core_price'] ?? null, $quantity);
+        $coreCost = $this->calculateCoreAmount($inventoryItem['core_cost'] ?? null, $quantity);
+
+        $coreReturn = $this->coreReturns->create([
+            'invoice_id' => $invoiceId,
+            'invoice_item_id' => $invoiceItemId,
+            'inventory_item_id' => $inventoryItemId,
+            'part_description' => $item['description'] ?? $inventoryItem['name'],
+            'sku' => $item['sku'] ?? $inventoryItem['sku'] ?? null,
+            'core_cost' => $coreCost ?? 0,
+            'core_price' => $corePrice ?? 0,
+            'customer_id' => $customerId,
+            'vendor' => $inventoryItem['vendor'] ?? null,
+        ], $actorId);
+
+        if (!empty($coreReturn['id'])) {
+            $this->connection->pdo()->prepare(
+                'UPDATE invoice_items SET core_return_id = :core_return_id, core_price = :core_price WHERE id = :id'
+            )->execute([
+                'core_return_id' => (int) $coreReturn['id'],
+                'core_price' => $corePrice ?? 0,
+                'id' => $invoiceItemId,
+            ]);
+        }
     }
 
     private function syncInvoiceBalance(int $invoiceId): void
@@ -566,8 +699,8 @@ class InvoiceService
     private function insertPayment(int $invoiceId, array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata) ' .
-            'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata)'
+            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata, paid_at, created_at) ' .
+            'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata, NOW(), NOW())'
         );
         $stmt->execute([
             'invoice_id' => $invoiceId,
@@ -671,10 +804,14 @@ class InvoiceService
                 $row['taxable'] = (bool) $row['taxable'];
             }
 
-            foreach (['quantity', 'unit_price', 'list_price', 'line_total'] as $field) {
+            foreach (['quantity', 'unit_price', 'list_price', 'line_total', 'core_price'] as $field) {
                 if (array_key_exists($field, $row)) {
                     $row[$field] = (float) $row[$field];
                 }
+            }
+
+            if (array_key_exists('core_return_id', $row) && $row['core_return_id'] !== null) {
+                $row['core_return_id'] = (int) $row['core_return_id'];
             }
 
             return $row;

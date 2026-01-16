@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import Alert from '../../components/ui/Alert'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
+import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import invoiceService from '../../../services/invoice.service'
@@ -69,6 +71,15 @@ export default function InvoiceDetail() {
   const [sending, setSending] = useState(false)
   const [deleteModal, setDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [refundModal, setRefundModal] = useState(false)
+  const [refunding, setRefunding] = useState(false)
+  const [refundError, setRefundError] = useState('')
+  const [refundPayment, setRefundPayment] = useState(null)
+  const [refundForm, setRefundForm] = useState({
+    amount: '',
+    reason: '',
+    payment_method: '',
+  })
 
   const loadInvoice = useCallback(async () => {
     setLoading(true)
@@ -125,6 +136,55 @@ export default function InvoiceDetail() {
       error('Failed to delete invoice')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const openRefundModal = (payment) => {
+    setRefundPayment(payment)
+    setRefundForm({
+      amount: payment?.amount ?? '',
+      reason: '',
+      payment_method: payment?.method || payment?.gateway || '',
+    })
+    setRefundError('')
+    setRefundModal(true)
+  }
+
+  const handleRefund = async () => {
+    if (!refundPayment) return
+
+    const transactionId = refundPayment.reference || refundPayment.transaction_id
+    if (!transactionId) {
+      setRefundError('Missing transaction reference for this payment.')
+      return
+    }
+
+    if (!refundForm.amount || Number(refundForm.amount) <= 0) {
+      setRefundError('Refund amount must be greater than 0.')
+      return
+    }
+
+    if (!refundForm.payment_method) {
+      setRefundError('Refund method is required.')
+      return
+    }
+
+    setRefunding(true)
+    setRefundError('')
+    try {
+      await invoiceService.refund(id, {
+        transaction_id: transactionId,
+        amount: Number(refundForm.amount),
+        reason: refundForm.reason,
+        payment_method: refundForm.payment_method,
+      })
+      success('Refund processed successfully')
+      setRefundModal(false)
+      loadInvoice()
+    } catch (err) {
+      setRefundError(err.response?.data?.message || 'Refund failed.')
+    } finally {
+      setRefunding(false)
     }
   }
 
@@ -318,6 +378,7 @@ export default function InvoiceDetail() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -330,6 +391,15 @@ export default function InvoiceDetail() {
                         {formatCurrency(payment.amount)}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-500">{payment.status || '—'}</td>
+                      <td className="px-4 py-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openRefundModal(payment)}
+                        >
+                          Refund
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -424,6 +494,45 @@ export default function InvoiceDetail() {
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setDeleteModal(false)}>Cancel</Button>
           <Button variant="danger" loading={deleting} onClick={handleDelete}>Delete</Button>
+        </div>
+      </Modal>
+
+      <Modal open={refundModal} title="Refund Payment" onClose={() => setRefundModal(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Refunds must use the same payment method used for the original sale.
+          </p>
+          {refundError ? (
+            <Alert variant="danger" message={refundError} closable={false} />
+          ) : null}
+          <Input
+            label="Amount"
+            type="number"
+            min="0"
+            step="0.01"
+            value={refundForm.amount}
+            onChange={(event) =>
+              setRefundForm((prev) => ({ ...prev, amount: event.target.value }))
+            }
+          />
+          <Input
+            label="Payment Method"
+            value={refundForm.payment_method}
+            onChange={(event) =>
+              setRefundForm((prev) => ({ ...prev, payment_method: event.target.value }))
+            }
+          />
+          <Input
+            label="Reason"
+            value={refundForm.reason}
+            onChange={(event) =>
+              setRefundForm((prev) => ({ ...prev, reason: event.target.value }))
+            }
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setRefundModal(false)}>Cancel</Button>
+            <Button loading={refunding} onClick={handleRefund}>Process Refund</Button>
+          </div>
         </div>
       </Modal>
     </div>

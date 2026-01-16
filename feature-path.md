@@ -112,18 +112,18 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## Summary of "Must-Have" Feature Set
 
-[ ] Mobile Damage App: 4-photo minimum + car diagram marking.
-[ ] Automated Storage Ledger: Daily recurring fees with grace periods.
-[ ] Customer Tracking Link: Real-time map view for the stranded motorist.
-[ ] Integrated VIN Decoding: Reduce manual entry for technicians.
-[ ] Digital Dispatch Adapters: Full handshake with Agero/AAA/Geico portals.
+[x] Digital Dispatch Adapters: Full handshake with Agero/AAA/Geico portals.
+[x] Integrated VIN Decoding: Reduce manual entry for technicians.
+[x] Customer Tracking Link: Real-time map view for the stranded motorist.
+[x] Automated Storage Ledger: Daily recurring fees with grace periods.
+[x] Mobile Damage App: 4-photo minimum + car diagram marking.
 
 
 ## 11. Inventory Performance Enhancements
 
 The current implementation appears to handle basic CRUD operations but may struggle as the inventory database grows into the thousands of items (common in auto shops).
 
-[ ] Optimize Search Queries (Backend):
+[x] Optimize Search Queries (Backend):
 
  Issue: The InventoryItemRepository likely uses LIKE %...% wildcard searches for SKUs and names. This prevents the database from efficiently using indexes, leading to full table scans.
 
@@ -131,7 +131,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemRepository.php
 
-[ ] Frontend Debouncing & Pagination:
+[x] Frontend Debouncing & Pagination:
 
  Issue: InventoryList.jsx may trigger API calls on every keystroke or filter change.
 
@@ -139,7 +139,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/react/views/inventory/InventoryList.jsx
 
-[ ] Eager Loading for Alerts:
+[x] Eager Loading for Alerts:
 
  Issue: The InventoryAlerts view likely polls for low stock.
 
@@ -149,7 +149,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 12. Inventory Security Enhancements
 
-[ ] Granular Permission Checks (RBAC):
+[x] Granular Permission Checks (RBAC):
 
  Issue: InventoryItemController.php might only check if a user is logged in.
 
@@ -163,7 +163,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemController.php
 
-[ ] Input Sanitization & Validation:
+[x] Input Sanitization & Validation:
 
  Issue: Importing inventory via CSV or bulk updates can be a vector for CSV Injection or malformed data.
 
@@ -171,7 +171,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 13. Must-Have Inventory Features (Currently Missing)
 
-[ ] Core Tracking System:
+[x] Core Tracking System:
 
  Gap: Auto parts often have a "Core Charge" (a deposit on the old part).
 
@@ -179,7 +179,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Workflow: When an item with a core is sold, the system should automatically track that a "Core Return" is expected from the customer, and subsequently from the shop to the vendor.
 
-[ ] Transaction Audit Log (Ledger):
+[x] Transaction Audit Log (Ledger):
 
  Gap: Changing quantity from 10 to 5 without context is dangerous.
 
@@ -193,7 +193,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemRepository.php (Update methods should write to this log).
 
-[ ] Bin Locations / Aisle Mapping:
+[x] Bin Locations / Aisle Mapping:
 
  Gap: Knowing you have 5 filters is useless if you don't know where they are.
 
@@ -201,35 +201,35 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 14. Additional Inventory Features
 
-[ ] Barcode / QR Code Integration:
+[x] Barcode / QR Code Integration:
 
  Feature: Allow the frontend (InventoryList.jsx) to accept input from a USB barcode scanner or use the device camera to scan a VIN or UPC to instantly find the part.
 
-[ ] Vendor Warranty Claims Workflow:
+[x] Vendor Warranty Claims Workflow:
 
  Feature: A dedicated view to manage "Defective" inventory.
 
- Status flow: Defective Detected -> RMA Requested -> Shipped to Vendor -> Credit Received.
+ Status flow: Defective -> RMA Requested -> Shipped -> Credit Received.
 
  Ref: Link this to the cp/inventory/alerts page so unpaid warranty claims are highlighted.
 
-[ ] Stock Forecasting:
+[x] Stock Forecasting:
 
  Feature: Use historical usage data (from Workorders) to suggest "Reorder Points" dynamically. If you sell 10 oil filters a week, the system should suggest a min-stock of 15, rather than a static number set by a human.
 
 ## 15. In-Shop & Mobile Repairs Additional Features:
 
-[ ] Service Menu / Canned Jobs: While ServiceTypes exist, a "Canned Job" feature (bundling Parts + Labor + Fees into one quick-add item) is a must-have for speed (e.g., "Standard 5qt Oil Change"). Ref: Bundle files exist, so verify this UI is optimized for quick selection.
+[x] Service Menu / Canned Jobs: While ServiceTypes exist, a "Canned Job" feature (bundling Parts + Labor + Fees into one quick-add item) is a must-have for speed (e.g., "Standard 5qt Oil Change"). Ref: Bundle files exist, so verify this UI is optimized for quick selection.
 
-[ ] Customer Communication Hub: MessagingService exists, but a unified "Timeline" view for the customer (seeing photos, approving estimates, chatting) is a "Nice to Have" that boosts trust.
+[x] Customer Communication Hub: MessagingService exists, but a unified "Timeline" view for the customer (seeing photos, approving estimates, chatting) is a "Nice to Have" that boosts trust.
 
-[ ] Digital Vehicle Inspections (DVI): InspectionReport exists. Ensure this supports video uploads, not just photos, as video has higher conversion rates for upsells.
+[x] Digital Vehicle Inspections (DVI): InspectionReport exists. Ensure this supports video uploads, not just photos, as video has higher conversion rates for upsells.
 
 ## 16. Additional Roadside & Towing Features
 
-[ ] GOA (Gone On Arrival) Logic: Roadside jobs often cancel while en route. A specific workflow to bill a "GOA Fee" to the motor club or customer is essential.
-[ ] Map-Based Dispatch: Geofencing exists, but a visual "Drag and Drop" map board for dispatchers to assign calls to the nearest truck is a critical efficiency feature.
-[ ] Truck Checklists: Pre-trip/Post-trip inspection forms for the tow trucks themselves (DOT compliance).
+[x] GOA (Gone On Arrival) Logic: Roadside jobs often cancel while en route. A specific workflow to bill a "GOA Fee" to the motor club or customer is essential.
+[x] Map-Based Dispatch: Geofencing exists, but a visual "Drag and Drop" map board for dispatchers to assign calls to the nearest truck is a critical efficiency feature.
+[x] Truck Checklists: Pre-trip/Post-trip inspection forms for the tow trucks themselves (DOT compliance).
 
 # Expansion of Features set into shop ERP
 
@@ -239,12 +239,14 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: Create an Employee model linked 1:1 to the User model.
+[x] New Model: Create an Employee model linked 1:1 to the User model.
 [ ] Fields: Store hire_date, emergency_contact, pay_structure (Hourly, Flat Rate, Commission, Salary), and skills (e.g., "Level 3 Tech", "Heavy Duty Towing").
 
-[ ] Document Vault: storage for contracts, certifications (ASE, WreckMaster), and expiration dates for driver's licenses.
+[x] Document Vault: storage for contracts, certifications (ASE, WreckMaster), and expiration dates for driver's licenses.
 
 ## 2. Employee Self-Services (ESS) Portal
+
+[x] Employee Self-Services (ESS) Portal
 
  Concept: Reduce administrative overhead by letting staff help themselves.
 
@@ -254,10 +256,10 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Features:
 
-[ ] Time Clock: Clock In/Out (with geolocation for mobile techs). Expanding upon current time keeping functionality.
-[ ] Schedule View: "When am I working next?"
-[ ] Pay History: View/Download PDF pay stubs.
-[ ] Profile Update: Change address/phone number.
+[x] Time Clock: Clock In/Out (with geolocation for mobile techs). Expanding upon current time keeping functionality.
+[x] Schedule View: "When am I working next?"
+[x] Pay History: View/Download PDF pay stubs.
+[x] Profile Update: Change address/phone number.
 
 ## 3. Cash Register (POS) & Direct Sales
 
@@ -265,9 +267,9 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] "Quick Sale" Interface: A high-contrast, touch-friendly UI.
+[x] "Quick Sale" Interface: A high-contrast, touch-friendly UI.
 [ ] Workflow: Bypasses "Vehicle" requirement. Uses a generic "Walk-in Customer" if no name is provided.
-[ ] Cash Drawer Management:
+[x] Cash Drawer Management:
 
  Opening/Closing: Track starting cash float and ending count.
 
@@ -280,13 +282,13 @@ The current implementation appears to handle basic CRUD operations but may strug
  Recommendations:
 
 [ ] Credit Memos: Do not just "delete" the invoice. Create a negative invoice (Credit Memo).
-[ ] Restock Logic: Ask the user: "Is this item sellable?"
+[x] Restock Logic: Ask the user: "Is this item sellable?"
 
  Yes: Increment Inventory count.
 
  No: Move to "Defective/Warranty" bin (triggering the Vendor Warranty flow).
 
-[ ] Refunds: Limit refunds to the original payment method (e.g., prevent cash refunds for credit card purchases).
+[x] Refunds: Limit refunds to the original payment method (e.g., prevent cash refunds for credit card purchases).
 
 ## 5. Banking (Payment, Reconcile, Deposits)
 
@@ -294,7 +296,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
+[x] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
 [ ] Bank Feeds: This is complex to build. Strongly recommend integrating a provider like Plaid or Yodlee to fetch transactions automatically.
 [ ] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.
 [ ] Undeposited Funds: When cash/checks are received, they go to a temporary asset account ("Undeposited Funds"). The "Cash Deposit" feature groups them and moves the total to the "Checking Account" to match the single bank slip.
@@ -312,8 +314,10 @@ The current implementation appears to handle basic CRUD operations but may strug
  Workflow:
 
 [ ] Timesheet Approval: Manager approves hours/flagged hours.
+[x] Payroll Run: System calculates Gross Pay.
+[x] Timesheet Approval: Manager approves hours/flagged hours.
 [ ] Payroll Run: System calculates Gross Pay.
-[ ] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
+[x] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
 
 ## 7. Leave / Vacation Requests
 
@@ -321,12 +325,13 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
+[x] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
 
  Integration:
 
-[ ] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
-[ ] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
+[x] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar/Payroll Integration: Dispatch and appointment scheduling respects approved leave while payroll reporting includes PTO hours.
 
 ## 8. Branches / Multi-Location
 

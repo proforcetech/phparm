@@ -12,10 +12,12 @@ import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import ChatWidget from '../../components/chat/ChatWidget'
+import Timeline from '../../components/Timeline'
 import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
 import inventoryService from '../../../services/inventory.service'
+import bundleService from '../../../services/bundle.service'
 import PartsCart from '../inventory/PartsCart'
 import { useToast } from '../../stores/toast'
 
@@ -33,6 +35,7 @@ const createSubEstimateItem = () => ({
 const createSubEstimateJob = () => ({
   title: '',
   notes: '',
+  bundle_id: '',
   items: [createSubEstimateItem()],
 })
 
@@ -43,8 +46,14 @@ const priorityOptions = [
   { value: 'low', label: 'Low' },
 ]
 
+const goaBillingOptions = [
+  { value: 'customer', label: 'Customer' },
+  { value: 'motor_club', label: 'Motor Club' },
+]
+
 const formatStatus = (status) => {
   if (!status) return ''
+  if (status.toLowerCase() === 'goa') return 'GOA'
   return status
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -93,6 +102,7 @@ const getStatusVariant = (status) => {
     in_progress: 'info',
     on_hold: 'warning',
     completed: 'success',
+    goa: 'danger',
     cancelled: 'danger',
   }
   return variants[status?.toLowerCase()] || 'default'
@@ -104,6 +114,7 @@ const getJobStatusVariant = (status) => {
     in_progress: 'info',
     hooked: 'info',
     completed: 'success',
+    goa: 'danger',
   }
   return variants[status?.toLowerCase()] || 'default'
 }
@@ -147,6 +158,7 @@ const getTimelineIconBg = (status) => {
     in_progress: 'bg-blue-500',
     on_hold: 'bg-yellow-500',
     completed: 'bg-green-500',
+    goa: 'bg-red-500',
     cancelled: 'bg-red-500',
   }
   return colors[status] || 'bg-gray-400'
@@ -162,9 +174,11 @@ export default function WorkorderDetail() {
   const [workorder, setWorkorder] = useState(null)
   const [jobs, setJobs] = useState([])
   const [subEstimates, setSubEstimates] = useState([])
-  const [statusHistory, setStatusHistory] = useState([])
+  const [timelineEvents, setTimelineEvents] = useState([])
   const [technicians, setTechnicians] = useState([])
   const [pullRequests, setPullRequests] = useState([])
+  const [bundles, setBundles] = useState([])
+  const [bundleLoading, setBundleLoading] = useState(false)
 
   const [showConvertModal, setShowConvertModal] = useState(false)
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -172,6 +186,7 @@ export default function WorkorderDetail() {
   const [showPriorityModal, setShowPriorityModal] = useState(false)
   const [showSubEstimateModal, setShowSubEstimateModal] = useState(false)
   const [showPullRequestModal, setShowPullRequestModal] = useState(false)
+  const [showGoaModal, setShowGoaModal] = useState(false)
   const [selectedJob, setSelectedJob] = useState(null)
 
   const [converting, setConverting] = useState(false)
@@ -179,6 +194,7 @@ export default function WorkorderDetail() {
   const [updatingPriority, setUpdatingPriority] = useState(false)
   const [creatingSubEstimate, setCreatingSubEstimate] = useState(false)
   const [creatingPullRequest, setCreatingPullRequest] = useState(false)
+  const [markingGoa, setMarkingGoa] = useState(false)
 
   const [convertForm, setConvertForm] = useState({ due_date: '' })
   const [assignForm, setAssignForm] = useState({ technician_id: '' })
@@ -196,13 +212,18 @@ export default function WorkorderDetail() {
     workorder_job_id: '',
     notes: '',
   })
+  const [goaForm, setGoaForm] = useState({
+    goa_fee: 0,
+    goa_billing_party: 'customer',
+    notes: '',
+  })
   const [subEstimateForm, setSubEstimateForm] = useState({
     tax_rate: 0,
     jobs: [createSubEstimateJob()],
   })
 
   const completedJobsCount = useMemo(() => {
-    return jobs.filter((job) => job.status === 'completed').length
+    return jobs.filter((job) => ['completed', 'goa'].includes(job.status)).length
   }, [jobs])
 
   const isSubEstimateValid = useMemo(() => {
@@ -232,6 +253,15 @@ export default function WorkorderDetail() {
     return tech?.name || `Tech #${techId}`
   }, [technicians])
 
+  const loadTimeline = useCallback(async () => {
+    try {
+      const response = await workorderService.getTimeline(id)
+      setTimelineEvents(response.data?.timeline || [])
+    } catch (timelineError) {
+      console.error('Failed to load timeline:', timelineError)
+    }
+  }, [id])
+
   const loadWorkorder = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
@@ -241,16 +271,16 @@ export default function WorkorderDetail() {
       setWorkorder(data)
       setJobs(data.jobs || [])
       setSubEstimates(data.sub_estimates || [])
-      setStatusHistory(data.status_history || [])
       setPriorityForm({ priority: data.priority || 'normal' })
       setAssignForm({ technician_id: data.assigned_technician_id || '' })
+      loadTimeline()
     } catch (fetchError) {
       console.error('Failed to load workorder:', fetchError)
       setLoadError(fetchError.response?.data?.message || 'Failed to load workorder')
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, loadTimeline])
 
   const loadTechnicians = useCallback(async () => {
     try {
@@ -258,6 +288,19 @@ export default function WorkorderDetail() {
       setTechnicians(Array.isArray(users) ? users : users?.data || [])
     } catch (techError) {
       console.error('Failed to load technicians:', techError)
+    }
+  }, [])
+
+  const loadBundles = useCallback(async () => {
+    setBundleLoading(true)
+    try {
+      const data = await bundleService.list({ active: 1 })
+      setBundles(Array.isArray(data) ? data : [])
+    } catch (bundleError) {
+      console.error('Failed to load bundles:', bundleError)
+      setBundles([])
+    } finally {
+      setBundleLoading(false)
     }
   }, [])
 
@@ -274,7 +317,8 @@ export default function WorkorderDetail() {
     loadWorkorder()
     loadTechnicians()
     loadPullRequests()
-  }, [loadPullRequests, loadTechnicians, loadWorkorder])
+    loadBundles()
+  }, [loadBundles, loadPullRequests, loadTechnicians, loadWorkorder])
 
   const updateStatus = async (status, notes = null) => {
     if (!workorder) return
@@ -304,6 +348,37 @@ export default function WorkorderDetail() {
     setSelectedJob(job)
     setJobAssignForm({ technician_id: job.technician_id || '' })
     setShowJobAssign(true)
+  }
+
+  const openGoaModal = () => {
+    if (!workorder) return
+    setGoaForm({
+      goa_fee: workorder.goa_fee ?? workorder.call_out_fee ?? 0,
+      goa_billing_party: workorder.goa_billing_party || 'customer',
+      notes: '',
+    })
+    setShowGoaModal(true)
+  }
+
+  const markGoa = async () => {
+    if (!workorder) return
+    setMarkingGoa(true)
+    try {
+      await workorderService.updateStatus(workorder.id, 'goa', goaForm.notes || 'Marked GOA', {
+        payload: {
+          goa_fee: Number(goaForm.goa_fee) || 0,
+          goa_billing_party: goaForm.goa_billing_party,
+        },
+      })
+      success('Workorder marked GOA')
+      setShowGoaModal(false)
+      loadWorkorder()
+    } catch (err) {
+      console.error('Failed to mark GOA:', err)
+      toastError(err.response?.data?.error || 'Failed to mark workorder GOA')
+    } finally {
+      setMarkingGoa(false)
+    }
   }
 
   const confirmJobAssign = async () => {
@@ -441,7 +516,7 @@ export default function WorkorderDetail() {
 
   const onSubEstimateItemTypeChange = (jobIndex, itemIndex, value) => {
     updateSubEstimateItem(jobIndex, itemIndex, (item) => {
-      if (value === 'LABOR') {
+      if (value !== 'PART') {
         return {
           ...item,
           type: value,
@@ -452,6 +527,38 @@ export default function WorkorderDetail() {
       }
       return { ...item, type: value }
     })
+  }
+
+  const addBundleItemsToJob = async (jobIndex) => {
+    const bundleId = subEstimateForm.jobs[jobIndex]?.bundle_id
+    if (!bundleId) return
+
+    try {
+      const items = await bundleService.fetchItemsForEstimate(bundleId)
+      if (!Array.isArray(items) || items.length === 0) {
+        toastError('Selected canned job has no items.')
+        return
+      }
+
+      const nextItems = items.map((item) => ({
+        type: item.type || 'LABOR',
+        sku: '',
+        inventory_item_id: null,
+        description: item.description || '',
+        quantity: Number(item.quantity) || 1,
+        unit_price: item.type === 'DISCOUNT' ? -Math.abs(Number(item.unit_price) || 0) : Number(item.unit_price) || 0,
+        list_price: Number(item.list_price) || 0,
+        taxable: item.taxable !== false,
+      }))
+
+      updateSubEstimateJob(jobIndex, (current) => ({
+        ...current,
+        items: [...current.items, ...nextItems],
+      }))
+    } catch (bundleError) {
+      console.error('Failed to add bundle items to sub-estimate:', bundleError)
+      toastError('Failed to add canned job items.')
+    }
   }
 
   const lookupSubEstimateBySku = async (jobIndex, itemIndex) => {
@@ -747,12 +854,17 @@ export default function WorkorderDetail() {
               Mark Complete
             </Button>
           ) : null}
-          {workorder.status === 'completed' ? (
+          {['completed', 'goa'].includes(workorder.status) ? (
             <Button onClick={() => setShowConvertModal(true)}>
               <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               Convert to Invoice
+            </Button>
+          ) : null}
+          {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
+            <Button variant="danger" onClick={openGoaModal}>
+              Mark GOA
             </Button>
           ) : null}
           {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
@@ -953,6 +1065,15 @@ export default function WorkorderDetail() {
                             Reopen
                           </Button>
                         ) : null}
+                        {['pending', 'in_progress', 'arrived'].includes(job.status) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateJobStatus(job.id, 'goa')}
+                          >
+                            Mark GOA
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1128,53 +1249,9 @@ export default function WorkorderDetail() {
 
           <Card>
             <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Status History</h3>
+              <h3 className="text-lg font-medium text-gray-900">Customer Communication Hub</h3>
             </div>
-
-            {statusHistory.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">No status changes yet</div>
-            ) : (
-              <div className="flow-root">
-                <ul role="list" className="-mb-8">
-                  {statusHistory.map((event, idx) => (
-                    <li key={event.id}>
-                      <div className="relative pb-8">
-                        {idx !== statusHistory.length - 1 ? (
-                          <span
-                            className="absolute left-4 top-4 -ml-px h-full w-0.5 bg-gray-200"
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                        <div className="relative flex space-x-3">
-                          <div>
-                            <span
-                              className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${getTimelineIconBg(event.new_status)}`}
-                            >
-                              <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                              </svg>
-                            </span>
-                          </div>
-                          <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
-                            <div>
-                              <p className="text-sm text-gray-500">
-                                Changed to <span className="font-medium text-gray-900">{formatStatus(event.new_status)}</span>
-                              </p>
-                              {event.notes ? (
-                                <p className="text-xs text-gray-400 mt-0.5">{event.notes}</p>
-                              ) : null}
-                            </div>
-                            <div className="whitespace-nowrap text-right text-sm text-gray-500">
-                              {formatDateTime(event.created_at)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <Timeline events={timelineEvents} />
           </Card>
         </div>
       </div>
@@ -1189,7 +1266,9 @@ export default function WorkorderDetail() {
               Convert workorder #{workorder?.number} to an invoice?
             </p>
             <Alert variant="info">
-              This will create an invoice with all completed work from this workorder.
+              {workorder?.status === 'goa'
+                ? 'This will create an invoice for the GOA fee only.'
+                : 'This will create an invoice with all completed work from this workorder.'}
             </Alert>
             <div>
               <label className="block text-sm font-medium text-gray-700">Due Date (Optional)</label>
@@ -1207,6 +1286,57 @@ export default function WorkorderDetail() {
             <Button variant="outline" onClick={() => setShowConvertModal(false)}>Cancel</Button>
             <Button onClick={confirmConvert} disabled={converting} loading={converting}>
               {converting ? 'Converting...' : 'Convert to Invoice'}
+            </Button>
+          </div>
+        )}
+      />
+
+      <Modal
+        open={showGoaModal}
+        onClose={() => setShowGoaModal(false)}
+        title="Mark Gone On Arrival (GOA)"
+        content={(
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Record the GOA fee and billing party before closing this workorder.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">GOA Fee</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                className="mt-1"
+                value={goaForm.goa_fee}
+                onUpdateModelValue={(value) => setGoaForm((prev) => ({ ...prev, goa_fee: value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Bill To</label>
+              <Select
+                value={goaForm.goa_billing_party}
+                options={goaBillingOptions}
+                className="mt-1"
+                onChange={(event) =>
+                  setGoaForm((prev) => ({ ...prev, goa_billing_party: event.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Notes (Optional)</label>
+              <Textarea
+                rows={3}
+                modelValue={goaForm.notes}
+                onUpdateModelValue={(value) => setGoaForm((prev) => ({ ...prev, notes: value }))}
+              />
+            </div>
+          </div>
+        )}
+        footer={(
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowGoaModal(false)}>Cancel</Button>
+            <Button variant="danger" onClick={markGoa} loading={markingGoa} disabled={markingGoa}>
+              {markingGoa ? 'Marking...' : 'Mark GOA'}
             </Button>
           </div>
         )}
@@ -1349,6 +1479,33 @@ export default function WorkorderDetail() {
                     onUpdateModelValue={(value) => updateSubEstimateJob(jobIndex, (current) => ({ ...current, notes: value }))}
                   />
 
+                  <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                      <div className="flex-1">
+                        <Select
+                          value={job.bundle_id}
+                          label="Quick add canned job"
+                          placeholder={bundleLoading ? 'Loading canned jobs...' : 'Select a canned job'}
+                          options={bundles.map((bundle) => ({
+                            value: bundle.id,
+                            label: bundle.service_type_name ? `${bundle.name} • ${bundle.service_type_name}` : bundle.name,
+                          }))}
+                          disabled={bundleLoading}
+                          onChange={(event) => updateSubEstimateJob(jobIndex, (current) => ({ ...current, bundle_id: event.target.value }))}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Add a preset bundle of parts, labor, and fees.</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addBundleItemsToJob(jobIndex)}
+                        disabled={!job.bundle_id}
+                      >
+                        Add Bundle Items
+                      </Button>
+                    </div>
+                  </div>
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h5 className="text-sm font-medium text-gray-700">Line Items</h5>
@@ -1375,6 +1532,8 @@ export default function WorkorderDetail() {
                               options={[
                                 { value: 'LABOR', label: 'Labor' },
                                 { value: 'PART', label: 'Part' },
+                                { value: 'FEE', label: 'Fee' },
+                                { value: 'DISCOUNT', label: 'Discount' },
                               ]}
                               required
                               onChange={(event) => onSubEstimateItemTypeChange(jobIndex, itemIndex, event.target.value)}

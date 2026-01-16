@@ -22,7 +22,7 @@ INSERT INTO users (id, name, email, password, role, email_verified, active, crea
     (3, 'Terry Technician', 'tech@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'technician', 1, 1, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
     name = VALUES(name),
-    password = VALUES(password),
+    -- Note: password intentionally NOT updated to preserve admin-configured passwords
     role = VALUES(role),
     email_verified = VALUES(email_verified),
     active = VALUES(active),

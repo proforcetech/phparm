@@ -11,6 +11,8 @@ class WarrantyClaim extends BaseModel
     public string $subject;
     public string $description;
     public string $status;
+    public float $financial_impact = 0.0;
+    public ?float $credit_received_amount = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }

@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\Estimate;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
+use App\Support\SettingsRepository;
 use InvalidArgumentException;
 use PDO;
 use Throwable;
@@ -18,6 +19,7 @@ class InspectionEstimateBridgeService
 {
     private Connection $connection;
     private ?AuditLogger $audit;
+    private ?SettingsRepository $settings;
 
     /** @var array<string, string> Default failure thresholds by input type */
     private const DEFAULT_FAIL_THRESHOLDS = [
@@ -27,10 +29,11 @@ class InspectionEstimateBridgeService
         'select_scale' => 'fail,poor,bad,needs_attention,needs_repair,replace',
     ];
 
-    public function __construct(Connection $connection, ?AuditLogger $audit = null)
+    public function __construct(Connection $connection, ?AuditLogger $audit = null, ?SettingsRepository $settings = null)
     {
         $this->connection = $connection;
         $this->audit = $audit;
+        $this->settings = $settings;
     }
 
     /**
@@ -596,7 +599,9 @@ class InspectionEstimateBridgeService
     {
         $laborHours = (float) ($item['estimated_labor_hours'] ?? 1.0);
         $partsCost = (float) ($item['estimated_parts_cost'] ?? 0.0);
-        $laborRate = 100.00; // Default labor rate - could be configurable
+        $laborRate = $this->settings !== null
+            ? (float) $this->settings->get('pricing.labor_rate', 0)
+            : 0.0;
 
         return ($laborHours * $laborRate) + $partsCost;
     }

@@ -1,6 +1,10 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Pass the Authorization header to PHP (required for JWT Bearer token auth)
+    RewriteCond %{HTTP:Authorization} ^(.*)$
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
     # Route all requests through index.php
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d

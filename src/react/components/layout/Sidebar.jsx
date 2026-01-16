@@ -10,7 +10,9 @@ const adminMenuItems = [
   { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
   { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
   { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
+  { path: '/cp/quick-sale', label: 'Quick Sale', icon: CreditCardIcon, moduleKey: 'invoicing' },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
+  { path: '/cp/leave-requests', label: 'Leave Requests', icon: ClipboardDocumentCheckIcon, moduleKey: 'time_tracking' },
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
   { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
   { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
@@ -27,7 +29,35 @@ const adminMenuItems = [
       },
     ],
   },
-  { path: '/cp/dispatch', label: 'Dispatch', icon: TruckIcon, moduleKey: 'towing' },
+  { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
+  {
+    path: '/cp/dispatch',
+    label: 'Dispatch',
+    icon: TruckIcon,
+    moduleKey: 'towing',
+    children: [
+      {
+        path: '/cp/dispatch',
+        label: 'Dispatch Board',
+        icon: TruckIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists',
+        label: 'Truck Checklists',
+        icon: ClipboardDocumentCheckIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists/logs',
+        label: 'Checklist Logs',
+        icon: ClipboardDocumentListIcon,
+      },
+      {
+        path: '/cp/driver/truck-checklists/templates',
+        label: 'Checklist Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
   {
     path: '/cp/storage/impound-intake',
     label: 'Storage',
@@ -46,7 +76,9 @@ const adminMenuItems = [
       },
     ],
   },
+  { path: '/cp/document-vault', label: 'Document Vault', icon: DocumentDuplicateIcon, moduleKey: 'documents' },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
+  { path: '/cp/financial/categories', label: 'Account Categories', icon: FolderIcon, moduleKey: 'financial' },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
   {
     path: '/cp/inspections/work',
@@ -126,10 +158,12 @@ const technicianMenuItems = [
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon },
   { path: '/cp/inspections/work', label: 'Inspections', icon: ClipboardDocumentListIcon },
+  { path: '/cp/driver/truck-checklists', label: 'Truck Checklists', icon: ClipboardDocumentCheckIcon },
 ]
 
 const customerMenuItems = [
   { path: '/portal', label: 'Dashboard', icon: HomeIcon },
+  { path: '/portal/workorders', label: 'Communication Hub', icon: DocumentTextIcon },
   { path: '/portal/invoices', label: 'My Invoices', icon: DocumentTextIcon },
   { path: '/portal/appointments', label: 'My Appointments', icon: CalendarIcon },
   { path: '/portal/vehicles', label: 'My Vehicles', icon: TruckIcon },
@@ -139,9 +173,21 @@ const customerMenuItems = [
   { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
+const essMenuItems = [
+  { path: '/ess', label: 'Dashboard', icon: HomeIcon },
+  { path: '/ess/time-clock', label: 'Time Clock', icon: ClockIcon },
+  { path: '/ess/schedule', label: 'My Schedule', icon: CalendarIcon },
+  { path: '/ess/pay-history', label: 'Pay History', icon: DocumentTextIcon },
+  { path: '/ess/leave-requests', label: 'Leave Requests', icon: ClipboardDocumentCheckIcon },
+  { path: '/ess/profile', label: 'Profile Updates', icon: Cog6ToothIcon },
+]
+
 const isActiveRoute = (currentPath, targetPath) => {
   if (targetPath === '/cp/dashboard' || targetPath === '/portal') {
     return currentPath === targetPath
+  }
+  if (targetPath === '/ess') {
+    return currentPath === '/ess'
   }
   if (targetPath === '/cp/inventory') {
     return currentPath === '/cp/inventory'
@@ -175,6 +221,10 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
   const menuItems = useMemo(() => {
     if (type === 'customer') {
       return customerMenuItems
+    }
+
+    if (type === 'ess') {
+      return essMenuItems
     }
 
     if (user?.role === 'technician') {

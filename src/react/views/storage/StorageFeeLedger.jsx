@@ -9,12 +9,14 @@ import Input from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Table from '../../components/ui/Table'
+import Textarea from '../../components/ui/Textarea'
 import storageService from '../../../services/storage.service'
 
 const emptyFeeForm = {
   caseNumber: '',
   feeDate: '',
   feeType: 'Daily Storage',
+  description: '',
   amount: '',
   status: 'posted',
 }
@@ -39,6 +41,9 @@ const feeTypeOptions = [
   'Adjustment',
 ]
 
+const statusFilterOptions = [{ label: 'All Statuses', value: 'all' }, ...statusOptions]
+const feeTypeFilterOptions = ['All Types', ...feeTypeOptions]
+
 export default function StorageFeeLedger() {
   const [search, setSearch] = useState('')
   const [fees, setFees] = useState([])
@@ -46,6 +51,8 @@ export default function StorageFeeLedger() {
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('All Types')
   const [showModal, setShowModal] = useState(false)
   const [editingFee, setEditingFee] = useState(null)
   const [form, setForm] = useState(emptyFeeForm)
@@ -102,14 +109,25 @@ export default function StorageFeeLedger() {
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase()
-    if (!term) return fees
-    return fees.filter((row) => row.case_number?.toLowerCase().includes(term))
-  }, [fees, search])
+    return fees.filter((row) => {
+      if (term && !row.case_number?.toLowerCase().includes(term)) {
+        return false
+      }
+      if (statusFilter !== 'all' && row.status !== statusFilter) {
+        return false
+      }
+      if (typeFilter !== 'All Types' && row.fee_type !== typeFilter) {
+        return false
+      }
+      return true
+    })
+  }, [fees, search, statusFilter, typeFilter])
 
   const columns = useMemo(() => ([
     { key: 'case_number', label: 'Case #' },
     { key: 'fee_date', label: 'Fee Date' },
     { key: 'fee_type', label: 'Type' },
+    { key: 'description', label: 'Description' },
     { key: 'amount', label: 'Amount' },
     { key: 'status', label: 'Status' },
   ]), [])
@@ -143,6 +161,7 @@ export default function StorageFeeLedger() {
       caseNumber: fee.case_number || '',
       feeDate: fee.fee_date || '',
       feeType: fee.fee_type || 'Daily Storage',
+      description: fee.description || '',
       amount: fee.amount ?? '',
       status: fee.status || 'posted',
     })
@@ -163,6 +182,7 @@ export default function StorageFeeLedger() {
       case_number: form.caseNumber,
       fee_date: form.feeDate,
       fee_type: form.feeType,
+      description: form.description,
       amount: Number(form.amount) || 0,
       status: form.status,
     }
@@ -217,6 +237,7 @@ export default function StorageFeeLedger() {
           </Link>
           <Link to="/cp/storage/auction-management">
             <Button variant="secondary">Auction Management</Button>
+          </Link>
           <Link to="/cp/storage/spot-checks">
             <Button variant="secondary">Inventory Spot-Checks</Button>
           </Link>
@@ -251,12 +272,24 @@ export default function StorageFeeLedger() {
       </div>
 
       <Card>
-        <div className="mb-4 grid gap-4 md:grid-cols-3">
+        <div className="mb-4 grid gap-4 md:grid-cols-4">
           <Input
             label="Search case"
             modelValue={search}
             placeholder="IMP-2024-017"
             onUpdateModelValue={setSearch}
+          />
+          <Select
+            label="Status filter"
+            modelValue={statusFilter}
+            options={statusFilterOptions}
+            onUpdateModelValue={setStatusFilter}
+          />
+          <Select
+            label="Fee type"
+            modelValue={typeFilter}
+            options={feeTypeFilterOptions}
+            onUpdateModelValue={setTypeFilter}
           />
           <div className="flex items-end gap-2">
             <Button variant="secondary" loading={syncing} onClick={handleSyncLedger}>
@@ -271,6 +304,7 @@ export default function StorageFeeLedger() {
           data={filtered.map((row) => ({
             ...row,
             amount: `$${Number(row.amount || 0).toFixed(2)}`,
+            description: row.description || '—',
             status: (
               <Badge variant={statusVariant[row.status] || 'default'}>
                 {row.status}
@@ -312,6 +346,13 @@ export default function StorageFeeLedger() {
             options={feeTypeOptions}
             placeholder="Select fee type"
             onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, feeType: value }))}
+          />
+          <Textarea
+            label="Description"
+            value={form.description}
+            placeholder="Add a manager note or adjustment reason"
+            rows={3}
+            onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
           />
           <Input
             label="Amount"

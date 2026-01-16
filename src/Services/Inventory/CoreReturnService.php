@@ -5,6 +5,7 @@ namespace App\Services\Inventory;
 use App\Database\Connection;
 use App\Support\Audit\AuditLogger;
 use PDO;
+use InvalidArgumentException;
 
 /**
  * Service for managing core return tracking.
@@ -14,6 +15,7 @@ class CoreReturnService
 {
     private Connection $connection;
     private AuditLogger $auditLogger;
+    private InventoryTransactionRepository $transactionRepository;
 
     // Core return statuses
     public const STATUS_PENDING_FROM_CUSTOMER = 'pending_from_customer';
@@ -28,16 +30,17 @@ class CoreReturnService
     {
         $this->connection = $connection;
         $this->auditLogger = $auditLogger;
+        $this->transactionRepository = new InventoryTransactionRepository($connection);
     }
 
     /**
      * Create a core return record when a part with core is sold
      *
      * @param array<string, mixed> $data
-     * @param int $userId
+     * @param int|null $userId
      * @return array<string, mixed>
      */
-    public function create(array $data, int $userId): array
+    public function create(array $data, ?int $userId): array
     {
         $customerReturnDays = $this->getSettingValue('inventory.core_tracking.customer_return_days', 30);
         $vendorReturnDays = $this->getSettingValue('inventory.core_tracking.vendor_return_days', 45);
@@ -273,11 +276,41 @@ class CoreReturnService
      * @param string|null $notes
      * @return array<string, mixed>
      */
-    public function receiveFromCustomer(int $id, int $userId, ?string $notes = null): array
+    public function receiveFromCustomer(int $id, int $userId, array $data = []): array
     {
-        return $this->updateStatus($id, self::STATUS_RECEIVED_FROM_CUSTOMER, $userId, $notes, [
+        $sellable = filter_var($data['sellable'] ?? null, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($sellable === null) {
+            throw new InvalidArgumentException('Sellable flag is required.');
+        }
+
+        $warrantyStatus = $data['warranty_status'] ?? null;
+        $warrantyReason = $data['warranty_reason'] ?? null;
+
+        if ($sellable === false) {
+            if (empty($warrantyStatus)) {
+                throw new InvalidArgumentException('Warranty follow-up status is required for non-sellable cores.');
+            }
+            $allowedStatuses = ['defective', 'rma_requested', 'shipped', 'credit_received'];
+            if (!in_array($warrantyStatus, $allowedStatuses, true)) {
+                throw new InvalidArgumentException('Invalid warranty follow-up status.');
+            }
+            if (empty($warrantyReason)) {
+                throw new InvalidArgumentException('Warranty follow-up reason is required for non-sellable cores.');
+            }
+        }
+
+        $notes = $data['notes'] ?? null;
+
+        $updated = $this->updateStatus($id, self::STATUS_RECEIVED_FROM_CUSTOMER, $userId, $notes, [
             'customer_core_received_at' => date('Y-m-d H:i:s'),
+            'return_sellable' => $sellable ? 1 : 0,
+            'warranty_follow_up_status' => $sellable ? null : $warrantyStatus,
+            'warranty_follow_up_reason' => $sellable ? null : $warrantyReason,
         ]);
+
+        $this->applyRestockOutcome($updated, $sellable, $userId, $notes, $warrantyReason);
+
+        return $updated;
     }
 
     /**
@@ -412,7 +445,7 @@ class CoreReturnService
      * @param string|null $notes
      * @param int $userId
      */
-    private function logHistory(int $coreReturnId, ?string $oldStatus, string $newStatus, ?string $notes, int $userId): void
+    private function logHistory(int $coreReturnId, ?string $oldStatus, string $newStatus, ?string $notes, ?int $userId): void
     {
         $sql = 'INSERT INTO core_return_history (core_return_id, old_status, new_status, notes, created_by)
                 VALUES (:core_return_id, :old_status, :new_status, :notes, :created_by)';
@@ -444,6 +477,91 @@ class CoreReturnService
         $stmt->execute(['core_return_id' => $coreReturnId]);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Apply restock logic based on sellable outcome.
+     *
+     * @param array<string, mixed> $coreReturn
+     * @param bool $sellable
+     * @param int $userId
+     * @param string|null $notes
+     * @param string|null $warrantyReason
+     */
+    private function applyRestockOutcome(
+        array $coreReturn,
+        bool $sellable,
+        int $userId,
+        ?string $notes,
+        ?string $warrantyReason
+    ): void {
+        $inventoryItemId = isset($coreReturn['inventory_item_id']) ? (int) $coreReturn['inventory_item_id'] : null;
+        if (!$inventoryItemId) {
+            return;
+        }
+
+        if ($sellable) {
+            $reason = $notes ?: 'Core return restocked';
+            $this->incrementInventory($inventoryItemId, (int) $coreReturn['id'], $userId, $reason);
+            return;
+        }
+
+        $this->moveToDefectiveBin($inventoryItemId, $warrantyReason);
+    }
+
+    private function incrementInventory(int $inventoryItemId, int $coreReturnId, int $userId, string $reason): void
+    {
+        $beforeStmt = $this->connection->pdo()->prepare('SELECT stock_quantity FROM inventory_items WHERE id = :id');
+        $beforeStmt->execute(['id' => $inventoryItemId]);
+        $before = $beforeStmt->fetchColumn();
+        if ($before === false) {
+            return;
+        }
+
+        $updateStmt = $this->connection->pdo()->prepare(
+            'UPDATE inventory_items SET stock_quantity = stock_quantity + 1 WHERE id = :id'
+        );
+        $updateStmt->execute(['id' => $inventoryItemId]);
+
+        $afterStmt = $this->connection->pdo()->prepare('SELECT stock_quantity FROM inventory_items WHERE id = :id');
+        $afterStmt->execute(['id' => $inventoryItemId]);
+        $after = $afterStmt->fetchColumn();
+
+        if ($after === false) {
+            return;
+        }
+
+        $this->transactionRepository->record(
+            $inventoryItemId,
+            (int) $before,
+            (int) $after,
+            'core_return',
+            (string) $coreReturnId,
+            $reason,
+            $userId
+        );
+    }
+
+    private function moveToDefectiveBin(int $inventoryItemId, ?string $reason): void
+    {
+        $binLabel = 'Defective';
+        $notes = $reason ? sprintf('%s - %s', $binLabel, $reason) : $binLabel;
+
+        $stmt = $this->connection->pdo()->prepare(
+            "UPDATE inventory_items
+                SET bin_location = :bin_location,
+                    notes = CASE
+                        WHEN :notes IS NULL THEN notes
+                        WHEN notes IS NULL OR notes = '' THEN :notes
+                        ELSE CONCAT(notes, '\n', :notes)
+                    END
+                WHERE id = :id"
+        );
+        $stmt->execute([
+            'bin_location' => $binLabel,
+            'notes' => $notes,
+            'id' => $inventoryItemId,
+        ]);
     }
 
     /**

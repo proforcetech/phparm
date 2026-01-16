@@ -8,16 +8,29 @@ import Loading from '../../components/ui/Loading'
 import Textarea from '../../components/ui/Textarea'
 import { warrantyService } from '../../../services/warranty.service'
 
+const STATUS_LABELS = {
+  defective: 'Defective',
+  rma_requested: 'RMA Requested',
+  shipped: 'Shipped to Vendor',
+  credit_received: 'Credit Received',
+  open: 'Open',
+  in_review: 'In Review',
+  resolved: 'Resolved',
+  rejected: 'Rejected',
+}
+
 const statusClass = (status) => {
   switch (status) {
-    case 'resolved':
+    case 'credit_received':
       return 'bg-green-100 text-green-800'
-    case 'rejected':
-      return 'bg-red-100 text-red-800'
-    case 'in_review':
-      return 'bg-yellow-100 text-yellow-800'
-    default:
+    case 'shipped':
       return 'bg-blue-100 text-blue-800'
+    case 'rma_requested':
+      return 'bg-yellow-100 text-yellow-800'
+    case 'defective':
+      return 'bg-red-100 text-red-800'
+    default:
+      return 'bg-gray-100 text-gray-700'
   }
 }
 
@@ -128,10 +141,10 @@ export default function WarrantyClaims() {
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
           >
             <option value="">All Statuses</option>
-            <option value="open">Open</option>
-            <option value="in_review">In Review</option>
-            <option value="resolved">Resolved</option>
-            <option value="rejected">Rejected</option>
+            <option value="defective">Defective</option>
+            <option value="rma_requested">RMA Requested</option>
+            <option value="shipped">Shipped to Vendor</option>
+            <option value="credit_received">Credit Received</option>
           </select>
         </div>
 
@@ -168,7 +181,9 @@ export default function WarrantyClaims() {
                     Invoice: {claim.invoice_id || '—'} · Vehicle: {claim.vehicle_id || '—'}
                   </p>
                 </div>
-                <span className={`px-3 py-1 text-xs rounded-full ${statusClass(claim.status)}`}>{claim.status}</span>
+                <span className={`px-3 py-1 text-xs rounded-full ${statusClass(claim.status)}`}>
+                  {STATUS_LABELS[claim.status] || claim.status}
+                </span>
               </button>
             ))}
           </div>

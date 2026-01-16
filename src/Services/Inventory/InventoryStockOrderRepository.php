@@ -8,6 +8,7 @@ use App\Services\Messaging\MessagingNotificationService;
 use App\Models\InventoryStockOrder;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
+use App\Services\Inventory\InventoryTransactionRepository;
 use InvalidArgumentException;
 use PDO;
 
@@ -17,6 +18,7 @@ class InventoryStockOrderRepository
     private FinancialEntryService $financialEntries;
     private ?AuditLogger $auditLogger;
     private ?MessagingNotificationService $messagingNotifications;
+    private InventoryTransactionRepository $transactionRepository;
 
     public function __construct(
         Connection $connection,
@@ -28,6 +30,7 @@ class InventoryStockOrderRepository
         $this->auditLogger = $auditLogger;
         $this->financialEntries = $financialEntries ?? new FinancialEntryService($connection, $auditLogger);
         $this->messagingNotifications = $messagingNotifications;
+        $this->transactionRepository = new InventoryTransactionRepository($connection);
     }
 
     public function find(int $id): ?InventoryStockOrder
@@ -286,7 +289,7 @@ class InventoryStockOrderRepository
         ?int $actorId
     ): void {
         if ($inventoryItemId !== null) {
-            $this->incrementInventory($inventoryItemId, $quantityOrdered);
+            $this->incrementInventory($inventoryItemId, $quantityOrdered, $stockOrderId, $actorId);
         }
 
         $reference = sprintf('stock_order:%d', $stockOrderId);
@@ -336,8 +339,14 @@ class InventoryStockOrderRepository
         }
     }
 
-    private function incrementInventory(int $inventoryItemId, int $quantity): void
+    private function incrementInventory(int $inventoryItemId, int $quantity, int $stockOrderId, ?int $actorId): void
     {
+        $beforeStmt = $this->connection->pdo()->prepare(
+            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+        );
+        $beforeStmt->execute(['id' => $inventoryItemId]);
+        $quantityBefore = (int) ($beforeStmt->fetchColumn() ?? 0);
+
         $sql = "UPDATE inventory_items SET
                 stock_quantity = stock_quantity + :quantity,
                 updated_at = NOW()
@@ -347,6 +356,22 @@ class InventoryStockOrderRepository
             'quantity' => $quantity,
             'id' => $inventoryItemId,
         ]);
+
+        $afterStmt = $this->connection->pdo()->prepare(
+            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+        );
+        $afterStmt->execute(['id' => $inventoryItemId]);
+        $quantityAfter = (int) ($afterStmt->fetchColumn() ?? $quantityBefore);
+
+        $this->transactionRepository->record(
+            $inventoryItemId,
+            $quantityBefore,
+            $quantityAfter,
+            'stock_order',
+            sprintf('stock_order:%d', $stockOrderId),
+            'Stock order received',
+            $actorId
+        );
     }
 
     /**

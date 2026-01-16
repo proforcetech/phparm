@@ -8,6 +8,7 @@ import Card from '../../components/ui/Card'
 import Loading from '../../components/ui/Loading'
 import inventoryService from '../../../services/inventory.service'
 import dashboardService from '../../../services/dashboard.service'
+import { warrantyService } from '../../../services/warranty.service'
 
 const STATUS_LABELS = {
   out_of_stock: 'Out of stock',
@@ -40,6 +41,26 @@ export default function InventoryAlerts() {
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [warrantySummary, setWarrantySummary] = useState(null)
+
+  const loadWarrantySummary = async () => {
+    try {
+      const statuses = ['defective', 'rma_requested', 'shipped']
+      const results = await Promise.all(
+        statuses.map((status) => warrantyService.listClaims({ status }))
+      )
+
+      const summary = statuses.reduce((acc, status, index) => {
+        acc[status] = Array.isArray(results[index]) ? results[index].length : 0
+        return acc
+      }, {})
+
+      setWarrantySummary(summary)
+    } catch (err) {
+      console.error('Failed to load warranty summary', err)
+      setWarrantySummary(null)
+    }
+  }
 
   const loadAlerts = async (reset = false, overrideOffset = null) => {
     try {
@@ -83,6 +104,7 @@ export default function InventoryAlerts() {
 
   useEffect(() => {
     loadAlerts()
+    loadWarrantySummary()
   }, [])
 
   const nextPage = () => {
@@ -127,6 +149,32 @@ export default function InventoryAlerts() {
           </div>
         </div>
       </Card>
+
+      {warrantySummary ? (
+        <Card className="mb-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">Warranty Claims Awaiting Credit</h3>
+              <p className="text-sm text-gray-500">Track defective inventory claims that still need vendor credit.</p>
+            </div>
+            <Button variant="outline" onClick={() => navigate('/cp/warranty')}>View warranty claims</Button>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border border-red-100 bg-red-50 p-4">
+              <p className="text-sm font-medium text-red-700">Defective</p>
+              <p className="mt-2 text-2xl font-semibold text-red-800">{warrantySummary.defective || 0}</p>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
+              <p className="text-sm font-medium text-amber-700">RMA Requested</p>
+              <p className="mt-2 text-2xl font-semibold text-amber-800">{warrantySummary.rma_requested || 0}</p>
+            </div>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+              <p className="text-sm font-medium text-blue-700">Shipped</p>
+              <p className="mt-2 text-2xl font-semibold text-blue-800">{warrantySummary.shipped || 0}</p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

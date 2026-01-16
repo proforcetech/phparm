@@ -174,6 +174,29 @@ export function PricingForm({ form, updateField }) {
             onChange={(event) => updateField(['pricing', 'mileageRate'], event.target.value)}
           />
         </div>
+        <div className="md:col-span-2 border-t border-gray-200 pt-4 mt-2">
+          <h3 className="text-sm font-medium text-gray-900 mb-3">Default Taxable Settings</h3>
+          <div className="flex flex-wrap gap-6">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.pricing.laborTaxable}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                onChange={(event) => updateField(['pricing', 'laborTaxable'], event.target.checked)}
+              />
+              <span className="text-sm text-gray-700">Labor is taxable by default</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.pricing.feeTaxable}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                onChange={(event) => updateField(['pricing', 'feeTaxable'], event.target.checked)}
+              />
+              <span className="text-sm text-gray-700">Fees are taxable by default</span>
+            </label>
+          </div>
+        </div>
       </div>
     </Card>
   )

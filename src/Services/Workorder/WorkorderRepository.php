@@ -238,6 +238,9 @@ class WorkorderRepository
         if ($status === Workorder::STATUS_COMPLETED) {
             $updateFields[] = 'completed_at = NOW()';
         }
+        if ($status === Workorder::STATUS_GOA) {
+            $updateFields[] = 'completed_at = NOW()';
+        }
 
         $stmt = $pdo->prepare('UPDATE workorders SET ' . implode(', ', $updateFields) . ' WHERE id = :id');
         $stmt->execute($params);
@@ -258,6 +261,22 @@ class WorkorderRepository
         $this->log('workorder.status_changed', $id, $actorId, $context);
 
         return $workorder;
+    }
+
+    public function updateGoaDetails(int $id, float $goaFee, ?string $billingParty): void
+    {
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            UPDATE workorders
+            SET goa_fee = :goa_fee,
+                goa_billing_party = :goa_billing_party,
+                updated_at = NOW()
+            WHERE id = :id
+        SQL);
+        $stmt->execute([
+            'goa_fee' => $goaFee,
+            'goa_billing_party' => $billingParty,
+            'id' => $id,
+        ]);
     }
 
     public function assignTechnician(
@@ -387,6 +406,9 @@ class WorkorderRepository
         if ($status === WorkorderJob::STATUS_COMPLETED) {
             $updateFields[] = 'completed_at = NOW()';
         }
+        if ($status === WorkorderJob::STATUS_GOA) {
+            $updateFields[] = 'completed_at = NOW()';
+        }
 
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE workorder_jobs SET ' . implode(', ', $updateFields) . ' WHERE id = :id'
@@ -444,6 +466,34 @@ class WorkorderRepository
         if ($missing) {
             throw new InvalidArgumentException(
                 'Hooked status requires photo evidence. Missing: ' . implode(', ', $missing) . '.'
+            );
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_media WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $damagePhotoCount = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        if ($damagePhotoCount < WorkorderJobEvidenceService::DAMAGE_PHOTO_MINIMUM) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Hooked status requires at least %d damage photos. %d uploaded.',
+                    WorkorderJobEvidenceService::DAMAGE_PHOTO_MINIMUM,
+                    $damagePhotoCount
+                )
+            );
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) as total FROM job_damage_reports WHERE workorder_job_id = :job_id'
+        );
+        $stmt->execute(['job_id' => $jobId]);
+        $damageReportCount = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+        if ($damageReportCount < 1) {
+            throw new InvalidArgumentException(
+                'Hooked status requires a saved damage diagram report.'
             );
         }
     }
@@ -564,6 +614,8 @@ class WorkorderRepository
             'discounts' => (float) ($row['discounts'] ?? 0),
             'shop_fee' => (float) ($row['shop_fee'] ?? 0),
             'hazmat_disposal_fee' => (float) ($row['hazmat_disposal_fee'] ?? 0),
+            'goa_fee' => (float) ($row['goa_fee'] ?? 0),
+            'goa_billing_party' => $row['goa_billing_party'] ?? null,
             'grand_total' => (float) ($row['grand_total'] ?? 0),
             'internal_notes' => $row['internal_notes'] ?? null,
             'customer_notes' => $row['customer_notes'] ?? null,

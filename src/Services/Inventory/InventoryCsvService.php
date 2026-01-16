@@ -35,7 +35,7 @@ class InventoryCsvService
         do {
             $batch = $this->repository->list($filters, $limit, $offset);
             foreach ($batch as $item) {
-                fputcsv($stream, [
+                fputcsv($stream, array_map([$this, 'escapeCsvValue'], [
                     $item->name,
                     $item->description,
                     $item->sku,
@@ -44,12 +44,16 @@ class InventoryCsvService
                     $item->low_stock_threshold,
                     $item->reorder_quantity,
                     $item->cost,
+                    $item->core_cost,
+                    $item->core_price,
+                    $item->core_eligible ? '1' : '0',
                     $item->sale_price,
                     $item->markup,
                     $item->location,
+                    $item->bin_location,
                     $item->vendor,
                     $item->notes,
-                ]);
+                ]));
             }
 
             $offset += $limit;
@@ -99,6 +103,7 @@ class InventoryCsvService
                 $summary['errors'][] = [
                     'row' => $index + 2, // header row offset
                     'message' => $e->getMessage(),
+                    'data' => $this->mapRow($row, $headers),
                 ];
             }
         }
@@ -157,11 +162,33 @@ class InventoryCsvService
             'low_stock_threshold',
             'reorder_quantity',
             'cost',
+            'core_cost',
+            'core_price',
+            'core_eligible',
             'sale_price',
             'markup',
             'location',
+            'bin_location',
             'vendor',
             'notes',
         ];
+    }
+
+    private function escapeCsvValue($value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            $value = $value->format(DATE_ATOM);
+        }
+
+        $stringValue = (string) $value;
+        if (preg_match('/^[=+\-@\t]/', $stringValue)) {
+            return "'" . $stringValue;
+        }
+
+        return $stringValue;
     }
 }

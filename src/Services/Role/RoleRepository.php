@@ -269,7 +269,9 @@ class RoleRepository
                 'permissions' => [
                     'inventory.view' => 'View inventory',
                     'inventory.create' => 'Create inventory items',
-                    'inventory.update' => 'Update inventory',
+                    'inventory.edit' => 'Edit inventory items',
+                    'inventory.adjust' => 'Adjust inventory stock quantities',
+                    'inventory.update' => 'Update inventory (legacy)',
                     'inventory.delete' => 'Delete inventory items',
                     'inventory.*' => 'All inventory permissions',
                 ]
@@ -282,6 +284,24 @@ class RoleRepository
                     'inspections.update' => 'Update inspections',
                     'inspections.delete' => 'Delete inspections',
                     'inspections.*' => 'All inspection permissions',
+                ]
+            ],
+            'truck_checklists' => [
+                'label' => 'Truck Checklists',
+                'permissions' => [
+                    'truck_checklists.view' => 'View truck checklists',
+                    'truck_checklists.complete' => 'Complete truck checklists',
+                    'truck_checklists.manage' => 'Manage truck checklist templates',
+                    'truck_checklists.*' => 'All truck checklist permissions',
+                ]
+            ],
+            'driver_shifts' => [
+                'label' => 'Driver Shifts',
+                'permissions' => [
+                    'driver_shifts.view' => 'View driver shifts',
+                    'driver_shifts.start' => 'Start driver shifts',
+                    'driver_shifts.end' => 'End driver shifts',
+                    'driver_shifts.*' => 'All driver shift permissions',
                 ]
             ],
             'time' => [

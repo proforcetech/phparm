@@ -9,22 +9,18 @@ use PDO;
 
 class DispatchRecommendationService
 {
-    private const DISTANCE_WEIGHT = 0.30;
-    private const EQUIPMENT_WEIGHT = 0.23;
-    private const SHIFT_WEIGHT = 0.14;
+    private const DISTANCE_WEIGHT = 0.25;
+    private const EQUIPMENT_WEIGHT = 0.20;
+    private const SHIFT_WEIGHT = 0.12;
     private const ETA_WEIGHT = 0.13;
     private const PERFORMANCE_WEIGHT = 0.10;
     private const DEADHEAD_WEIGHT = 0.10;
-    private const EQUIPMENT_WEIGHT = 0.25;
-    private const SHIFT_WEIGHT = 0.10;
-    private const ETA_WEIGHT = 0.15;
-    private const PERFORMANCE_WEIGHT = 0.10;
+    private const WORKLOAD_WEIGHT = 0.10;
     private const EQUIPMENT_REQUIREMENT_CLASS_MAP = [
         'awd' => ['flatbed', 'low-profile'],
         'all_wheel_drive' => ['flatbed', 'low-profile'],
         'low_clearance' => ['flatbed', 'low-profile'],
     ];
-    private const WORKLOAD_WEIGHT = 0.10;
 
     private Connection $connection;
     private ?TrafficAwareEtaService $etaService;
@@ -72,6 +68,7 @@ class DispatchRecommendationService
         $equipmentCompatibility = $jobCategory ? $this->fetchEquipmentCompatibility($jobCategory) : [];
         $activeDropoffsByDriver = $this->fetchActiveJobDropoffs();
         $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
+        $leaveByUserId = $this->fetchApprovedLeaveByUserIds(array_column($drivers, 'user_id'), $referenceTime);
 
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
@@ -80,6 +77,24 @@ class DispatchRecommendationService
         foreach ($drivers as $driver) {
             $driverId = $driver['id'];
             $exclusionReasons = [];
+            $leave = $leaveByUserId[$driver['user_id']] ?? null;
+
+            if ($leave !== null) {
+                $excludedDrivers[] = [
+                    'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
+                    'reason' => 'on_leave',
+                    'details' => [
+                        'leave_type' => $leave['leave_type'] ?? null,
+                        'start_at' => $leave['start_at'] ?? null,
+                        'end_at' => $leave['end_at'] ?? null,
+                    ],
+                ];
+                if ($this->enforceHardFilters) {
+                    continue;
+                }
+                $exclusionReasons[] = 'on_leave';
+            }
 
             // Check certifications (from both profile and certification table)
             $profileCertifications = $driver['certifications'] ?? [];
@@ -187,7 +202,7 @@ class DispatchRecommendationService
                 $shiftScore,
                 $etaScore,
                 $performanceScore,
-                $deadheadScore
+                $deadheadScore,
                 $workloadScore
             );
 
@@ -199,7 +214,7 @@ class DispatchRecommendationService
                 $remainingHours,
                 $performance,
                 $headingScore,
-                $deadheadDistanceKm
+                $deadheadDistanceKm,
                 $workload
             );
 
@@ -285,7 +300,7 @@ class DispatchRecommendationService
         float $remainingHours,
         ?array $performance,
         ?float $headingScore,
-        ?float $deadheadDistanceKm
+        ?float $deadheadDistanceKm,
         ?array $workload
     ): array {
         $reasons = [];
@@ -753,6 +768,47 @@ class DispatchRecommendationService
         return $byDriver;
     }
 
+    /**
+     * @param int[] $userIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchApprovedLeaveByUserIds(array $userIds, DateTimeImmutable $referenceTime): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $sql = 'SELECT lr.leave_type, lr.start_at, lr.end_at, e.user_id '
+            . 'FROM leave_requests lr '
+            . 'INNER JOIN employees e ON e.id = lr.employee_id '
+            . 'WHERE lr.status = ? '
+            . 'AND lr.start_at <= ? '
+            . 'AND lr.end_at >= ? '
+            . 'AND e.user_id IN (' . $placeholders . ') '
+            . 'ORDER BY lr.start_at ASC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $params = array_merge(
+            ['approved', $referenceTime->format('Y-m-d H:i:s'), $referenceTime->format('Y-m-d H:i:s')],
+            $userIds
+        );
+
+        foreach ($params as $index => $value) {
+            $stmt->bindValue($index + 1, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+
+        $stmt->execute();
+
+        $leaves = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $userId = (int) $row['user_id'];
+            $leaves[$userId] = $row;
+        }
+
+        return $leaves;
+    }
+
     private function findRequirement(int $id): ?array
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM dispatch_requirements WHERE id = :id');
@@ -1010,7 +1066,7 @@ class DispatchRecommendationService
         float $shiftScore,
         float $etaScore = 0.5,
         float $performanceScore = 0.5,
-        float $deadheadScore = 0.5
+        float $deadheadScore = 0.5,
         float $workloadScore = 0.5
     ): float {
         return round(
@@ -1019,7 +1075,7 @@ class DispatchRecommendationService
             + ($shiftScore * self::SHIFT_WEIGHT)
             + ($etaScore * self::ETA_WEIGHT)
             + ($performanceScore * self::PERFORMANCE_WEIGHT)
-            + ($deadheadScore * self::DEADHEAD_WEIGHT),
+            + ($deadheadScore * self::DEADHEAD_WEIGHT)
             + ($workloadScore * self::WORKLOAD_WEIGHT),
             4
         );

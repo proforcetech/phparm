@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS cash_drawer_sessions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    opened_by INT UNSIGNED NOT NULL,
+    closed_by INT UNSIGNED NULL,
+    started_at DATETIME NOT NULL,
+    ended_at DATETIME NULL,
+    start_float DECIMAL(12,2) NOT NULL DEFAULT 0,
+    end_float DECIMAL(12,2) NULL,
+    cash_sales DECIMAL(12,2) NOT NULL DEFAULT 0,
+    expected_cash DECIMAL(12,2) NULL,
+    over_short DECIMAL(12,2) NULL,
+    notes TEXT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cash_drawer_status (status),
+    INDEX idx_cash_drawer_started (started_at),
+    INDEX idx_cash_drawer_opened_by (opened_by),
+    INDEX idx_cash_drawer_closed_by (closed_by),
+    CONSTRAINT fk_cash_drawer_opened_by FOREIGN KEY (opened_by) REFERENCES users (id),
+    CONSTRAINT fk_cash_drawer_closed_by FOREIGN KEY (closed_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

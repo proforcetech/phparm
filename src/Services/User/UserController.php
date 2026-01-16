@@ -3,7 +3,9 @@
 namespace App\Services\User;
 
 use App\Services\ImportExport\CsvExportService;
+use App\Models\Employee;
 use App\Models\User;
+use App\Services\Employee\EmployeeRepository;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\RolePermissions;
 use App\Support\Auth\TotpService;
@@ -16,17 +18,23 @@ class UserController
     private AccessGate $gate;
     private TotpService $totpService;
     private RolePermissions $roles;
-
-    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService, RolePermissions $roles)
     private CsvExportService $csvExportService;
+    private EmployeeRepository $employeeRepository;
 
-    public function __construct(UserRepository $repository, AccessGate $gate, TotpService $totpService, CsvExportService $csvExportService)
-    {
+    public function __construct(
+        UserRepository $repository,
+        AccessGate $gate,
+        TotpService $totpService,
+        RolePermissions $roles,
+        CsvExportService $csvExportService,
+        EmployeeRepository $employeeRepository
+    ) {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->totpService = $totpService;
         $this->roles = $roles;
         $this->csvExportService = $csvExportService;
+        $this->employeeRepository = $employeeRepository;
     }
 
     /**
@@ -115,6 +123,8 @@ class UserController
             throw new InvalidArgumentException('User not found');
         }
 
+        $employee = $this->employeeRepository->findByUserId($id);
+
         return [
             'id' => $targetUser->id,
             'name' => $targetUser->name,
@@ -126,6 +136,7 @@ class UserController
             'created_at' => $targetUser->created_at,
             'updated_at' => $targetUser->updated_at,
             'last_activity_at' => $targetUser->last_activity_at,
+            'employee' => $this->serializeEmployee($employee),
         ];
     }
 
@@ -169,7 +180,13 @@ class UserController
         // Hash password
         $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
 
+        $employeePayload = $this->normalizeEmployeePayload($data);
+        unset($data['employee']);
+
         $newUser = $this->repository->create($data);
+        $employee = $employeePayload !== null
+            ? $this->employeeRepository->upsertByUserId($newUser->id, $employeePayload)
+            : null;
 
         return [
             'id' => $newUser->id,
@@ -182,6 +199,7 @@ class UserController
             'created_at' => $newUser->created_at,
             'updated_at' => $newUser->updated_at,
             'last_activity_at' => $newUser->last_activity_at,
+            'employee' => $this->serializeEmployee($employee),
         ];
     }
 
@@ -216,6 +234,7 @@ class UserController
         }
 
         $temporaryPassword = bin2hex(random_bytes(24));
+        $employeePayload = $this->normalizeEmployeePayload($data);
 
         $newUser = $this->repository->create([
             'name' => $data['name'],
@@ -226,6 +245,9 @@ class UserController
             'two_factor_enabled' => false,
             'two_factor_type' => 'none',
         ]);
+        $employee = $employeePayload !== null
+            ? $this->employeeRepository->upsertByUserId($newUser->id, $employeePayload)
+            : null;
 
         return [
             'id' => $newUser->id,
@@ -238,6 +260,7 @@ class UserController
             'created_at' => $newUser->created_at,
             'updated_at' => $newUser->updated_at,
             'last_activity_at' => $newUser->last_activity_at,
+            'employee' => $this->serializeEmployee($employee),
         ];
     }
 
@@ -278,7 +301,13 @@ class UserController
             unset($data['password']);
         }
 
+        $employeePayload = $this->normalizeEmployeePayload($data);
+        unset($data['employee']);
+
         $updatedUser = $this->repository->update($id, $data);
+        $employee = $employeePayload !== null
+            ? $this->employeeRepository->upsertByUserId($id, $employeePayload)
+            : $this->employeeRepository->findByUserId($id);
 
         return [
             'id' => $updatedUser->id,
@@ -290,6 +319,7 @@ class UserController
             'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
             'updated_at' => $updatedUser->updated_at,
+            'employee' => $this->serializeEmployee($employee),
         ];
     }
 
@@ -570,6 +600,84 @@ class UserController
             'message' => 'User roles updated successfully',
             'updated' => $count,
             'role' => $role,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>|null
+     */
+    private function normalizeEmployeePayload(array $data): ?array
+    {
+        if (!array_key_exists('employee', $data) || !is_array($data['employee'])) {
+            return null;
+        }
+
+        $employee = $data['employee'];
+
+        return [
+            'hire_date' => $this->normalizeNullableString($employee['hire_date'] ?? null),
+            'emergency_contact' => $this->normalizeNullableString($employee['emergency_contact'] ?? null),
+            'pay_structure' => $this->normalizeNullableString($employee['pay_structure'] ?? null),
+            'skills' => $this->normalizeEmployeeSkills($employee['skills'] ?? null),
+        ];
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function normalizeNullableString($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<int, string>|null
+     */
+    private function normalizeEmployeeSkills($value): ?array
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $parts = preg_split('/[,\n]/', $value) ?: [];
+        } elseif (is_array($value)) {
+            $parts = $value;
+        } else {
+            return null;
+        }
+
+        $skills = array_values(array_filter(array_map(
+            static fn ($skill) => trim((string) $skill),
+            $parts
+        ), static fn ($skill) => $skill !== ''));
+
+        return $skills;
+    }
+
+    private function serializeEmployee(?Employee $employee): ?array
+    {
+        if (!$employee) {
+            return null;
+        }
+
+        return [
+            'id' => $employee->id,
+            'user_id' => $employee->user_id,
+            'hire_date' => $employee->hire_date,
+            'emergency_contact' => $employee->emergency_contact,
+            'pay_structure' => $employee->pay_structure,
+            'skills' => $employee->skills ?? [],
+            'created_at' => $employee->created_at,
+            'updated_at' => $employee->updated_at,
         ];
     }
 }

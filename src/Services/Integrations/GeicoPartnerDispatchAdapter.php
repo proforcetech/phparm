@@ -46,12 +46,18 @@ class GeicoPartnerDispatchAdapter extends AbstractPartnerDispatchAdapter
         $normalizedStatus = $this->normalizeStatus($status);
         $context['status'] = $normalizedStatus;
         $base = $this->baseStatusPayload($dispatch, $context);
+        $acceptanceFlag = match ($normalizedStatus) {
+            'accepted' => true,
+            'declined' => false,
+            default => null,
+        };
 
         return $this->pruneNulls([
             'protocol' => $dispatch['protocol'] ?? null,
             'claim_number' => $dispatch['external_reference'] ?? $dispatch['dispatch_reference'] ?? null,
             'dispatch_reference' => $dispatch['dispatch_reference'] ?? null,
             'status' => $normalizedStatus,
+            'accepted' => $acceptanceFlag,
             'updated_at' => $base['occurred_at'],
             'provider' => $base['provider'],
             'notes' => $base['notes'],

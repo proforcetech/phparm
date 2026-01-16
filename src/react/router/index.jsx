@@ -11,6 +11,7 @@ import StaffProfile from '../views/users/Profile'
 import InvoiceList from '../views/invoices/InvoiceList'
 import InvoiceDetail from '../views/invoices/InvoiceDetail'
 import InvoiceCreate from '../views/invoices/InvoiceCreate'
+import QuickSale from '../views/pos/QuickSale'
 import EstimateList from '../views/estimates/EstimateList'
 import EstimateCreate from '../views/estimates/EstimateCreate'
 import EstimateDetail from '../views/estimates/EstimateDetail'
@@ -20,6 +21,9 @@ import WorkorderDetail from '../views/workorders/WorkorderDetail'
 import QCChecklist from '../views/workorders/QCChecklist'
 import DispatchView from '../views/dispatch/DispatchView'
 import DriverJobIntake from '../views/driver/DriverJobIntake'
+import TruckChecklistForm from '../views/driver/TruckChecklistForm'
+import TruckChecklistLogs from '../views/driver/TruckChecklistLogs'
+import TruckChecklistTemplates from '../views/driver/TruckChecklistTemplates'
 import BundleList from '../views/bundles/BundleList'
 import BundleForm from '../views/bundles/BundleForm'
 import AppointmentList from '../views/appointments/AppointmentList'
@@ -28,6 +32,7 @@ import AppointmentBook from '../views/appointments/AppointmentBook'
 import AvailabilitySettings from '../views/appointments/AvailabilitySettings'
 import TimeLogs from '../views/time/TimeLogs'
 import TechnicianPortal from '../views/time/TechnicianPortal'
+import LeaveRequestsAdmin from '../views/time/LeaveRequestsAdmin'
 import CustomerList from '../views/customers/CustomerList'
 import CustomerForm from '../views/customers/CustomerForm'
 import CustomerDetail from '../views/customers/CustomerDetail'
@@ -45,14 +50,17 @@ import InventoryForm from '../views/inventory/InventoryForm'
 import InventoryAlerts from '../views/inventory/InventoryAlerts'
 import InventoryStockOrders from '../views/inventory/InventoryStockOrders'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
+import WarrantyClaims from '../views/warranty/WarrantyClaims'
 import ImpoundIntake from '../views/storage/ImpoundIntake'
 import StorageFeeLedger from '../views/storage/StorageFeeLedger'
 import NoticeGeneration from '../views/storage/NoticeGeneration'
 import ReleaseChecklist from '../views/storage/ReleaseChecklist'
 import AuctionManagement from '../views/storage/AuctionManagement'
 import InventorySpotChecks from '../views/storage/InventorySpotChecks'
+import DocumentVault from '../views/documents/DocumentVault'
 import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
+import AccountCategories from '../views/financial/AccountCategories'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
@@ -101,6 +109,14 @@ import CustomerWarrantyClaims from '../views/customer-portal/WarrantyClaims'
 import CustomerWarrantyClaimDetail from '../views/customer-portal/WarrantyClaimDetail'
 import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
+import CustomerWorkorders from '../views/customer-portal/Workorders'
+import CustomerWorkorderTimeline from '../views/customer-portal/WorkorderTimeline'
+import EssDashboard from '../views/ess/Dashboard'
+import EssTimeClock from '../views/ess/TimeClock'
+import EssSchedule from '../views/ess/Schedule'
+import EssPayHistory from '../views/ess/PayHistory'
+import EssProfile from '../views/ess/Profile'
+import EssLeaveRequests from '../views/ess/LeaveRequests'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
@@ -108,6 +124,7 @@ import TrackingView from '../views/tracking/TrackingView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
+import EssLayout from '../components/layout/EssLayout'
 import NotFound from '../views/NotFound'
 
 const reactBasename = import.meta.env.VITE_REACT_BASE || ''
@@ -177,6 +194,7 @@ const protectedRoutes = [
   { path: '/cp/dashboard', name: 'Dashboard', auth: 'requiresAuth', element: <AdminDashboard /> },
   { path: '/cp/profile', name: 'StaffProfile', auth: 'requiresAuth', element: <StaffProfile /> },
   { path: '/cp/invoices', name: 'InvoiceList', auth: 'requiresAuth', element: <InvoiceList /> },
+  { path: '/cp/quick-sale', name: 'QuickSale', auth: 'requiresAuth', element: <QuickSale /> },
   { path: '/cp/invoices/create', name: 'InvoiceCreate', auth: 'requiresAuth', element: <InvoiceCreate /> },
   { path: '/cp/invoices/:id', name: 'InvoiceDetail', auth: 'requiresAuth', element: <InvoiceDetail /> },
   { path: '/cp/estimates', name: 'EstimateList', auth: 'requiresAuth', element: <EstimateList /> },
@@ -188,6 +206,9 @@ const protectedRoutes = [
   { path: '/cp/workorders/:id/qc-check', name: 'QCChecklist', auth: 'requiresAuth', element: <QCChecklist /> },
   { path: '/cp/dispatch', name: 'Dispatch', auth: 'requiresAuth', element: <DispatchView /> },
   { path: '/cp/driver/job-intake', name: 'DriverJobIntake', auth: 'requiresAuth', element: <DriverJobIntake /> },
+  { path: '/cp/driver/truck-checklists', name: 'TruckChecklists', auth: 'requiresAuth', element: <TruckChecklistForm /> },
+  { path: '/cp/driver/truck-checklists/logs', name: 'TruckChecklistLogs', auth: 'requiresAuth', element: <TruckChecklistLogs /> },
+  { path: '/cp/driver/truck-checklists/templates', name: 'TruckChecklistTemplates', auth: 'requiresAuth', element: <TruckChecklistTemplates /> },
   { path: '/cp/bundles', name: 'BundleList', auth: 'requiresAuth', element: <BundleList /> },
   { path: '/cp/bundles/create', name: 'BundleCreate', auth: 'requiresAuth', element: <BundleForm /> },
   { path: '/cp/bundles/:id/edit', name: 'BundleEdit', auth: 'requiresAuth', element: <BundleForm /> },
@@ -196,6 +217,7 @@ const protectedRoutes = [
   { path: '/cp/appointments/create', name: 'AppointmentBook', auth: 'requiresAuth', element: <AppointmentBook /> },
   { path: '/cp/appointments/availability-settings', name: 'AvailabilitySettings', auth: 'requiresAuth', element: <AvailabilitySettings /> },
   { path: '/cp/time-logs', name: 'TimeLogs', auth: 'requiresAuth', element: <TimeLogs /> },
+  { path: '/cp/leave-requests', name: 'LeaveRequests', auth: 'requiresAuth', element: <LeaveRequestsAdmin /> },
   { path: '/cp/my-time', name: 'TechnicianTime', auth: 'requiresAuth', element: <TechnicianPortal /> },
   { path: '/cp/customers', name: 'CustomerList', auth: 'requiresAuth', element: <CustomerList /> },
   { path: '/cp/customers/create', name: 'CustomerCreate', auth: 'requiresAuth', element: <CustomerForm /> },
@@ -208,6 +230,7 @@ const protectedRoutes = [
   { path: '/cp/vehicles/create', name: 'VehicleCreate', auth: 'requiresAuth', element: <VehicleForm /> },
   { path: '/cp/vehicles/:id/edit', name: 'VehicleEdit', auth: 'requiresAuth', element: <VehicleForm /> },
   { path: '/cp/vehicles/:id', name: 'VehicleDetail', auth: 'requiresAuth', element: <VehicleDetail /> },
+  { path: '/cp/document-vault', name: 'DocumentVault', auth: 'requiresAuth', element: <DocumentVault /> },
   { path: '/cp/inventory', name: 'InventoryList', auth: 'requiresAuth', element: <InventoryList /> },
   { path: '/cp/inventory/categories', name: 'InventoryCategories', auth: 'requiresAuth', element: <InventoryLookupManager /> },
   { path: '/cp/inventory/vendors', name: 'InventoryVendors', auth: 'requiresAuth', element: <InventoryLookupManager /> },
@@ -217,6 +240,7 @@ const protectedRoutes = [
   { path: '/cp/inventory/alerts', name: 'InventoryAlerts', auth: 'requiresAuth', element: <InventoryAlerts /> },
   { path: '/cp/inventory/stock-orders', name: 'InventoryStockOrders', auth: 'requiresAuth', element: <InventoryStockOrders /> },
   { path: '/cp/inventory/pull-requests', name: 'InventoryPullRequests', auth: 'requiresAuth', element: <InventoryPullRequests /> },
+  { path: '/cp/warranty', name: 'WarrantyClaims', auth: 'requiresAuth', element: <WarrantyClaims /> },
   { path: '/cp/storage/impound-intake', name: 'ImpoundIntake', auth: 'requiresAuth', element: <ImpoundIntake /> },
   { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
   { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },
@@ -225,6 +249,7 @@ const protectedRoutes = [
   { path: '/cp/storage/spot-checks', name: 'StorageSpotChecks', auth: 'requiresAuth', element: <InventorySpotChecks /> },
   { path: '/cp/towing/pricing', name: 'TowingPricingMatrix', auth: 'requiresAuth', element: <TowingPricingMatrix /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
+  { path: '/cp/financial/categories', name: 'FinancialCategories', auth: 'requiresAuth', element: <AccountCategories /> },
   { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
@@ -267,6 +292,14 @@ const protectedRoutes = [
   { path: '/portal/warranty-claims/:id', name: 'CustomerWarrantyClaimDetail', auth: 'requiresAuth', element: <CustomerWarrantyClaimDetail /> },
   { path: '/portal/vehicles', name: 'CustomerVehicles', auth: 'requiresAuth', element: <CustomerVehicles /> },
   { path: '/portal/profile', name: 'CustomerProfile', auth: 'requiresAuth', element: <CustomerProfile /> },
+  { path: '/portal/workorders', name: 'CustomerWorkorders', auth: 'requiresAuth', element: <CustomerWorkorders /> },
+  { path: '/portal/workorders/:id', name: 'CustomerWorkorderTimeline', auth: 'requiresAuth', element: <CustomerWorkorderTimeline /> },
+  { path: '/ess', name: 'EssDashboard', auth: 'requiresAuth', element: <EssDashboard /> },
+  { path: '/ess/time-clock', name: 'EssTimeClock', auth: 'requiresAuth', element: <EssTimeClock /> },
+  { path: '/ess/schedule', name: 'EssSchedule', auth: 'requiresAuth', element: <EssSchedule /> },
+  { path: '/ess/pay-history', name: 'EssPayHistory', auth: 'requiresAuth', element: <EssPayHistory /> },
+  { path: '/ess/leave-requests', name: 'EssLeaveRequests', auth: 'requiresAuth', element: <EssLeaveRequests /> },
+  { path: '/ess/profile', name: 'EssProfile', auth: 'requiresAuth', element: <EssProfile /> },
 ]
 
 const settingsRoutes = [
@@ -294,6 +327,7 @@ const publicChildren = [...guestRoutes, ...publicRoutes].map(withAuthLoader)
 
 const adminRoutes = protectedRoutes.filter((route) => route.path.startsWith('/cp'))
 const customerRoutes = protectedRoutes.filter((route) => route.path.startsWith('/portal'))
+const essRoutes = protectedRoutes.filter((route) => route.path.startsWith('/ess'))
 
 const toChildRoute = (route, basePath) => {
   const suffix = route.path.replace(basePath, '')
@@ -306,6 +340,7 @@ const toChildRoute = (route, basePath) => {
 
 const adminChildren = adminRoutes.map((route) => toChildRoute(route, '/cp'))
 const customerChildren = customerRoutes.map((route) => toChildRoute(route, '/portal'))
+const essChildren = essRoutes.map((route) => toChildRoute(route, '/ess'))
 
 adminChildren.push({
   path: 'settings',
@@ -331,6 +366,11 @@ adminChildren.push({
 })
 
 customerChildren.push({
+  path: '*',
+  element: <NotFound />,
+})
+
+essChildren.push({
   path: '*',
   element: <NotFound />,
 })
@@ -362,5 +402,11 @@ export const router = createBrowserRouter([
     loader: requireAuth,
     element: <CustomerLayout />,
     children: customerChildren,
+  },
+  {
+    path: '/ess',
+    loader: requireAuth,
+    element: <EssLayout />,
+    children: essChildren,
   },
 ], { basename: reactBasename })
