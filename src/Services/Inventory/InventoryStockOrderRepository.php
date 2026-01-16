@@ -68,6 +68,11 @@ class InventoryStockOrderRepository
             $bindings['status'] = $filters['status'];
         }
 
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'so.branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
         if (!empty($filters['inventory_item_id'])) {
             $clauses[] = 'so.inventory_item_id = :inventory_item_id';
             $bindings['inventory_item_id'] = (int) $filters['inventory_item_id'];
@@ -119,14 +124,15 @@ class InventoryStockOrderRepository
         $this->validateData($data);
 
         $sql = "INSERT INTO inventory_stock_orders (
-                inventory_item_id, sku, description, quantity_ordered, status,
+                branch_id, inventory_item_id, sku, description, quantity_ordered, status,
                 expected_arrival_date, notes, vendor, order_reference, created_by
             ) VALUES (
-                :inventory_item_id, :sku, :description, :quantity_ordered, :status,
+                :branch_id, :inventory_item_id, :sku, :description, :quantity_ordered, :status,
                 :expected_arrival_date, :notes, :vendor, :order_reference, :created_by
             )";
 
         $this->connection->pdo()->prepare($sql)->execute([
+            'branch_id' => array_key_exists('branch_id', $data) ? $data['branch_id'] : null,
             'inventory_item_id' => isset($data['inventory_item_id']) ? (int) $data['inventory_item_id'] : null,
             'sku' => $data['sku'] ?? null,
             'description' => $data['description'],
@@ -342,10 +348,12 @@ class InventoryStockOrderRepository
     private function incrementInventory(int $inventoryItemId, int $quantity, int $stockOrderId, ?int $actorId): void
     {
         $beforeStmt = $this->connection->pdo()->prepare(
-            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+            'SELECT stock_quantity, branch_id FROM inventory_items WHERE id = :id'
         );
         $beforeStmt->execute(['id' => $inventoryItemId]);
-        $quantityBefore = (int) ($beforeStmt->fetchColumn() ?? 0);
+        $beforeRow = $beforeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $quantityBefore = (int) ($beforeRow['stock_quantity'] ?? 0);
+        $branchId = isset($beforeRow['branch_id']) ? (int) $beforeRow['branch_id'] : null;
 
         $sql = "UPDATE inventory_items SET
                 stock_quantity = stock_quantity + :quantity,
@@ -370,7 +378,8 @@ class InventoryStockOrderRepository
             'stock_order',
             sprintf('stock_order:%d', $stockOrderId),
             'Stock order received',
-            $actorId
+            $actorId,
+            $branchId
         );
     }
 

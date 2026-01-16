@@ -6,6 +6,7 @@ class InvoiceItem extends BaseModel
 {
     public int $id;
     public int $invoice_id;
+    public ?int $branch_id = null;
     public string $type;
     public ?string $sku = null;
     public ?int $inventory_item_id = null;

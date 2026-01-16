@@ -44,6 +44,7 @@ class InventoryPullRequestController
             $filters['pending_only'] = true;
         }
 
+        $filters['branch_id'] = $this->resolveBranchFilter($user, $params);
         $result = $this->repository->list($filters, $limit, $offset);
 
         return [
@@ -67,6 +68,8 @@ class InventoryPullRequestController
             throw new InvalidArgumentException('Pull request not found');
         }
 
+        $this->assertBranchAccess($user, $request->branch_id);
+
         return $request->toArray();
     }
 
@@ -79,6 +82,9 @@ class InventoryPullRequestController
         $this->assertViewAccess($user);
 
         $items = $this->repository->getByWorkorder($workorderId);
+        foreach ($items as $item) {
+            $this->assertBranchAccess($user, $item->branch_id);
+        }
 
         return [
             'items' => array_map(fn ($item) => $item->toArray(), $items),
@@ -94,6 +100,7 @@ class InventoryPullRequestController
     {
         $this->assertManageAccess($user);
 
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
         $request = $this->repository->create($data, $user->id);
 
         return $request->toArray();
@@ -107,6 +114,11 @@ class InventoryPullRequestController
     public function update(User $user, int $id, array $data): array
     {
         $this->assertManageAccess($user);
+
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
 
         $request = $this->repository->update($id, $data, $user->id);
         if ($request === null) {
@@ -124,6 +136,11 @@ class InventoryPullRequestController
     public function pull(User $user, int $id, array $data): array
     {
         $this->assertManageAccess($user);
+
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
 
         $quantity = (int) ($data['quantity'] ?? 1);
         $request = $this->repository->markAsPulled($id, $quantity, $user->id);
@@ -143,6 +160,11 @@ class InventoryPullRequestController
     {
         $this->assertManageAccess($user);
 
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
         $orderReference = $data['order_reference'] ?? null;
         $request = $this->repository->markAsOrdered($id, $orderReference, $user->id);
         if ($request === null) {
@@ -161,6 +183,11 @@ class InventoryPullRequestController
     {
         $this->assertManageAccess($user);
 
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
         $quantity = (int) ($data['quantity'] ?? 1);
         $request = $this->repository->markAsReceived($id, $quantity, $user->id);
         if ($request === null) {
@@ -178,6 +205,11 @@ class InventoryPullRequestController
     {
         $this->assertManageAccess($user);
 
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
         $request = $this->repository->cancel($id, $user->id);
         if ($request === null) {
             throw new InvalidArgumentException('Pull request not found');
@@ -193,6 +225,11 @@ class InventoryPullRequestController
     public function destroy(User $user, int $id): array
     {
         $this->assertManageAccess($user);
+
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
 
         $deleted = $this->repository->delete($id);
         if (!$deleted) {
@@ -210,7 +247,7 @@ class InventoryPullRequestController
     {
         $this->assertViewAccess($user);
 
-        return $this->repository->getSummary();
+        return $this->repository->getSummary($this->resolveBranchFilter($user));
     }
 
     private function assertViewAccess(User $user): void
@@ -225,5 +262,48 @@ class InventoryPullRequestController
     private function assertManageAccess(User $user): void
     {
         $this->gate->assert($user, 'inventory.*');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveBranchFilter(User $user, array $params = []): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $params)) {
+            return null;
+        }
+
+        return $params['branch_id'] !== '' && $params['branch_id'] !== null ? (int) $params['branch_id'] : null;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function resolveBranchAssignment(User $user, array $data): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $data)) {
+            return null;
+        }
+
+        return $data['branch_id'] !== '' && $data['branch_id'] !== null ? (int) $data['branch_id'] : null;
+    }
+
+    private function assertBranchAccess(User $user, ?int $branchId): void
+    {
+        if ($user->role === 'admin') {
+            return;
+        }
+
+        if ($user->branch_id !== null && $branchId !== null && $user->branch_id !== $branchId) {
+            throw new UnauthorizedException('User lacks access to this branch pull request.');
+        }
     }
 }

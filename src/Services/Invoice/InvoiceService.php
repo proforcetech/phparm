@@ -35,7 +35,7 @@ class InvoiceService
         $this->coreReturns = $coreReturns;
     }
 
-    public function createFromEstimate(int $estimateId, array $itemIds, int $actorId): ?Invoice
+    public function createFromEstimate(int $estimateId, array $itemIds, int $actorId, ?int $branchId = null): ?Invoice
     {
         $estimate = $this->fetchEstimate($estimateId);
         if ($estimate === null) {
@@ -71,10 +71,11 @@ class InvoiceService
                 'issue_date' => date('Y-m-d'),
                 'public_token' => $this->generatePublicToken(),
                 'public_token_expires_at' => $this->calculatePublicExpiry(),
+                'branch_id' => $branchId,
             ]);
 
-            $totals = $this->appendEstimateItems($invoiceId, $items, (int) $estimate->customer_id, $actorId);
-            $totals = $this->appendEstimateExtras($invoiceId, $estimate, $totals);
+            $totals = $this->appendEstimateItems($invoiceId, $items, (int) $estimate->customer_id, $actorId, $branchId);
+            $totals = $this->appendEstimateExtras($invoiceId, $estimate, $totals, $branchId);
             $this->updateTotals($invoiceId, $totals);
             $this->syncInvoiceBalance($invoiceId);
 
@@ -124,9 +125,17 @@ class InvoiceService
                 'split_billing' => $splitBilling,
                 'public_token' => $payload['public_token'] ?? $this->generatePublicToken(),
                 'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
+                'branch_id' => $payload['branch_id'] ?? null,
             ]);
 
-            $totals = $this->persistItems($invoiceId, $payload['items'], $payload['tax_rate'] ?? 0.0, (int) $payload['customer_id'], $actorId);
+            $totals = $this->persistItems(
+                $invoiceId,
+                $payload['items'],
+                $payload['tax_rate'] ?? 0.0,
+                (int) $payload['customer_id'],
+                $actorId,
+                $payload['branch_id'] ?? null
+            );
             $this->updateTotals($invoiceId, $totals);
 
             if ($splitBilling) {
@@ -230,6 +239,11 @@ class InvoiceService
             $bindings['customer_id'] = (int) $filters['customer_id'];
         }
 
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'invoices.branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
         if (!empty($filters['technician_id'])) {
             $joins[] = 'LEFT JOIN estimates e ON e.id = invoices.estimate_id';
             $clauses[] = 'e.technician_id = :technician_id';
@@ -320,7 +334,13 @@ class InvoiceService
     /**
      * @return array<string, float>
      */
-    private function appendEstimateItems(int $invoiceId, array $items, int $customerId, ?int $actorId): array
+    private function appendEstimateItems(
+        int $invoiceId,
+        array $items,
+        int $customerId,
+        ?int $actorId,
+        ?int $branchId
+    ): array
     {
         $totals = ['subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0];
         foreach ($items as $row) {
@@ -328,6 +348,7 @@ class InvoiceService
             $tax = !empty($row['taxable']) ? $lineTotal * 0.1 : 0.0;
             $description = $row['job_title'] . ' - ' . $row['description'];
             $invoiceItemId = $this->insertInvoiceItem($invoiceId, [
+                'branch_id' => $branchId,
                 'type' => $row['type'] ?? 'service',
                 'sku' => $row['sku'] ?? null,
                 'inventory_item_id' => $row['inventory_item_id'] ?? null,
@@ -380,8 +401,14 @@ class InvoiceService
                 throw new InvalidArgumentException('No approved items found for merge');
             }
 
-            $addedTotals = $this->appendEstimateItems($invoiceId, $items, (int) $invoice->customer_id, $actorId);
-            $addedTotals = $this->appendEstimateExtras($invoiceId, $estimate, $addedTotals);
+            $addedTotals = $this->appendEstimateItems(
+                $invoiceId,
+                $items,
+                (int) $invoice->customer_id,
+                $actorId,
+                $invoice->branch_id
+            );
+            $addedTotals = $this->appendEstimateExtras($invoiceId, $estimate, $addedTotals, $invoice->branch_id);
 
             $combinedTotals = [
                 'subtotal' => (float) $invoice->subtotal + $addedTotals['subtotal'],
@@ -406,11 +433,12 @@ class InvoiceService
         }
     }
 
-    private function appendEstimateExtras(int $invoiceId, Estimate $estimate, array $totals): array
+    private function appendEstimateExtras(int $invoiceId, Estimate $estimate, array $totals, ?int $branchId): array
     {
         if (!empty($estimate->call_out_fee)) {
             $totals['subtotal'] += (float) $estimate->call_out_fee;
             $this->insertInvoiceItem($invoiceId, [
+                'branch_id' => $branchId,
                 'type' => 'fee',
                 'description' => 'Call-out Fee',
                 'quantity' => 1,
@@ -423,6 +451,7 @@ class InvoiceService
         if (!empty($estimate->mileage_total)) {
             $totals['subtotal'] += (float) $estimate->mileage_total;
             $this->insertInvoiceItem($invoiceId, [
+                'branch_id' => $branchId,
                 'type' => 'mileage',
                 'description' => 'Mileage',
                 'quantity' => 1,
@@ -469,7 +498,14 @@ class InvoiceService
      * @param array<int, array<string, mixed>> $items
      * @return array<string, float>
      */
-    private function persistItems(int $invoiceId, array $items, float $taxRate, int $customerId, ?int $actorId): array
+    private function persistItems(
+        int $invoiceId,
+        array $items,
+        float $taxRate,
+        int $customerId,
+        ?int $actorId,
+        ?int $branchId
+    ): array
     {
         $totals = ['subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0];
         foreach ($items as $item) {
@@ -477,6 +513,7 @@ class InvoiceService
             $taxable = (bool) ($item['taxable'] ?? false);
             $tax = $taxable ? $lineTotal * $taxRate : 0.0;
             $invoiceItemId = $this->insertInvoiceItem($invoiceId, [
+                'branch_id' => $branchId,
                 'type' => $item['type'] ?? 'line_item',
                 'sku' => $item['sku'] ?? null,
                 'inventory_item_id' => $item['inventory_item_id'] ?? null,
@@ -511,8 +548,8 @@ class InvoiceService
     private function insertInvoice(array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
-            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
+            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, branch_id, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
+            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :branch_id, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'],
@@ -521,6 +558,7 @@ class InvoiceService
             'number' => $payload['number'],
             'status' => $payload['status'],
             'estimate_id' => $payload['estimate_id'] ?? null,
+            'branch_id' => $payload['branch_id'] ?? null,
             'issue_date' => $payload['issue_date'] ?? date('Y-m-d'),
             'due_date' => $payload['due_date'] ?? null,
             'notes' => $payload['notes'] ?? null,
@@ -553,6 +591,9 @@ class InvoiceService
         }
         if (array_key_exists('inventory_item_id', $payload)) {
             $fields['inventory_item_id'] = $payload['inventory_item_id'];
+        }
+        if (array_key_exists('branch_id', $payload)) {
+            $fields['branch_id'] = $payload['branch_id'];
         }
         if (array_key_exists('core_price', $payload)) {
             $fields['core_price'] = $payload['core_price'];

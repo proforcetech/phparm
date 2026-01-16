@@ -52,6 +52,7 @@ class InventoryItemController
 
         $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 50;
         $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
+        $filters['branch_id'] = $this->resolveBranchFilter($user, $params);
 
         return array_map(static fn ($item) => $item->toArray(), $this->repository->list($filters, $limit, $offset));
     }
@@ -72,6 +73,7 @@ class InventoryItemController
 
         $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 25;
         $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
+        $filters['branch_id'] = $this->resolveBranchFilter($user, $params);
 
         return $this->lowStockService->page($filters, $limit, $offset);
     }
@@ -83,7 +85,7 @@ class InventoryItemController
     {
         $this->assertViewAccess($user);
 
-        return $this->lowStockService->tile($limit);
+        return $this->lowStockService->tile($limit, $this->resolveBranchFilter($user));
     }
 
     /**
@@ -93,7 +95,10 @@ class InventoryItemController
     {
         $this->assertViewAccess($user);
 
-        $item = $this->repository->find($id);
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item !== null) {
+            $this->assertBranchAccess($user, $item->branch_id);
+        }
 
         return $item?->toArray();
     }
@@ -108,6 +113,13 @@ class InventoryItemController
         $limit = isset($params['limit']) ? max(1, (int) $params['limit']) : 50;
         $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
 
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item === null) {
+            return [];
+        }
+
+        $this->assertBranchAccess($user, $item->branch_id);
+
         return $this->transactionRepository->listByItem($id, $limit, $offset);
     }
 
@@ -120,6 +132,7 @@ class InventoryItemController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'inventory.create');
 
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
         $item = $this->repository->create($data);
 
         return $item->toArray();
@@ -138,7 +151,7 @@ class InventoryItemController
             $this->gate->assert($user, 'inventory.manage');
         }
 
-        $existing = $this->repository->find($id);
+        $existing = $this->repository->find($id, $this->resolveBranchFilter($user));
         $incomingQuantity = null;
         if ($existing !== null && array_key_exists('stock_quantity', $data)) {
             $incomingQuantity = (int) $data['stock_quantity'];
@@ -147,6 +160,11 @@ class InventoryItemController
             }
         }
 
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
         $item = $this->repository->update($id, $data, $user->id);
 
         if ($existing !== null && $incomingQuantity !== null && $item !== null) {
@@ -158,7 +176,8 @@ class InventoryItemController
                     'manual_adjustment',
                     null,
                     $data['adjustment_reason'] ?? 'Manual adjustment',
-                    $user->id
+                    $user->id,
+                    $existing->branch_id
                 );
             }
         }
@@ -171,6 +190,11 @@ class InventoryItemController
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'inventory.delete');
 
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item !== null) {
+            $this->assertBranchAccess($user, $item->branch_id);
+        }
+
         return $this->repository->delete($id);
     }
 
@@ -180,6 +204,8 @@ class InventoryItemController
     public function export(User $user, array $filters = []): string
     {
         $this->assertViewAccess($user);
+
+        $filters['branch_id'] = $this->resolveBranchFilter($user, $filters);
 
         return $this->csvService->export($filters);
     }
@@ -217,7 +243,7 @@ class InventoryItemController
             return $this->repository->searchWithCompatibility($query, $vehicleMasterId, $limit);
         }
 
-        $items = $this->repository->searchForParts($query, $vehicleMasterId, $limit);
+        $items = $this->repository->searchForParts($query, $vehicleMasterId, $limit, $this->resolveBranchFilter($user, $params));
 
         return array_map(static fn ($item) => $item->toArray(), $items);
     }
@@ -244,7 +270,7 @@ class InventoryItemController
 
         if (!$vehicleMasterId) {
             // Without vehicle ID, return all matching items with is_compatible = false
-            $items = $this->repository->searchForParts($query, null, $limit);
+            $items = $this->repository->searchForParts($query, null, $limit, $this->resolveBranchFilter($user, $params));
             return array_map(static function ($item) {
                 $arr = $item->toArray();
                 $arr['is_compatible'] = false;
@@ -252,7 +278,7 @@ class InventoryItemController
             }, $items);
         }
 
-        return $this->repository->searchWithCompatibility($query, $vehicleMasterId, $limit);
+        return $this->repository->searchWithCompatibility($query, $vehicleMasterId, $limit, $this->resolveBranchFilter($user, $params));
     }
 
     /**
@@ -267,7 +293,7 @@ class InventoryItemController
     {
         $this->assertViewAccess($user);
 
-        $items = $this->repository->getCompatibleParts($vehicleMasterId, $limit);
+        $items = $this->repository->getCompatibleParts($vehicleMasterId, $limit, $this->resolveBranchFilter($user));
 
         return array_map(static fn ($item) => $item->toArray(), $items);
     }
@@ -283,7 +309,7 @@ class InventoryItemController
     {
         $this->assertViewAccess($user);
 
-        $item = $this->repository->findBySku($sku);
+        $item = $this->repository->findBySku($sku, $this->resolveBranchFilter($user));
 
         return $item?->toArray();
     }
@@ -307,7 +333,7 @@ class InventoryItemController
     ): array {
         $this->assertViewAccess($user);
 
-        $item = $this->repository->findByBarcode($code);
+        $item = $this->repository->findByBarcode($code, $this->resolveBranchFilter($user));
 
         if ($item !== null) {
             // Log successful scan
@@ -358,6 +384,11 @@ class InventoryItemController
     {
         $this->assertViewAccess($user);
 
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item !== null) {
+            $this->assertBranchAccess($user, $item->branch_id);
+        }
+
         return $this->repository->getVehicleCompatibility($id);
     }
 
@@ -380,6 +411,11 @@ class InventoryItemController
             throw new \InvalidArgumentException('vehicle_master_id is required');
         }
 
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item !== null) {
+            $this->assertBranchAccess($user, $item->branch_id);
+        }
+
         $entry = $this->repository->addVehicleCompatibility($id, $vehicleMasterId, $notes);
 
         return $entry->toArray();
@@ -396,6 +432,11 @@ class InventoryItemController
     public function removeVehicleCompatibility(User $user, int $id, int $vehicleMasterId): bool
     {
         $this->assertManageAccess($user);
+
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item !== null) {
+            $this->assertBranchAccess($user, $item->branch_id);
+        }
 
         return $this->repository->removeVehicleCompatibility($id, $vehicleMasterId);
     }
@@ -416,6 +457,11 @@ class InventoryItemController
 
         if (!is_array($vehicleMasterIds) || empty($vehicleMasterIds)) {
             throw new \InvalidArgumentException('vehicle_master_ids array is required');
+        }
+
+        $item = $this->repository->find($id, $this->resolveBranchFilter($user));
+        if ($item !== null) {
+            $this->assertBranchAccess($user, $item->branch_id);
         }
 
         $count = $this->repository->bulkAddVehicleCompatibility($id, array_map('intval', $vehicleMasterIds));
@@ -469,5 +515,48 @@ class InventoryItemController
         }
 
         throw new UnauthorizedException('User lacks permission to adjust inventory.');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveBranchFilter(User $user, array $params = []): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $params)) {
+            return null;
+        }
+
+        return $params['branch_id'] !== '' && $params['branch_id'] !== null ? (int) $params['branch_id'] : null;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function resolveBranchAssignment(User $user, array $data): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $data)) {
+            return null;
+        }
+
+        return $data['branch_id'] !== '' && $data['branch_id'] !== null ? (int) $data['branch_id'] : null;
+    }
+
+    private function assertBranchAccess(User $user, ?int $branchId): void
+    {
+        if ($user->role === 'admin') {
+            return;
+        }
+
+        if ($user->branch_id !== null && $branchId !== null && $user->branch_id !== $branchId) {
+            throw new UnauthorizedException('User lacks access to this branch inventory.');
+        }
     }
 }

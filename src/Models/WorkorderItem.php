@@ -6,6 +6,7 @@ class WorkorderItem extends BaseModel
 {
     public int $id;
     public int $workorder_job_id;
+    public ?int $branch_id = null;
     public ?int $estimate_item_id = null;
     public string $type;
     public ?string $sku = null;

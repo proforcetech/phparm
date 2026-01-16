@@ -27,6 +27,7 @@ class InventoryPullRequest extends BaseModel
     ];
 
     public int $id;
+    public ?int $branch_id = null;
     public int $workorder_id;
     public ?int $workorder_job_id = null;
     public ?int $inventory_item_id = null;

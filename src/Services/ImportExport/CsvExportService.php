@@ -48,7 +48,7 @@ class CsvExportService
      */
     private function exportUsers(array $filters): string
     {
-        $query = 'SELECT id, name, email, role,'
+        $query = 'SELECT id, name, email, role, branch_id,'
             . " CASE WHEN email_verified = 1 THEN 'Email Verified' ELSE 'Email Not Verified' END AS status,"
             . " CASE WHEN two_factor_enabled = 1 THEN 'Enabled' ELSE 'Disabled' END AS two_factor_status,"
             . ' created_at'
@@ -65,6 +65,11 @@ class CsvExportService
             $query .= ' AND (id = :exact_id OR name LIKE :query OR email LIKE :query)';
             $bindings['exact_id'] = is_numeric($filters['query']) ? (int) $filters['query'] : 0;
             $bindings['query'] = '%' . $filters['query'] . '%';
+        }
+
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $query .= ' AND branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
         }
 
         $query .= ' ORDER BY created_at DESC';
