@@ -120,6 +120,7 @@ class PayPalGateway implements PaymentGatewayInterface
                 'status' => $this->normalizeStatus($sale->getState()),
                 'amount' => $sale->getAmount()->getTotal(),
                 'currency' => $sale->getAmount()->getCurrency(),
+                'payment_method' => 'paypal',
                 'created_at' => $sale->getCreateTime(),
                 'payer_email' => $result->getPayer()->getPayerInfo()?->getEmail(),
             ];
@@ -320,6 +321,7 @@ class PayPalGateway implements PaymentGatewayInterface
             'transaction_id' => $resource['id'] ?? '',
             'amount' => ($resource['amount']['total'] ?? 0),
             'currency' => $resource['amount']['currency'] ?? 'USD',
+            'payment_method' => 'paypal',
             'status' => 'succeeded',
             'handled' => true,
         ];
@@ -353,6 +355,7 @@ class PayPalGateway implements PaymentGatewayInterface
             'transaction_id' => $resource['id'] ?? '',
             'amount' => ($resource['amount']['total'] ?? 0),
             'currency' => $resource['amount']['currency'] ?? 'USD',
+            'payment_method' => 'paypal',
             'status' => 'failed',
             'handled' => true,
         ];
