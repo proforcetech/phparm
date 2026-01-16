@@ -9,6 +9,8 @@ export default function Navbar({
   showSidebarToggle = true,
   isSidebarCollapsed = true,
   onToggleSidebarCollapsed = () => {},
+  homePath = '/cp/dashboard',
+  homeLabel = 'Auto Repair Shop',
 }) {
   const { user, isCustomer, isAdmin, logout, impersonation, stopImpersonation } = useAuthStore()
   const navigate = useNavigate()
@@ -89,8 +91,8 @@ export default function Navbar({
                 </button>
               ) : null}
               <div className="flex-shrink-0 flex items-center">
-                <Link to="/cp/dashboard" className="text-xl font-bold text-primary-600">
-                  Auto Repair Shop
+                <Link to={homePath} className="text-xl font-bold text-primary-600">
+                  {homeLabel}
                 </Link>
               </div>
             </div>

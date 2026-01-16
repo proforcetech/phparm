@@ -170,9 +170,20 @@ const customerMenuItems = [
   { path: '/portal/profile', label: 'Profile', icon: Cog6ToothIcon },
 ]
 
+const essMenuItems = [
+  { path: '/ess', label: 'Dashboard', icon: HomeIcon },
+  { path: '/ess/time-clock', label: 'Time Clock', icon: ClockIcon },
+  { path: '/ess/schedule', label: 'My Schedule', icon: CalendarIcon },
+  { path: '/ess/pay-history', label: 'Pay History', icon: DocumentTextIcon },
+  { path: '/ess/profile', label: 'Profile Updates', icon: Cog6ToothIcon },
+]
+
 const isActiveRoute = (currentPath, targetPath) => {
   if (targetPath === '/cp/dashboard' || targetPath === '/portal') {
     return currentPath === targetPath
+  }
+  if (targetPath === '/ess') {
+    return currentPath === '/ess'
   }
   if (targetPath === '/cp/inventory') {
     return currentPath === '/cp/inventory'
@@ -206,6 +217,10 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
   const menuItems = useMemo(() => {
     if (type === 'customer') {
       return customerMenuItems
+    }
+
+    if (type === 'ess') {
+      return essMenuItems
     }
 
     if (user?.role === 'technician') {
