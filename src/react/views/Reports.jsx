@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import BarChart from '../components/charts/BarChart'
 import LineChart from '../components/charts/LineChart'
@@ -9,6 +9,7 @@ import Select from '../components/ui/Select'
 import FinancialReports from './financial/Reports'
 import branchesService from '../../services/branches.service'
 import reportsService from '../../services/reports.service'
+import { useAuthStore } from '../stores/auth.jsx'
 import { useToast } from '../stores/toast.jsx'
 
 const tabs = [
@@ -25,10 +26,13 @@ function formatPercent(value) {
 }
 
 function TechnicianMargins() {
+  const { user } = useAuthStore()
   const toast = useToast()
   const [loading, setLoading] = useState(false)
-  const [filters, setFilters] = useState({ start_date: '', end_date: '', branch_id: '' })
+  const [filters, setFilters] = useState({ start_date: '', end_date: '' })
+  const [branchScope, setBranchScope] = useState('all')
   const [branches, setBranches] = useState([])
+  const branchScopeInitialized = useRef(false)
   const [report, setReport] = useState({
     data: [],
     summary: {
@@ -47,7 +51,7 @@ function TechnicianMargins() {
     const monthAgo = new Date()
     monthAgo.setDate(monthAgo.getDate() - 30)
     const startDate = monthAgo.toISOString().slice(0, 10)
-    setFilters({ start_date: startDate, end_date: endDate, branch_id: '' })
+    setFilters({ start_date: startDate, end_date: endDate })
   }, [])
 
   useEffect(() => {
@@ -58,11 +62,21 @@ function TechnicianMargins() {
   }, [toast])
 
   useEffect(() => {
+    if (branchScopeInitialized.current) {
+      return
+    }
+    if (user?.branch_id) {
+      setBranchScope('current')
+    }
+    branchScopeInitialized.current = true
+  }, [user])
+
+  useEffect(() => {
     if (filters.start_date && filters.end_date) {
       fetchReport()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.start_date, filters.end_date])
+  }, [filters.start_date, filters.end_date, branchScope])
 
   const fetchReport = () => {
     if (!filters.start_date || !filters.end_date) {
@@ -75,7 +89,7 @@ function TechnicianMargins() {
       .technicianMargins({
         start_date: filters.start_date,
         end_date: filters.end_date,
-        branch_id: filters.branch_id || undefined,
+        branch_id: branchScope === 'current' ? user?.branch_id : undefined,
       })
       .then((data) => {
         setReport({
@@ -167,16 +181,22 @@ function TechnicianMargins() {
     },
   }
 
-  const branchOptions = useMemo(
-    () => [
-      { value: '', label: 'All branches' },
-      ...branches.map((branch) => ({
-        value: branch.id,
-        label: branch.label,
-      })),
-    ],
-    [branches],
-  )
+  const currentBranchLabel = useMemo(() => {
+    if (!user?.branch_id) {
+      return null
+    }
+    const match = branches.find((branch) => Number(branch.id) === Number(user.branch_id))
+    return match?.label || `#${user.branch_id}`
+  }, [branches, user?.branch_id])
+
+  const branchOptions = useMemo(() => {
+    const options = [{ value: 'all', label: 'All Locations' }]
+    if (user?.branch_id) {
+      const label = currentBranchLabel ? `Current Branch (${currentBranchLabel})` : 'Current Branch'
+      options.push({ value: 'current', label })
+    }
+    return options
+  }, [currentBranchLabel, user?.branch_id])
 
   return (
     <div className="space-y-6">
@@ -204,10 +224,10 @@ function TechnicianMargins() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Branch (optional)</label>
+            <label className="block text-sm font-medium text-gray-700">Location</label>
             <Select
-              modelValue={filters.branch_id}
-              onUpdateModelValue={(value) => setFilters((prev) => ({ ...prev, branch_id: value }))}
+              modelValue={branchScope}
+              onUpdateModelValue={setBranchScope}
               options={branchOptions}
               placeholder=""
             />

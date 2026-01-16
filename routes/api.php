@@ -1999,6 +1999,8 @@ return Response::json([
         });
 
         $router->get('/api/dashboard/inventory/pull-requests', function (Request $request) use ($inventoryPullRequestRepository) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
             $statusesParam = $request->queryParam('statuses');
             $statuses = $statusesParam
                 ? array_filter(array_map('trim', explode(',', $statusesParam)))
@@ -2009,8 +2011,11 @@ return Response::json([
                 ];
 
             $limit = (int) ($request->queryParam('limit') ?? 5);
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
 
-            $data = $inventoryPullRequestRepository->getDashboardNotifications($statuses, $limit);
+            $data = $inventoryPullRequestRepository->getDashboardNotifications($statuses, $limit, $branchId);
             return Response::json($data);
         });
 
@@ -2389,8 +2394,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/dashboard/inventory/low-stock', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
             $limit = max(1, (int) ($request->queryParam('limit') ?? 5));
+            $params = [
+                'branch_id' => $request->queryParam('branch_id'),
+            ];
 
-            $data = $inventoryController->lowStockTile($user, $limit);
+            $data = $inventoryController->lowStockTile($user, $limit, $params);
 
             return Response::json($data);
         });

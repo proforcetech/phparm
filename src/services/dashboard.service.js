@@ -48,9 +48,9 @@ export default {
   /**
    * Get low-stock inventory tile data for dashboard widgets
    */
-  async getInventoryLowStockTile(limit = 5) {
+  async getInventoryLowStockTile(limit = 5, params = {}) {
     const response = await api.get('/dashboard/inventory/low-stock', {
-      params: { limit },
+      params: { limit, ...params },
     })
     return response.data
   },
@@ -58,12 +58,12 @@ export default {
   /**
    * Get inventory pull request notifications for the dashboard
    */
-  async getInventoryPullRequests(limit = 5, statuses = []) {
-    const params = { limit }
+  async getInventoryPullRequests(limit = 5, params = {}, statuses = []) {
+    const requestParams = { limit, ...params }
     if (statuses.length > 0) {
-      params.statuses = statuses.join(',')
+      requestParams.statuses = statuses.join(',')
     }
-    const response = await api.get('/dashboard/inventory/pull-requests', { params })
+    const response = await api.get('/dashboard/inventory/pull-requests', { params: requestParams })
     return response.data
   },
 
