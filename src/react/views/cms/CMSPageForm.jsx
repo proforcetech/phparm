@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeftIcon,
@@ -191,6 +191,11 @@ export default function CMSPageForm() {
         .filter(Boolean),
     [componentLookup, form.component_order]
   )
+  const [linkQuery, setLinkQuery] = useState('')
+  const [linkResults, setLinkResults] = useState([])
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [linkError, setLinkError] = useState(null)
+  const contentRef = useRef(null)
 
   const categoryOptions = useMemo(() => {
     if (!availableCategories.length) return []
@@ -242,6 +247,37 @@ export default function CMSPageForm() {
     return categoryOptions.find((category) => category.id === form.category_id) || null
   }, [categoryOptions, form.category_id])
 
+  const categoryPathMap = useMemo(() => {
+    const map = new Map()
+    categoryOptions.forEach((category) => {
+      if (category.id) {
+        map.set(category.id, category.slugPath)
+      }
+    })
+    return map
+  }, [categoryOptions])
+
+  const resolvePageUrl = useCallback(
+    (page) => {
+      if (!page?.slug) return ''
+      if (!page.category_id) return `/${page.slug}`
+      const categoryPath = categoryPathMap.get(page.category_id)
+      if (!categoryPath?.length) return `/${page.slug}`
+      return `/${categoryPath.join('/')}/${page.slug}`
+    },
+    [categoryPathMap]
+  )
+
+  const escapeHtml = useCallback((value) => {
+    if (!value) return ''
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }, [])
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -289,6 +325,44 @@ export default function CMSPageForm() {
   useEffect(() => {
     pageStore.setDraft(draftKey, form)
   }, [draftKey, form, pageStore.setDraft])
+
+  useEffect(() => {
+    const searchTerm = linkQuery.trim()
+    if (!searchTerm) {
+      setLinkResults([])
+      setLinkLoading(false)
+      setLinkError(null)
+      return
+    }
+
+    let isActive = true
+    const timer = setTimeout(async () => {
+      try {
+        setLinkLoading(true)
+        setLinkError(null)
+        const response = await cmsService.getPages({ search: searchTerm, limit: 8, status: 'published' })
+        const pages = Array.isArray(response?.data) ? response.data : response
+        const filtered = (pages || []).filter((page) => `${page.id}` !== `${id}`)
+        if (isActive) {
+          setLinkResults(filtered)
+        }
+      } catch (err) {
+        console.error('Failed to search CMS pages:', err)
+        if (isActive) {
+          setLinkError(err.response?.data?.message || 'Failed to search CMS pages')
+        }
+      } finally {
+        if (isActive) {
+          setLinkLoading(false)
+        }
+      }
+    }, 250)
+
+    return () => {
+      isActive = false
+      clearTimeout(timer)
+    }
+  }, [id, linkQuery])
 
   const generateSlug = (title) => {
     if (isEditing) return
@@ -441,6 +515,26 @@ export default function CMSPageForm() {
       }
     })
     setComponentSelection('')
+  const insertInternalLink = (page) => {
+    if (!page) return
+    const url = resolvePageUrl(page)
+    const linkHtml = `<a href="${url}" data-cms-page-id="${page.id}">${escapeHtml(page.title)}</a>`
+    const textarea = contentRef.current
+    const currentValue = textarea?.value ?? form.content ?? ''
+    const selectionStart = textarea?.selectionStart ?? currentValue.length
+    const selectionEnd = textarea?.selectionEnd ?? currentValue.length
+    const updated =
+      currentValue.slice(0, selectionStart) + linkHtml + currentValue.slice(selectionEnd)
+
+    setForm((prev) => ({ ...prev, content: updated }))
+
+    requestAnimationFrame(() => {
+      if (textarea) {
+        const nextCursor = selectionStart + linkHtml.length
+        textarea.focus()
+        textarea.setSelectionRange(nextCursor, nextCursor)
+      }
+    })
   }
 
   return (
@@ -676,7 +770,62 @@ export default function CMSPageForm() {
                     placeholder="Enter HTML content..."
                     value={form.content}
                     onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, content: value }))}
+                    textareaRef={contentRef}
                   />
+
+                  <div className="rounded-md border border-gray-200 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">Internal Linking Tool</h4>
+                        <p className="text-xs text-gray-500">
+                          Search published pages by title and insert links directly into the editor.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <Input
+                        label="Search pages"
+                        placeholder="Start typing a page title..."
+                        value={linkQuery}
+                        onUpdateModelValue={setLinkQuery}
+                      />
+                    </div>
+                    {linkLoading ? (
+                      <p className="mt-3 text-sm text-gray-500">Searching pages...</p>
+                    ) : linkError ? (
+                      <p className="mt-3 text-sm text-red-600">{linkError}</p>
+                    ) : linkQuery.trim() ? (
+                      <div className="mt-3 space-y-2">
+                        {linkResults.length ? (
+                          linkResults.map((page) => (
+                            <div
+                              key={page.id}
+                              className="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm"
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900">{page.title}</p>
+                                <p className="text-xs text-gray-500">{resolvePageUrl(page)}</p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => insertInternalLink(page)}
+                              >
+                                Insert Link
+                              </Button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-gray-500">No pages found.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm text-gray-500">
+                        Start typing to search for published pages.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </Card>
 

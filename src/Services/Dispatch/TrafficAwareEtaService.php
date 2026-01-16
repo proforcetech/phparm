@@ -26,7 +26,7 @@ class TrafficAwareEtaService
     /**
      * Calculate ETA for a driver to reach a location.
      *
-     * @return array{eta_minutes: int, distance_km: float, traffic_factor: float, source: string}
+     * @return array{eta_minutes: int, raw_eta_minutes: int, distance_km: float, traffic_factor: float, source: string}
      */
     public function calculateEta(
         float $fromLat,
@@ -37,15 +37,16 @@ class TrafficAwareEtaService
     ): array {
         $cacheKey = $this->buildCacheKey($fromLat, $fromLng, $toLat, $toLng);
 
-        if (isset($this->etaCache[$cacheKey])) {
-            return $this->etaCache[$cacheKey];
+        $cached = $this->getCachedEta($cacheKey);
+        if ($cached !== null) {
+            return $cached;
         }
 
         // Try real-time API first
         if ($this->apiProvider !== null && $this->apiKey !== null) {
             $apiResult = $this->fetchFromMappingApi($fromLat, $fromLng, $toLat, $toLng);
             if ($apiResult !== null) {
-                $this->etaCache[$cacheKey] = $apiResult;
+                $this->storeCachedEta($cacheKey, $apiResult);
                 $this->storeEtaRecord($driverProfileId, $fromLat, $fromLng, $toLat, $toLng, $apiResult);
                 return $apiResult;
             }
@@ -57,15 +58,17 @@ class TrafficAwareEtaService
 
         $estimatedSpeedKmh = self::FALLBACK_SPEED_KMH / $trafficFactor;
         $etaMinutes = (int) ceil(($distance / $estimatedSpeedKmh) * 60);
+        $rawEtaMinutes = (int) ceil(($distance / self::FALLBACK_SPEED_KMH) * 60);
 
         $result = [
             'eta_minutes' => $etaMinutes,
+            'raw_eta_minutes' => $rawEtaMinutes,
             'distance_km' => round($distance, 2),
             'traffic_factor' => round($trafficFactor, 2),
             'source' => 'estimated',
         ];
 
-        $this->etaCache[$cacheKey] = $result;
+        $this->storeCachedEta($cacheKey, $result);
         return $result;
     }
 
@@ -73,22 +76,56 @@ class TrafficAwareEtaService
      * Calculate ETAs for multiple drivers to a single destination.
      *
      * @param array<array{driver_profile_id: int, latitude: float, longitude: float}> $drivers
-     * @return array<int, array{eta_minutes: int, distance_km: float, traffic_factor: float}>
+     * @return array<int, array{eta_minutes: int, raw_eta_minutes: int, distance_km: float, traffic_factor: float, source: string}>
      */
     public function calculateBulkEtas(array $drivers, float $destLat, float $destLng): array
     {
         $results = [];
+        $driversToFetch = [];
+
+        foreach ($drivers as $driver) {
+            $cacheKey = $this->buildCacheKey(
+                $driver['latitude'],
+                $driver['longitude'],
+                $destLat,
+                $destLng
+            );
+            $cached = $this->getCachedEta($cacheKey);
+            if ($cached !== null) {
+                $results[$driver['driver_profile_id']] = $cached;
+                continue;
+            }
+            $driversToFetch[] = $driver;
+        }
+
+        if (count($driversToFetch) === 0) {
+            return $results;
+        }
 
         // Try batch API if available
-        if ($this->apiProvider === 'google' && count($drivers) > 1) {
-            $batchResult = $this->fetchBatchFromGoogle($drivers, $destLat, $destLng);
+        if ($this->apiProvider === 'google' && count($driversToFetch) > 1) {
+            $batchResult = $this->fetchBatchFromGoogle($driversToFetch, $destLat, $destLng);
             if ($batchResult !== null) {
-                return $batchResult;
+                foreach ($driversToFetch as $driver) {
+                    $driverId = $driver['driver_profile_id'];
+                    if (!isset($batchResult[$driverId])) {
+                        continue;
+                    }
+                    $cacheKey = $this->buildCacheKey(
+                        $driver['latitude'],
+                        $driver['longitude'],
+                        $destLat,
+                        $destLng
+                    );
+                    $this->storeCachedEta($cacheKey, $batchResult[$driverId]);
+                }
+
+                return array_replace($results, $batchResult);
             }
         }
 
         // Fall back to individual calculations
-        foreach ($drivers as $driver) {
+        foreach ($driversToFetch as $driver) {
             $results[$driver['driver_profile_id']] = $this->calculateEta(
                 $driver['latitude'],
                 $driver['longitude'],
@@ -306,6 +343,7 @@ class TrafficAwareEtaService
 
         return [
             'eta_minutes' => (int) ceil($durationSeconds / 60),
+            'raw_eta_minutes' => (int) ceil($baseDurationSeconds / 60),
             'distance_km' => round($distanceMeters / 1000, 2),
             'traffic_factor' => round($trafficFactor, 2),
             'source' => 'google_maps',
@@ -342,6 +380,7 @@ class TrafficAwareEtaService
 
         return [
             'eta_minutes' => (int) ceil($durationSeconds / 60),
+            'raw_eta_minutes' => (int) ceil($typicalDuration / 60),
             'distance_km' => round($distanceMeters / 1000, 2),
             'traffic_factor' => round($trafficFactor, 2),
             'source' => 'mapbox',
@@ -387,6 +426,7 @@ class TrafficAwareEtaService
             $driverId = $drivers[$index]['driver_profile_id'];
             $results[$driverId] = [
                 'eta_minutes' => (int) ceil($durationSeconds / 60),
+                'raw_eta_minutes' => (int) ceil($baseDurationSeconds / 60),
                 'distance_km' => round($distanceMeters / 1000, 2),
                 'traffic_factor' => round($baseDurationSeconds > 0 ? $durationSeconds / $baseDurationSeconds : 1.0, 2),
                 'source' => 'google_maps_batch',
@@ -455,6 +495,34 @@ class TrafficAwareEtaService
     private function buildCacheKey(float $lat1, float $lng1, float $lat2, float $lng2): string
     {
         return sprintf('%.4f,%.4f->%.4f,%.4f', $lat1, $lng1, $lat2, $lng2);
+    }
+
+    private function getCachedEta(string $cacheKey): ?array
+    {
+        if (!isset($this->etaCache[$cacheKey])) {
+            return null;
+        }
+
+        $entry = $this->etaCache[$cacheKey];
+        if (!isset($entry['stored_at'], $entry['data'])) {
+            unset($this->etaCache[$cacheKey]);
+            return null;
+        }
+
+        if ((time() - $entry['stored_at']) > self::CACHE_TTL_SECONDS) {
+            unset($this->etaCache[$cacheKey]);
+            return null;
+        }
+
+        return $entry['data'];
+    }
+
+    private function storeCachedEta(string $cacheKey, array $etaData): void
+    {
+        $this->etaCache[$cacheKey] = [
+            'stored_at' => time(),
+            'data' => $etaData,
+        ];
     }
 
     private function storeEtaRecord(
