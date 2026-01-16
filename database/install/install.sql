@@ -2542,6 +2542,9 @@ CREATE TABLE core_returns (
 
     -- Status tracking
     status ENUM('pending_from_customer', 'received_from_customer', 'pending_to_vendor', 'returned_to_vendor', 'credit_received', 'expired', 'waived') NOT NULL DEFAULT 'pending_from_customer',
+    return_sellable TINYINT(1) NULL,
+    warranty_follow_up_status VARCHAR(40) NULL,
+    warranty_follow_up_reason TEXT NULL,
 
     -- Customer tracking
     customer_id INT UNSIGNED NULL,
