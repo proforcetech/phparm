@@ -60,7 +60,12 @@ export default function QuickSale() {
       )
       let customer = existing
       if (!customer) {
-        customer = await customerService.createCustomer({ name: 'Walk-in Customer' })
+        customer = await customerService.createCustomer({
+          first_name: 'Walk-in',
+          last_name: 'Customer',
+          email: 'walkin@example.com',
+          phone: '000-000-0000',
+        })
       }
       setWalkInCustomer(customer)
       if (customerMode === 'walk_in') {
@@ -166,16 +171,12 @@ export default function QuickSale() {
     if (customerMode === 'walk_in') {
       return walkInCustomer?.id
     }
-    return selectedCustomer?.id
+    return selectedCustomer?.id || walkInCustomer?.id
   }
 
   const handleCreateInvoice = async () => {
     setApiError('')
     const customerId = ensureCustomer()
-    if (!customerId) {
-      setApiError('Select a customer before completing the sale.')
-      return
-    }
     if (cartItems.length === 0) {
       setApiError('Add at least one item to the cart.')
       return
@@ -184,7 +185,6 @@ export default function QuickSale() {
     setCreatingInvoice(true)
     try {
       const payload = {
-        customer_id: customerId,
         number: createQuickSaleNumber(),
         issue_date: new Date().toISOString().split('T')[0],
         notes: notes.trim() ? `Quick Sale: ${notes.trim()}` : 'Quick Sale',
@@ -195,6 +195,9 @@ export default function QuickSale() {
           quantity: item.quantity,
           unit_price: item.unit_price,
         })),
+      }
+      if (customerId) {
+        payload.customer_id = customerId
       }
 
       const created = await invoiceService.create(payload)

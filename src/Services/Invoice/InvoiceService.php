@@ -104,7 +104,7 @@ class InvoiceService
      */
     public function createStandalone(array $payload, int $actorId): Invoice
     {
-        $required = ['customer_id', 'number', 'items'];
+        $required = ['number', 'items'];
         foreach ($required as $field) {
             if (!isset($payload[$field])) {
                 throw new InvalidArgumentException("Missing {$field}");
@@ -116,9 +116,11 @@ class InvoiceService
 
         try {
             $splitBilling = !empty($payload['split_billing']);
+            $customerId = $this->resolveCustomerId($payload);
+            $vehicleId = $this->normalizeOptionalId($payload['vehicle_id'] ?? null);
             $invoiceId = $this->insertInvoice([
-                'customer_id' => $payload['customer_id'],
-                'vehicle_id' => $payload['vehicle_id'] ?? null,
+                'customer_id' => $customerId,
+                'vehicle_id' => $vehicleId,
                 'is_mobile' => !empty($payload['is_mobile']),
                 'number' => $payload['number'],
                 'status' => 'pending',
@@ -137,7 +139,7 @@ class InvoiceService
                 $invoiceId,
                 $payload['items'],
                 $payload['tax_rate'] ?? 0.0,
-                (int) $payload['customer_id'],
+                $customerId,
                 $actorId,
                 $payload['branch_id'] ?? null
             );
@@ -944,6 +946,68 @@ class InvoiceService
             'description' => sprintf('Cash/check payment recorded for invoice %d; held in Undeposited Funds.', $invoiceId),
             'idempotency_key' => 'undeposited-payment-' . $paymentId,
         ], $actorId ?? 0);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function resolveCustomerId(array $payload): int
+    {
+        $customerId = $this->normalizeOptionalId($payload['customer_id'] ?? null);
+        if ($customerId !== null) {
+            return $customerId;
+        }
+
+        return $this->getOrCreateWalkInCustomerId();
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function normalizeOptionalId($value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value) && trim($value) === '') {
+            return null;
+        }
+
+        $intValue = (int) $value;
+
+        return $intValue > 0 ? $intValue : null;
+    }
+
+    private function getOrCreateWalkInCustomerId(): int
+    {
+        $pdo = $this->connection->pdo();
+        $walkInName = 'Walk-in Customer';
+        $firstName = 'Walk-in';
+        $lastName = 'Customer';
+
+        $stmt = $pdo->prepare(
+            'SELECT id FROM customers WHERE (first_name = :first_name AND last_name = :last_name) OR business_name = :name LIMIT 1'
+        );
+        $stmt->execute(['first_name' => $firstName, 'last_name' => $lastName, 'name' => $walkInName]);
+        $existingId = $stmt->fetchColumn();
+        if ($existingId) {
+            return (int) $existingId;
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO customers (first_name, last_name, business_name, email, phone, created_at, updated_at) '
+            . 'VALUES (:first_name, :last_name, :business_name, :email, :phone, NOW(), NOW())'
+        );
+        $stmt->execute([
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'business_name' => null,
+            'email' => 'walkin@example.com',
+            'phone' => '000-000-0000',
+        ]);
+
+        return (int) $pdo->lastInsertId();
     }
 
     private function fetchInvoice(int $id): ?Invoice
