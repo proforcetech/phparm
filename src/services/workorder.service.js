@@ -2,6 +2,44 @@ import api from './api'
 import { enqueueItem } from '../react/utils/offlineQueue'
 import offlineSync from '../react/services/offlineSync'
 
+const getCurrentLocation = () => new Promise((resolve) => {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    resolve(null)
+    return
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+      })
+    },
+    () => resolve(null),
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    }
+  )
+})
+
+const buildLocationPayload = async (locationOverride, captureIfMissing = true) => {
+  const location = locationOverride !== undefined
+    ? locationOverride
+    : (captureIfMissing ? await getCurrentLocation() : null)
+  if (!location || location.latitude == null || location.longitude == null) {
+    return null
+  }
+
+  return {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    accuracy: location.accuracy ?? null,
+  }
+}
+
 export default {
   /**
    * Get list of workorders with filters
@@ -50,6 +88,17 @@ export default {
    * @param {string} notes - Optional notes
    * @returns {Promise}
    */
+  async updateStatus(id, status, notes = null, options = {}) {
+    const { allowQueue = true, clientEventId = null, location } = options
+    const hasLocationOverride = Object.prototype.hasOwnProperty.call(options, 'location')
+    const locationPayload = await buildLocationPayload(location, !hasLocationOverride)
+    if (!allowQueue) {
+      return api.patch(`/workorders/${id}/status`, {
+        status,
+        notes,
+        client_event_id: clientEventId,
+        ...(locationPayload ? { location: locationPayload } : {}),
+      })
   updateStatus(id, status, notes = null, options = {}) {
     const { allowQueue = true, clientEventId = null, payload = {} } = options
     const requestPayload = {
@@ -68,6 +117,7 @@ export default {
       status,
       notes,
       clientEventId: eventId,
+      location: locationPayload,
       payload,
     })
 
@@ -147,12 +197,15 @@ export default {
    * @param {string} status - New status
    * @returns {Promise}
    */
-  updateJobStatus(workorderId, jobId, status, options = {}) {
-    const { allowQueue = true, clientEventId = null } = options
+  async updateJobStatus(workorderId, jobId, status, options = {}) {
+    const { allowQueue = true, clientEventId = null, location } = options
+    const hasLocationOverride = Object.prototype.hasOwnProperty.call(options, 'location')
+    const locationPayload = await buildLocationPayload(location, !hasLocationOverride)
     if (!allowQueue) {
       return api.patch(`/workorders/${workorderId}/jobs/${jobId}/status`, {
         status,
         client_event_id: clientEventId,
+        ...(locationPayload ? { location: locationPayload } : {}),
       })
     }
 
@@ -162,6 +215,7 @@ export default {
       jobId,
       status,
       clientEventId: eventId,
+      location: locationPayload,
     })
 
     if (typeof navigator !== 'undefined' && navigator.onLine) {

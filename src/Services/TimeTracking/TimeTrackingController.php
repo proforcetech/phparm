@@ -158,7 +158,10 @@ class TimeTrackingController
             throw new UnauthorizedException('Cannot review time entries');
         }
 
-        $entry = $this->service->review($id, $user->id, 'approved', $data['notes'] ?? null);
+        $includeInPayroll = array_key_exists('include_in_payroll', $data)
+            ? (bool) $data['include_in_payroll']
+            : null;
+        $entry = $this->service->review($id, $user->id, 'approved', $data['notes'] ?? null, $includeInPayroll);
 
         if ($entry === null) {
             throw new InvalidArgumentException('Time entry not found');
@@ -179,7 +182,7 @@ class TimeTrackingController
             throw new UnauthorizedException('Cannot review time entries');
         }
 
-        $entry = $this->service->review($id, $user->id, 'rejected', $data['notes'] ?? null);
+        $entry = $this->service->review($id, $user->id, 'rejected', $data['notes'] ?? null, false);
 
         if ($entry === null) {
             throw new InvalidArgumentException('Time entry not found');

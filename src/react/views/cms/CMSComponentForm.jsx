@@ -10,6 +10,7 @@ import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import { cmsService } from '../../../services/cms.service'
+import { useToast } from '../../stores/toast.jsx'
 
 const defaultForm = {
   name: '',
@@ -33,6 +34,10 @@ export default function CMSComponentForm() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [form, setForm] = useState(defaultForm)
+  const [revisions, setRevisions] = useState([])
+  const [revisionsLoading, setRevisionsLoading] = useState(false)
+  const [restoringRevisionId, setRestoringRevisionId] = useState(null)
+  const toast = useToast()
 
   const componentTypes = cmsService.getComponentTypes()
 
@@ -43,6 +48,16 @@ export default function CMSComponentForm() {
 
       if (isEditing) {
         const componentData = await cmsService.getComponent(id)
+        try {
+          setRevisionsLoading(true)
+          const revisionResponse = await cmsService.getComponentRevisions(id)
+          setRevisions(revisionResponse.data || revisionResponse || [])
+        } catch (revisionError) {
+          console.error('Failed to load revisions:', revisionError)
+          setRevisions([])
+        } finally {
+          setRevisionsLoading(false)
+        }
         setForm({
           name: componentData.name || '',
           slug: componentData.slug || '',
@@ -58,6 +73,7 @@ export default function CMSComponentForm() {
         })
       } else {
         setForm(defaultForm)
+        setRevisions([])
       }
     } catch (err) {
       console.error('Failed to load data:', err)
@@ -104,6 +120,31 @@ export default function CMSComponentForm() {
       setError(err.response?.data?.message || 'Failed to save component')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const formatRevisionAction = (action) => {
+    if (!action) return 'Saved'
+    const normalized = action.toString()
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
+  const restoreRevision = async (revisionId) => {
+    if (!window.confirm('Restore this revision? This will overwrite the current component content.')) {
+      return
+    }
+
+    try {
+      setRestoringRevisionId(revisionId)
+      setError(null)
+      await cmsService.restoreComponentRevision(id, revisionId)
+      toast.success('Revision restored')
+      await loadData()
+    } catch (err) {
+      console.error('Failed to restore revision:', err)
+      setError(err.response?.data?.message || 'Failed to restore revision')
+    } finally {
+      setRestoringRevisionId(null)
     }
   }
 
@@ -251,6 +292,47 @@ export default function CMSComponentForm() {
                 </div>
               </Card>
 
+              <Card header={<h3 className="text-lg font-medium text-gray-900">Revisions</h3>}>
+                <div className="space-y-3">
+                  {!isEditing ? (
+                    <p className="text-sm text-gray-500">Save the component to start tracking revisions.</p>
+                  ) : revisionsLoading ? (
+                    <Loading size="sm" text="Loading revisions..." />
+                  ) : revisions.length ? (
+                    <ul className="space-y-3">
+                      {revisions.map((revision) => (
+                        <li key={revision.id} className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {revision.author_name || 'Unknown author'}
+                              <span className="ml-2 text-xs text-gray-500">
+                                {formatRevisionAction(revision.action)}
+                              </span>
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {revision.created_at
+                                ? new Date(revision.created_at).toLocaleString()
+                                : 'Unknown time'}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={restoringRevisionId === revision.id}
+                            onClick={() => restoreRevision(revision.id)}
+                          >
+                            {restoringRevisionId === revision.id ? 'Restoring...' : 'Restore'}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No revisions yet.</p>
+                  )}
+                </div>
+              </Card>
+
               <Card header={<h3 className="text-lg font-medium text-gray-900">Component Type</h3>}>
                 <div className="space-y-4">
                   <Select
@@ -266,6 +348,8 @@ export default function CMSComponentForm() {
                       if (form.type === 'navigation') return 'Navigation menus'
                       if (form.type === 'sidebar') return 'Sidebar content'
                       if (form.type === 'widget') return 'Reusable widgets'
+                      if (form.type === 'live_coverage_map') return 'Live dispatch coverage with driver and hotspot data'
+                      if (form.type === 'eta') return 'Estimated wait time powered by dispatch ETA'
                       return 'Custom component'
                     })()}
                   />

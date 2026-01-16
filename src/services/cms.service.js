@@ -88,10 +88,34 @@ export const cmsService = {
   },
 
   /**
+   * Get or generate a preview token for a page
+   */
+  async getPagePreviewToken(id, regenerate = false) {
+    const response = await api.post(`/cms/pages/${id}/preview-token`, { regenerate })
+    return response.data
+  },
+
+  /**
    * Delete a page
    */
   async deletePage(id) {
     const response = await api.delete(`/cms/pages/${id}`)
+    return response.data
+  },
+
+  /**
+   * Get revisions for a page
+   */
+  async getPageRevisions(id) {
+    const response = await api.get(`/cms/pages/${id}/revisions`)
+    return response.data
+  },
+
+  /**
+   * Restore a page revision
+   */
+  async restorePageRevision(id, revisionId) {
+    const response = await api.post(`/cms/pages/${id}/revisions/${revisionId}/restore`)
     return response.data
   },
 
@@ -243,6 +267,22 @@ export const cmsService = {
     return response.data
   },
 
+  /**
+   * Get revisions for a component
+   */
+  async getComponentRevisions(id) {
+    const response = await api.get(`/cms/components/${id}/revisions`)
+    return response.data
+  },
+
+  /**
+   * Restore a component revision
+   */
+  async restoreComponentRevision(id, revisionId) {
+    const response = await api.post(`/cms/components/${id}/revisions/${revisionId}/restore`)
+    return response.data
+  },
+
   // ================================================
   // Templates
   // ================================================
@@ -284,6 +324,50 @@ export const cmsService = {
    */
   async deleteTemplate(id) {
     const response = await api.delete(`/cms/templates/${id}`)
+    return response.data
+  },
+
+  // ================================================
+  // Media Library
+  // ================================================
+
+  /**
+   * Get all media assets
+   */
+  async getMedia(params = {}) {
+    const response = await api.get('/cms/media', { params })
+    return response.data
+  },
+
+  /**
+   * Get media metadata (folders, tags)
+   */
+  async getMediaMetadata() {
+    const response = await api.get('/cms/media/metadata')
+    return response.data
+  },
+
+  /**
+   * Update a single media item
+   */
+  async updateMedia(id, data) {
+    const response = await api.put(`/cms/media/${id}`, data)
+    return response.data
+  },
+
+  /**
+   * Bulk update media items
+   */
+  async bulkUpdateMedia(data) {
+    const response = await api.post('/cms/media/bulk', data)
+    return response.data
+  },
+
+  /**
+   * Rename or clear a folder
+   */
+  async renameMediaFolder(data) {
+    const response = await api.post('/cms/media/folders/rename', data)
     return response.data
   },
 
@@ -341,6 +425,8 @@ export const cmsService = {
       { value: 'navigation', label: 'Navigation' },
       { value: 'sidebar', label: 'Sidebar' },
       { value: 'widget', label: 'Widget' },
+      { value: 'live_coverage_map', label: 'Live Coverage Map' },
+      { value: 'eta', label: 'Estimated Wait Time' },
       { value: 'custom', label: 'Custom' },
     ]
   },

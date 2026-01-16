@@ -19,6 +19,7 @@ const emptyForm = {
 
 const formatGroupLabel = (group) => {
   if (group === '*') return 'System'
+  if (group === 'cms') return 'CMS'
   return group
     .split('_')
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
