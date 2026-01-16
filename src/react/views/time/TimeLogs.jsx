@@ -7,12 +7,19 @@ import Input from '../../components/ui/Input'
 import Table from '../../components/ui/Table'
 import timeTrackingService from '../../../services/time-tracking.service'
 import laborTasksService from '../../../services/labor-tasks.service'
+import payrollExportService from '../../../services/payroll-export.service'
 
 const perPage = 25
 
 const statusVariant = (value) => {
   if (value === 'pending') return 'warning'
   if (value === 'rejected') return 'danger'
+  return 'success'
+}
+
+const exportStatusVariant = (value) => {
+  if (value === 'failed') return 'danger'
+  if (value === 'empty') return 'warning'
   return 'success'
 }
 
@@ -25,6 +32,11 @@ const formatDate = (value) => {
   if (!value) return '—'
   return new Date(value).toLocaleString()
 }
+
+const formatCurrency = (value) =>
+  `$${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const formatHours = (value) => `${Number(value || 0).toFixed(2)} hrs`
 
 const formatLocation = (lat, lng) => {
   if (lat == null || lng == null) return '—'
@@ -55,6 +67,16 @@ export default function TimeLogs() {
   const [reviewing, setReviewing] = useState(false)
   const [includeInPayroll, setIncludeInPayroll] = useState(true)
   const [laborTasks, setLaborTasks] = useState([])
+  const [exportForm, setExportForm] = useState({
+    provider: 'gusto',
+    start_date: '',
+    end_date: '',
+  })
+  const [exportingPayroll, setExportingPayroll] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const [exportHistory, setExportHistory] = useState([])
+  const [exportHistoryLoading, setExportHistoryLoading] = useState(false)
+  const [exportHistoryError, setExportHistoryError] = useState('')
 
   const [filters, setFilters] = useState({
     search: '',
@@ -107,6 +129,14 @@ export default function TimeLogs() {
     { key: 'manual_override', label: 'Source' },
     { key: 'payroll', label: 'Payroll' },
     { key: 'adjustments', label: 'Adjustments' },
+  ]), [])
+
+  const exportColumns = useMemo(() => ([
+    { key: 'provider', label: 'Provider' },
+    { key: 'range', label: 'Date Range' },
+    { key: 'totals', label: 'Totals' },
+    { key: 'status', label: 'Status' },
+    { key: 'created', label: 'Created' },
   ]), [])
 
   const refresh = useCallback(async (options = {}) => {
@@ -187,6 +217,23 @@ export default function TimeLogs() {
   useEffect(() => {
     laborTasksService.getActiveTasks().then(setLaborTasks).catch(() => {})
   }, [])
+
+  const loadExportHistory = useCallback(async () => {
+    setExportHistoryLoading(true)
+    setExportHistoryError('')
+    try {
+      const response = await payrollExportService.list({ per_page: 10 })
+      setExportHistory(response.data)
+    } catch (error) {
+      setExportHistoryError(error.response?.data?.message || 'Unable to load payroll export history.')
+    } finally {
+      setExportHistoryLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadExportHistory()
+  }, [loadExportHistory])
 
   useEffect(() => () => {
     if (inflightRequestRef.current?.controller) {
@@ -315,6 +362,32 @@ export default function TimeLogs() {
     }
   }
 
+  const submitPayrollExport = async (event) => {
+    event.preventDefault()
+    setExportError('')
+    setExportingPayroll(true)
+    try {
+      const response = await payrollExportService.exportPayroll({
+        provider: exportForm.provider,
+        start_date: exportForm.start_date,
+        end_date: exportForm.end_date,
+      })
+      const type = 'text/csv;charset=utf-8;'
+      const blob = new Blob([response.data || ''], { type })
+      const link = document.createElement('a')
+      link.href = window.URL.createObjectURL(blob)
+      link.setAttribute('download', response.filename || 'payroll-export.csv')
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      await loadExportHistory()
+    } catch (error) {
+      setExportError(error.response?.data?.message || 'Unable to export payroll data.')
+    } finally {
+      setExportingPayroll(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -329,6 +402,116 @@ export default function TimeLogs() {
 
       {listError ? <p className="text-sm text-red-600">{listError}</p> : null}
       {rateLimitNotice ? <p className="text-sm text-amber-600">{rateLimitNotice}</p> : null}
+
+      <Card>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Payroll exports</h2>
+            <p className="text-sm text-gray-600">Generate Gusto, ADP, or QuickBooks files with approved hours and gross pay.</p>
+          </div>
+        </div>
+        <form className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-5" onSubmit={submitPayrollExport}>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Provider</label>
+            <select
+              value={exportForm.provider}
+              onChange={(event) => setExportForm((prev) => ({ ...prev, provider: event.target.value }))}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            >
+              <option value="gusto">Gusto</option>
+              <option value="adp">ADP</option>
+              <option value="quickbooks">QuickBooks</option>
+            </select>
+          </div>
+          <Input
+            modelValue={exportForm.start_date}
+            type="date"
+            label="Start Date"
+            required
+            onUpdateModelValue={(value) => setExportForm((prev) => ({ ...prev, start_date: value }))}
+          />
+          <Input
+            modelValue={exportForm.end_date}
+            type="date"
+            label="End Date"
+            required
+            onUpdateModelValue={(value) => setExportForm((prev) => ({ ...prev, end_date: value }))}
+          />
+          <div className="flex items-end">
+            <Button type="submit" loading={exportingPayroll}>Export CSV</Button>
+          </div>
+          <div className="flex items-end">
+            {exportError ? <p className="text-sm text-red-600">{exportError}</p> : null}
+          </div>
+        </form>
+
+        <div className="mt-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">Export history & status</h3>
+            <Button variant="secondary" size="sm" onClick={loadExportHistory}>Refresh</Button>
+          </div>
+          {exportHistoryError ? <p className="mt-2 text-sm text-red-600">{exportHistoryError}</p> : null}
+          <div className="mt-3 hidden md:block">
+            <Table
+              columns={exportColumns}
+              data={exportHistory}
+              loading={exportHistoryLoading}
+              hoverable
+              cellRenderers={{
+                provider: ({ value }) => <span className="font-medium text-gray-900">{value?.toUpperCase()}</span>,
+                range: ({ row }) => (
+                  <div className="text-sm text-gray-700">
+                    <div>{row.start_date} → {row.end_date}</div>
+                    <div className="text-xs text-gray-500">Rows: {row.row_count}</div>
+                  </div>
+                ),
+                totals: ({ row }) => (
+                  <div className="text-sm text-gray-700">
+                    <div>{formatHours(row.total_hours)}</div>
+                    <div className="text-xs text-gray-500">{formatCurrency(row.total_gross_pay)}</div>
+                  </div>
+                ),
+                status: ({ value, row }) => (
+                  <div className="flex flex-col gap-1">
+                    <Badge variant={exportStatusVariant(value)} size="sm">{value}</Badge>
+                    {row.error_message ? <span className="text-xs text-red-500">{row.error_message}</span> : null}
+                  </div>
+                ),
+                created: ({ row }) => (
+                  <div className="text-xs text-gray-600">
+                    <div>{formatDate(row.created_at)}</div>
+                    <div>{row.created_by_name || (row.created_by ? `User #${row.created_by}` : 'System')}</div>
+                  </div>
+                ),
+              }}
+            />
+          </div>
+
+          <div className="mt-3 space-y-3 md:hidden">
+            {exportHistory.map((entry) => (
+              <div key={entry.id} className="rounded border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{entry.provider?.toUpperCase()}</p>
+                    <p className="text-xs text-gray-600">{entry.start_date} → {entry.end_date}</p>
+                  </div>
+                  <Badge variant={exportStatusVariant(entry.status)} size="sm">{entry.status}</Badge>
+                </div>
+                <div className="mt-2 text-xs text-gray-600">
+                  <div>{formatHours(entry.total_hours)} · {formatCurrency(entry.total_gross_pay)}</div>
+                  <div>Rows: {entry.row_count}</div>
+                  <div>{formatDate(entry.created_at)}</div>
+                </div>
+                {entry.error_message ? <div className="mt-1 text-xs text-red-500">{entry.error_message}</div> : null}
+              </div>
+            ))}
+            {exportHistory.length === 0 && !exportHistoryLoading ? (
+              <div className="py-4 text-center text-sm text-gray-500">No payroll exports yet.</div>
+            ) : null}
+            {exportHistoryLoading ? <div className="py-4 text-center text-sm text-gray-500">Loading...</div> : null}
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
