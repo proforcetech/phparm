@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSIndexService;
 use PDO;
 
 /**
@@ -21,6 +22,7 @@ class CMSApiController
     private string $tablePrefix;
     private ?CMSCacheService $cacheService;
     private AccessGate $gate;
+    private CMSIndexService $indexService;
 
     public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null)
     {
@@ -29,6 +31,7 @@ class CMSApiController
         $this->gate = $gate;
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
         $this->cacheService = $cacheService;
+        $this->indexService = new CMSIndexService($connection, $this->tablePrefix);
     }
 
     /**
@@ -231,7 +234,12 @@ class CMSApiController
 
         $id = (int) $pdo->lastInsertId();
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -274,7 +282,12 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($data['slug'] ?? '');
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -307,7 +320,12 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($page['slug']);
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -325,6 +343,7 @@ class CMSApiController
             $stmt = $pdo->prepare("DELETE FROM {$this->table('pages')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
             $this->invalidatePageCache($page['slug']);
+            $this->indexService->deleteEntry('page', $id);
             return true;
         }
 
@@ -429,7 +448,12 @@ class CMSApiController
 
         $id = (int) $pdo->lastInsertId();
 
-        return $this->getComponent($user, $id);
+        $component = $this->getComponent($user, $id);
+        if ($component) {
+            $this->indexService->indexComponent($component);
+        }
+
+        return $component;
     }
 
     /**
@@ -474,7 +498,12 @@ class CMSApiController
         // Invalidate cache
         $this->invalidateComponentCache($data['slug'] ?? '');
 
-        return $this->getComponent($user, $id);
+        $component = $this->getComponent($user, $id);
+        if ($component) {
+            $this->indexService->indexComponent($component);
+        }
+
+        return $component;
     }
 
     /**
@@ -491,6 +520,7 @@ class CMSApiController
             $stmt = $pdo->prepare("DELETE FROM {$this->table('components')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
             $this->invalidateComponentCache($component['slug']);
+            $this->indexService->deleteEntry('component', $id);
             return true;
         }
 
