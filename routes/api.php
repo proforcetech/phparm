@@ -7666,6 +7666,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/cms/pages/{id}/revisions', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsPageController->revisions($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
         $router->post('/api/cms/pages', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $data = $cmsPageController->store($user, $request->body());
@@ -7679,6 +7691,19 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             if ($data === null) {
                 return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/pages/{id}/revisions/{revisionId}/restore', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $revisionId = (int) $request->getAttribute('revisionId');
+            $data = $cmsPageController->restoreRevision($user, $id, $revisionId);
+
+            if ($data === null) {
+                return Response::notFound('Revision not found');
             }
 
             return Response::json($data);
@@ -7908,6 +7933,20 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
         });
 
+        $router->get('/api/cms/components/{id}/revisions', function (Request $request) use ($cmsApiController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsApiController->listComponentRevisions($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Component not found');
+                }
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
         $router->post('/api/cms/components', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             try {
@@ -7923,6 +7962,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
             try {
                 $data = $cmsApiController->updateComponent($user, $id, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/components/{id}/revisions/{revisionId}/restore', function (Request $request) use ($cmsApiController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $revisionId = (int) $request->getAttribute('revisionId');
+            try {
+                $data = $cmsApiController->restoreComponentRevision($user, $id, $revisionId);
+                if ($data === null) {
+                    return Response::notFound('Revision not found');
+                }
                 return Response::json($data);
             } catch (\RuntimeException $e) {
                 return Response::forbidden($e->getMessage());

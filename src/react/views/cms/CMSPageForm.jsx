@@ -53,6 +53,9 @@ export default function CMSPageForm() {
   const [availableFooterComponents, setAvailableFooterComponents] = useState([])
   const [availableCategories, setAvailableCategories] = useState([])
   const [form, setForm] = useState(createDefaultForm())
+  const [revisions, setRevisions] = useState([])
+  const [revisionsLoading, setRevisionsLoading] = useState(false)
+  const [restoringRevisionId, setRestoringRevisionId] = useState(null)
 
   const categoryOptions = useMemo(() => {
     if (!availableCategories.length) return []
@@ -117,6 +120,16 @@ export default function CMSPageForm() {
 
       if (isEditing) {
         const pageData = await pageStore.fetchPage(id)
+        try {
+          setRevisionsLoading(true)
+          const revisionResponse = await cmsService.getPageRevisions(id)
+          setRevisions(revisionResponse.data || revisionResponse || [])
+        } catch (revisionError) {
+          console.error('Failed to load revisions:', revisionError)
+          setRevisions([])
+        } finally {
+          setRevisionsLoading(false)
+        }
         const draft = pageStore.drafts[draftKey]
         setForm({
           ...createDefaultForm(),
@@ -129,6 +142,7 @@ export default function CMSPageForm() {
           ...createDefaultForm(),
           ...(draft || {}),
         })
+        setRevisions([])
       }
     } catch (err) {
       console.error('Failed to load data:', err)
@@ -235,6 +249,31 @@ export default function CMSPageForm() {
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  const formatRevisionAction = (action) => {
+    if (!action) return 'Saved'
+    const normalized = action.toString()
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
+  const restoreRevision = async (revisionId) => {
+    if (!window.confirm('Restore this revision? This will overwrite the current page content.')) {
+      return
+    }
+
+    try {
+      setRestoringRevisionId(revisionId)
+      setError(null)
+      await cmsService.restorePageRevision(id, revisionId)
+      toast.success('Revision restored')
+      await loadData()
+    } catch (err) {
+      console.error('Failed to restore revision:', err)
+      setError(err.response?.data?.message || 'Failed to restore revision')
+    } finally {
+      setRestoringRevisionId(null)
     }
   }
 
@@ -498,6 +537,47 @@ export default function CMSPageForm() {
                       </Button>
                     ) : null}
                   </div>
+                </div>
+              </Card>
+
+              <Card header={<h3 className="text-lg font-medium text-gray-900">Revisions</h3>}>
+                <div className="space-y-3">
+                  {!isEditing ? (
+                    <p className="text-sm text-gray-500">Save the page to start tracking revisions.</p>
+                  ) : revisionsLoading ? (
+                    <Loading size="sm" text="Loading revisions..." />
+                  ) : revisions.length ? (
+                    <ul className="space-y-3">
+                      {revisions.map((revision) => (
+                        <li key={revision.id} className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {revision.author_name || 'Unknown author'}
+                              <span className="ml-2 text-xs text-gray-500">
+                                {formatRevisionAction(revision.action)}
+                              </span>
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {revision.created_at
+                                ? new Date(revision.created_at).toLocaleString()
+                                : 'Unknown time'}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={restoringRevisionId === revision.id}
+                            onClick={() => restoreRevision(revision.id)}
+                          >
+                            {restoringRevisionId === revision.id ? 'Restoring...' : 'Restore'}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No revisions yet.</p>
+                  )}
                 </div>
               </Card>
             </div>
