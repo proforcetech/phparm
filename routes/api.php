@@ -198,6 +198,8 @@ use App\Services\CMS\CMSCacheService;
 return function (Router $router, array $config, $connection) {
     $authConfig = $config['auth'];
     $rolePermissions = RolePermissions::fromDatabase($connection, $authConfig['roles'] ?? []);
+    $passwordPolicy = new \App\Support\Auth\PasswordPolicy($authConfig);
+    $passwordHistory = new \App\Support\Auth\PasswordHistoryRepository($connection);
     $authService = new \App\Support\Auth\AuthService(
         $connection,
         $rolePermissions,
@@ -209,6 +211,8 @@ return function (Router $router, array $config, $connection) {
             $connection,
             (int) ($authConfig['verification']['token_ttl_hours'] ?? 48)
         ),
+        $passwordHistory,
+        $passwordPolicy,
         $authConfig
     );
     $sessionManager = new \App\Support\Auth\UserSessionManager($connection);
@@ -4347,7 +4351,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $totpService,
         $rolePermissions,
         new \App\Services\ImportExport\CsvExportService($connection),
-        new \App\Services\Employee\EmployeeRepository($connection)
+        new \App\Services\Employee\EmployeeRepository($connection),
+        $passwordPolicy,
+        $passwordHistory,
+        (int) ($authConfig['passwords']['history_limit'] ?? 5)
     );
 
     // Role controller for role management

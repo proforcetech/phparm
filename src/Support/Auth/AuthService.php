@@ -16,6 +16,9 @@ class AuthService
     private RolePermissions $roles;
     private PasswordResetRepository $passwordResets;
     private EmailVerificationRepository $verifications;
+    private PasswordHistoryRepository $passwordHistory;
+    private PasswordPolicy $passwordPolicy;
+    private int $passwordHistoryLimit;
 
     /**
      * @var array<string, mixed>
@@ -30,13 +33,18 @@ class AuthService
         RolePermissions $roles,
         PasswordResetRepository $passwordResets,
         EmailVerificationRepository $verifications,
+        PasswordHistoryRepository $passwordHistory,
+        PasswordPolicy $passwordPolicy,
         array $config
     ) {
         $this->connection = $connection;
         $this->roles = $roles;
         $this->passwordResets = $passwordResets;
         $this->verifications = $verifications;
+        $this->passwordHistory = $passwordHistory;
+        $this->passwordPolicy = $passwordPolicy;
         $this->config = $config;
+        $this->passwordHistoryLimit = (int) ($config['passwords']['history_limit'] ?? 5);
     }
 
     public function registerStaff(string $name, string $email, string $password, string $role): User
@@ -46,7 +54,7 @@ class AuthService
         if ($role === 'customer') {
             throw new InvalidArgumentException('Staff role cannot be customer.');
         }
-        $this->assertPasswordStrength($password);
+        $this->passwordPolicy->assertPasswordStrength($password);
 
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
@@ -61,6 +69,7 @@ class AuthService
         ]);
 
         $userId = (int) $this->connection->pdo()->lastInsertId();
+        $this->recordPasswordHistory($userId, $passwordHash);
 
         if (($this->config['verification']['require_staff_verification'] ?? false) === true) {
             $this->verifications->createToken($userId);
@@ -122,22 +131,30 @@ class AuthService
 
     public function resetPassword(string $token, string $newPassword): bool
     {
-        $this->assertPasswordStrength($newPassword);
+        $this->passwordPolicy->assertPasswordStrength($newPassword);
 
         $reset = $this->passwordResets->findValidToken($token);
         if ($reset === null) {
             return false;
         }
 
+        $user = $this->findByEmail($reset->email);
+        if (!$user) {
+            return false;
+        }
+
+        $this->assertPasswordNotReused($user, $newPassword);
+        $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE users SET password = :password, updated_at = NOW() WHERE email = :email'
         );
         $stmt->execute([
-            'password' => password_hash($newPassword, PASSWORD_BCRYPT),
+            'password' => $passwordHash,
             'email' => $reset->email,
         ]);
 
         $this->passwordResets->markUsed($token);
+        $this->recordPasswordHistory($user->id, $passwordHash);
 
         return true;
     }
@@ -166,22 +183,26 @@ class AuthService
 
     public function acceptInvitation(string $token, string $password): ?User
     {
-        $this->assertPasswordStrength($password);
+        $this->passwordPolicy->assertPasswordStrength($password);
 
         $verification = $this->verifications->findValidToken($token);
         if ($verification === null) {
             return null;
         }
 
+        $user = $this->findUserById($verification->user_id);
+        $this->assertPasswordNotReused($user, $password);
+        $passwordHash = password_hash($password, PASSWORD_BCRYPT);
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE users SET password = :password, email_verified = 1, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute([
-            'password' => password_hash($password, PASSWORD_BCRYPT),
+            'password' => $passwordHash,
             'id' => $verification->user_id,
         ]);
 
         $this->verifications->markUsed($token);
+        $this->recordPasswordHistory($verification->user_id, $passwordHash);
 
         return $this->findUserById($verification->user_id);
     }
@@ -213,6 +234,7 @@ class AuthService
         ]);
 
         $userId = (int) $this->connection->pdo()->lastInsertId();
+        $this->recordPasswordHistory($userId, $passwordHash);
 
         if (($this->config['verification']['require_customer_verification'] ?? false) === true) {
             $this->verifications->createToken($userId);
@@ -228,15 +250,23 @@ class AuthService
         $params = ['name' => $fields['name'], 'id' => $user->id];
 
         if (isset($attributes['password'])) {
-            $this->assertPasswordStrength((string) $attributes['password']);
+            $this->passwordPolicy->assertPasswordStrength((string) $attributes['password']);
+            $this->assertPasswordNotReused($user, (string) $attributes['password']);
             $sql = 'UPDATE users SET name = :name, password = :password, updated_at = NOW() WHERE id = :id';
-            $params['password'] = password_hash((string) $attributes['password'], PASSWORD_BCRYPT);
+            $passwordHash = password_hash((string) $attributes['password'], PASSWORD_BCRYPT);
+            $params['password'] = $passwordHash;
         }
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($params);
 
-        return $this->findUserById($user->id);
+        $updated = $this->findUserById($user->id);
+
+        if (isset($passwordHash)) {
+            $this->recordPasswordHistory($user->id, $passwordHash);
+        }
+
+        return $updated;
     }
 
     public function recordLastActivity(int $userId): void
@@ -245,12 +275,21 @@ class AuthService
         $stmt->execute(['id' => $userId]);
     }
 
-    private function assertPasswordStrength(string $password): void
+    private function assertPasswordNotReused(User $user, string $password): void
     {
-        $minLength = (int) ($this->config['passwords']['min_length'] ?? 12);
-        if (strlen($password) < $minLength) {
-            throw new InvalidArgumentException('Password must be at least ' . $minLength . ' characters long.');
+        if (password_verify($password, $user->password)) {
+            throw new InvalidArgumentException('New password must be different from your current password.');
         }
+
+        if ($this->passwordHistory->wasPasswordUsed($user->id, $password, $this->passwordHistoryLimit)) {
+            throw new InvalidArgumentException('You cannot reuse a recent password.');
+        }
+    }
+
+    private function recordPasswordHistory(int $userId, string $passwordHash): void
+    {
+        $this->passwordHistory->record($userId, $passwordHash);
+        $this->passwordHistory->prune($userId, $this->passwordHistoryLimit);
     }
 
     private function findByEmail(string $email): ?User

@@ -7,6 +7,8 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Services\Employee\EmployeeRepository;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\PasswordHistoryRepository;
+use App\Support\Auth\PasswordPolicy;
 use App\Support\Auth\RolePermissions;
 use App\Support\Auth\TotpService;
 use App\Support\Auth\UnauthorizedException;
@@ -20,6 +22,9 @@ class UserController
     private RolePermissions $roles;
     private CsvExportService $csvExportService;
     private EmployeeRepository $employeeRepository;
+    private PasswordPolicy $passwordPolicy;
+    private PasswordHistoryRepository $passwordHistory;
+    private int $passwordHistoryLimit;
 
     public function __construct(
         UserRepository $repository,
@@ -27,7 +32,10 @@ class UserController
         TotpService $totpService,
         RolePermissions $roles,
         CsvExportService $csvExportService,
-        EmployeeRepository $employeeRepository
+        EmployeeRepository $employeeRepository,
+        PasswordPolicy $passwordPolicy,
+        PasswordHistoryRepository $passwordHistory,
+        int $passwordHistoryLimit
     ) {
         $this->repository = $repository;
         $this->gate = $gate;
@@ -35,6 +43,9 @@ class UserController
         $this->roles = $roles;
         $this->csvExportService = $csvExportService;
         $this->employeeRepository = $employeeRepository;
+        $this->passwordPolicy = $passwordPolicy;
+        $this->passwordHistory = $passwordHistory;
+        $this->passwordHistoryLimit = $passwordHistoryLimit;
     }
 
     /**
@@ -180,6 +191,8 @@ class UserController
             throw new InvalidArgumentException('Email already exists');
         }
 
+        $this->passwordPolicy->assertPasswordStrength((string) $data['password']);
+
         // Hash password
         $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
 
@@ -188,6 +201,7 @@ class UserController
         $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
         $newUser = $this->repository->create($data);
+        $this->recordPasswordHistory($newUser->id, $data['password']);
         $employee = $employeePayload !== null
             ? $this->employeeRepository->upsertByUserId($newUser->id, $employeePayload)
             : null;
@@ -239,6 +253,7 @@ class UserController
         }
 
         $temporaryPassword = bin2hex(random_bytes(24));
+        $temporaryPasswordHash = password_hash($temporaryPassword, PASSWORD_DEFAULT);
         $employeePayload = $this->normalizeEmployeePayload($data);
         $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
@@ -246,12 +261,13 @@ class UserController
             'name' => $data['name'],
             'email' => $data['email'],
             'role' => $data['role'],
-            'password' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
+            'password' => $temporaryPasswordHash,
             'email_verified' => false,
             'two_factor_enabled' => false,
             'two_factor_type' => 'none',
             'branch_id' => $data['branch_id'],
         ]);
+        $this->recordPasswordHistory($newUser->id, $temporaryPasswordHash);
         $employee = $employeePayload !== null
             ? $this->employeeRepository->upsertByUserId($newUser->id, $employeePayload)
             : null;
@@ -304,6 +320,12 @@ class UserController
 
         // Hash password if provided
         if (isset($data['password']) && !empty($data['password'])) {
+            $this->passwordPolicy->assertPasswordStrength((string) $data['password']);
+            $targetUserWithPassword = $this->repository->findWithPassword($id);
+            if (!$targetUserWithPassword) {
+                throw new InvalidArgumentException('User not found');
+            }
+            $this->assertPasswordNotReused($targetUserWithPassword, (string) $data['password']);
             $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
         } else {
             unset($data['password']);
@@ -314,6 +336,9 @@ class UserController
         $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
         $updatedUser = $this->repository->update($id, $data);
+        if (isset($data['password'])) {
+            $this->recordPasswordHistory($id, $data['password']);
+        }
         $employee = $employeePayload !== null
             ? $this->employeeRepository->upsertByUserId($id, $employeePayload)
             : $this->employeeRepository->findByUserId($id);
@@ -383,6 +408,8 @@ class UserController
                 throw new InvalidArgumentException('Password confirmation does not match');
             }
 
+            $this->passwordPolicy->assertPasswordStrength((string) $data['password']);
+            $this->assertPasswordNotReused($user, (string) $data['password']);
             $updateData['password'] = password_hash((string) $data['password'], PASSWORD_DEFAULT);
             $sensitiveChange = true;
         }
@@ -425,6 +452,10 @@ class UserController
         $updatedUser = $user;
         if (!empty($updateData)) {
             $updatedUser = $this->repository->update($user->id, $updateData);
+        }
+
+        if ($passwordChange && isset($updateData['password'])) {
+            $this->recordPasswordHistory($user->id, $updateData['password']);
         }
 
         if ($twoFactorChange && isset($data['two_factor_enabled']) && !$data['two_factor_enabled']) {
@@ -692,6 +723,23 @@ class UserController
             'created_at' => $employee->created_at,
             'updated_at' => $employee->updated_at,
         ];
+    }
+
+    private function assertPasswordNotReused(User $user, string $password): void
+    {
+        if (password_verify($password, $user->password)) {
+            throw new InvalidArgumentException('New password must be different from the current password.');
+        }
+
+        if ($this->passwordHistory->wasPasswordUsed($user->id, $password, $this->passwordHistoryLimit)) {
+            throw new InvalidArgumentException('You cannot reuse a recent password.');
+        }
+    }
+
+    private function recordPasswordHistory(int $userId, string $passwordHash): void
+    {
+        $this->passwordHistory->record($userId, $passwordHash);
+        $this->passwordHistory->prune($userId, $this->passwordHistoryLimit);
     }
 
     /**

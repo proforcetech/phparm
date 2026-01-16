@@ -34,6 +34,46 @@ const payStructureOptions = [
   { label: 'Salary', value: 'Salary' },
 ]
 
+const PASSWORD_RULES = {
+  minLength: 12,
+  minEntropy: 50,
+  minCategories: 3,
+}
+
+const estimateEntropy = (password) => {
+  if (!password) return 0
+  let poolSize = 0
+  if (/[a-z]/.test(password)) poolSize += 26
+  if (/[A-Z]/.test(password)) poolSize += 26
+  if (/\d/.test(password)) poolSize += 10
+  if (/[^a-zA-Z\d]/.test(password)) poolSize += 32
+  if (poolSize === 0) return 0
+  return password.length * Math.log2(poolSize)
+}
+
+const countCategories = (password) => {
+  let count = 0
+  if (/[a-z]/.test(password)) count += 1
+  if (/[A-Z]/.test(password)) count += 1
+  if (/\d/.test(password)) count += 1
+  if (/[^a-zA-Z\d]/.test(password)) count += 1
+  return count
+}
+
+const getPasswordError = (password) => {
+  if (!password) return ''
+  if (password.length < PASSWORD_RULES.minLength) {
+    return `Password must be at least ${PASSWORD_RULES.minLength} characters`
+  }
+  if (countCategories(password) < PASSWORD_RULES.minCategories) {
+    return 'Password must include at least three of: uppercase, lowercase, number, symbol'
+  }
+  if (estimateEntropy(password) < PASSWORD_RULES.minEntropy) {
+    return 'Password is too weak. Use a longer passphrase with mixed character types'
+  }
+  return ''
+}
+
 export default function UserForm() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -98,8 +138,9 @@ export default function UserForm() {
       isValid = false
     }
 
-    if (form.password && form.password.length < 12) {
-      setErrors((prev) => ({ ...prev, password: 'Password must be at least 12 characters' }))
+    const passwordError = getPasswordError(form.password)
+    if (passwordError) {
+      setErrors((prev) => ({ ...prev, password: passwordError }))
       isValid = false
     }
 
@@ -284,7 +325,9 @@ export default function UserForm() {
                       error={errors.password}
                       onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, password: value }))}
                     />
-                    <p className="mt-1 text-xs text-gray-500">Minimum 12 characters</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Minimum {PASSWORD_RULES.minLength} characters, use at least three character types.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>

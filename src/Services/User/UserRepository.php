@@ -164,6 +164,21 @@ class UserRepository
         return new User($row);
     }
 
+    public function findWithPassword(int $id): ?User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM users WHERE id = :id AND active = 1 LIMIT 1'
+        );
+        $stmt->execute(['id' => $id]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        return new User($row);
+    }
+
     /**
      * Find a user by email
      */
