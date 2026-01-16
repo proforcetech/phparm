@@ -323,7 +323,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
+[x] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
 
  Integration:
 

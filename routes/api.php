@@ -5990,6 +5990,69 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $leaveRequestService = new \App\Services\LeaveRequests\LeaveRequestService($connection);
+        $leaveAuditService = new \App\Services\Approval\ApprovalAuditService($connection);
+        $leaveController = new \App\Services\LeaveRequests\LeaveRequestController(
+            $leaveRequestService,
+            $leaveAuditService
+        );
+
+        $router->get('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'user_id' => $request->queryParam('user_id'),
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/leave-requests/mine', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->mine($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $data = $leaveController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/approve', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->approve($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/reject', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->reject($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
         $router->get('/api/time-tracking/technician/jobs', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->assignedJobs($user);

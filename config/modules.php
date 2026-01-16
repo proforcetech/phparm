@@ -142,7 +142,7 @@ return [
             'default_enabled' => true,
             'can_disable' => true,
             'permissions_prefix' => ['time.*'],
-            'routes' => ['/cp/time', '/cp/time-logs'],
+            'routes' => ['/cp/time', '/cp/time-logs', '/cp/leave-requests'],
             'sidebar_keys' => ['time', 'time-logs'],
             'depends_on' => ['core'],
         ],
