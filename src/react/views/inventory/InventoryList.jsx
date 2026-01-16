@@ -424,8 +424,9 @@ export default function InventoryList() {
                 <Button disabled={!hasNextPage} variant="secondary" onClick={nextPage}>Next</Button>
               </div>
             </div>
+           </Card>
           </div>
-        </Card>
+
 
         <Card className="space-y-3">
           <h3 className="text-lg font-semibold text-gray-900">Quick actions</h3>
