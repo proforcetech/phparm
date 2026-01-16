@@ -9,6 +9,7 @@ use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\ServiceType;
+use App\Services\Financial\FinancialEntryService;
 use App\Services\Inventory\CoreReturnService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
@@ -205,6 +206,8 @@ class InvoiceService
         $paymentId = $this->insertPayment($invoiceId, $payload);
         $this->syncInvoiceBalance($invoiceId);
         $this->log('payment.recorded', $invoiceId, $actorId, ['payment_id' => $paymentId, 'payload' => $payload]);
+
+        $this->recordUndepositedFundsEntry($invoiceId, $paymentId, $payload, $actorId);
 
         return new Payment([
             'id' => $paymentId,
@@ -765,6 +768,42 @@ class InvoiceService
         ]);
 
         return (int) $this->connection->pdo()->lastInsertId();
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function recordUndepositedFundsEntry(int $invoiceId, int $paymentId, array $payload, ?int $actorId): void
+    {
+        $method = strtolower((string) ($payload['method'] ?? ''));
+        if (!in_array($method, ['cash', 'check'], true)) {
+            return;
+        }
+
+        $amount = (float) ($payload['amount'] ?? 0);
+        if ($amount <= 0) {
+            return;
+        }
+
+        $invoice = $this->fetchInvoice($invoiceId);
+        $customerName = null;
+        if ($invoice !== null) {
+            $customer = $this->fetchCustomer($invoice->customer_id);
+            $customerName = $customer['name'] ?? null;
+        }
+
+        $entryService = new FinancialEntryService($this->connection, $this->audit);
+        $entryService->create([
+            'type' => 'income',
+            'category' => 'Undeposited Funds',
+            'reference' => 'invoice-' . $invoiceId,
+            'purchase_order' => 'invoice',
+            'amount' => $amount,
+            'entry_date' => date('Y-m-d'),
+            'vendor' => $customerName ?: 'Customer',
+            'description' => sprintf('Cash/check payment recorded for invoice %d; held in Undeposited Funds.', $invoiceId),
+            'idempotency_key' => 'undeposited-payment-' . $paymentId,
+        ], $actorId ?? 0);
     }
 
     private function fetchInvoice(int $id): ?Invoice

@@ -5848,6 +5848,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Financial\CashDrawerService($connection, $financialEntryService),
             $gate
         );
+        $cashDepositController = new \App\Services\Financial\CashDepositController(
+            new \App\Services\Financial\CashDepositService($connection, $financialEntryService),
+            $gate
+        );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
         $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
             new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
@@ -6028,6 +6032,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ];
             $data = $cashDrawerController->closeouts($user, $filters);
             return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-deposits/undeposited', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $cashDepositController->undeposited($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-deposits', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'status' => $request->queryParam('status'),
+            ];
+            $data = $cashDepositController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-deposits/{id}', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cashDepositController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/cash-deposits', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $data = $cashDepositController->create($user, $request->body());
+            return Response::created($data);
         });
 
         $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
