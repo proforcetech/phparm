@@ -83,6 +83,11 @@ class WorkorderRepository
             $bindings['customer_id'] = (int) $filters['customer_id'];
         }
 
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
         if (!empty($filters['vehicle_id'])) {
             $clauses[] = 'vehicle_id = :vehicle_id';
             $bindings['vehicle_id'] = (int) $filters['vehicle_id'];
@@ -170,6 +175,11 @@ class WorkorderRepository
         if (!empty($filters['technician_id'])) {
             $clauses[] = 'assigned_technician_id = :technician_id';
             $bindings['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
         }
 
         if (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '') {

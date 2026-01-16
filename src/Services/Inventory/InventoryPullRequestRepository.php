@@ -70,6 +70,11 @@ class InventoryPullRequestRepository
             $bindings['workorder_id'] = (int) $filters['workorder_id'];
         }
 
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'pr.branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
         if (!empty($filters['status'])) {
             $clauses[] = 'pr.status = :status';
             $bindings['status'] = $filters['status'];
@@ -129,7 +134,7 @@ class InventoryPullRequestRepository
      * @param string[] $statuses
      * @return array{counts: array<string, int>, items: InventoryPullRequest[]}
      */
-    public function getDashboardNotifications(array $statuses, int $limit = 5): array
+    public function getDashboardNotifications(array $statuses, int $limit = 5, ?int $branchId = null): array
     {
         $filteredStatuses = array_values(array_filter(
             $statuses,
@@ -153,12 +158,18 @@ class InventoryPullRequestRepository
         $counts = array_fill_keys($filteredStatuses, 0);
         $countSql = "SELECT pr.status, COUNT(*) as count
             FROM inventory_pull_requests pr
-            WHERE pr.status IN ($placeholdersSql)
-            GROUP BY pr.status";
+            WHERE pr.status IN ($placeholdersSql)";
+        if ($branchId !== null) {
+            $countSql .= ' AND pr.branch_id = :branch_id';
+        }
+        $countSql .= ' GROUP BY pr.status';
 
         $stmt = $this->connection->pdo()->prepare($countSql);
         foreach ($filteredStatuses as $index => $status) {
             $stmt->bindValue(':status_' . $index, $status);
+        }
+        if ($branchId !== null) {
+            $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_INT);
         }
         $stmt->execute();
 
@@ -178,13 +189,20 @@ class InventoryPullRequestRepository
             LEFT JOIN inventory_items ii ON pr.inventory_item_id = ii.id
             LEFT JOIN users u1 ON pr.requested_by = u1.id
             LEFT JOIN users u2 ON pr.fulfilled_by = u2.id
-            WHERE pr.status IN ($placeholdersSql)
+            WHERE pr.status IN ($placeholdersSql)";
+        if ($branchId !== null) {
+            $sql .= ' AND pr.branch_id = :branch_id';
+        }
+        $sql .= '
             ORDER BY pr.created_at DESC
             LIMIT :limit";
 
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($filteredStatuses as $index => $status) {
             $stmt->bindValue(':status_' . $index, $status);
+        }
+        if ($branchId !== null) {
+            $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_INT);
         }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
@@ -240,18 +258,19 @@ class InventoryPullRequestRepository
         $requestType = $this->determineRequestType($data);
 
         $sql = "INSERT INTO inventory_pull_requests (
-                workorder_id, workorder_job_id, inventory_item_id, sku, description,
+                branch_id, workorder_id, workorder_job_id, inventory_item_id, sku, description,
                 quantity_requested, quantity_fulfilled, unit_cost, unit_price,
                 status, request_type, notes, vendor, order_reference,
                 requested_by, requested_at
             ) VALUES (
-                :workorder_id, :workorder_job_id, :inventory_item_id, :sku, :description,
+                :branch_id, :workorder_id, :workorder_job_id, :inventory_item_id, :sku, :description,
                 :quantity_requested, :quantity_fulfilled, :unit_cost, :unit_price,
                 :status, :request_type, :notes, :vendor, :order_reference,
                 :requested_by, NOW()
             )";
 
         $this->connection->pdo()->prepare($sql)->execute([
+            'branch_id' => array_key_exists('branch_id', $data) ? $data['branch_id'] : null,
             'workorder_id' => (int) $data['workorder_id'],
             'workorder_job_id' => isset($data['workorder_job_id']) ? (int) $data['workorder_job_id'] : null,
             'inventory_item_id' => isset($data['inventory_item_id']) ? (int) $data['inventory_item_id'] : null,
@@ -487,7 +506,7 @@ class InventoryPullRequestRepository
      * Get summary counts for dashboard/widgets
      * @return array<string, int>
      */
-    public function getSummary(): array
+    public function getSummary(?int $branchId = null): array
     {
         $sql = "SELECT
                 SUM(CASE WHEN status = 'pending' AND request_type = 'pull' THEN 1 ELSE 0 END) as pending_pulls,
@@ -496,8 +515,14 @@ class InventoryPullRequestRepository
                 COUNT(*) as total
             FROM inventory_pull_requests
             WHERE status NOT IN ('pulled', 'received', 'cancelled')";
+        $params = [];
+        if ($branchId !== null) {
+            $sql .= ' AND branch_id = :branch_id';
+            $params['branch_id'] = $branchId;
+        }
 
-        $stmt = $this->connection->pdo()->query($sql);
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return [
@@ -548,10 +573,12 @@ class InventoryPullRequestRepository
     private function deductFromInventory(int $itemId, int $quantity, int $pullRequestId, ?int $actorId): void
     {
         $beforeStmt = $this->connection->pdo()->prepare(
-            'SELECT stock_quantity FROM inventory_items WHERE id = :id'
+            'SELECT stock_quantity, branch_id FROM inventory_items WHERE id = :id'
         );
         $beforeStmt->execute(['id' => $itemId]);
-        $quantityBefore = (int) ($beforeStmt->fetchColumn() ?? 0);
+        $beforeRow = $beforeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $quantityBefore = (int) ($beforeRow['stock_quantity'] ?? 0);
+        $branchId = isset($beforeRow['branch_id']) ? (int) $beforeRow['branch_id'] : null;
 
         $sql = "UPDATE inventory_items SET
                 stock_quantity = GREATEST(0, stock_quantity - :quantity),
@@ -576,7 +603,8 @@ class InventoryPullRequestRepository
             'pull_request',
             sprintf('pull_request:%d', $pullRequestId),
             'Inventory pull request fulfillment',
-            $actorId
+            $actorId,
+            $branchId
         );
     }
 

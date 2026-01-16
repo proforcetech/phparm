@@ -511,12 +511,14 @@ class CoreReturnService
 
     private function incrementInventory(int $inventoryItemId, int $coreReturnId, int $userId, string $reason): void
     {
-        $beforeStmt = $this->connection->pdo()->prepare('SELECT stock_quantity FROM inventory_items WHERE id = :id');
+        $beforeStmt = $this->connection->pdo()->prepare('SELECT stock_quantity, branch_id FROM inventory_items WHERE id = :id');
         $beforeStmt->execute(['id' => $inventoryItemId]);
-        $before = $beforeStmt->fetchColumn();
-        if ($before === false) {
+        $beforeRow = $beforeStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$beforeRow) {
             return;
         }
+        $before = (int) ($beforeRow['stock_quantity'] ?? 0);
+        $branchId = isset($beforeRow['branch_id']) ? (int) $beforeRow['branch_id'] : null;
 
         $updateStmt = $this->connection->pdo()->prepare(
             'UPDATE inventory_items SET stock_quantity = stock_quantity + 1 WHERE id = :id'
@@ -533,12 +535,13 @@ class CoreReturnService
 
         $this->transactionRepository->record(
             $inventoryItemId,
-            (int) $before,
+            $before,
             (int) $after,
             'core_return',
             (string) $coreReturnId,
             $reason,
-            $userId
+            $userId,
+            $branchId
         );
     }
 

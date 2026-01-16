@@ -11,6 +11,7 @@ class User extends BaseModel
     public string $role = '';
     public bool $email_verified = false;
     public ?int $customer_id = null;
+    public ?int $branch_id = null;
     public ?string $remember_token = null;
     public bool $active = true;
     public bool $two_factor_enabled = false;

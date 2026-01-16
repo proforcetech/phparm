@@ -21,7 +21,8 @@ class InventoryTransactionRepository
         string $source,
         ?string $reference = null,
         ?string $reason = null,
-        ?int $actorId = null
+        ?int $actorId = null,
+        ?int $branchId = null
     ): void {
         if ($quantityBefore === $quantityAfter) {
             return;
@@ -29,6 +30,7 @@ class InventoryTransactionRepository
 
         $sql = 'INSERT INTO inventory_transactions (
                 inventory_item_id,
+                branch_id,
                 quantity_before,
                 quantity_after,
                 quantity_change,
@@ -51,6 +53,7 @@ class InventoryTransactionRepository
 
         $this->connection->pdo()->prepare($sql)->execute([
             'inventory_item_id' => $inventoryItemId,
+            'branch_id' => $branchId,
             'quantity_before' => $quantityBefore,
             'quantity_after' => $quantityAfter,
             'quantity_change' => $quantityAfter - $quantityBefore,

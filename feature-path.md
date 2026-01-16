@@ -371,6 +371,8 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
+[x] Data Structure: Add branch_id to almost every major table (Users, Inventory, Invoices, Workorders).
+[ ] Inventory Transfer: A workflow to move parts from "Main St Branch" to "Downtown Branch" without buying/selling.
 [ ] Data Structure: Add branch_id to almost every major table (Users, Inventory, Invoices, Workorders).
 [x] Inventory Transfer: A workflow to move parts from "Main St Branch" to "Downtown Branch" without buying/selling.
 [ ] Reporting: Ability to filter Dashboards by "Current Branch" vs "All Locations".

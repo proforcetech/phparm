@@ -22,6 +22,7 @@ class WorkorderJob extends BaseModel
 
     public int $id;
     public int $workorder_id;
+    public ?int $branch_id = null;
     public int $estimate_job_id;
     public ?int $service_type_id = null;
     public string $title;

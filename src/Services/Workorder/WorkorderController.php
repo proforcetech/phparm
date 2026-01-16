@@ -87,6 +87,8 @@ class WorkorderController
             throw new InvalidArgumentException('Workorder not found');
         }
 
+        $this->assertBranchAccess($user, $workorder->branch_id);
+
         // Customer can only view their own workorders
         if ($user->role === 'customer' && $user->customer_id !== null && $workorder->customer_id !== $user->customer_id) {
             throw new UnauthorizedException('Cannot view another customer\'s workorder.');
@@ -119,7 +121,8 @@ class WorkorderController
         $workorder = $this->service->createFromEstimate(
             (int) $estimateId,
             $technicianId ? (int) $technicianId : null,
-            $user->id
+            $user->id,
+            $this->resolveBranchFilter($user)
         );
 
         $data = $this->enrichWorkorder($workorder, true);
@@ -153,6 +156,9 @@ class WorkorderController
         }
 
         $before = $this->repository->find($id);
+        if ($before !== null) {
+            $this->assertBranchAccess($user, $before->branch_id);
+        }
         $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId, $location);
 
         if ($status === Workorder::STATUS_GOA) {
@@ -187,6 +193,9 @@ class WorkorderController
         $recommendedDriver = $payload['recommended_driver'] ?? null;
 
         $before = $this->repository->find($id);
+        if ($before !== null) {
+            $this->assertBranchAccess($user, $before->branch_id);
+        }
         $workorder = $this->repository->assignTechnician(
             $id,
             $technicianId ? (int) $technicianId : null,
@@ -256,6 +265,11 @@ class WorkorderController
             );
         }
 
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
         $workorder = $this->repository->updatePriority($id, $priority, $user->id);
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
@@ -273,6 +287,11 @@ class WorkorderController
     {
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'invoices.create');
+
+        $workorder = $this->repository->find($id);
+        if ($workorder !== null) {
+            $this->assertBranchAccess($user, $workorder->branch_id);
+        }
 
         $dueDate = $payload['due_date'] ?? null;
 
@@ -321,6 +340,11 @@ class WorkorderController
             throw new InvalidArgumentException('sub_estimate_id is required');
         }
 
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
         $workorder = $this->service->addSubEstimateJobs($id, (int) $subEstimateId, $user->id);
 
         $data = $this->enrichWorkorder($workorder, true);
@@ -344,6 +368,8 @@ class WorkorderController
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }
+
+        $this->assertBranchAccess($user, $workorder->branch_id);
 
         if ($user->role === 'customer' && $user->customer_id !== null && $workorder->customer_id !== $user->customer_id) {
             throw new UnauthorizedException('Cannot view another customer\'s workorder.');
@@ -632,6 +658,7 @@ class WorkorderController
             'created_to' => $params['created_to'] ?? null,
             'status_age_min_days' => $params['status_age_min_days'] ?? null,
             'status_age_max_days' => $params['status_age_max_days'] ?? null,
+            'branch_id' => $this->resolveBranchFilter($user, $params),
         ], fn($v) => $v !== null && $v !== '');
 
         // Customers can only see their own workorders
@@ -775,5 +802,32 @@ class WorkorderController
     private function assertManageAccess(User $user): void
     {
         $this->gate->assert($user, 'workorders.manage');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveBranchFilter(User $user, array $params = []): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $params)) {
+            return null;
+        }
+
+        return $params['branch_id'] !== '' && $params['branch_id'] !== null ? (int) $params['branch_id'] : null;
+    }
+
+    private function assertBranchAccess(User $user, ?int $branchId): void
+    {
+        if ($user->role === 'admin') {
+            return;
+        }
+
+        if ($user->branch_id !== null && $branchId !== null && $user->branch_id !== $branchId) {
+            throw new UnauthorizedException('Cannot access workorders for another branch.');
+        }
     }
 }

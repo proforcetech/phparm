@@ -23,6 +23,7 @@ CREATE TABLE users (
     role VARCHAR(50) NOT NULL,
     email_verified TINYINT(1) DEFAULT 0,
     customer_id INT UNSIGNED NULL,
+    branch_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
     two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
     two_factor_type ENUM('none', 'totp', 'sms', 'email') NOT NULL DEFAULT 'none',
@@ -35,7 +36,8 @@ CREATE TABLE users (
     last_activity_at TIMESTAMP NULL DEFAULT NULL,
    INDEX idx_users_two_factor_setup_pending (two_factor_setup_pending),
    INDEX idx_users_last_activity (last_activity_at),
-   INDEX idx_users_active (active)
+   INDEX idx_users_active (active),
+   INDEX idx_users_branch (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customers (
@@ -201,6 +203,7 @@ CREATE TABLE invoices (
     is_mobile TINYINT(1) NOT NULL DEFAULT 0,
     estimate_id INT UNSIGNED NULL,
     workorder_id INT UNSIGNED NULL,
+    branch_id INT UNSIGNED NULL,
     service_type_id INT UNSIGNED NULL,
     status VARCHAR(40) NOT NULL,
     issue_date DATE NOT NULL,
@@ -221,6 +224,7 @@ CREATE TABLE invoices (
     INDEX idx_invoice_customer (customer_id),
     INDEX idx_invoices_service_type (service_type_id),
     INDEX idx_invoice_workorder (workorder_id),
+    INDEX idx_invoices_branch (branch_id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_invoice_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
     CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
@@ -231,6 +235,7 @@ CREATE TABLE invoices (
 CREATE TABLE invoice_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NULL,
     type VARCHAR(40) NOT NULL,
     sku VARCHAR(120) NULL,
     inventory_item_id INT UNSIGNED NULL,
@@ -243,6 +248,7 @@ CREATE TABLE invoice_items (
     core_return_id INT UNSIGNED NULL,
     core_price DECIMAL(10, 2) NULL,
     INDEX idx_invoice_item_invoice (invoice_id),
+    INDEX idx_invoice_items_branch (branch_id),
     INDEX idx_invoice_item_sku (sku),
     INDEX idx_invoice_item_inventory (inventory_item_id),
     INDEX idx_invoice_item_core (core_return_id),
@@ -1220,6 +1226,7 @@ ALTER TABLE invoices ADD CONSTRAINT fk_invoice_workorder FOREIGN KEY (workorder_
 CREATE TABLE workorder_jobs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     workorder_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NULL,
     estimate_job_id INT UNSIGNED NOT NULL,
     service_type_id INT UNSIGNED NULL,
     title VARCHAR(160) NOT NULL,
@@ -1236,6 +1243,7 @@ CREATE TABLE workorder_jobs (
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_workorder_job_workorder (workorder_id),
+    INDEX idx_workorder_job_branch (branch_id),
     INDEX idx_workorder_job_estimate_job (estimate_job_id),
     INDEX idx_workorder_job_status (status),
     CONSTRAINT fk_workorder_job_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE CASCADE,
@@ -1251,6 +1259,7 @@ ALTER TABLE time_entries ADD CONSTRAINT fk_time_entry_workorder_job FOREIGN KEY 
 CREATE TABLE workorder_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     workorder_job_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NULL,
     estimate_item_id INT UNSIGNED NULL,
     type VARCHAR(40) NOT NULL,
     sku VARCHAR(120) NULL,
@@ -1266,6 +1275,7 @@ CREATE TABLE workorder_items (
     core_price DECIMAL(10, 2) NULL,
     INDEX idx_workorder_item_core (core_return_id),
     INDEX idx_workorder_item_job (workorder_job_id),
+    INDEX idx_workorder_item_branch (branch_id),
     INDEX idx_workorder_item_estimate_item (estimate_item_id),
     INDEX idx_workorder_item_sku (sku),
     INDEX idx_workorder_item_inventory (inventory_item_id),
@@ -1653,6 +1663,7 @@ CREATE TABLE users (
     role VARCHAR(50) NOT NULL,
     email_verified TINYINT(1) DEFAULT 0,
     customer_id INT UNSIGNED NULL,
+    branch_id INT UNSIGNED NULL,
     remember_token VARCHAR(100) NULL,
     two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
     two_factor_type ENUM('none', 'totp', 'sms', 'email') NOT NULL DEFAULT 'none',
@@ -1665,7 +1676,8 @@ CREATE TABLE users (
     last_activity_at TIMESTAMP NULL DEFAULT NULL,
     INDEX idx_users_two_factor_setup_pending (two_factor_setup_pending),
     INDEX idx_users_last_activity (last_activity_at),
-    INDEX idx_users_active (active)
+    INDEX idx_users_active (active),
+    INDEX idx_users_branch (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customers (
@@ -1748,11 +1760,13 @@ CREATE TABLE invoices (
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT UNSIGNED NOT NULL,
     estimate_id INT UNSIGNED NULL,
+    branch_id INT UNSIGNED NULL,
     status VARCHAR(40) NOT NULL,
     total DECIMAL(12,2) DEFAULT 0,
     created_at TIMESTAMP NULL,
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
-    CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
+    CONSTRAINT fk_invoice_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
+    INDEX idx_invoices_branch (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Impound System
@@ -2865,6 +2879,7 @@ CREATE TABLE truck_checklist_entry_items (
 CREATE TABLE inventory_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     inventory_item_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NULL,
     quantity_before INT NOT NULL,
     quantity_after INT NOT NULL,
     quantity_change INT NOT NULL,
@@ -2874,6 +2889,7 @@ CREATE TABLE inventory_transactions (
     created_by INT UNSIGNED NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_inventory_transactions_item (inventory_item_id),
+    INDEX idx_inventory_transactions_branch (branch_id),
     INDEX idx_inventory_transactions_source (source),
     INDEX idx_inventory_transactions_reference (reference),
     CONSTRAINT fk_inventory_transactions_item FOREIGN KEY (inventory_item_id)
@@ -2902,6 +2918,7 @@ CREATE TABLE inventory_reorder_point_history (
 
 CREATE TABLE inventory_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT UNSIGNED NULL,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     sku VARCHAR(120) NULL,
@@ -2936,6 +2953,7 @@ CREATE TABLE inventory_items (
     INDEX idx_inventory_barcode (barcode),
     INDEX idx_inventory_manufacturer_pn (manufacturer_part_number),
     INDEX idx_inventory_is_low_stock (is_low_stock),
+    INDEX idx_inventory_branch (branch_id),
     FULLTEXT INDEX idx_inventory_search (name, description),
     INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by),
     INDEX idx_inventory_sku_prefix (sku(20))
@@ -2987,6 +3005,7 @@ CREATE TABLE inventory_vehicle_compatibility (
 -- Create inventory pull requests table for workorder parts management
 CREATE TABLE inventory_pull_requests (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT UNSIGNED NULL,
     workorder_id INT UNSIGNED NOT NULL,
     workorder_job_id INT UNSIGNED NULL COMMENT 'Optional link to specific job',
 
@@ -3033,7 +3052,8 @@ CREATE TABLE inventory_pull_requests (
     INDEX idx_pull_request_workorder (workorder_id),
     INDEX idx_pull_request_status (status),
     INDEX idx_pull_request_type (request_type),
-    INDEX idx_pull_request_inventory (inventory_item_id)
+    INDEX idx_pull_request_inventory (inventory_item_id),
+    INDEX idx_pull_request_branch (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE inventory_transfers (
@@ -3104,6 +3124,7 @@ CREATE TABLE inventory_reorder_point_history (
 
 CREATE TABLE inventory_stock_orders (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT UNSIGNED NULL,
     inventory_item_id INT UNSIGNED NULL,
     sku VARCHAR(120) NULL,
     description VARCHAR(255) NOT NULL,
@@ -3120,7 +3141,8 @@ CREATE TABLE inventory_stock_orders (
     CONSTRAINT fk_stock_order_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_stock_order_inventory (inventory_item_id),
     INDEX idx_stock_order_status (status),
-    INDEX idx_stock_order_expected_arrival (expected_arrival_date)
+    INDEX idx_stock_order_expected_arrival (expected_arrival_date),
+    INDEX idx_stock_order_branch (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS document_vault_documents (
