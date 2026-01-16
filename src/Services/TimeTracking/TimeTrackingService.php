@@ -161,6 +161,7 @@ class TimeTrackingService
 
         $rows = array_map(static function (array $row) {
             $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+            $row['payroll_included'] = isset($row['payroll_included']) ? (bool) $row['payroll_included'] : false;
 
             return $row;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -236,6 +237,8 @@ class TimeTrackingService
             'Reviewed By',
             'Reviewed At',
             'Review Notes',
+            'Payroll Included',
+            'Payroll Included At',
             'Manual Override',
             'Notes',
             'Adjustments',
@@ -279,6 +282,8 @@ class TimeTrackingService
                 $row['reviewer_name'] ?? null,
                 $row['reviewed_at'] ?? null,
                 $row['review_notes'] ?? null,
+                !empty($row['payroll_included']) ? 'Yes' : 'No',
+                $row['payroll_included_at'] ?? null,
                 ($row['manual_override'] ?? false) ? 'Yes' : 'No',
                 $row['notes'] ?? null,
                 implode(' | ', $adjustmentNotes),
@@ -511,12 +516,16 @@ class TimeTrackingService
         $reviewedBy = $entry->reviewed_by;
         $reviewedAt = $entry->reviewed_at;
         $reviewNotes = $entry->review_notes;
+        $payrollIncluded = $entry->payroll_included ?? false;
+        $payrollIncludedAt = $entry->payroll_included_at;
 
         if ($override) {
             $status = 'pending';
             $reviewedBy = null;
             $reviewedAt = null;
             $reviewNotes = null;
+            $payrollIncluded = false;
+            $payrollIncludedAt = null;
         }
 
         $start = new DateTimeImmutable($startedAt);
@@ -527,7 +536,7 @@ class TimeTrackingService
         $minutes = $end !== null ? max(0, ($end->getTimestamp() - $start->getTimestamp()) / 60) : null;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, en_route_at = :en_route_at, on_site_at = :on_site_at, wrap_up_at = :wrap_up_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, task_id = :task_id, task_name = :task_name, flat_rate_minutes = :flat_rate_minutes, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
+            'UPDATE time_entries SET started_at = :started_at, ended_at = :ended_at, en_route_at = :en_route_at, on_site_at = :on_site_at, wrap_up_at = :wrap_up_at, duration_minutes = :minutes, estimate_job_id = :estimate_job_id, task_id = :task_id, task_name = :task_name, flat_rate_minutes = :flat_rate_minutes, notes = :notes, manual_override = :override, status = :status, reviewed_by = :reviewed_by, reviewed_at = :reviewed_at, review_notes = :review_notes, payroll_included = :payroll_included, payroll_included_at = :payroll_included_at, updated_at = NOW() WHERE id = :id'
         );
 
         $stmt->execute([
@@ -548,6 +557,8 @@ class TimeTrackingService
             'reviewed_by' => $reviewedBy,
             'reviewed_at' => $reviewedAt,
             'review_notes' => $reviewNotes,
+            'payroll_included' => $payrollIncluded ? 1 : 0,
+            'payroll_included_at' => $payrollIncludedAt,
         ]);
 
         $updated = $this->find($entryId);
@@ -591,7 +602,13 @@ class TimeTrackingService
         return $updated;
     }
 
-    public function review(int $entryId, int $actorId, string $decision, ?string $notes = null): ?TimeEntry
+    public function review(
+        int $entryId,
+        int $actorId,
+        string $decision,
+        ?string $notes = null,
+        ?bool $includeInPayroll = null
+    ): ?TimeEntry
     {
         $entry = $this->find($entryId);
         if ($entry === null) {
@@ -602,8 +619,10 @@ class TimeTrackingService
             throw new InvalidArgumentException('Invalid review status');
         }
 
+        $shouldIncludeInPayroll = $decision === 'approved' ? ($includeInPayroll ?? true) : false;
+
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE time_entries SET status = :status, reviewed_by = :reviewed_by, reviewed_at = NOW(), review_notes = :review_notes, updated_at = NOW() WHERE id = :id'
+            'UPDATE time_entries SET status = :status, reviewed_by = :reviewed_by, reviewed_at = NOW(), review_notes = :review_notes, payroll_included = :payroll_included, payroll_included_at = :payroll_included_at, updated_at = NOW() WHERE id = :id'
         );
 
         $stmt->execute([
@@ -611,6 +630,8 @@ class TimeTrackingService
             'status' => $decision,
             'reviewed_by' => $actorId,
             'review_notes' => $notes,
+            'payroll_included' => $shouldIncludeInPayroll ? 1 : 0,
+            'payroll_included_at' => $shouldIncludeInPayroll ? (new DateTimeImmutable())->format('Y-m-d H:i:s') : null,
         ]);
 
         $this->recordAdjustment(
@@ -650,7 +671,15 @@ class TimeTrackingService
         );
 
         $updated = $this->find($entryId);
-        $this->log($actorId, 'time.review', $entryId, ['status' => $decision, 'notes' => $notes]);
+        $this->log($actorId, 'time.review', $entryId, [
+            'status' => $decision,
+            'notes' => $notes,
+            'payroll_included' => $shouldIncludeInPayroll,
+        ]);
+        $this->log($actorId, 'time.' . $decision, $entryId, [
+            'notes' => $notes,
+            'payroll_included' => $shouldIncludeInPayroll,
+        ]);
 
         return $updated;
     }
@@ -671,6 +700,7 @@ class TimeTrackingService
         }
 
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+        $row['payroll_included'] = isset($row['payroll_included']) ? (bool) $row['payroll_included'] : false;
 
         return new TimeEntry($row);
     }
@@ -691,6 +721,7 @@ class TimeTrackingService
         }
 
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+        $row['payroll_included'] = isset($row['payroll_included']) ? (bool) $row['payroll_included'] : false;
 
         return new TimeEntry($row);
     }
@@ -707,6 +738,7 @@ class TimeTrackingService
 
         $rows = array_map(static function (array $row) {
             $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+            $row['payroll_included'] = isset($row['payroll_included']) ? (bool) $row['payroll_included'] : false;
 
             return $row;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));

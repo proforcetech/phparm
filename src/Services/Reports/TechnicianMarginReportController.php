@@ -4,6 +4,7 @@ namespace App\Services\Reports;
 
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\BranchScope;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
 
@@ -33,6 +34,7 @@ class TechnicianMarginReportController
         $branchId = isset($params['branch_id']) && $params['branch_id'] !== ''
             ? (int) $params['branch_id']
             : null;
+        $branchId = BranchScope::resolveBranchId($user, $branchId);
 
         if (!$startDate || !$endDate) {
             throw new InvalidArgumentException('start_date and end_date are required');

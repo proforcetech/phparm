@@ -1732,6 +1732,18 @@ return Response::json([
     };
 
     // Public CMS content delivery endpoints
+    $router->get('/api/cms/page/preview/{token}', function (Request $request) use ($cmsPageController) {
+        $token = (string) $request->getAttribute('token');
+
+        $html = $cmsPageController->previewPageByToken($token);
+
+        if ($html === null) {
+            return Response::notFound('Preview not found');
+        }
+
+        return Response::html($html);
+    });
+
     $router->get('/api/cms/page/{slug}', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
@@ -1840,6 +1852,9 @@ return Response::json([
 
         $dashboardService = new \App\Services\Dashboard\DashboardService($connection);
         $dashboardController = new \App\Services\Dashboard\DashboardController($dashboardService);
+        $branchController = new \App\Services\Branch\BranchController(
+            new \App\Services\Branch\BranchRepository($connection)
+        );
         $inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
             $connection,
             $auditLogger
@@ -1867,6 +1882,13 @@ return Response::json([
                 $params['technician_id'] = (int) $requestedTechnician;
             }
 
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
+            }
+
             $data = $dashboardController->handleKpis($params);
             return Response::json($data);
         });
@@ -1891,6 +1913,13 @@ return Response::json([
                 $params['technician_id'] = $user->id;
             } elseif ($requestedTechnician !== null) {
                 $params['technician_id'] = (int) $requestedTechnician;
+            }
+
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
             }
 
             $data = $dashboardController->handleMonthlyTrends($params);
@@ -1920,6 +1949,13 @@ return Response::json([
                 $params['technician_id'] = (int) $requestedTechnician;
             }
 
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
+            }
+
             $data = $dashboardController->handleServiceTypeBreakdown($params);
             return Response::json($data);
         });
@@ -1942,7 +1978,23 @@ return Response::json([
                 $params['technician_id'] = (int) $requestedTechnician;
             }
 
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            if ($branchId !== null) {
+                $params['branch_id'] = $branchId;
+            }
+
             $data = $dashboardController->handleWipAging($params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/branches', function (Request $request) use ($branchController) {
+            /** @var \App\Models\User|null $user */
+            $user = $request->getAttribute('user');
+            $requestedBranch = $request->queryParam('branch_id');
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $data = $branchController->index($user, $branchId);
             return Response::json($data);
         });
 
@@ -2305,7 +2357,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inventory routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
         $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
@@ -2314,6 +2366,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $inventoryLookupService = new \App\Services\Inventory\InventoryLookupService($connection);
         $inventoryLookupController = new \App\Services\Inventory\InventoryLookupController($inventoryLookupService, $gate);
         $stockOrderController = new \App\Services\Inventory\InventoryStockOrderController($stockOrderRepository, $gate);
+        $transferRepository = new \App\Services\Inventory\InventoryTransferRepository($connection, $auditLogger);
+        $transferController = new \App\Services\Inventory\InventoryTransferController($transferRepository, $gate);
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
@@ -2447,6 +2501,80 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $inventoryController->destroy($user, $id);
             return Response::noContent();
+        });
+
+        // Inventory transfer requests
+        $router->get('/api/inventory/transfers', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'requested_by' => $request->queryParam('requested_by'),
+                'source_location' => $request->queryParam('source_location'),
+                'destination_location' => $request->queryParam('destination_location'),
+                'created_from' => $request->queryParam('created_from'),
+                'created_to' => $request->queryParam('created_to'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $transferController->index($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/transfers/report', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'requested_by' => $request->queryParam('requested_by'),
+                'source_location' => $request->queryParam('source_location'),
+                'destination_location' => $request->queryParam('destination_location'),
+                'created_from' => $request->queryParam('created_from'),
+                'created_to' => $request->queryParam('created_to'),
+            ];
+
+            $data = $transferController->report($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/transfers/{id}', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $data = $transferController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/approve', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->approve($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/reject', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->reject($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/cancel', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->cancel($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/complete', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->complete($user, $id, $request->body());
+            return Response::json($data);
         });
 
         // CSV Export
@@ -2987,7 +3115,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Roadside assistance routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
@@ -3759,6 +3887,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'status' => $request->queryParam('status'),
                 'customer_id' => $request->queryParam('customer_id'),
+                'branch_id' => $request->queryParam('branch_id'),
                 'limit' => $request->queryParam('limit'),
                 'offset' => $request->queryParam('offset'),
             ];
@@ -3768,6 +3897,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             } elseif ($user?->role === 'technician') {
                 $filters['technician_id'] = $user->id;
             }
+
+            $requestedBranch = $filters['branch_id'] ?? null;
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            $filters['branch_id'] = $branchId;
+
             $data = $invoiceController->index($user, $filters);
             return Response::json($data);
         });
@@ -4185,9 +4320,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $connection,
         new \App\Services\Messaging\MessagingService($connection)
     );
+    $leaveRequestService = new \App\Services\Leave\LeaveRequestService($connection);
     $appointmentController = new \App\Services\Appointment\AppointmentController(
-        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks, $appointmentMessagingNotifications),
-        new \App\Services\Appointment\AvailabilityService($connection),
+        new \App\Services\Appointment\AppointmentService(
+            $connection,
+            $appointmentAudit,
+            $appointmentWebhooks,
+            $appointmentMessagingNotifications,
+            $leaveRequestService
+        ),
+        new \App\Services\Appointment\AvailabilityService($connection, $leaveRequestService),
         $gate
     );
 
@@ -4276,11 +4418,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'customer_id' => $request->queryParam('customer_id'),
                 'technician_id' => $request->queryParam('technician_id'),
                 'date' => $request->queryParam('date'),
+                'branch_id' => $request->queryParam('branch_id'),
             ];
 
             if ($user?->role === 'technician') {
                 $filters['technician_id'] = $user->id;
             }
+
+            $requestedBranch = $filters['branch_id'] ?? null;
+            $branchId = $requestedBranch !== null && $requestedBranch !== '' ? (int) $requestedBranch : null;
+            $branchId = \App\Support\Auth\BranchScope::resolveBranchId($user, $branchId);
+            $filters['branch_id'] = $branchId;
+
             $data = $appointmentController->index($user, $filters);
             return Response::json($data);
         });
@@ -4653,7 +4802,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $etaConfig = require __DIR__ . '/../config/dispatch.php';
         $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
         $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
@@ -4835,7 +4984,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Job Density Heatmap Data
-        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.heatmap.view')) {
                 return Response::forbidden('Permission denied');
@@ -4878,7 +5027,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['data' => $data]);
         });
 
-        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $body = $request->body();
             $driverProfileId = $body['driver_profile_id'] ?? null;
@@ -4926,7 +5075,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.certifications.verify')) {
                 return Response::forbidden('Permission denied');
@@ -5297,7 +5446,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Warranty routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $warrantyMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
@@ -5359,7 +5508,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Credit Account routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $creditController = new \App\Services\Credit\CreditAccountController(
             new \App\Services\Credit\CreditAccountService($connection),
@@ -5424,8 +5573,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Document Vault routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
                 return Response::forbidden('Permission denied');
@@ -5499,7 +5648,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
                 return Response::forbidden('Permission denied');
@@ -5530,7 +5679,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5598,7 +5747,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5672,7 +5821,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['success' => true]);
         });
 
-        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5699,9 +5848,19 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Financial\CashDrawerService($connection, $financialEntryService),
             $gate
         );
+        $cashDepositController = new \App\Services\Financial\CashDepositController(
+            new \App\Services\Financial\CashDepositService($connection, $financialEntryService),
+            $gate
+        );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
         $technicianMarginController = new \App\Services\Reports\TechnicianMarginReportController(
             new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
+            $gate
+        );
+        $reconciliationController = new \App\Services\Financial\ReconciliationController(
+            new \App\Services\Financial\ReconciliationService($connection),
+        $leaveReportController = new \App\Services\Reports\LeaveReportController(
+            new \App\Services\Reports\LeaveReportService($connection),
             $gate
         );
 
@@ -5714,11 +5873,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->get('/api/financial/categories/{type:purchase|expense|income}', function (Request $request) use ($financialCategoryController) {
+        $router->get('/api/financial/categories/{type:asset|liability|income|expense|equity}', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
             $type = (string) $request->getAttribute('type');
             $data = $financialCategoryController->index($user, ['type' => $type]);
             return Response::json($data);
+        });
+
+        $router->post('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $data = $financialCategoryController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $financialCategoryController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::json(['message' => 'Category not found'], 404);
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $deleted = $financialCategoryController->destroy($user, $id);
+            return Response::json(['deleted' => $deleted]);
         });
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
@@ -5822,6 +6006,76 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/financial/reconciliation/sessions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+            ];
+            $data = $reconciliationController->listSessions($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/reconciliation/sessions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $data = $reconciliationController->createSession($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions/{id}', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->showSession($user, $id);
+            return Response::json($data);
+        });
+
+        $router->put('/api/financial/reconciliation/sessions/{id}', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->updateSession($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions/{id}/bank-transactions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->listBankTransactions($user, $id);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/financial/reconciliation/sessions/{id}/bank-transactions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->createBankTransaction($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions/{id}/ledger-entries', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $filters = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'type' => $request->queryParam('type'),
+            ];
+            $data = $reconciliationController->listLedgerEntries($user, $id, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/financial/reconciliation/sessions/{id}/matches', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->createMatch($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->delete('/api/financial/reconciliation/matches/{id}', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reconciliationController->deleteMatch($user, $id);
+            return Response::noContent();
+        });
+
         $router->get('/api/financial/cash-drawer/active', function (Request $request) use ($cashDrawerController) {
             $user = $request->getAttribute('user');
             $data = $cashDrawerController->active($user);
@@ -5852,6 +6106,40 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/financial/cash-deposits/undeposited', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $cashDepositController->undeposited($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-deposits', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'status' => $request->queryParam('status'),
+            ];
+            $data = $cashDepositController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-deposits/{id}', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cashDepositController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/cash-deposits', function (Request $request) use ($cashDepositController) {
+            $user = $request->getAttribute('user');
+            $data = $cashDepositController->create($user, $request->body());
+            return Response::created($data);
+        });
+
         $router->get('/api/reports/technician-margins', function (Request $request) use ($technicianMarginController) {
             $user = $request->getAttribute('user');
             $params = [
@@ -5860,6 +6148,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'branch_id' => $request->queryParam('branch_id'),
             ];
             $data = $technicianMarginController->report($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/leave-summary', function (Request $request) use ($leaveReportController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'employee_id' => $request->queryParam('employee_id'),
+            ];
+            $data = $leaveReportController->summary($user, $params);
             return Response::json($data);
         });
     });
@@ -5913,13 +6212,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Time Tracking routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
+        $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection, $auditLogger);
         $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
+        $payrollExportService = new \App\Services\Payroll\PayrollExportService(
+            $connection,
+            new \App\Support\SettingsRepository($connection)
+        );
 
         $timeController = new \App\Services\TimeTracking\TimeTrackingController(
             $timeTrackingService,
             new \App\Services\TimeTracking\TechnicianPortalService($connection, $timeTrackingService),
+            $gate
+        );
+
+        $payrollExportController = new \App\Services\Payroll\PayrollExportController(
+            $payrollExportService,
             $gate
         );
 
@@ -5990,6 +6299,69 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $leaveRequestService = new \App\Services\LeaveRequests\LeaveRequestService($connection);
+        $leaveAuditService = new \App\Services\Approval\ApprovalAuditService($connection);
+        $leaveController = new \App\Services\LeaveRequests\LeaveRequestController(
+            $leaveRequestService,
+            $leaveAuditService
+        );
+
+        $router->get('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'user_id' => $request->queryParam('user_id'),
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/leave-requests/mine', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->mine($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $data = $leaveController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/approve', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->approve($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/reject', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->reject($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
         $router->get('/api/time-tracking/technician/jobs', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->assignedJobs($user);
@@ -5999,6 +6371,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/time-tracking/technician/portal', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->portal($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $payrollExportController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $data = $payrollExportController->export($user, $request->body());
             return Response::json($data);
         });
 
@@ -7602,7 +7990,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Audit routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $auditController = new \App\Services\Audit\AuditController(
             new \App\Services\Audit\AuditLogViewerService($connection),
@@ -7692,6 +8080,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/cms/pages/{id}/revisions', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsPageController->revisions($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
         $router->post('/api/cms/pages', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $data = $cmsPageController->store($user, $request->body());
@@ -7705,6 +8105,19 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             if ($data === null) {
                 return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/pages/{id}/revisions/{revisionId}/restore', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $revisionId = (int) $request->getAttribute('revisionId');
+            $data = $cmsPageController->restoreRevision($user, $id, $revisionId);
+
+            if ($data === null) {
+                return Response::notFound('Revision not found');
             }
 
             return Response::json($data);
@@ -7742,6 +8155,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
 
             return Response::html($html);
+        });
+
+        $router->post('/api/cms/pages/{id}/preview-token', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $regenerate = (bool) ($body['regenerate'] ?? false);
+
+            $data = $cmsPageController->previewToken($user, $id, $regenerate);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
         });
 
         // CMS Categories
@@ -7861,9 +8289,29 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'status' => $request->queryParam('status'),
                 'search' => $request->queryParam('search'),
+                'folder' => $request->queryParam('folder'),
+                'tag' => $request->queryParam('tag'),
             ];
 
             $data = $cmsMediaController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/cms/media/metadata', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->metadata($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media/bulk', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->bulkUpdate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media/folders/rename', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->renameFolder($user, $request->body());
             return Response::json($data);
         });
 
@@ -7934,6 +8382,20 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
         });
 
+        $router->get('/api/cms/components/{id}/revisions', function (Request $request) use ($cmsApiController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsApiController->listComponentRevisions($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Component not found');
+                }
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
         $router->post('/api/cms/components', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             try {
@@ -7949,6 +8411,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
             try {
                 $data = $cmsApiController->updateComponent($user, $id, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/components/{id}/revisions/{revisionId}/restore', function (Request $request) use ($cmsApiController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $revisionId = (int) $request->getAttribute('revisionId');
+            try {
+                $data = $cmsApiController->restoreComponentRevision($user, $id, $revisionId);
+                if ($data === null) {
+                    return Response::notFound('Revision not found');
+                }
                 return Response::json($data);
             } catch (\RuntimeException $e) {
                 return Response::forbidden($e->getMessage());
@@ -8295,7 +8772,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Towing Pricing Matrix routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $towingPricingController = new \App\Services\Towing\TowingPricingController(
             new \App\Services\Towing\TowingPricingService($connection),
             $gate
@@ -8454,8 +8931,8 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     // =========================================================================
 
     // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
             $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
@@ -8464,7 +8941,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Admin-only module management routes
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
         $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);

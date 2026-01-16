@@ -46,6 +46,9 @@ return [
     'cache' => [
         'enabled' => env('CMS_CACHE_ENABLED', true),
         'ttl' => env('CMS_CACHE_TTL', 3600), // 1 hour default
+        'stale_ttl' => env('CMS_CACHE_STALE_TTL', 300), // 5 minutes stale window
+        'pre_render_on_save' => env('CMS_CACHE_PRE_RENDER_ON_SAVE', true),
+        'revalidate_on_change' => env('CMS_CACHE_REVALIDATE_ON_CHANGE', true),
         'driver' => env('CMS_CACHE_DRIVER', 'file'), // file or redis
         'redis' => [
             'host' => env('CMS_CACHE_REDIS_HOST', '127.0.0.1'),

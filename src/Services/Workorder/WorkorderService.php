@@ -38,7 +38,12 @@ class WorkorderService
      * Create a workorder from an approved estimate.
      * Only jobs with customer_status = 'approved' will be included.
      */
-    public function createFromEstimate(int $estimateId, ?int $technicianId = null, ?int $actorId = null): Workorder
+    public function createFromEstimate(
+        int $estimateId,
+        ?int $technicianId = null,
+        ?int $actorId = null,
+        ?int $branchId = null
+    ): Workorder
     {
         $estimate = $this->fetchEstimate($estimateId);
         if ($estimate === null) {
@@ -78,12 +83,12 @@ class WorkorderService
             // Create workorder
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO workorders (
-                    number, estimate_id, customer_id, vehicle_id, status, priority,
+                    number, estimate_id, customer_id, vehicle_id, branch_id, status, priority,
                     assigned_technician_id, subtotal, tax, call_out_fee, mileage_total,
                     discounts, shop_fee, hazmat_disposal_fee, grand_total,
                     internal_notes, customer_notes, created_at, updated_at
                 ) VALUES (
-                    :number, :estimate_id, :customer_id, :vehicle_id, :status, :priority,
+                    :number, :estimate_id, :customer_id, :vehicle_id, :branch_id, :status, :priority,
                     :technician_id, :subtotal, :tax, :call_out_fee, :mileage_total,
                     :discounts, :shop_fee, :hazmat_disposal_fee, :grand_total,
                     :internal_notes, :customer_notes, NOW(), NOW()
@@ -95,6 +100,7 @@ class WorkorderService
                 'estimate_id' => $estimateId,
                 'customer_id' => $estimate->customer_id,
                 'vehicle_id' => $estimate->vehicle_id,
+                'branch_id' => $branchId,
                 'status' => Workorder::STATUS_PENDING,
                 'priority' => Workorder::PRIORITY_NORMAL,
                 'technician_id' => $technicianId ?? $estimate->technician_id,
@@ -113,7 +119,7 @@ class WorkorderService
             $workorderId = (int) $pdo->lastInsertId();
 
             // Copy approved jobs and their items to workorder
-            $this->copyApprovedJobsToWorkorder($workorderId, $approvedJobs, $technicianId);
+            $this->copyApprovedJobsToWorkorder($workorderId, $approvedJobs, $technicianId, 0, $branchId);
 
             // Record initial status history
             $this->recordStatusHistory($workorderId, null, Workorder::STATUS_PENDING, $actorId, 'Workorder created from estimate');
@@ -182,7 +188,7 @@ class WorkorderService
             $maxPosition = (int) $stmt->fetchColumn();
 
             // Add jobs from sub-estimate
-            $this->copyApprovedJobsToWorkorder($workorderId, $approvedJobs, null, $maxPosition + 1);
+            $this->copyApprovedJobsToWorkorder($workorderId, $approvedJobs, null, $maxPosition + 1, $workorder->branch_id);
 
             // Recalculate totals
             $this->recalculateWorkorderTotals($workorderId);
@@ -241,12 +247,12 @@ class WorkorderService
             // Create invoice
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO invoices (
-                    number, customer_id, vehicle_id, estimate_id, workorder_id,
+                    number, customer_id, vehicle_id, estimate_id, workorder_id, branch_id,
                     status, issue_date, due_date, subtotal, tax, total,
                     shop_fee, hazmat_disposal_fee, amount_paid, balance_due,
                     public_token, public_token_expires_at, created_at, updated_at
                 ) VALUES (
-                    :number, :customer_id, :vehicle_id, :estimate_id, :workorder_id,
+                    :number, :customer_id, :vehicle_id, :estimate_id, :workorder_id, :branch_id,
                     :status, :issue_date, :due_date, :subtotal, :tax, :total,
                     :shop_fee, :hazmat_disposal_fee, 0, :balance_due,
                     :public_token, :public_token_expires_at, NOW(), NOW()
@@ -264,6 +270,7 @@ class WorkorderService
                 'vehicle_id' => $workorder->vehicle_id,
                 'estimate_id' => $workorder->estimate_id,
                 'workorder_id' => $workorderId,
+                'branch_id' => $workorder->branch_id,
                 'status' => 'pending',
                 'issue_date' => date('Y-m-d'),
                 'due_date' => $dueDate,
@@ -281,7 +288,13 @@ class WorkorderService
 
             // Copy workorder items to invoice
             if (!$isGoa) {
-            $this->copyWorkorderItemsToInvoice($invoiceId, $workorderId, (int) $workorder->customer_id, $actorId);
+            $this->copyWorkorderItemsToInvoice(
+                $invoiceId,
+                $workorderId,
+                (int) $workorder->customer_id,
+                $actorId,
+                $workorder->branch_id
+            );
             }
 
             // Add extra fees as line items
@@ -542,7 +555,13 @@ class WorkorderService
         ];
     }
 
-    private function copyApprovedJobsToWorkorder(int $workorderId, array $jobs, ?int $technicianId, int $startPosition = 0): void
+    private function copyApprovedJobsToWorkorder(
+        int $workorderId,
+        array $jobs,
+        ?int $technicianId,
+        int $startPosition = 0,
+        ?int $branchId = null
+    ): void
     {
         $pdo = $this->connection->pdo();
         $position = $startPosition;
@@ -551,16 +570,17 @@ class WorkorderService
             // Insert workorder job
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO workorder_jobs (
-                    workorder_id, estimate_job_id, service_type_id, title, notes, reference,
+                    workorder_id, branch_id, estimate_job_id, service_type_id, title, notes, reference,
                     status, assigned_technician_id, subtotal, tax, total, position, created_at, updated_at
                 ) VALUES (
-                    :workorder_id, :estimate_job_id, :service_type_id, :title, :notes, :reference,
+                    :workorder_id, :branch_id, :estimate_job_id, :service_type_id, :title, :notes, :reference,
                     :status, :technician_id, :subtotal, :tax, :total, :position, NOW(), NOW()
                 )
             SQL);
 
             $stmt->execute([
                 'workorder_id' => $workorderId,
+                'branch_id' => $branchId,
                 'estimate_job_id' => (int) $job['id'],
                 'service_type_id' => $job['service_type_id'],
                 'title' => $job['title'],
@@ -577,13 +597,13 @@ class WorkorderService
             $workorderJobId = (int) $pdo->lastInsertId();
 
             // Copy items for this job
-            $this->copyJobItems($workorderJobId, (int) $job['id']);
+            $this->copyJobItems($workorderJobId, (int) $job['id'], $branchId);
 
             $position++;
         }
     }
 
-    private function copyJobItems(int $workorderJobId, int $estimateJobId): void
+    private function copyJobItems(int $workorderJobId, int $estimateJobId, ?int $branchId): void
     {
         $pdo = $this->connection->pdo();
 
@@ -608,16 +628,17 @@ class WorkorderService
 
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO workorder_items (
-                    workorder_job_id, estimate_item_id, type, sku, inventory_item_id, description,
+                    workorder_job_id, branch_id, estimate_item_id, type, sku, inventory_item_id, description,
                     quantity, unit_price, list_price, core_price, taxable, line_total, position
                 ) VALUES (
-                    :workorder_job_id, :estimate_item_id, :type, :sku, :inventory_item_id, :description,
+                    :workorder_job_id, :branch_id, :estimate_item_id, :type, :sku, :inventory_item_id, :description,
                     :quantity, :unit_price, :list_price, :core_price, :taxable, :line_total, :position
                 )
             SQL);
 
             $stmt->execute([
                 'workorder_job_id' => $workorderJobId,
+                'branch_id' => $branchId,
                 'estimate_item_id' => (int) $item['id'],
                 'type' => $item['type'],
                 'sku' => $item['sku'] ?? null,
@@ -636,7 +657,13 @@ class WorkorderService
         }
     }
 
-    private function copyWorkorderItemsToInvoice(int $invoiceId, int $workorderId, int $customerId, ?int $actorId): void
+    private function copyWorkorderItemsToInvoice(
+        int $invoiceId,
+        int $workorderId,
+        int $customerId,
+        ?int $actorId,
+        ?int $branchId
+    ): void
     {
         $pdo = $this->connection->pdo();
 
@@ -654,9 +681,9 @@ class WorkorderService
         foreach ($items as $item) {
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO invoice_items (
-                    invoice_id, type, sku, inventory_item_id, description, quantity, unit_price, list_price, core_price, taxable, line_total
+                    invoice_id, branch_id, type, sku, inventory_item_id, description, quantity, unit_price, list_price, core_price, taxable, line_total
                 ) VALUES (
-                    :invoice_id, :type, :sku, :inventory_item_id, :description, :quantity, :unit_price, :list_price, :core_price, :taxable, :line_total
+                    :invoice_id, :branch_id, :type, :sku, :inventory_item_id, :description, :quantity, :unit_price, :list_price, :core_price, :taxable, :line_total
                 )
             SQL);
 
@@ -664,6 +691,7 @@ class WorkorderService
 
             $stmt->execute([
                 'invoice_id' => $invoiceId,
+                'branch_id' => $branchId,
                 'type' => $item['type'],
                 'sku' => $item['sku'] ?? null,
                 'inventory_item_id' => $item['inventory_item_id'] ?? null,
@@ -701,12 +729,13 @@ class WorkorderService
         foreach ($fees as $fee) {
             if ($fee['amount'] > 0) {
                 $stmt = $pdo->prepare(<<<SQL
-                    INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, taxable, line_total)
-                    VALUES (:invoice_id, :type, :description, 1, :amount, 0, :amount)
+                    INSERT INTO invoice_items (invoice_id, branch_id, type, description, quantity, unit_price, taxable, line_total)
+                    VALUES (:invoice_id, :branch_id, :type, :description, 1, :amount, 0, :amount)
                 SQL);
 
                 $stmt->execute([
                     'invoice_id' => $invoiceId,
+                    'branch_id' => $workorder->branch_id,
                     'type' => $fee['type'],
                     'description' => $fee['description'],
                     'amount' => $fee['amount'],
@@ -716,12 +745,13 @@ class WorkorderService
 
         if ($workorder->discounts > 0) {
             $stmt = $pdo->prepare(<<<SQL
-                INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, taxable, line_total)
-                VALUES (:invoice_id, 'discount', 'Discount', 1, :amount, 0, :line_total)
+                INSERT INTO invoice_items (invoice_id, branch_id, type, description, quantity, unit_price, taxable, line_total)
+                VALUES (:invoice_id, :branch_id, 'discount', 'Discount', 1, :amount, 0, :line_total)
             SQL);
 
             $stmt->execute([
                 'invoice_id' => $invoiceId,
+                'branch_id' => $workorder->branch_id,
                 'amount' => -$workorder->discounts,
                 'line_total' => -$workorder->discounts,
             ]);
@@ -742,11 +772,12 @@ class WorkorderService
         }
 
         $stmt = $pdo->prepare(<<<SQL
-            INSERT INTO invoice_items (invoice_id, type, description, quantity, unit_price, taxable, line_total)
-            VALUES (:invoice_id, 'fee', :description, 1, :amount, 0, :amount)
+            INSERT INTO invoice_items (invoice_id, branch_id, type, description, quantity, unit_price, taxable, line_total)
+            VALUES (:invoice_id, :branch_id, 'fee', :description, 1, :amount, 0, :amount)
         SQL);
         $stmt->execute([
             'invoice_id' => $invoiceId,
+            'branch_id' => $workorder->branch_id,
             'description' => $description,
             'amount' => $amount,
         ]);

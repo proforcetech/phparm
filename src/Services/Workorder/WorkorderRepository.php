@@ -83,6 +83,11 @@ class WorkorderRepository
             $bindings['customer_id'] = (int) $filters['customer_id'];
         }
 
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
         if (!empty($filters['vehicle_id'])) {
             $clauses[] = 'vehicle_id = :vehicle_id';
             $bindings['vehicle_id'] = (int) $filters['vehicle_id'];
@@ -172,6 +177,11 @@ class WorkorderRepository
             $bindings['technician_id'] = (int) $filters['technician_id'];
         }
 
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
         if (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '') {
             $clauses[] = $ageExpression . ' >= :status_age_min_days';
             $bindings['status_age_min_days'] = (int) $filters['status_age_min_days'];
@@ -200,7 +210,8 @@ class WorkorderRepository
         string $status,
         ?int $actorId = null,
         ?string $notes = null,
-        ?string $clientEventId = null
+        ?string $clientEventId = null,
+        ?array $location = null
     ): ?Workorder
     {
         $workorder = $this->find($id);
@@ -248,11 +259,16 @@ class WorkorderRepository
         $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes, $clientEventId);
 
         $workorder = $this->find($id);
-        $this->log('workorder.status_changed', $id, $actorId, [
+        $context = [
             'from_status' => $fromStatus,
             'to_status' => $status,
             'notes' => $notes,
-        ]);
+        ];
+        if ($location !== null) {
+            $context['location'] = $location;
+        }
+
+        $this->log('workorder.status_changed', $id, $actorId, $context);
 
         return $workorder;
     }
@@ -377,7 +393,12 @@ class WorkorderRepository
         return $result;
     }
 
-    public function updateJobStatus(int $jobId, string $status, ?int $actorId = null): ?WorkorderJob
+    public function updateJobStatus(
+        int $jobId,
+        string $status,
+        ?int $actorId = null,
+        ?array $location = null
+    ): ?WorkorderJob
     {
         if (!in_array($status, WorkorderJob::ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException('Invalid status for workorder job.');
@@ -409,10 +430,15 @@ class WorkorderRepository
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($row) {
-            $this->log('workorder_job.status_changed', $row['workorder_id'], $actorId, [
+            $context = [
                 'job_id' => $jobId,
                 'status' => $status,
-            ]);
+            ];
+            if ($location !== null) {
+                $context['location'] = $location;
+            }
+
+            $this->log('workorder_job.status_changed', $row['workorder_id'], $actorId, $context);
         }
 
         return $row ? new WorkorderJob($row) : null;

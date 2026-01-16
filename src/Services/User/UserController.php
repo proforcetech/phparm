@@ -52,9 +52,9 @@ class UserController
         $query = $params['query'] ?? '';
 
         if ($query !== '') {
-            $technicians = $this->repository->searchByRole('technician', $query, 20);
+            $technicians = $this->repository->searchByRole('technician', $query, 20, $this->resolveBranchFilter($user, $params));
         } else {
-            $technicians = $this->repository->listByRole('technician');
+            $technicians = $this->repository->listByRole('technician', $this->resolveBranchFilter($user, $params));
         }
 
         return array_map(static fn ($tech) => [
@@ -77,6 +77,7 @@ class UserController
             throw new UnauthorizedException('Cannot view users');
         }
 
+        $filters = $this->applyBranchFilter($user, $filters);
         $users = $this->repository->list($filters);
 
         return array_map(static fn ($u) => [
@@ -85,6 +86,7 @@ class UserController
             'email' => $u->email,
             'role' => $u->role,
             'email_verified' => $u->email_verified,
+            'branch_id' => $u->branch_id,
             'two_factor_enabled' => $u->two_factor_enabled,
             'two_factor_type' => $u->two_factor_type ?? 'none',
             'created_at' => $u->created_at,
@@ -104,7 +106,7 @@ class UserController
             throw new UnauthorizedException('Cannot export users');
         }
 
-        return $this->csvExportService->export('users', $filters);
+        return $this->csvExportService->export('users', $this->applyBranchFilter($user, $filters));
     }
 
     /**
@@ -131,6 +133,7 @@ class UserController
             'email' => $targetUser->email,
             'role' => $targetUser->role,
             'email_verified' => $targetUser->email_verified,
+            'branch_id' => $targetUser->branch_id,
             'two_factor_enabled' => $targetUser->two_factor_enabled,
             'two_factor_type' => $targetUser->two_factor_type ?? 'none',
             'created_at' => $targetUser->created_at,
@@ -182,6 +185,7 @@ class UserController
 
         $employeePayload = $this->normalizeEmployeePayload($data);
         unset($data['employee']);
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
         $newUser = $this->repository->create($data);
         $employee = $employeePayload !== null
@@ -194,6 +198,7 @@ class UserController
             'email' => $newUser->email,
             'role' => $newUser->role,
             'email_verified' => $newUser->email_verified,
+            'branch_id' => $newUser->branch_id,
             'two_factor_enabled' => $newUser->two_factor_enabled,
             'two_factor_type' => $newUser->two_factor_type ?? 'none',
             'created_at' => $newUser->created_at,
@@ -235,6 +240,7 @@ class UserController
 
         $temporaryPassword = bin2hex(random_bytes(24));
         $employeePayload = $this->normalizeEmployeePayload($data);
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
         $newUser = $this->repository->create([
             'name' => $data['name'],
@@ -244,6 +250,7 @@ class UserController
             'email_verified' => false,
             'two_factor_enabled' => false,
             'two_factor_type' => 'none',
+            'branch_id' => $data['branch_id'],
         ]);
         $employee = $employeePayload !== null
             ? $this->employeeRepository->upsertByUserId($newUser->id, $employeePayload)
@@ -255,6 +262,7 @@ class UserController
             'email' => $newUser->email,
             'role' => $newUser->role,
             'email_verified' => $newUser->email_verified,
+            'branch_id' => $newUser->branch_id,
             'two_factor_enabled' => $newUser->two_factor_enabled,
             'two_factor_type' => $newUser->two_factor_type ?? 'none',
             'created_at' => $newUser->created_at,
@@ -303,6 +311,7 @@ class UserController
 
         $employeePayload = $this->normalizeEmployeePayload($data);
         unset($data['employee']);
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
         $updatedUser = $this->repository->update($id, $data);
         $employee = $employeePayload !== null
@@ -315,6 +324,7 @@ class UserController
             'email' => $updatedUser->email,
             'role' => $updatedUser->role,
             'email_verified' => $updatedUser->email_verified,
+            'branch_id' => $updatedUser->branch_id,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
             'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
@@ -429,6 +439,7 @@ class UserController
                 'email' => $updatedUser->email,
                 'role' => $updatedUser->role,
                 'email_verified' => $updatedUser->email_verified,
+                'branch_id' => $updatedUser->branch_id,
                 'two_factor_enabled' => $updatedUser->two_factor_enabled,
                 'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
                 'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending,
@@ -484,6 +495,7 @@ class UserController
             'email' => $updatedUser->email,
             'role' => $updatedUser->role,
             'email_verified' => $updatedUser->email_verified,
+            'branch_id' => $updatedUser->branch_id,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
             'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'created_at' => $updatedUser->created_at,
@@ -527,6 +539,7 @@ class UserController
             'email' => $updatedUser->email,
             'role' => $updatedUser->role,
             'email_verified' => $updatedUser->email_verified,
+            'branch_id' => $updatedUser->branch_id,
             'two_factor_enabled' => $updatedUser->two_factor_enabled,
             'two_factor_type' => $updatedUser->two_factor_type ?? 'none',
             'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending,
@@ -679,5 +692,58 @@ class UserController
             'created_at' => $employee->created_at,
             'updated_at' => $employee->updated_at,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    private function applyBranchFilter(User $user, array $filters): array
+    {
+        if ($user->role !== 'admin' && $user->branch_id !== null) {
+            $filters['branch_id'] = $user->branch_id;
+        }
+
+        return $filters;
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveBranchFilter(User $user, array $params): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $params)) {
+            return null;
+        }
+
+        return $this->normalizeBranchId($params['branch_id']);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function resolveBranchAssignment(User $user, array $data): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        return $this->normalizeBranchId($data['branch_id'] ?? null);
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function normalizeBranchId($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
     }
 }

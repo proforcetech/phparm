@@ -54,6 +54,7 @@ class InventoryItemValidator
         }
 
         $normalized = [
+            'branch_id' => $this->parseNullableIntField($data['branch_id'] ?? null, 'Branch'),
             'name' => $name,
             'description' => $description,
             'sku' => $sku,
