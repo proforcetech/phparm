@@ -505,6 +505,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
     reviewed_by INT NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    payroll_included TINYINT(1) NOT NULL DEFAULT 0,
+    payroll_included_at DATETIME NULL,
     en_route_at DATETIME NULL,
     on_site_at DATETIME NULL,
     wrap_up_at DATETIME NULL,
@@ -913,7 +915,7 @@ CREATE TABLE IF NOT EXISTS cms_menus (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     slug VARCHAR(150) NOT NULL UNIQUE,
-    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+    status ENUM('draft', 'pending', 'published', 'archived') NOT NULL DEFAULT 'draft',
     description TEXT NULL,
     items JSON NULL,
     meta_title VARCHAR(255) NULL,
@@ -934,8 +936,11 @@ CREATE TABLE IF NOT EXISTS cms_media (
     size_bytes INT UNSIGNED NULL,
     title VARCHAR(255) NULL,
     alt_text VARCHAR(255) NULL,
+    folder VARCHAR(255) NULL,
+    tags JSON NULL,
     status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
     published_at DATETIME NULL,
+    variants JSON NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_cms_media_status (status),
@@ -971,6 +976,8 @@ CREATE TABLE IF NOT EXISTS cms_components (
     content LONGTEXT NULL,
     css LONGTEXT NULL,
     javascript LONGTEXT NULL,
+    css_assets LONGTEXT NULL,
+    js_assets LONGTEXT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     cache_ttl INT UNSIGNED NOT NULL DEFAULT 0,
     created_by INT UNSIGNED NULL,
@@ -987,16 +994,23 @@ CREATE TABLE IF NOT EXISTS cms_pages (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL UNIQUE,
-category_id INT UNSIGNED NULL,
+    preview_token VARCHAR(64) NULL,
+    category_id INT UNSIGNED NULL,
     template_id INT UNSIGNED NULL,
     header_component_id INT UNSIGNED NULL,
     footer_component_id INT UNSIGNED NULL,
     custom_css TEXT NULL,
     custom_js TEXT NULL,
-    status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+    status ENUM('draft', 'pending', 'published', 'archived') NOT NULL DEFAULT 'draft',
     meta_title VARCHAR(255) NULL,
     meta_description TEXT NULL,
     meta_keywords VARCHAR(255) NULL,
+    canonical_url VARCHAR(500) NULL,
+    og_title VARCHAR(255) NULL,
+    og_description TEXT NULL,
+    og_image VARCHAR(500) NULL,
+    og_type VARCHAR(100) NULL,
+    og_url VARCHAR(500) NULL,
     summary TEXT NULL,
     content LONGTEXT NULL,
     publish_start_at DATETIME NULL,
@@ -1006,6 +1020,7 @@ category_id INT UNSIGNED NULL,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_cms_pages_status (status),
     INDEX idx_cms_pages_published_at (published_at),
+    INDEX idx_cms_pages_preview_token (preview_token),
     INDEX idx_cms_pages_template_id (template_id),
     INDEX idx_cms_pages_header_component (header_component_id),
     INDEX idx_cms_pages_footer_component (footer_component_id),
@@ -1014,6 +1029,32 @@ category_id INT UNSIGNED NULL,
     CONSTRAINT fk_cms_pages_footer_component FOREIGN KEY (footer_component_id) REFERENCES cms_components(id) ON DELETE SET NULL,
     CONSTRAINT fk_cms_pages_category FOREIGN KEY (category_id) REFERENCES cms_categories(id) ON DELETE SET NULL,
     CONSTRAINT fk_cms_pages_template FOREIGN KEY (template_id) REFERENCES cms_templates (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cms_revisions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id INT UNSIGNED NOT NULL,
+    action VARCHAR(50) NULL,
+    snapshot_data LONGTEXT NOT NULL,
+    created_by INT UNSIGNED NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_cms_revisions_entity (entity_type, entity_id),
+    INDEX idx_cms_revisions_created_at (created_at),
+    INDEX idx_cms_revisions_created_by (created_by)
+CREATE TABLE IF NOT EXISTS cms_search_index (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    source_type VARCHAR(32) NOT NULL,
+    source_id INT UNSIGNED NOT NULL,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    slug VARCHAR(255) NULL,
+    summary TEXT NULL,
+    content LONGTEXT NULL,
+    status VARCHAR(50) NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_cms_search_source (source_type, source_id),
+    INDEX idx_cms_search_status (status),
+    FULLTEXT KEY ft_cms_search_text (title, summary, content)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1548,6 +1589,57 @@ CREATE TABLE IF NOT EXISTS inventory_pull_requests (
     INDEX idx_pull_request_type (request_type),
     INDEX idx_pull_request_inventory (inventory_item_id),
     INDEX idx_pull_request_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_transfers (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    status ENUM('pending', 'approved', 'rejected', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    source_location VARCHAR(160) NULL,
+    destination_location VARCHAR(160) NULL,
+    notes TEXT NULL,
+    requested_by INT UNSIGNED NOT NULL,
+    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_by INT UNSIGNED NULL,
+    approved_at TIMESTAMP NULL,
+    rejected_by INT UNSIGNED NULL,
+    rejected_at TIMESTAMP NULL,
+    cancelled_by INT UNSIGNED NULL,
+    cancelled_at TIMESTAMP NULL,
+    completed_by INT UNSIGNED NULL,
+    completed_at TIMESTAMP NULL,
+    INDEX idx_inventory_transfers_status (status),
+    INDEX idx_inventory_transfers_requested_by (requested_by),
+    INDEX idx_inventory_transfers_source (source_location),
+    INDEX idx_inventory_transfers_destination (destination_location),
+    CONSTRAINT fk_inventory_transfers_requested_by FOREIGN KEY (requested_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_approved_by FOREIGN KEY (approved_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_rejected_by FOREIGN KEY (rejected_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_cancelled_by FOREIGN KEY (cancelled_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_completed_by FOREIGN KEY (completed_by)
+        REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_transfer_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    transfer_id INT UNSIGNED NOT NULL,
+    source_inventory_item_id INT UNSIGNED NOT NULL,
+    destination_inventory_item_id INT UNSIGNED NOT NULL,
+    quantity_requested INT NOT NULL DEFAULT 0,
+    quantity_transferred INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_transfer_items_transfer (transfer_id),
+    INDEX idx_inventory_transfer_items_source (source_inventory_item_id),
+    INDEX idx_inventory_transfer_items_destination (destination_inventory_item_id),
+    CONSTRAINT fk_inventory_transfer_items_transfer FOREIGN KEY (transfer_id)
+        REFERENCES inventory_transfers (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_transfer_items_source FOREIGN KEY (source_inventory_item_id)
+        REFERENCES inventory_items (id),
+    CONSTRAINT fk_inventory_transfer_items_destination FOREIGN KEY (destination_inventory_item_id)
+        REFERENCES inventory_items (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Add index on is_tracked for filtering catalog vs tracked items

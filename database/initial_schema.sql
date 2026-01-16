@@ -161,6 +161,57 @@ CREATE TABLE inventory_transactions (
         REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE inventory_transfers (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    status ENUM('pending', 'approved', 'rejected', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    source_location VARCHAR(160) NULL,
+    destination_location VARCHAR(160) NULL,
+    notes TEXT NULL,
+    requested_by INT UNSIGNED NOT NULL,
+    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_by INT UNSIGNED NULL,
+    approved_at TIMESTAMP NULL,
+    rejected_by INT UNSIGNED NULL,
+    rejected_at TIMESTAMP NULL,
+    cancelled_by INT UNSIGNED NULL,
+    cancelled_at TIMESTAMP NULL,
+    completed_by INT UNSIGNED NULL,
+    completed_at TIMESTAMP NULL,
+    INDEX idx_inventory_transfers_status (status),
+    INDEX idx_inventory_transfers_requested_by (requested_by),
+    INDEX idx_inventory_transfers_source (source_location),
+    INDEX idx_inventory_transfers_destination (destination_location),
+    CONSTRAINT fk_inventory_transfers_requested_by FOREIGN KEY (requested_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_approved_by FOREIGN KEY (approved_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_rejected_by FOREIGN KEY (rejected_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_cancelled_by FOREIGN KEY (cancelled_by)
+        REFERENCES users (id),
+    CONSTRAINT fk_inventory_transfers_completed_by FOREIGN KEY (completed_by)
+        REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE inventory_transfer_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    transfer_id INT UNSIGNED NOT NULL,
+    source_inventory_item_id INT UNSIGNED NOT NULL,
+    destination_inventory_item_id INT UNSIGNED NOT NULL,
+    quantity_requested INT NOT NULL DEFAULT 0,
+    quantity_transferred INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_transfer_items_transfer (transfer_id),
+    INDEX idx_inventory_transfer_items_source (source_inventory_item_id),
+    INDEX idx_inventory_transfer_items_destination (destination_inventory_item_id),
+    CONSTRAINT fk_inventory_transfer_items_transfer FOREIGN KEY (transfer_id)
+        REFERENCES inventory_transfers (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_transfer_items_source FOREIGN KEY (source_inventory_item_id)
+        REFERENCES inventory_items (id),
+    CONSTRAINT fk_inventory_transfer_items_destination FOREIGN KEY (destination_inventory_item_id)
+        REFERENCES inventory_items (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE estimates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
@@ -362,6 +413,8 @@ CREATE TABLE time_entries (
     reviewed_by INT UNSIGNED NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    payroll_included TINYINT(1) NOT NULL DEFAULT 0,
+    payroll_included_at DATETIME NULL,
     en_route_at DATETIME NULL,
     on_site_at DATETIME NULL,
     wrap_up_at DATETIME NULL,
@@ -462,6 +515,8 @@ CREATE TABLE `cms_components` (
     `content` LONGTEXT NOT NULL,
     `css` TEXT NULL,
     `javascript` TEXT NULL,
+    `css_assets` TEXT NULL,
+    `js_assets` TEXT NULL,
     `is_active` TINYINT(1) DEFAULT 1,
     `cache_ttl` INT UNSIGNED DEFAULT 3600 COMMENT 'Cache time-to-live in seconds',
     `created_by` INT UNSIGNED NULL,
@@ -473,4 +528,44 @@ CREATE TABLE `cms_components` (
     INDEX `idx_is_active` (`is_active`),
     INDEX `idx_created_by` (`created_by`),
     INDEX `idx_updated_by` (`updated_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cms_revisions` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `entity_type` VARCHAR(50) NOT NULL,
+    `entity_id` INT UNSIGNED NOT NULL,
+    `action` VARCHAR(50) NULL,
+    `snapshot_data` LONGTEXT NOT NULL,
+    `created_by` INT UNSIGNED NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_cms_revisions_entity` (`entity_type`, `entity_id`),
+    INDEX `idx_cms_revisions_created_at` (`created_at`),
+    INDEX `idx_cms_revisions_created_by` (`created_by`)
+CREATE TABLE `cms_component_page_usage` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `component_id` INT UNSIGNED NOT NULL,
+    `page_id` INT UNSIGNED NOT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uniq_component_page` (`component_id`, `page_id`),
+    INDEX `idx_component_page_component` (`component_id`),
+    INDEX `idx_component_page_page` (`page_id`),
+    CONSTRAINT `fk_component_page_component`
+        FOREIGN KEY (`component_id`) REFERENCES `cms_components`(`id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `fk_component_page_page`
+        FOREIGN KEY (`page_id`) REFERENCES `cms_pages`(`id`)
+        ON DELETE CASCADE
+CREATE TABLE `cms_search_index` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `source_type` VARCHAR(32) NOT NULL,
+    `source_id` INT UNSIGNED NOT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `slug` VARCHAR(255) NULL,
+    `summary` TEXT NULL,
+    `content` LONGTEXT NULL,
+    `status` VARCHAR(50) NULL,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uniq_cms_search_source` (`source_type`, `source_id`),
+    INDEX `idx_cms_search_status` (`status`),
+    FULLTEXT KEY `ft_cms_search_text` (`title`, `summary`, `content`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

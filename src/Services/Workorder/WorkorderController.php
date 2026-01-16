@@ -143,6 +143,7 @@ class WorkorderController
         $status = $payload['status'] ?? null;
         $notes = $payload['notes'] ?? null;
         $clientEventId = $payload['client_event_id'] ?? null;
+        $location = $this->extractLocation($payload);
 
         if (!$status) {
             throw new InvalidArgumentException('status is required');
@@ -158,6 +159,7 @@ class WorkorderController
         if ($before !== null) {
             $this->assertBranchAccess($user, $before->branch_id);
         }
+        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId, $location);
 
         if ($status === Workorder::STATUS_GOA) {
             $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
@@ -395,13 +397,14 @@ class WorkorderController
             throw new InvalidArgumentException('status is required');
         }
 
-        $job = $this->repository->updateJobStatus($jobId, $status, $user->id);
+        $location = $this->extractLocation($payload);
+        $job = $this->repository->updateJobStatus($jobId, $status, $user->id, $location);
         if ($job === null) {
             throw new InvalidArgumentException('Workorder job not found');
         }
 
         // Check if all jobs are completed and auto-update workorder status
-        $this->checkAndUpdateWorkorderCompletion($id, $user->id);
+        $this->checkAndUpdateWorkorderCompletion($id, $user->id, $location);
 
         return $job->toArray();
     }
@@ -699,7 +702,7 @@ class WorkorderController
         };
     }
 
-    private function checkAndUpdateWorkorderCompletion(int $workorderId, ?int $actorId): void
+    private function checkAndUpdateWorkorderCompletion(int $workorderId, ?int $actorId, ?array $location = null): void
     {
         $jobs = $this->repository->getJobs($workorderId);
         if (empty($jobs)) {
@@ -728,13 +731,67 @@ class WorkorderController
         }
 
         // Auto-transition workorder status based on job statuses
+        if ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
+            $this->repository->updateStatus(
+                $workorderId,
+                Workorder::STATUS_COMPLETED,
+                $actorId,
+                'All jobs completed',
+                null,
+                $location
+            );
         if ($allGoa && $workorder->status !== Workorder::STATUS_GOA) {
             $this->service->markGoneOnArrival($workorderId, ['notes' => 'All jobs marked GOA'], $actorId);
         } elseif ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
             $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed', null);
         } elseif ($anyInProgress && $workorder->status === Workorder::STATUS_PENDING) {
-            $this->repository->updateStatus($workorderId, Workorder::STATUS_IN_PROGRESS, $actorId, 'Work started', null);
+            $this->repository->updateStatus(
+                $workorderId,
+                Workorder::STATUS_IN_PROGRESS,
+                $actorId,
+                'Work started',
+                null,
+                $location
+            );
         }
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{latitude: float, longitude: float, accuracy?: float}|null
+     */
+    private function extractLocation(array $payload): ?array
+    {
+        $location = $payload['location'] ?? null;
+        if (!is_array($location)) {
+            $location = [
+                'latitude' => $payload['latitude'] ?? $payload['lat'] ?? null,
+                'longitude' => $payload['longitude'] ?? $payload['lng'] ?? null,
+                'accuracy' => $payload['accuracy'] ?? $payload['location_accuracy_meters'] ?? null,
+            ];
+        }
+
+        if (!is_array($location)) {
+            return null;
+        }
+
+        $latitude = $location['latitude'] ?? $location['lat'] ?? null;
+        $longitude = $location['longitude'] ?? $location['lng'] ?? null;
+        if ($latitude === null || $longitude === null) {
+            return null;
+        }
+
+        $normalized = [
+            'latitude' => (float) $latitude,
+            'longitude' => (float) $longitude,
+        ];
+
+        $accuracy = $location['accuracy'] ?? $location['location_accuracy_meters'] ?? null;
+        if ($accuracy !== null && $accuracy !== '') {
+            $normalized['accuracy'] = (float) $accuracy;
+        }
+
+        return $normalized;
     }
 
     private function assertViewAccess(User $user): void

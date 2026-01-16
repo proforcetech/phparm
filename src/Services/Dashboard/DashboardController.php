@@ -161,7 +161,7 @@ class DashboardController
     private function extractOptions(array $params): array
     {
         $options = [];
-        foreach (['timezone', 'cache_ttl', 'customer_id', 'role', 'technician_id'] as $key) {
+        foreach (['timezone', 'cache_ttl', 'customer_id', 'role', 'technician_id', 'branch_id'] as $key) {
             if (isset($params[$key])) {
                 $options[$key] = $params[$key];
             }

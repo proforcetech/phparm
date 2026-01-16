@@ -8,6 +8,8 @@ import Card from '../../components/ui/Card'
 import Loading from '../../components/ui/Loading'
 import LineChart from '../../components/charts/LineChart'
 import DoughnutChart from '../../components/charts/DoughnutChart'
+import Select from '../../components/ui/Select'
+import branchesService from '../../../services/branches.service'
 import dashboardService from '../../../services/dashboard.service'
 import { useAuthStore } from '../../stores/auth.jsx'
 import { useToast } from '../../stores/toast.jsx'
@@ -151,6 +153,8 @@ export default function AdminDashboard() {
     oldest_days: null,
     buckets: [],
   })
+  const [branches, setBranches] = useState([])
+  const [branchId, setBranchId] = useState('')
   const [revenueChartData, setRevenueChartData] = useState({ labels: [], datasets: [] })
   const [serviceTypeChartData, setServiceTypeChartData] = useState({ labels: [], datasets: [] })
   const [loading, setLoading] = useState(true)
@@ -158,6 +162,7 @@ export default function AdminDashboard() {
 
   const technicianId = useMemo(() => (user?.role === 'technician' ? user.id : null), [user])
   const technicianParams = useMemo(() => (technicianId ? { technician_id: technicianId } : {}), [technicianId])
+  const branchParams = useMemo(() => (branchId ? { branch_id: branchId } : {}), [branchId])
   const chartRange = useMemo(() => {
     const endDate = new Date()
     const startDate = new Date()
@@ -167,6 +172,13 @@ export default function AdminDashboard() {
       end: endDate.toISOString().split('T')[0],
     }
   }, [])
+
+  useEffect(() => {
+    branchesService
+      .list()
+      .then((data) => setBranches(Array.isArray(data) ? data : []))
+      .catch(() => toast.error('Failed to load branches'))
+  }, [toast])
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -183,18 +195,18 @@ export default function AdminDashboard() {
         servicesRes,
       ] = await Promise.all([
         dashboardService
-          .getStats({ start: chartRange.start, end: chartRange.end, ...technicianParams })
+          .getStats({ start: chartRange.start, end: chartRange.end, ...technicianParams, ...branchParams })
           .catch(() => ({})),
-        dashboardService.getRecentInvoices(5, technicianParams).catch(() => []),
-        dashboardService.getRecentAppointments(5, technicianParams).catch(() => []),
+        dashboardService.getRecentInvoices(5, { ...technicianParams, ...branchParams }).catch(() => []),
+        dashboardService.getRecentAppointments(5, { ...technicianParams, ...branchParams }).catch(() => []),
         dashboardService.getInventoryLowStockTile(5).catch(() => null),
         dashboardService.getInventoryPullRequests(5).catch(() => null),
-        dashboardService.getWipAging(technicianParams).catch(() => null),
+        dashboardService.getWipAging({ ...technicianParams, ...branchParams }).catch(() => null),
         dashboardService
-          .getMonthlyTrendsChart({ start: chartRange.start, end: chartRange.end, ...technicianParams })
+          .getMonthlyTrendsChart({ start: chartRange.start, end: chartRange.end, ...technicianParams, ...branchParams })
           .catch(() => []),
         dashboardService
-          .getServiceTypeChart({ start: chartRange.start, end: chartRange.end, limit: 8, ...technicianParams })
+          .getServiceTypeChart({ start: chartRange.start, end: chartRange.end, limit: 8, ...technicianParams, ...branchParams })
           .catch(() => ({ categories: [], data: [] })),
       ])
 
@@ -283,7 +295,18 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [chartRange.end, chartRange.start, technicianParams, toast])
+  }, [branchParams, chartRange.end, chartRange.start, technicianParams, toast])
+
+  const branchOptions = useMemo(
+    () => [
+      { value: '', label: 'All branches' },
+      ...branches.map((branch) => ({
+        value: branch.id,
+        label: branch.label,
+      })),
+    ],
+    [branches],
+  )
 
   useEffect(() => {
     loadDashboard()
@@ -318,6 +341,19 @@ export default function AdminDashboard() {
         </Alert>
       ) : (
         <div className="space-y-8">
+          <Card>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Branch</label>
+                <Select
+                  modelValue={branchId}
+                  onUpdateModelValue={setBranchId}
+                  options={branchOptions}
+                  placeholder=""
+                />
+              </div>
+            </div>
+          </Card>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               title="Total Revenue"
