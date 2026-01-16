@@ -12,6 +12,7 @@ const adminMenuItems = [
   { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
   { path: '/cp/quick-sale', label: 'Quick Sale', icon: CreditCardIcon, moduleKey: 'invoicing' },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
+  { path: '/cp/leave-requests', label: 'Leave Requests', icon: ClipboardDocumentCheckIcon, moduleKey: 'time_tracking' },
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
   { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
   { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
@@ -176,6 +177,7 @@ const essMenuItems = [
   { path: '/ess/time-clock', label: 'Time Clock', icon: ClockIcon },
   { path: '/ess/schedule', label: 'My Schedule', icon: CalendarIcon },
   { path: '/ess/pay-history', label: 'Pay History', icon: DocumentTextIcon },
+  { path: '/ess/leave-requests', label: 'Leave Requests', icon: ClipboardDocumentCheckIcon },
   { path: '/ess/profile', label: 'Profile Updates', icon: Cog6ToothIcon },
 ]
 

@@ -32,6 +32,7 @@ import AppointmentBook from '../views/appointments/AppointmentBook'
 import AvailabilitySettings from '../views/appointments/AvailabilitySettings'
 import TimeLogs from '../views/time/TimeLogs'
 import TechnicianPortal from '../views/time/TechnicianPortal'
+import LeaveRequestsAdmin from '../views/time/LeaveRequestsAdmin'
 import CustomerList from '../views/customers/CustomerList'
 import CustomerForm from '../views/customers/CustomerForm'
 import CustomerDetail from '../views/customers/CustomerDetail'
@@ -114,6 +115,7 @@ import EssTimeClock from '../views/ess/TimeClock'
 import EssSchedule from '../views/ess/Schedule'
 import EssPayHistory from '../views/ess/PayHistory'
 import EssProfile from '../views/ess/Profile'
+import EssLeaveRequests from '../views/ess/LeaveRequests'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
@@ -214,6 +216,7 @@ const protectedRoutes = [
   { path: '/cp/appointments/create', name: 'AppointmentBook', auth: 'requiresAuth', element: <AppointmentBook /> },
   { path: '/cp/appointments/availability-settings', name: 'AvailabilitySettings', auth: 'requiresAuth', element: <AvailabilitySettings /> },
   { path: '/cp/time-logs', name: 'TimeLogs', auth: 'requiresAuth', element: <TimeLogs /> },
+  { path: '/cp/leave-requests', name: 'LeaveRequests', auth: 'requiresAuth', element: <LeaveRequestsAdmin /> },
   { path: '/cp/my-time', name: 'TechnicianTime', auth: 'requiresAuth', element: <TechnicianPortal /> },
   { path: '/cp/customers', name: 'CustomerList', auth: 'requiresAuth', element: <CustomerList /> },
   { path: '/cp/customers/create', name: 'CustomerCreate', auth: 'requiresAuth', element: <CustomerForm /> },
@@ -293,6 +296,7 @@ const protectedRoutes = [
   { path: '/ess/time-clock', name: 'EssTimeClock', auth: 'requiresAuth', element: <EssTimeClock /> },
   { path: '/ess/schedule', name: 'EssSchedule', auth: 'requiresAuth', element: <EssSchedule /> },
   { path: '/ess/pay-history', name: 'EssPayHistory', auth: 'requiresAuth', element: <EssPayHistory /> },
+  { path: '/ess/leave-requests', name: 'EssLeaveRequests', auth: 'requiresAuth', element: <EssLeaveRequests /> },
   { path: '/ess/profile', name: 'EssProfile', auth: 'requiresAuth', element: <EssProfile /> },
 ]
 

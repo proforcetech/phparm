@@ -315,6 +315,8 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 [ ] Timesheet Approval: Manager approves hours/flagged hours.
 [x] Payroll Run: System calculates Gross Pay.
+[x] Timesheet Approval: Manager approves hours/flagged hours.
+[ ] Payroll Run: System calculates Gross Pay.
 [x] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
 
 ## 7. Leave / Vacation Requests
@@ -323,12 +325,13 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
+[x] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
 
  Integration:
 
-[ ] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
-[ ] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
+[x] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar/Payroll Integration: Dispatch and appointment scheduling respects approved leave while payroll reporting includes PTO hours.
 
 ## 8. Branches / Multi-Location
 
