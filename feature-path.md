@@ -314,8 +314,8 @@ The current implementation appears to handle basic CRUD operations but may strug
  Workflow:
 
 [ ] Timesheet Approval: Manager approves hours/flagged hours.
-[ ] Payroll Run: System calculates Gross Pay.
-[ ] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
+[x] Payroll Run: System calculates Gross Pay.
+[x] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
 
 ## 7. Leave / Vacation Requests
 
