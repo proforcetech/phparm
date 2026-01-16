@@ -95,6 +95,22 @@ export const cmsService = {
     return response.data
   },
 
+  /**
+   * Get revisions for a page
+   */
+  async getPageRevisions(id) {
+    const response = await api.get(`/cms/pages/${id}/revisions`)
+    return response.data
+  },
+
+  /**
+   * Restore a page revision
+   */
+  async restorePageRevision(id, revisionId) {
+    const response = await api.post(`/cms/pages/${id}/revisions/${revisionId}/restore`)
+    return response.data
+  },
+
   // ================================================
   // Categories
   // ================================================
@@ -240,6 +256,22 @@ export const cmsService = {
    */
   async duplicateComponent(id) {
     const response = await api.post(`/cms/components/${id}/duplicate`)
+    return response.data
+  },
+
+  /**
+   * Get revisions for a component
+   */
+  async getComponentRevisions(id) {
+    const response = await api.get(`/cms/components/${id}/revisions`)
+    return response.data
+  },
+
+  /**
+   * Restore a component revision
+   */
+  async restoreComponentRevision(id, revisionId) {
+    const response = await api.post(`/cms/components/${id}/revisions/${revisionId}/restore`)
     return response.data
   },
 

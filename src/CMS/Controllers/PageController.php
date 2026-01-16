@@ -10,6 +10,7 @@ use App\Services\CMS\CMSCacheService;
 use App\Services\CMS\CMSComponentUsageService;
 use App\Services\CMS\CMSIndexService;
 use App\Services\CMS\CMSRenderingService;
+use App\Services\CMS\CMSRevisionService;
 use DateTimeImmutable;
 use PDO;
 
@@ -18,6 +19,9 @@ class PageController
     private Connection $connection;
     private AccessGate $gate;
     private ?CMSCacheService $cache;
+    private CMSRevisionService $revisions;
+
+    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null, ?CMSRevisionService $revisions = null)
     private CMSComponentUsageService $componentUsage;
 
     public function __construct(
@@ -33,6 +37,7 @@ class PageController
         $this->connection = $connection;
         $this->gate = $gate;
         $this->cache = $cache;
+        $this->revisions = $revisions ?? new CMSRevisionService($connection);
         $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
         $this->indexService = $indexService ?? new CMSIndexService($connection);
     }
@@ -129,6 +134,7 @@ class PageController
         $page = $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
 
         if (!empty($page['id'])) {
+            $this->revisions->recordRevision('page', (int) $page['id'], $page, $user->id, 'created');
             $this->componentUsage->syncForPage((int) $page['id'], $page);
         }
 
@@ -175,6 +181,12 @@ class PageController
             $this->invalidateCache($existingSlug);
         }
 
+        $updatedPage = $this->find($id)?->toArray();
+        if ($updatedPage !== null) {
+            $this->revisions->recordRevision('page', $id, $updatedPage, $user->id, 'updated');
+        }
+
+        return $updatedPage;
         $page = $this->find($id)?->toArray();
         if ($page !== null) {
             $this->indexService->indexPage($page);
@@ -230,6 +242,74 @@ class PageController
 
         $this->invalidateCache($existing->slug);
 
+        $publishedPage = $this->find($id)?->toArray();
+        if ($publishedPage !== null) {
+            $this->revisions->recordRevision('page', $id, $publishedPage, $user->id, 'published');
+        }
+
+        return $publishedPage;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function revisions(User $user, int $id): ?array
+    {
+        $this->gate->assert($user, 'cms.pages.view');
+
+        if ($this->find($id) === null) {
+            return null;
+        }
+
+        return [
+            'data' => $this->revisions->listRevisions('page', $id),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function restoreRevision(User $user, int $id, int $revisionId): ?array
+    {
+        $this->gate->assert($user, 'cms.pages.update');
+
+        $existing = $this->find($id);
+        if ($existing === null) {
+            return null;
+        }
+
+        $revision = $this->revisions->getRevision('page', $id, $revisionId);
+        if ($revision === null) {
+            return null;
+        }
+
+        $snapshot = json_decode($revision['snapshot_data'] ?? '', true);
+        if (!is_array($snapshot)) {
+            return null;
+        }
+
+        $payload = $this->normalizeSnapshotPayload($snapshot);
+        $payload['id'] = $id;
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
+            . 'WHERE id = :id'
+        );
+
+        $stmt->execute($payload);
+
+        $this->invalidateCache($existing->slug);
+        if ($existing->slug !== $payload['slug']) {
+            $this->invalidateCache($payload['slug']);
+        }
+
+        $restored = $this->find($id)?->toArray();
+        if ($restored !== null) {
+            $this->revisions->recordRevision('page', $id, $restored, $user->id, 'restored');
+        }
+
+        return $restored;
         $page = $this->find($id)?->toArray();
         if ($page !== null) {
             $this->indexService->indexPage($page);
@@ -403,7 +483,7 @@ class PageController
             'title' => (string) $title,
             'slug' => $this->slugify((string) $slugSource),
             'category_id' => array_key_exists('category_id', $data) ? ($data['category_id'] !== null ? (int) $data['category_id'] : null) : $existing?->category_id,
-	'template_id' => array_key_exists('template_id', $data) ? ($data['template_id'] !== null ? (int) $data['template_id'] : null) : $existing?->template_id,
+            'template_id' => array_key_exists('template_id', $data) ? ($data['template_id'] !== null ? (int) $data['template_id'] : null) : $existing?->template_id,
             'header_component_id' => isset($data['header_component_id']) ? (int) $data['header_component_id'] : $existing?->header_component_id,
             'footer_component_id' => isset($data['footer_component_id']) ? (int) $data['footer_component_id'] : $existing?->footer_component_id,
             'custom_css' => $data['custom_css'] ?? $existing?->custom_css,
@@ -422,6 +502,33 @@ class PageController
     }
 
     /**
+     * @param array<string, mixed> $snapshot
+     * @return array<string, mixed>
+     */
+    private function normalizeSnapshotPayload(array $snapshot): array
+    {
+        $title = (string) ($snapshot['title'] ?? 'Untitled Page');
+        $slug = (string) ($snapshot['slug'] ?? $this->slugify($title));
+
+        return [
+            'title' => $title,
+            'slug' => $slug,
+            'category_id' => array_key_exists('category_id', $snapshot) ? ($snapshot['category_id'] !== null ? (int) $snapshot['category_id'] : null) : null,
+            'template_id' => array_key_exists('template_id', $snapshot) ? ($snapshot['template_id'] !== null ? (int) $snapshot['template_id'] : null) : null,
+            'header_component_id' => array_key_exists('header_component_id', $snapshot) ? ($snapshot['header_component_id'] !== null ? (int) $snapshot['header_component_id'] : null) : null,
+            'footer_component_id' => array_key_exists('footer_component_id', $snapshot) ? ($snapshot['footer_component_id'] !== null ? (int) $snapshot['footer_component_id'] : null) : null,
+            'custom_css' => $snapshot['custom_css'] ?? null,
+            'custom_js' => $snapshot['custom_js'] ?? null,
+            'status' => (string) ($snapshot['status'] ?? 'draft'),
+            'meta_title' => $snapshot['meta_title'] ?? null,
+            'meta_description' => $snapshot['meta_description'] ?? null,
+            'meta_keywords' => $snapshot['meta_keywords'] ?? null,
+            'summary' => $snapshot['summary'] ?? null,
+            'content' => $snapshot['content'] ?? null,
+            'publish_start_at' => $snapshot['publish_start_at'] ?? null,
+            'publish_end_at' => $snapshot['publish_end_at'] ?? null,
+            'published_at' => $snapshot['published_at'] ?? null,
+        ];
      * @param mixed $value
      */
     private function serializeComponentOrder($value): ?string

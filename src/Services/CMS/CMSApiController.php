@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSRevisionService;
 use App\Services\CMS\CMSComponentUsageService;
 use App\Services\CMS\CMSIndexService;
 use PDO;
@@ -23,6 +24,9 @@ class CMSApiController
     private string $tablePrefix;
     private ?CMSCacheService $cacheService;
     private AccessGate $gate;
+    private CMSRevisionService $revisions;
+
+    public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null, ?CMSRevisionService $revisions = null)
     private CMSComponentUsageService $componentUsage;
     private CMSIndexService $indexService;
 
@@ -39,6 +43,7 @@ class CMSApiController
         $this->gate = $gate;
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
         $this->cacheService = $cacheService;
+        $this->revisions = $revisions ?? new CMSRevisionService($connection);
         $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
         $this->indexService = new CMSIndexService($connection, $this->tablePrefix);
     }
@@ -478,6 +483,11 @@ class CMSApiController
         $id = (int) $pdo->lastInsertId();
 
         $component = $this->getComponent($user, $id);
+        if ($component !== null) {
+            $this->revisions->recordRevision('component', $id, $component, $user?->id, 'created');
+        }
+
+        return $component ?? [];
         if ($component) {
             $this->indexService->indexComponent($component);
         }
@@ -531,6 +541,11 @@ class CMSApiController
         $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
 
         $component = $this->getComponent($user, $id);
+        if ($component !== null) {
+            $this->revisions->recordRevision('component', $id, $component, $user?->id, 'updated');
+        }
+
+        return $component ?? [];
         if ($component) {
             $this->indexService->indexComponent($component);
         }
@@ -577,6 +592,90 @@ class CMSApiController
         unset($component['id']);
 
         return $this->createComponent($user, $component);
+    }
+
+    /**
+     * List component revisions
+     */
+    public function listComponentRevisions(?User $user, int $id): ?array
+    {
+        $this->gate->assert($user, 'cms.components.view');
+        $this->authBridge->initializeCMSSession($user);
+
+        if ($this->getComponent($user, $id) === null) {
+            return null;
+        }
+
+        return [
+            'data' => $this->revisions->listRevisions('component', $id),
+        ];
+    }
+
+    /**
+     * Restore component revision
+     */
+    public function restoreComponentRevision(?User $user, int $id, int $revisionId): ?array
+    {
+        $this->requireEditAccess($user);
+
+        $existing = $this->getComponent($user, $id);
+        if ($existing === null) {
+            return null;
+        }
+
+        $revision = $this->revisions->getRevision('component', $id, $revisionId);
+        if ($revision === null) {
+            return null;
+        }
+
+        $snapshot = json_decode($revision['snapshot_data'] ?? '', true);
+        if (!is_array($snapshot)) {
+            return null;
+        }
+
+        $payload = $this->normalizeComponentSnapshot($snapshot);
+
+        $stmt = $this->connection->pdo()->prepare("
+            UPDATE {$this->table('components')} SET
+                name = :name,
+                slug = :slug,
+                type = :type,
+                description = :description,
+                content = :content,
+                css = :css,
+                javascript = :javascript,
+                cache_ttl = :cache_ttl,
+                is_active = :is_active,
+                updated_by = :updated_by,
+                updated_at = NOW()
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            'id' => $id,
+            'name' => $payload['name'],
+            'slug' => $payload['slug'],
+            'type' => $payload['type'],
+            'description' => $payload['description'],
+            'content' => $payload['content'],
+            'css' => $payload['css'],
+            'javascript' => $payload['javascript'],
+            'cache_ttl' => $payload['cache_ttl'],
+            'is_active' => $payload['is_active'],
+            'updated_by' => $user?->id,
+        ]);
+
+        $this->invalidateComponentCache($existing['slug'] ?? '');
+        if (($existing['slug'] ?? '') !== $payload['slug']) {
+            $this->invalidateComponentCache($payload['slug']);
+        }
+
+        $component = $this->getComponent($user, $id);
+        if ($component !== null) {
+            $this->revisions->recordRevision('component', $id, $component, $user?->id, 'restored');
+        }
+
+        return $component;
     }
 
     // ================================================
@@ -1059,6 +1158,28 @@ class CMSApiController
         $stmt->execute(['key' => '%component_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('component:' . $slug);
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return array<string, mixed>
+     */
+    private function normalizeComponentSnapshot(array $snapshot): array
+    {
+        $name = (string) ($snapshot['name'] ?? '');
+        $slug = (string) ($snapshot['slug'] ?? $this->generateSlug($name ?: 'component'));
+
+        return [
+            'name' => $name,
+            'slug' => $slug,
+            'type' => (string) ($snapshot['type'] ?? 'custom'),
+            'description' => $snapshot['description'] ?? '',
+            'content' => $snapshot['content'] ?? '',
+            'css' => $snapshot['css'] ?? '',
+            'javascript' => $snapshot['javascript'] ?? '',
+            'cache_ttl' => (int) ($snapshot['cache_ttl'] ?? 0),
+            'is_active' => !empty($snapshot['is_active']) ? 1 : 0,
+        ];
     }
 
     private function invalidateTemplateCache(string $slug): void
