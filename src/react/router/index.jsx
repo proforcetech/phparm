@@ -11,6 +11,7 @@ import StaffProfile from '../views/users/Profile'
 import InvoiceList from '../views/invoices/InvoiceList'
 import InvoiceDetail from '../views/invoices/InvoiceDetail'
 import InvoiceCreate from '../views/invoices/InvoiceCreate'
+import QuickSale from '../views/pos/QuickSale'
 import EstimateList from '../views/estimates/EstimateList'
 import EstimateCreate from '../views/estimates/EstimateCreate'
 import EstimateDetail from '../views/estimates/EstimateDetail'
@@ -190,6 +191,7 @@ const protectedRoutes = [
   { path: '/cp/dashboard', name: 'Dashboard', auth: 'requiresAuth', element: <AdminDashboard /> },
   { path: '/cp/profile', name: 'StaffProfile', auth: 'requiresAuth', element: <StaffProfile /> },
   { path: '/cp/invoices', name: 'InvoiceList', auth: 'requiresAuth', element: <InvoiceList /> },
+  { path: '/cp/quick-sale', name: 'QuickSale', auth: 'requiresAuth', element: <QuickSale /> },
   { path: '/cp/invoices/create', name: 'InvoiceCreate', auth: 'requiresAuth', element: <InvoiceCreate /> },
   { path: '/cp/invoices/:id', name: 'InvoiceDetail', auth: 'requiresAuth', element: <InvoiceDetail /> },
   { path: '/cp/estimates', name: 'EstimateList', auth: 'requiresAuth', element: <EstimateList /> },

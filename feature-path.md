@@ -267,7 +267,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] "Quick Sale" Interface: A high-contrast, touch-friendly UI.
+[x] "Quick Sale" Interface: A high-contrast, touch-friendly UI.
 [ ] Workflow: Bypasses "Vehicle" requirement. Uses a generic "Walk-in Customer" if no name is provided.
 [ ] Cash Drawer Management:
 

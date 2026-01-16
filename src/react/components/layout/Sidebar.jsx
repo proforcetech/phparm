@@ -10,6 +10,7 @@ const adminMenuItems = [
   { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
   { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
   { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
+  { path: '/cp/quick-sale', label: 'Quick Sale', icon: CreditCardIcon, moduleKey: 'invoicing' },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
   { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
