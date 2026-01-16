@@ -19,6 +19,9 @@ class CMSAuthBridge
         'admin' => 'admin',      // Full CMS access
         'manager' => 'admin',    // Full CMS access
         'technician' => 'editor', // Content editing only
+        'cms' => 'admin',
+        'cms_editor' => 'editor',
+        'cms_publisher' => 'publisher',
         'customer' => null,      // No CMS access
     ];
 
@@ -98,7 +101,7 @@ class CMSAuthBridge
     public function canEditContent(?User $user): bool
     {
         $role = $this->getCMSRole($user);
-        return in_array($role, ['admin', 'editor'], true);
+        return in_array($role, ['admin', 'editor', 'publisher'], true);
     }
 
     /**
