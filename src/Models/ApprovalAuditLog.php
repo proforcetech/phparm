@@ -7,6 +7,7 @@ class ApprovalAuditLog extends BaseModel
     public const ENTITY_ESTIMATE = 'estimate';
     public const ENTITY_WORKORDER = 'workorder';
     public const ENTITY_SUB_ESTIMATE = 'sub_estimate';
+    public const ENTITY_LEAVE_REQUEST = 'leave_request';
 
     public const ACTION_VIEWED = 'viewed';
     public const ACTION_JOB_APPROVED = 'job_approved';
