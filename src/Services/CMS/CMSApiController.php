@@ -231,7 +231,12 @@ class CMSApiController
 
         $id = (int) $pdo->lastInsertId();
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page !== null) {
+            $this->queuePageRevalidation($page);
+        }
+
+        return $page ?? [];
     }
 
     /**
@@ -274,7 +279,12 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($data['slug'] ?? '');
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page !== null) {
+            $this->queuePageRevalidation($page);
+        }
+
+        return $page ?? [];
     }
 
     /**
@@ -307,7 +317,12 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($page['slug']);
 
-        return $this->getPage($user, $id);
+        $published = $this->getPage($user, $id);
+        if ($published !== null) {
+            $this->queuePageRevalidation($published);
+        }
+
+        return $published ?? [];
     }
 
     /**
@@ -440,6 +455,7 @@ class CMSApiController
         $this->requireEditAccess($user);
 
         $pdo = $this->connection->pdo();
+        $existing = $this->getComponent($user, $id);
 
         $stmt = $pdo->prepare("
             UPDATE {$this->table('components')} SET
@@ -460,7 +476,7 @@ class CMSApiController
         $stmt->execute([
             'id' => $id,
             'name' => $data['name'] ?? '',
-            'slug' => $data['slug'] ?? '',
+            'slug' => $data['slug'] ?? ($existing['slug'] ?? ''),
             'type' => $data['type'] ?? 'custom',
             'description' => $data['description'] ?? '',
             'content' => $data['content'] ?? '',
@@ -472,7 +488,18 @@ class CMSApiController
         ]);
 
         // Invalidate cache
-        $this->invalidateComponentCache($data['slug'] ?? '');
+        $newSlug = (string) ($data['slug'] ?? ($existing['slug'] ?? ''));
+        if ($newSlug !== '') {
+            $this->invalidateComponentCache($newSlug);
+        }
+        if ($existing !== null && $existing['slug'] !== $newSlug) {
+            $this->invalidateComponentCache($existing['slug']);
+        }
+
+        $this->queueComponentRevalidation($id, array_filter([
+            $existing['slug'] ?? null,
+            $newSlug !== '' ? $newSlug : null,
+        ]));
 
         return $this->getComponent($user, $id);
     }
@@ -491,6 +518,7 @@ class CMSApiController
             $stmt = $pdo->prepare("DELETE FROM {$this->table('components')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
             $this->invalidateComponentCache($component['slug']);
+            $this->queueComponentRevalidation($id, [$component['slug']]);
             return true;
         }
 
@@ -982,5 +1010,140 @@ class CMSApiController
         $stmt->execute(['key' => '%template_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('template:' . $slug);
+    }
+
+    /**
+     * @param array<string, mixed> $page
+     */
+    private function queuePageRevalidation(array $page): void
+    {
+        if (!$this->cacheService || !$this->cacheService->shouldPreRenderOnSave()) {
+            return;
+        }
+
+        if (($page['status'] ?? '') !== 'published') {
+            return;
+        }
+
+        $slug = (string) ($page['slug'] ?? '');
+        if ($slug === '') {
+            return;
+        }
+
+        $categoryId = isset($page['category_id']) ? (int) $page['category_id'] : null;
+        $path = $this->buildPagePath($categoryId, $slug);
+        if ($path === '') {
+            return;
+        }
+
+        $connection = $this->connection;
+        $cache = $this->cacheService;
+
+        $cache->enqueueRevalidation(function () use ($connection, $cache, $path): void {
+            $renderingService = new CMSRenderingService($connection, $cache);
+            $renderingService->renderPage($path, true);
+        });
+    }
+
+    /**
+     * @param array<int, string> $slugs
+     */
+    private function queueComponentRevalidation(int $componentId, array $slugs): void
+    {
+        if (!$this->cacheService || !$this->cacheService->shouldRevalidateOnChange()) {
+            return;
+        }
+
+        if ($componentId <= 0 && empty($slugs)) {
+            return;
+        }
+
+        $pages = $this->findPagesUsingComponent($componentId, $slugs);
+        foreach ($pages as $page) {
+            $this->queuePageRevalidation($page);
+        }
+    }
+
+    private function buildPagePath(?int $categoryId, string $slug): string
+    {
+        $normalizedSlug = $this->normalizeSlugPath($slug);
+        if ($normalizedSlug === '') {
+            return '';
+        }
+
+        $segments = $this->resolveCategorySegments($categoryId);
+        if (empty($segments)) {
+            return $normalizedSlug;
+        }
+
+        $segments[] = $normalizedSlug;
+
+        return implode('/', $segments);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveCategorySegments(?int $categoryId): array
+    {
+        if ($categoryId === null) {
+            return [];
+        }
+
+        $pdo = $this->connection->pdo();
+        $segments = [];
+        $currentId = $categoryId;
+
+        while ($currentId !== null) {
+            $stmt = $pdo->prepare("SELECT slug, parent_id FROM {$this->table('categories')} WHERE id = :id LIMIT 1");
+            $stmt->execute(['id' => $currentId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$row) {
+                break;
+            }
+
+            $segments[] = (string) $row['slug'];
+            $parentId = $row['parent_id'];
+            $currentId = $parentId !== null ? (int) $parentId : null;
+        }
+
+        return array_reverse($segments);
+    }
+
+    /**
+     * @param array<int, string> $slugs
+     * @return array<int, array<string, mixed>>
+     */
+    private function findPagesUsingComponent(int $componentId, array $slugs): array
+    {
+        $pdo = $this->connection->pdo();
+        $conditions = [
+            '(header_component_id = :component_id OR footer_component_id = :component_id)',
+        ];
+        $params = ['component_id' => $componentId];
+
+        $tagIndex = 0;
+        foreach ($slugs as $slug) {
+            $slug = trim($slug);
+            if ($slug === '') {
+                continue;
+            }
+
+            $tagKey = 'tag_' . $tagIndex;
+            $conditions[] = "content LIKE :{$tagKey}";
+            $params[$tagKey] = '%{{component:' . $slug . '}}%';
+            $tagIndex++;
+        }
+
+        $sql = "SELECT id, slug, category_id, status
+            FROM {$this->table('pages')}
+            WHERE status = 'published'
+            AND (" . implode(' OR ', $conditions) . ')';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }

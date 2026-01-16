@@ -111,6 +111,7 @@ class PageController
         $page = $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
 
         $this->invalidateCache($page['slug'] ?? '');
+        $this->queuePageRevalidation($page);
 
         return $page;
     }
@@ -145,7 +146,12 @@ class PageController
             $this->invalidateCache($existingSlug);
         }
 
-        return $this->find($id)?->toArray();
+        $updated = $this->find($id)?->toArray();
+        if ($updated !== null) {
+            $this->queuePageRevalidation($updated);
+        }
+
+        return $updated;
     }
 
     public function destroy(User $user, int $id): bool
@@ -193,7 +199,12 @@ class PageController
 
         $this->invalidateCache($existing->slug);
 
-        return $this->find($id)?->toArray();
+        $published = $this->find($id)?->toArray();
+        if ($published !== null) {
+            $this->queuePageRevalidation($published);
+        }
+
+        return $published;
     }
 
     /**
@@ -378,6 +389,86 @@ class PageController
         }
 
         $this->cache?->forgetPrefix('page:' . $this->slugify($normalizedSlug));
+    }
+
+    /**
+     * @param array<string, mixed> $page
+     */
+    private function queuePageRevalidation(array $page): void
+    {
+        if (!$this->cache || !$this->cache->shouldPreRenderOnSave()) {
+            return;
+        }
+
+        if (($page['status'] ?? '') !== 'published') {
+            return;
+        }
+
+        $slug = (string) ($page['slug'] ?? '');
+        if ($slug === '') {
+            return;
+        }
+
+        $categoryId = isset($page['category_id']) ? (int) $page['category_id'] : null;
+        $path = $this->buildPagePath($categoryId, $slug);
+        if ($path === '') {
+            return;
+        }
+
+        $connection = $this->connection;
+        $cache = $this->cache;
+
+        $cache->enqueueRevalidation(function () use ($connection, $cache, $path): void {
+            $renderingService = new CMSRenderingService($connection, $cache);
+            $renderingService->renderPage($path, true);
+        });
+    }
+
+    private function buildPagePath(?int $categoryId, string $slug): string
+    {
+        $normalizedSlug = $this->normalizedSlug($slug);
+        if ($normalizedSlug === '') {
+            return '';
+        }
+
+        $segments = $this->resolveCategorySegments($categoryId);
+        if (empty($segments)) {
+            return $normalizedSlug;
+        }
+
+        $segments[] = $normalizedSlug;
+
+        return implode('/', $segments);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveCategorySegments(?int $categoryId): array
+    {
+        if ($categoryId === null) {
+            return [];
+        }
+
+        $pdo = $this->connection->pdo();
+        $segments = [];
+        $currentId = $categoryId;
+
+        while ($currentId !== null) {
+            $stmt = $pdo->prepare('SELECT slug, parent_id FROM cms_categories WHERE id = :id LIMIT 1');
+            $stmt->execute(['id' => $currentId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$row) {
+                break;
+            }
+
+            $segments[] = (string) $row['slug'];
+            $parentId = $row['parent_id'];
+            $currentId = $parentId !== null ? (int) $parentId : null;
+        }
+
+        return array_reverse($segments);
     }
 
     private function slugify(string $value): string

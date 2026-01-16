@@ -22,15 +22,23 @@ class CMSRenderingService
         $this->cache = $cache;
     }
 
-    public function renderPage(string $slug): ?string
+    public function renderPage(string $slug, bool $forceRefresh = false): ?string
     {
         $cacheKey = 'page:rendered:' . $slug;
 
         try {
-            if ($this->cache) {
-                $cached = $this->cache->get($cacheKey);
+            if ($this->cache && !$forceRefresh) {
+                $cached = $this->cache->getWithStale($cacheKey);
                 if ($cached !== null) {
-                    return $cached;
+                    if (!$cached['is_stale']) {
+                        return $cached['value'];
+                    }
+
+                    $this->cache->enqueueRevalidation(function () use ($slug): void {
+                        $this->renderPage($slug, true);
+                    });
+
+                    return $cached['value'];
                 }
             }
 
@@ -42,7 +50,7 @@ class CMSRenderingService
             $html = $this->renderPageContent($page);
 
             if ($this->cache && $html !== null) {
-                $this->cache->set($cacheKey, $html, 3600);
+                $this->cache->set($cacheKey, $html, $this->cache->defaultTtl());
             }
 
             return $html;

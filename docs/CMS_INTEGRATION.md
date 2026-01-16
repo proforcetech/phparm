@@ -109,7 +109,10 @@ return [
     'cache' => [
         'enabled' => env('CMS_CACHE_ENABLED', true),
         'ttl' => env('CMS_CACHE_TTL', 3600),
-        'driver' => 'file', // file or database
+        'stale_ttl' => env('CMS_CACHE_STALE_TTL', 300),
+        'pre_render_on_save' => env('CMS_CACHE_PRE_RENDER_ON_SAVE', true),
+        'revalidate_on_change' => env('CMS_CACHE_REVALIDATE_ON_CHANGE', true),
+        'driver' => 'file', // file or redis
     ],
     // ... other settings
 ];
@@ -123,6 +126,9 @@ Add these to your `.env` file:
 # CMS Configuration
 CMS_CACHE_ENABLED=true
 CMS_CACHE_TTL=3600
+CMS_CACHE_STALE_TTL=300
+CMS_CACHE_PRE_RENDER_ON_SAVE=true
+CMS_CACHE_REVALIDATE_ON_CHANGE=true
 CMS_CACHE_DRIVER=file # file or redis
 CMS_CACHE_PATH=/path/to/project/storage/cms-cache
 CMS_CACHE_REDIS_HOST=127.0.0.1
@@ -133,6 +139,18 @@ CMS_CACHE_PREFIX=cms:
 ```
 
 The CMS uses the same database connection as the main application (configured via `DB_HOST`, `DB_NAME`, etc.).
+
+## Cache Strategy
+
+The CMS cache favors Redis when available and falls back to a file cache stored at `CMS_CACHE_PATH`. It uses a two-phase freshness window:
+
+1. **Fresh TTL** (`CMS_CACHE_TTL`) - Requests served instantly from cache.
+2. **Stale-While-Revalidate** (`CMS_CACHE_STALE_TTL`) - Once the fresh TTL expires, stale HTML is still served while a background revalidation rebuilds the cache.
+
+When editors publish or update pages, the system can proactively pre-render the updated page in the background. When components are updated, published pages that reference those components are also queued for revalidation. Control this behavior with:
+
+- `CMS_CACHE_PRE_RENDER_ON_SAVE` - Enable/disable page pre-rendering after saves.
+- `CMS_CACHE_REVALIDATE_ON_CHANGE` - Enable/disable revalidation of pages when components change.
 
 ## Usage
 
