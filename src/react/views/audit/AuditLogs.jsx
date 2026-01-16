@@ -22,6 +22,33 @@ const formatDateTime = (value) => {
   })
 }
 
+const normalizeCoordinate = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+const extractLocation = (context) => {
+  if (!context || typeof context !== 'object') return null
+  const nested = context.location && typeof context.location === 'object' ? context.location : {}
+  const latitude = normalizeCoordinate(nested.latitude ?? nested.lat ?? context.latitude ?? context.lat)
+  const longitude = normalizeCoordinate(nested.longitude ?? nested.lng ?? context.longitude ?? context.lng)
+  if (latitude === null || longitude === null) return null
+  const accuracy = normalizeCoordinate(
+    nested.accuracy ?? nested.location_accuracy_meters ?? context.accuracy ?? context.location_accuracy_meters
+  )
+
+  return { latitude, longitude, accuracy }
+}
+
+const formatCoordinates = (location) => {
+  if (!location) return '—'
+  const lat = location.latitude.toFixed(6)
+  const lng = location.longitude.toFixed(6)
+  const accuracy = location.accuracy != null ? ` (±${Math.round(location.accuracy)}m)` : ''
+  return `${lat}, ${lng}${accuracy}`
+}
+
 export default function AuditLogs() {
   const navigate = useNavigate()
   const toast = useToast()
@@ -159,6 +186,7 @@ export default function AuditLogs() {
                     const actorId = log.actor_id ?? log.actorId ?? '—'
                     const createdAt = log.created_at || log.createdAt
                     const context = log.context || {}
+                    const location = extractLocation(context)
 
                     return (
                       <tr key={`${event}-${entityId ?? index}`} className="hover:bg-gray-50">
@@ -169,7 +197,15 @@ export default function AuditLogs() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{actorId ?? '—'}</td>
                         <td className="px-6 py-4 text-xs text-gray-500">
-                          <pre className="whitespace-pre-wrap break-words">{JSON.stringify(context, null, 2)}</pre>
+                          <div className="space-y-2">
+                            {location ? (
+                              <div className="rounded bg-gray-50 px-2 py-1 text-xs text-gray-600">
+                                <span className="font-medium text-gray-700">Coordinates:</span>{' '}
+                                {formatCoordinates(location)}
+                              </div>
+                            ) : null}
+                            <pre className="whitespace-pre-wrap break-words">{JSON.stringify(context, null, 2)}</pre>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatDateTime(createdAt)}</td>
                       </tr>

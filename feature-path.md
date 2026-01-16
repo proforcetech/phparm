@@ -59,13 +59,23 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] Media Library Folders: As the media library grows, implement a folder/tagging system in MediaController to prevent a flat, unmanageable list of images.
 [x] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
 [ ] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
+[ ] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
+[x] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
 [ ] Schema Validation for Components: Since components likely use JSON or flexible fields, implement backend validation to ensure that required data (like image URLs or call-to-action text) is present before saving.
 [ ] Search Index Integration: Implement a hook that updates an internal search index (like Meilisearch or a simple full-text DB index) whenever CMS content changes, powering a site-wide search for customers.
+[ ] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
+[x] Schema Validation for Components: Since components likely use JSON or flexible fields, implement backend validation to ensure that required data (like image URLs or call-to-action text) is present before saving.
+[x] Search Index Integration: Implement a hook that updates an internal search index (like Meilisearch or a simple full-text DB index) whenever CMS content changes, powering a site-wide search for customers.
 
 
 
 ## 4. Dispatch & Recommendation Engine (/src/Services/Dispatch)
 
+[ ] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
+[ ] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
+[ ] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
+[x] Predictive ETA (Traffic-Aware): Integrate the Google Distance Matrix API into DispatchRecommendationService. Standard straight-line distance is often inaccurate in urban towing scenarios.
+[ ] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
 [x] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
 [x] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
 [x] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
@@ -106,9 +116,9 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 10. Technical & Performance Improvements
 
+[x] Unified Audit Log: Ensure every status change (e.g., "En Route" -> "Arrived") logs the GPS coordinates of the action, not just the timestamp. This is critical for resolving disputes with motor clubs.
 [x] Database Partitioning: Roadside tracking data (GPS pings) grows exponentially. Partition the driver_locations table by month to ensure the dispatch map remains fast as your history grows.
 [x] WebSocket Integration: The DispatchView.jsx map should not poll the server. Use a real-time provider (like Pusher or a self-hosted Soketi instance) to push driver_location_updated events.
-[ ] Unified Audit Log: Ensure every status change (e.g., "En Route" -> "Arrived") logs the GPS coordinates of the action, not just the timestamp. This is critical for resolving disputes with motor clubs.
 
 ## Summary of "Must-Have" Feature Set
 
@@ -296,7 +306,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
+[x] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
 [ ] Bank Feeds: This is complex to build. Strongly recommend integrating a provider like Plaid or Yodlee to fetch transactions automatically.
 [ ] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.
 [ ] Undeposited Funds: When cash/checks are received, they go to a temporary asset account ("Undeposited Funds"). The "Cash Deposit" feature groups them and moves the total to the "Checking Account" to match the single bank slip.
@@ -314,8 +324,10 @@ The current implementation appears to handle basic CRUD operations but may strug
  Workflow:
 
 [ ] Timesheet Approval: Manager approves hours/flagged hours.
+[x] Payroll Run: System calculates Gross Pay.
+[x] Timesheet Approval: Manager approves hours/flagged hours.
 [ ] Payroll Run: System calculates Gross Pay.
-[ ] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
+[x] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
 
 ## 7. Leave / Vacation Requests
 
@@ -323,12 +335,13 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
+[x] New Model: LeaveRequest (Start Date, End Date, Type: Vacation/Sick/Unpaid, Reason, Status).
 
  Integration:
 
-[ ] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
-[ ] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
+[x] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar/Payroll Integration: Dispatch and appointment scheduling respects approved leave while payroll reporting includes PTO hours.
 
 ## 8. Branches / Multi-Location
 
