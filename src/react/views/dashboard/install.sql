@@ -928,6 +928,7 @@ CREATE TABLE IF NOT EXISTS cms_media (
     alt_text VARCHAR(255) NULL,
     status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
     published_at DATETIME NULL,
+    variants JSON NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_cms_media_status (status),
