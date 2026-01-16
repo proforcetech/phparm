@@ -2305,7 +2305,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inventory routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
         $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
@@ -2987,7 +2987,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Roadside assistance routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
@@ -4660,7 +4660,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $etaConfig = require __DIR__ . '/../config/dispatch.php';
         $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
         $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
@@ -4842,7 +4842,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Job Density Heatmap Data
-        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.heatmap.view')) {
                 return Response::forbidden('Permission denied');
@@ -4885,7 +4885,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['data' => $data]);
         });
 
-        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $body = $request->body();
             $driverProfileId = $body['driver_profile_id'] ?? null;
@@ -4933,7 +4933,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.certifications.verify')) {
                 return Response::forbidden('Permission denied');
@@ -5304,7 +5304,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Warranty routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $warrantyMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
@@ -5366,7 +5366,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Credit Account routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $creditController = new \App\Services\Credit\CreditAccountController(
             new \App\Services\Credit\CreditAccountService($connection),
@@ -5431,8 +5431,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Document Vault routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
                 return Response::forbidden('Permission denied');
@@ -5506,7 +5506,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
                 return Response::forbidden('Permission denied');
@@ -5537,7 +5537,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5605,7 +5605,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5679,7 +5679,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['success' => true]);
         });
 
-        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5935,8 +5935,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Time Tracking routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
+        $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection, $auditLogger);
         $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
         $payrollExportService = new \App\Services\Payroll\PayrollExportService(
             $connection,
@@ -7686,7 +7687,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Audit routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $auditController = new \App\Services\Audit\AuditController(
             new \App\Services\Audit\AuditLogViewerService($connection),
@@ -8379,7 +8380,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Towing Pricing Matrix routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $towingPricingController = new \App\Services\Towing\TowingPricingController(
             new \App\Services\Towing\TowingPricingService($connection),
             $gate
@@ -8538,8 +8539,8 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     // =========================================================================
 
     // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
             $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
@@ -8548,7 +8549,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Admin-only module management routes
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
         $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);
