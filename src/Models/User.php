@@ -11,6 +11,7 @@ class User extends BaseModel
     public string $role = '';
     public bool $email_verified = false;
     public ?int $customer_id = null;
+    public ?int $branch_id = null;
     public ?string $remember_token = null;
     public bool $active = true;
     public bool $two_factor_enabled = false;
@@ -21,6 +22,7 @@ class User extends BaseModel
      */
     public ?array $two_factor_recovery_codes = null;
     public bool $two_factor_setup_pending = false;
+    public ?int $branch_id = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
     public ?string $last_activity_at = null;

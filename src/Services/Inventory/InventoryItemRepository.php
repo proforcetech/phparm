@@ -94,14 +94,21 @@ class InventoryItemRepository
         return null;
     }
 
-    public function find(int $id): ?InventoryItem
+    public function find(int $id, ?int $branchId = null): ?InventoryItem
     {
         if (isset($this->cache[$id])) {
             return $this->cache[$id];
         }
 
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM inventory_items WHERE id = :id');
-        $stmt->execute(['id' => $id]);
+        $sql = 'SELECT * FROM inventory_items WHERE id = :id';
+        $params = ['id' => $id];
+        if ($branchId !== null) {
+            $sql .= ' AND branch_id = :branch_id';
+            $params['branch_id'] = $branchId;
+        }
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -109,22 +116,29 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
-        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id], $branchId));
         $this->cache[$id] = $item;
 
         return $item;
     }
 
-    public function findBySku(string $sku): ?InventoryItem
+    public function findBySku(string $sku, ?int $branchId = null): ?InventoryItem
     {
         foreach ($this->cache as $item) {
-            if ($item->sku === $sku) {
+            if ($item->sku === $sku && ($branchId === null || $item->branch_id === $branchId)) {
                 return $item;
             }
         }
 
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM inventory_items WHERE sku = :sku LIMIT 1');
-        $stmt->execute(['sku' => $sku]);
+        $sql = 'SELECT * FROM inventory_items WHERE sku = :sku';
+        $params = ['sku' => $sku];
+        if ($branchId !== null) {
+            $sql .= ' AND branch_id = :branch_id';
+            $params['branch_id'] = $branchId;
+        }
+        $sql .= ' LIMIT 1';
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -132,7 +146,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
-        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id], $branchId));
         $this->cache[$item->id] = $item;
 
         return $item;
@@ -144,10 +158,13 @@ class InventoryItemRepository
      * @param string $code Barcode or UPC value
      * @return InventoryItem|null
      */
-    public function findByBarcode(string $code): ?InventoryItem
+    public function findByBarcode(string $code, ?int $branchId = null): ?InventoryItem
     {
         // Check cache first
         foreach ($this->cache as $item) {
+            if ($branchId !== null && $item->branch_id !== $branchId) {
+                continue;
+            }
             if (isset($item->barcode) && $item->barcode === $code) {
                 return $item;
             }
@@ -158,11 +175,18 @@ class InventoryItemRepository
 
         // Search by barcode, UPC, or SKU (fallback)
         $sql = 'SELECT * FROM inventory_items
-                WHERE barcode = :code OR upc = :code2 OR sku = :code3
-                LIMIT 1';
+                WHERE (barcode = :code OR upc = :code2 OR sku = :code3)';
+        if ($branchId !== null) {
+            $sql .= ' AND branch_id = :branch_id';
+        }
+        $sql .= ' LIMIT 1';
 
         $stmt = $this->connection->pdo()->prepare($sql);
-        $stmt->execute(['code' => $code, 'code2' => $code, 'code3' => $code]);
+        $params = ['code' => $code, 'code2' => $code, 'code3' => $code];
+        if ($branchId !== null) {
+            $params['branch_id'] = $branchId;
+        }
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -170,7 +194,7 @@ class InventoryItemRepository
         }
 
         $item = $this->mapRow($row);
-        $this->applyForecasting($item, $this->getUsageTotals([$item->id]));
+        $this->applyForecasting($item, $this->getUsageTotals([$item->id], $branchId));
         $this->cache[$item->id] = $item;
 
         return $item;
@@ -221,20 +245,26 @@ class InventoryItemRepository
     public function findDuplicate(array $payload): ?InventoryItem
     {
         if (!empty($payload['sku'])) {
-            $existing = $this->findBySku((string) $payload['sku']);
+            $existing = $this->findBySku((string) $payload['sku'], $payload['branch_id'] ?? null);
             if ($existing !== null) {
                 return $existing;
             }
         }
 
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT * FROM inventory_items WHERE name = :name AND (category = :category OR (:category IS NULL AND category IS NULL)) LIMIT 1'
+            'SELECT * FROM inventory_items WHERE name = :name AND (category = :category OR (:category IS NULL AND category IS NULL))'
+            . (array_key_exists('branch_id', $payload) && $payload['branch_id'] !== null ? ' AND branch_id = :branch_id' : '')
+            . ' LIMIT 1'
         );
 
-        $stmt->execute([
+        $params = [
             'name' => $payload['name'],
             'category' => $payload['category'] ?? null,
-        ]);
+        ];
+        if (array_key_exists('branch_id', $payload) && $payload['branch_id'] !== null) {
+            $params['branch_id'] = (int) $payload['branch_id'];
+        }
+        $stmt->execute($params);
 
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
@@ -254,6 +284,7 @@ class InventoryItemRepository
     {
         $payload = $this->validator->validate($data);
         $columnMap = [
+            'branch_id' => $this->resolveColumn('branch_id'),
             'name' => 'name',
             'description' => 'description',
             'sku' => 'sku',
@@ -321,6 +352,7 @@ class InventoryItemRepository
         $overrideChanged = $payload['reorder_point_override'] !== $existing->reorder_point_override
             || $payload['reorder_point_override_reason'] !== $existing->reorder_point_override_reason;
         $columnMap = [
+            'branch_id' => $this->resolveColumn('branch_id'),
             'name' => 'name',
             'description' => 'description',
             'sku' => 'sku',
@@ -433,7 +465,7 @@ class InventoryItemRepository
             $this->cache[$item->id] = $item;
         }
 
-        $this->attachForecasting($results);
+        $this->attachForecasting($results, $filters['branch_id'] ?? null);
         $this->listCache[$cacheKey] = $results;
 
         return $results;
@@ -442,9 +474,12 @@ class InventoryItemRepository
     /**
      * @return array<int, InventoryItem>
      */
-    public function lowStock(int $limit = 25, int $offset = 0): array
+    public function lowStock(int $limit = 25, int $offset = 0, ?int $branchId = null): array
     {
         $filters = ['low_stock_only' => true];
+        if ($branchId !== null) {
+            $filters['branch_id'] = $branchId;
+        }
 
         return $this->list($filters, $limit, $offset);
     }
@@ -452,9 +487,9 @@ class InventoryItemRepository
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function lowStockAlerts(int $limit = 25, int $offset = 0): array
+    public function lowStockAlerts(int $limit = 25, int $offset = 0, ?int $branchId = null): array
     {
-        $items = $this->lowStock($limit, $offset);
+        $items = $this->lowStock($limit, $offset, $branchId);
 
         return array_map(static function (InventoryItem $item) {
             return [
@@ -477,6 +512,11 @@ class InventoryItemRepository
     {
         $clauses = [];
         $bindings = [];
+
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
 
         if (isset($filters['category']) && $filters['category'] !== '') {
             $clauses[] = 'category = :category';
@@ -591,14 +631,14 @@ class InventoryItemRepository
     /**
      * @param array<int, InventoryItem> $items
      */
-    private function attachForecasting(array $items): void
+    private function attachForecasting(array $items, ?int $branchId = null): void
     {
         if (!$items) {
             return;
         }
 
         $ids = array_map(static fn (InventoryItem $item) => $item->id, $items);
-        $usageTotals = $this->getUsageTotals($ids);
+        $usageTotals = $this->getUsageTotals($ids, $branchId);
         foreach ($items as $item) {
             $this->applyForecasting($item, $usageTotals);
         }
@@ -608,7 +648,7 @@ class InventoryItemRepository
      * @param array<int, int> $inventoryIds
      * @return array<int, float>
      */
-    private function getUsageTotals(array $inventoryIds): array
+    private function getUsageTotals(array $inventoryIds, ?int $branchId = null): array
     {
         if ($inventoryIds === []) {
             return [];
@@ -617,6 +657,7 @@ class InventoryItemRepository
         $placeholders = implode(',', array_fill(0, count($inventoryIds), '?'));
         $startDate = (new \DateTimeImmutable('-' . self::FORECAST_WINDOW_DAYS . ' days'))->format('Y-m-d H:i:s');
 
+        $branchClause = $branchId !== null ? ' AND w.branch_id = ?' : '';
         $sql = "SELECT wi.inventory_item_id, SUM(wi.quantity) AS usage_quantity
                 FROM workorder_items wi
                 INNER JOIN workorder_jobs wj ON wi.workorder_job_id = wj.id
@@ -624,9 +665,12 @@ class InventoryItemRepository
                 WHERE wi.inventory_item_id IN ({$placeholders})
                   AND w.status = ?
                   AND w.completed_at IS NOT NULL
-                  AND w.completed_at >= ?
+                  AND w.completed_at >= ?{$branchClause}
                 GROUP BY wi.inventory_item_id";
         $params = array_merge($inventoryIds, ['completed', $startDate]);
+        if ($branchId !== null) {
+            $params[] = $branchId;
+        }
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($params);
 
@@ -690,7 +734,7 @@ class InventoryItemRepository
      * @param int $limit Maximum number of results
      * @return array<int, InventoryItem>
      */
-    public function searchForParts(string $query, ?int $vehicleMasterId = null, int $limit = 20): array
+    public function searchForParts(string $query, ?int $vehicleMasterId = null, int $limit = 20, ?int $branchId = null): array
     {
         $bindings = [];
         $searchConditions = $this->buildSearchClause($query, $bindings);
@@ -699,14 +743,24 @@ class InventoryItemRepository
             // Search only parts compatible with the specified vehicle
             $sql = 'SELECT DISTINCT i.* FROM inventory_items i
                     INNER JOIN inventory_vehicle_compatibility ivc ON i.id = ivc.inventory_item_id
-                    WHERE ivc.vehicle_master_id = :vehicle_master_id
+                    WHERE ivc.vehicle_master_id = :vehicle_master_id';
+            if ($branchId !== null) {
+                $sql .= ' AND i.branch_id = :branch_id';
+                $bindings['branch_id'] = $branchId;
+            }
+            $sql .= '
                     AND ' . $searchConditions . '
                     ORDER BY i.name ASC
                     LIMIT :limit';
             $bindings['vehicle_master_id'] = $vehicleMasterId;
         } else {
             $sql = 'SELECT * FROM inventory_items i
-                    WHERE ' . $searchConditions . '
+                    WHERE ' . $searchConditions;
+            if ($branchId !== null) {
+                $sql .= ' AND i.branch_id = :branch_id';
+                $bindings['branch_id'] = $branchId;
+            }
+            $sql .= '
                     ORDER BY i.name ASC
                     LIMIT :limit';
         }
@@ -812,7 +866,7 @@ class InventoryItemRepository
      * @param int $limit Maximum results
      * @return array<int, array<string, mixed>>
      */
-    public function searchWithCompatibility(string $query, int $vehicleMasterId, int $limit = 20): array
+    public function searchWithCompatibility(string $query, int $vehicleMasterId, int $limit = 20, ?int $branchId = null): array
     {
         $bindings = ['vehicle_master_id' => $vehicleMasterId];
         $searchConditions = $this->buildSearchClause($query, $bindings);
@@ -823,7 +877,12 @@ class InventoryItemRepository
                 FROM inventory_items i
                 LEFT JOIN inventory_vehicle_compatibility ivc
                     ON i.id = ivc.inventory_item_id AND ivc.vehicle_master_id = :vehicle_master_id
-                WHERE ' . $searchConditions . '
+                WHERE ' . $searchConditions;
+        if ($branchId !== null) {
+            $sql .= ' AND i.branch_id = :branch_id';
+            $bindings['branch_id'] = $branchId;
+        }
+        $sql .= '
                 ORDER BY is_compatible DESC, i.name ASC
                 LIMIT :limit';
 
@@ -859,17 +918,24 @@ class InventoryItemRepository
      * @param int $limit Maximum results
      * @return array<int, InventoryItem>
      */
-    public function getCompatibleParts(int $vehicleMasterId, int $limit = 100): array
+    public function getCompatibleParts(int $vehicleMasterId, int $limit = 100, ?int $branchId = null): array
     {
         $sql = 'SELECT i.* FROM inventory_items i
                 INNER JOIN inventory_vehicle_compatibility ivc ON i.id = ivc.inventory_item_id
-                WHERE ivc.vehicle_master_id = :vehicle_master_id
+                WHERE ivc.vehicle_master_id = :vehicle_master_id';
+        if ($branchId !== null) {
+            $sql .= ' AND i.branch_id = :branch_id';
+        }
+        $sql .= '
                 ORDER BY i.category, i.name ASC
                 LIMIT :limit';
 
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue(':vehicle_master_id', $vehicleMasterId, PDO::PARAM_INT);
+        if ($branchId !== null) {
+            $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_INT);
+        }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 

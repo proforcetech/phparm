@@ -46,6 +46,10 @@ const initialFormState = {
     partsTechBase: '',
     partsTechKey: '',
     partsTechMarkup: '',
+    bankFeedsProvider: '',
+    bankFeedsClientId: '',
+    bankFeedsClientSecret: '',
+    bankFeedsAccessToken: '',
   },
   rejectionReasons: '',
 }
@@ -158,6 +162,10 @@ export default function useSettingsForm() {
             partsTechBase: getSetting(settings, 'integrations.partstech.api_base', ''),
             partsTechKey: getSetting(settings, 'integrations.partstech.api_key', ''),
             partsTechMarkup,
+            bankFeedsProvider: getSetting(settings, 'integrations.bank_feeds.provider', 'demo'),
+            bankFeedsClientId: getSetting(settings, 'integrations.bank_feeds.client_id', ''),
+            bankFeedsClientSecret: getSetting(settings, 'integrations.bank_feeds.client_secret', ''),
+            bankFeedsAccessToken: getSetting(settings, 'integrations.bank_feeds.access_token', ''),
           },
           rejectionReasons,
         }
@@ -244,6 +252,10 @@ export default function useSettingsForm() {
       'integrations.zoho.org_id': form.integrations.zohoOrgId,
       'integrations.partstech.api_base': form.integrations.partsTechBase,
       'integrations.partstech.api_key': form.integrations.partsTechKey,
+      'integrations.bank_feeds.provider': form.integrations.bankFeedsProvider,
+      'integrations.bank_feeds.client_id': form.integrations.bankFeedsClientId,
+      'integrations.bank_feeds.client_secret': form.integrations.bankFeedsClientSecret,
+      'integrations.bank_feeds.access_token': form.integrations.bankFeedsAccessToken,
     }
   }, [form])
 

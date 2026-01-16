@@ -20,15 +20,23 @@ class UserRepository
      *
      * @return array<int, User>
      */
-    public function listByRole(string $role): array
+    public function listByRole(string $role, ?int $branchId = null): array
     {
+        $conditions = ['role = :role', 'active = 1'];
+        $bindings = ['role' => $role];
+
+        if ($branchId !== null) {
+            $conditions[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = $branchId;
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, created_at, updated_at, last_activity_at
+            'SELECT id, name, email, role, active, branch_id, created_at, updated_at, last_activity_at
              FROM users
-             WHERE role = :role AND active = 1
+             WHERE ' . implode(' AND ', $conditions) . '
              ORDER BY name ASC'
         );
-        $stmt->execute(['role' => $role]);
+        $stmt->execute($bindings);
 
         $results = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
@@ -43,19 +51,26 @@ class UserRepository
      *
      * @return array<int, User>
      */
-    public function searchByRole(string $role, string $query, int $limit = 10): array
+    public function searchByRole(string $role, string $query, int $limit = 10, ?int $branchId = null): array
     {
+        $conditions = ['role = :role', 'active = 1'];
+        if ($branchId !== null) {
+            $conditions[] = 'branch_id = :branch_id';
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, created_at, updated_at, last_activity_at
+            'SELECT id, name, email, role, active, branch_id, created_at, updated_at, last_activity_at
              FROM users
-             WHERE role = :role
-             AND active = 1
+             WHERE ' . implode(' AND ', $conditions) . '
              AND (id = :exact_id OR name LIKE :query OR email LIKE :query)
              ORDER BY name ASC
              LIMIT :limit'
         );
 
         $stmt->bindValue(':role', $role);
+        if ($branchId !== null) {
+            $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_INT);
+        }
         $stmt->bindValue(':exact_id', is_numeric($query) ? (int) $query : 0, PDO::PARAM_INT);
         $stmt->bindValue(':query', '%' . $query . '%');
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
@@ -77,8 +92,7 @@ class UserRepository
      */
     public function list(array $filters = []): array
     {
-        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at FROM users WHERE active = 1';
-        $query = 'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at FROM users WHERE 1 = 1';
+        $query = 'SELECT id, name, email, role, active, branch_id, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at FROM users WHERE 1 = 1';
         $bindings = [];
 
         $status = $filters['status'] ?? '';
@@ -93,6 +107,11 @@ class UserRepository
         if (!empty($filters['role'])) {
             $query .= ' AND role = :role';
             $bindings['role'] = $filters['role'];
+        }
+
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $query .= ' AND branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
         }
 
         if (!empty($filters['query'])) {
@@ -131,7 +150,7 @@ class UserRepository
     public function find(int $id): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
+            'SELECT id, name, email, role, active, branch_id, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
              FROM users
              WHERE id = :id AND active = 1'
         );
@@ -151,7 +170,7 @@ class UserRepository
     public function findByEmail(string $email): ?User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, name, email, role, active, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
+            'SELECT id, name, email, role, active, branch_id, email_verified, two_factor_enabled, two_factor_type, two_factor_setup_pending, created_at, updated_at, last_activity_at
              FROM users
              WHERE email = :email AND active = 1'
         );
@@ -173,8 +192,8 @@ class UserRepository
     public function create(array $data): User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, email_verified, active, two_factor_enabled, two_factor_type, created_at, updated_at)
-             VALUES (:name, :email, :password, :role, :email_verified, :active, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, role, email_verified, active, branch_id, two_factor_enabled, two_factor_type, created_at, updated_at)
+             VALUES (:name, :email, :password, :role, :email_verified, :active, :branch_id, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
         );
 
         $stmt->execute([
@@ -184,6 +203,7 @@ class UserRepository
             'role' => $data['role'] ?? 'customer',
             'email_verified' => $data['email_verified'] ?? false,
             'active' => $data['active'] ?? true,
+            'branch_id' => array_key_exists('branch_id', $data) ? $data['branch_id'] : null,
             'two_factor_enabled' => $data['two_factor_enabled'] ?? false,
             'two_factor_type' => $data['two_factor_type'] ?? 'none',
         ]);
@@ -220,6 +240,11 @@ class UserRepository
         if (isset($data['role'])) {
             $fields[] = 'role = :role';
             $bindings['role'] = $data['role'];
+        }
+
+        if (array_key_exists('branch_id', $data)) {
+            $fields[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = $data['branch_id'];
         }
 
         if (isset($data['email_verified'])) {

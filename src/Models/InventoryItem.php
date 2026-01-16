@@ -5,6 +5,7 @@ namespace App\Models;
 class InventoryItem extends BaseModel
 {
     public int $id;
+    public ?int $branch_id = null;
     public string $name;
     public ?string $description = null;
     public ?string $sku = null;

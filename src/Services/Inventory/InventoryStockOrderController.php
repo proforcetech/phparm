@@ -41,6 +41,7 @@ class InventoryStockOrderController
             $filters['query'] = $params['query'];
         }
 
+        $filters['branch_id'] = $this->resolveBranchFilter($user, $params);
         $result = $this->repository->list($filters, $limit, $offset);
 
         return [
@@ -64,6 +65,8 @@ class InventoryStockOrderController
             throw new InvalidArgumentException('Stock order not found');
         }
 
+        $this->assertBranchAccess($user, $order->branch_id);
+
         return $order->toArray();
     }
 
@@ -76,6 +79,7 @@ class InventoryStockOrderController
     {
         $this->assertManageAccess($user);
 
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
         $order = $this->repository->create($data, $user->id);
 
         return $order->toArray();
@@ -90,6 +94,12 @@ class InventoryStockOrderController
     {
         $this->assertManageAccess($user);
 
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
         $order = $this->repository->update($id, $data, $user->id);
         if ($order === null) {
             throw new InvalidArgumentException('Stock order not found');
@@ -110,5 +120,48 @@ class InventoryStockOrderController
     private function assertManageAccess(User $user): void
     {
         $this->gate->assert($user, 'inventory.*');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveBranchFilter(User $user, array $params = []): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $params)) {
+            return null;
+        }
+
+        return $params['branch_id'] !== '' && $params['branch_id'] !== null ? (int) $params['branch_id'] : null;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function resolveBranchAssignment(User $user, array $data): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $data)) {
+            return null;
+        }
+
+        return $data['branch_id'] !== '' && $data['branch_id'] !== null ? (int) $data['branch_id'] : null;
+    }
+
+    private function assertBranchAccess(User $user, ?int $branchId): void
+    {
+        if ($user->role === 'admin') {
+            return;
+        }
+
+        if ($user->branch_id !== null && $branchId !== null && $user->branch_id !== $branchId) {
+            throw new UnauthorizedException('User lacks access to this branch stock order.');
+        }
     }
 }

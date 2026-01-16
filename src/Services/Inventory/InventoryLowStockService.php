@@ -30,9 +30,9 @@ class InventoryLowStockService
      *
      * @return array<string, mixed>
      */
-    public function tile(int $limit = 5): array
+    public function tile(int $limit = 5, ?int $branchId = null): array
     {
-        $alerts = $this->repository->lowStockAlerts($limit, 0);
+        $alerts = $this->repository->lowStockAlerts($limit, 0, $branchId);
         $outOfStock = array_filter($alerts, static fn (array $row) => $row['severity'] === 'out');
         $low = array_filter($alerts, static fn (array $row) => $row['severity'] === 'low');
 
@@ -84,13 +84,13 @@ class InventoryLowStockService
      *
      * @return array<string, mixed>
      */
-    public function sendEmailAlert(string $recipient, ?string $subject = null, int $limit = 50): array
+    public function sendEmailAlert(string $recipient, ?string $subject = null, int $limit = 50, ?int $branchId = null): array
     {
         if ($this->notifications === null) {
             throw new InvalidArgumentException('Notification dispatcher is not configured for low stock alerts.');
         }
 
-        $alerts = $this->repository->lowStockAlerts($limit, 0);
+        $alerts = $this->repository->lowStockAlerts($limit, 0, $branchId);
         $counts = $this->countAlerts($alerts);
         $itemsList = $this->formatItemsList($alerts);
         $payload = [

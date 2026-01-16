@@ -53,6 +53,10 @@ class DashboardService
                 'start' => $startUtc->format('Y-m-d H:i:s'),
                 'end' => $endUtc->format('Y-m-d H:i:s'),
             ];
+            $branchId = isset($options['branch_id']) ? (int) $options['branch_id'] : null;
+            if ($branchId !== null) {
+                $baseBindings['branch_id'] = $branchId;
+            }
 
             $customerFilter = '';
             if (isset($options['customer_id'])) {
@@ -61,23 +65,45 @@ class DashboardService
             }
 
             $technicianId = isset($options['technician_id']) ? (int) $options['technician_id'] : null;
-            $technicianFilter = $technicianId !== null ? ' AND technician_id = :technician_id' : '';
+            $estimateTechnicianFilter = $technicianId !== null ? ' AND e.technician_id = :technician_id' : '';
+            $appointmentTechnicianFilter = $technicianId !== null ? ' AND a.technician_id = :technician_id' : '';
             $invoiceJoin = $technicianId !== null ? ' LEFT JOIN estimates e ON e.id = i.estimate_id' : '';
+            $estimateCustomerFilter = $customerFilter !== '' ? str_replace('customer_id', 'e.customer_id', $customerFilter) : '';
+            $appointmentCustomerFilter = $customerFilter !== '' ? str_replace('customer_id', 'a.customer_id', $customerFilter) : '';
+            $warrantyCustomerFilter = $customerFilter !== '' ? str_replace('customer_id', 'wc.customer_id', $customerFilter) : '';
+
+            $estimateJoin = '';
+            $estimateBranchFilter = '';
+            if ($branchId !== null) {
+                $estimateJoin = ' LEFT JOIN workorders w ON w.id = e.workorder_id';
+                $estimateBranchFilter = ' AND w.branch_id = :branch_id';
+            }
 
             $estimateStmt = $pdo->prepare(
-                'SELECT status, COUNT(*) AS total FROM estimates WHERE created_at BETWEEN :start AND :end'
-                . $customerFilter . $technicianFilter . ' GROUP BY status'
+                'SELECT e.status, COUNT(*) AS total FROM estimates e' . $estimateJoin
+                . ' WHERE e.created_at BETWEEN :start AND :end'
+                . $estimateCustomerFilter . $estimateTechnicianFilter . $estimateBranchFilter . ' GROUP BY e.status'
             );
             $estimateStmt->execute($this->withTechnician($baseBindings, $technicianId));
             foreach ($estimateStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $response->estimateStatusCounts[$row['status']] = (int) $row['total'];
             }
 
+            $invoiceBranchFilter = '';
+            if ($branchId !== null) {
+                if ($invoiceJoin === '') {
+                    $invoiceJoin = ' LEFT JOIN estimates e ON e.id = i.estimate_id';
+                }
+                $invoiceJoin .= ' LEFT JOIN workorders w ON w.id = COALESCE(i.workorder_id, e.workorder_id)';
+                $invoiceBranchFilter = ' AND w.branch_id = :branch_id';
+            }
+
             $invoiceStmt = $pdo->prepare(
                 'SELECT SUM(i.total) AS total, AVG(i.total) AS average, SUM(i.amount_paid) AS paid, SUM(i.balance_due) AS outstanding '
                 . 'FROM invoices i' . $invoiceJoin . ' WHERE i.issue_date BETWEEN :start AND :end'
                 . str_replace('customer_id', 'i.customer_id', $customerFilter)
-                . ($invoiceJoin !== '' ? ' AND e.technician_id = :technician_id' : '')
+                . ($technicianId !== null ? ' AND e.technician_id = :technician_id' : '')
+                . $invoiceBranchFilter
             );
             $invoiceBindings = $invoiceJoin !== '' ? $this->withTechnician($baseBindings, $technicianId) : $baseBindings;
             $invoiceStmt->execute($invoiceBindings);
@@ -90,8 +116,9 @@ class DashboardService
             ];
 
             $estimateTaxStmt = $pdo->prepare(
-                'SELECT SUM(tax) AS total_tax FROM estimates WHERE created_at BETWEEN :start AND :end'
-                . $customerFilter . $technicianFilter
+                'SELECT SUM(e.tax) AS total_tax FROM estimates e' . $estimateJoin
+                . ' WHERE e.created_at BETWEEN :start AND :end'
+                . $estimateCustomerFilter . $estimateTechnicianFilter . $estimateBranchFilter
             );
             $estimateTaxStmt->execute($this->withTechnician($baseBindings, $technicianId));
             $estimateTax = (float) ($estimateTaxStmt->fetchColumn() ?: 0);
@@ -99,7 +126,8 @@ class DashboardService
             $invoiceTaxStmt = $pdo->prepare(
                 'SELECT SUM(i.tax) AS total_tax FROM invoices i' . $invoiceJoin . ' WHERE i.issue_date BETWEEN :start AND :end'
                 . str_replace('customer_id', 'i.customer_id', $customerFilter)
-                . ($invoiceJoin !== '' ? ' AND e.technician_id = :technician_id' : '')
+                . ($technicianId !== null ? ' AND e.technician_id = :technician_id' : '')
+                . $invoiceBranchFilter
             );
             $invoiceTaxStmt->execute($invoiceBindings);
             $invoiceTax = (float) ($invoiceTaxStmt->fetchColumn() ?: 0);
@@ -109,17 +137,34 @@ class DashboardService
                 'invoices' => $invoiceTax,
             ];
 
+            $warrantyJoin = '';
+            $warrantyBranchFilter = '';
+            if ($branchId !== null) {
+                $warrantyJoin = ' LEFT JOIN invoices wi ON wi.id = wc.invoice_id'
+                    . ' LEFT JOIN workorders ww ON ww.id = wi.workorder_id';
+                $warrantyBranchFilter = ' AND ww.branch_id = :branch_id';
+            }
             $warrantyStmt = $pdo->prepare(
-                'SELECT status, COUNT(*) AS total FROM warranty_claims WHERE created_at BETWEEN :start AND :end' . $customerFilter . ' GROUP BY status'
+                'SELECT wc.status, COUNT(*) AS total FROM warranty_claims wc' . $warrantyJoin
+                . ' WHERE wc.created_at BETWEEN :start AND :end' . $warrantyCustomerFilter . $warrantyBranchFilter . ' GROUP BY wc.status'
             );
             $warrantyStmt->execute($baseBindings);
             foreach ($warrantyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $response->warrantyCounts[$row['status']] = (int) $row['total'];
             }
 
+            $appointmentJoin = '';
+            $appointmentBranchFilter = '';
+            if ($branchId !== null) {
+                $appointmentJoin = ' LEFT JOIN estimates ae ON ae.id = a.estimate_id'
+                    . ' LEFT JOIN workorders aw ON aw.id = ae.workorder_id';
+                $appointmentBranchFilter = ' AND aw.branch_id = :branch_id';
+            }
+
             $appointmentStmt = $pdo->prepare(
-                'SELECT status, COUNT(*) AS total FROM appointments WHERE start_time BETWEEN :start AND :end'
-                . $customerFilter . $technicianFilter . ' GROUP BY status'
+                'SELECT a.status, COUNT(*) AS total FROM appointments a' . $appointmentJoin
+                . ' WHERE a.start_time BETWEEN :start AND :end'
+                . $appointmentCustomerFilter . $appointmentTechnicianFilter . $appointmentBranchFilter . ' GROUP BY a.status'
             );
             $appointmentStmt->execute($this->withTechnician($baseBindings, $technicianId));
             foreach ($appointmentStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
@@ -144,18 +189,27 @@ class DashboardService
                 'start' => $todayStart->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
                 'end' => $todayEnd->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             ];
+            if ($branchId !== null) {
+                $todayBindings['branch_id'] = $branchId;
+            }
 
             $pendingInvoiceStmt = $pdo->prepare(
                 'SELECT COUNT(*) FROM invoices i' . $invoiceJoin . ' WHERE i.status IN ("pending", "sent", "partial")'
-                . ($invoiceJoin !== '' ? ' AND e.technician_id = :technician_id' : '')
+                . ($technicianId !== null ? ' AND e.technician_id = :technician_id' : '')
+                . $invoiceBranchFilter
             );
             $pendingBindings = $invoiceJoin !== '' ? $this->withTechnician([], $technicianId) : [];
+            if ($branchId !== null) {
+                $pendingBindings['branch_id'] = $branchId;
+            }
             $pendingInvoiceStmt->execute($pendingBindings);
             $pendingInvoices = (int) ($pendingInvoiceStmt->fetchColumn() ?: 0);
 
             $appointmentsTodayStmt = $pdo->prepare(
-                'SELECT COUNT(*) FROM appointments WHERE start_time BETWEEN :start AND :end'
-                . ($technicianId !== null ? ' AND technician_id = :technician_id' : '')
+                'SELECT COUNT(*) FROM appointments a' . $appointmentJoin
+                . ' WHERE a.start_time BETWEEN :start AND :end'
+                . ($technicianId !== null ? ' AND a.technician_id = :technician_id' : '')
+                . $appointmentBranchFilter
             );
             $appointmentsTodayStmt->execute($this->withTechnician($todayBindings, $technicianId));
             $appointmentsToday = (int) ($appointmentsTodayStmt->fetchColumn() ?: 0);
@@ -212,7 +266,8 @@ class DashboardService
                 $categories,
                 $timezone,
                 'e.technician_id',
-                'LEFT JOIN estimates e ON e.id = i.estimate_id'
+                'LEFT JOIN estimates e ON e.id = i.estimate_id',
+                'COALESCE(i.workorder_id, e.workorder_id)'
             );
             $estimates = $this->aggregateMonthly(
                 'estimates',
@@ -223,7 +278,9 @@ class DashboardService
                 $options,
                 $categories,
                 $timezone,
-                'technician_id'
+                'technician_id',
+                '',
+                'estimates.workorder_id'
             );
 
             return [
@@ -251,6 +308,7 @@ class DashboardService
 
         $technicianFilter = '';
         $customerFilter = '';
+        $branchFilter = '';
         $bindings = [
             'status_parts_pending' => Workorder::STATUS_PARTS_PENDING,
             'status_authorized' => Workorder::STATUS_AWAITING_AUTHORIZATION,
@@ -266,6 +324,11 @@ class DashboardService
             $bindings['technician_id'] = (int) $options['technician_id'];
         }
 
+        if (isset($options['branch_id'])) {
+            $branchFilter = ' AND w.branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $options['branch_id'];
+        }
+
         $stmt = $pdo->prepare(
             'SELECT bucket, COUNT(*) AS total, MAX(age_days) AS oldest_days FROM ('
             . 'SELECT CASE '
@@ -276,7 +339,7 @@ class DashboardService
             . 'END AS bucket, '
             . $ageExpression . ' AS age_days '
             . 'FROM workorders w '
-            . 'WHERE w.status IN (:status_parts_pending, :status_authorized)' . $technicianFilter . $customerFilter
+            . 'WHERE w.status IN (:status_parts_pending, :status_authorized)' . $technicianFilter . $customerFilter . $branchFilter
             . ') AS bucketed '
             . 'GROUP BY bucket'
         );
@@ -367,11 +430,20 @@ class DashboardService
                 $customerFilter .= ' AND e.technician_id = :technician_id';
             }
 
+            $branchJoin = '';
+            $branchFilter = '';
+            if (isset($options['branch_id'])) {
+                $branchJoin = ' LEFT JOIN workorders w ON w.id = e.workorder_id';
+                $branchFilter = ' AND w.branch_id = :branch_id';
+                $bindings['branch_id'] = (int) $options['branch_id'];
+            }
+
             $sql = 'SELECT st.name AS label, COALESCE(SUM(ej.total), 0) AS total '
                 . 'FROM estimate_jobs ej '
                 . 'JOIN estimates e ON e.id = ej.estimate_id '
                 . 'JOIN service_types st ON st.id = ej.service_type_id '
-                . 'WHERE e.created_at BETWEEN :start AND :end' . $customerFilter . ' '
+                . $branchJoin
+                . 'WHERE e.created_at BETWEEN :start AND :end' . $customerFilter . $branchFilter . ' '
                 . 'GROUP BY st.name '
                 . 'ORDER BY total DESC '
                 . 'LIMIT :limit';
@@ -409,7 +481,8 @@ class DashboardService
         array $categories,
         string $timezone,
         string $technicianColumn = '',
-        string $joinClause = ''
+        string $joinClause = '',
+        ?string $branchJoinColumn = null
     ): array {
         $pdo = $this->connection->pdo();
         [$startUtc, $endUtc] = $this->normalizeRange($start, $end, $timezone, true);
@@ -434,6 +507,13 @@ class DashboardService
             $bindings['technician_id'] = (int) $options['technician_id'];
         }
 
+        $branchFilter = '';
+        if ($branchJoinColumn !== null && isset($options['branch_id'])) {
+            $joinClause .= ' LEFT JOIN workorders w ON w.id = ' . $branchJoinColumn;
+            $branchFilter = ' AND w.branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $options['branch_id'];
+        }
+
         $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?: '';
         $dateBucket = $driver === 'sqlite'
             ? sprintf("strftime('%%Y-%%m', %s)", $dateColumn)
@@ -441,14 +521,15 @@ class DashboardService
 
         $sql = sprintf(
             'SELECT %s AS bucket, SUM(%s) AS total FROM %s %s'
-            . 'WHERE %s BETWEEN :start AND :end%s%s GROUP BY bucket',
+            . 'WHERE %s BETWEEN :start AND :end%s%s%s GROUP BY bucket',
             $dateBucket,
             $amountColumn,
             $table,
             $joinClause !== '' ? $joinClause . ' ' : '',
             $dateColumn,
             $customerFilter,
-            $technicianFilter
+            $technicianFilter,
+            $branchFilter
         );
 
         $stmt = $pdo->prepare($sql);

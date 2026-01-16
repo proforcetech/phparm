@@ -45,6 +45,7 @@ class InvoiceController
             $filters['customer_id'] = $user->customer_id;
         }
 
+        $filters['branch_id'] = $this->resolveBranchFilter($user, $filters);
         $limit = isset($filters['limit']) ? max(1, (int) $filters['limit']) : 50;
         $offset = isset($filters['offset']) ? max(0, (int) $filters['offset']) : 0;
         $filters = array_diff_key($filters, ['limit' => true, 'offset' => true]);
@@ -69,6 +70,7 @@ class InvoiceController
             throw new InvalidArgumentException('Invoice not found');
         }
 
+        $this->assertBranchAccess($user, $invoice['branch_id'] ?? null);
         $this->assertCustomerOwnership($user, (int) ($invoice['customer_id'] ?? 0));
 
         return $invoice;
@@ -93,7 +95,8 @@ class InvoiceController
         $invoice = $this->service->createFromEstimate(
             (int) $data['estimate_id'],
             (array) $data['item_ids'],
-            $user->id
+            $user->id,
+            $this->resolveBranchAssignment($user, $data)
         );
 
         if ($invoice === null) {
@@ -115,6 +118,7 @@ class InvoiceController
             throw new UnauthorizedException('Cannot create invoices');
         }
 
+        $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
         $invoice = $this->service->createStandalone($data, $user->id);
 
         return $invoice->toArray();
@@ -154,6 +158,9 @@ class InvoiceController
         }
 
         $before = $this->service->findById($id);
+        if ($before !== null) {
+            $this->assertBranchAccess($user, $before->branch_id);
+        }
         $invoice = $this->service->updateStatus($id, (string) $data['status'], $user->id);
 
         if ($invoice === null) {
@@ -185,6 +192,7 @@ class InvoiceController
             throw new InvalidArgumentException('Invoice not found');
         }
 
+        $this->assertBranchAccess($user, $invoice->branch_id);
         $this->assertCustomerOwnership($user, $invoice->customer_id);
 
         if (!isset($data['provider'])) {
@@ -245,11 +253,21 @@ class InvoiceController
             throw new InvalidArgumentException('amount is required');
         }
 
+        if (!isset($data['payment_method']) && !isset($data['method'])) {
+            throw new InvalidArgumentException('payment_method is required');
+        }
+
+        $invoice = $this->service->findById($id);
+        if ($invoice !== null) {
+            $this->assertBranchAccess($user, $invoice->branch_id);
+        }
+
         $result = $this->payments->refundPayment(
             $id,
             (string) $data['transaction_id'],
             (float) $data['amount'],
-            (string) ($data['reason'] ?? '')
+            (string) ($data['reason'] ?? ''),
+            (string) ($data['payment_method'] ?? $data['method'] ?? '')
         );
 
         return [
@@ -272,6 +290,7 @@ class InvoiceController
             throw new InvalidArgumentException('Invoice not found');
         }
 
+        $this->assertBranchAccess($user, $invoice->branch_id);
         if ($user->role === 'customer') {
             $this->assertCustomerOwnership($user, $invoice->customer_id);
         } elseif (!$this->gate->can($user, 'invoices.view')) {
@@ -307,5 +326,48 @@ class InvoiceController
         }
 
         throw new UnauthorizedException('Cannot view invoices');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveBranchFilter(User $user, array $params = []): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $params)) {
+            return null;
+        }
+
+        return $params['branch_id'] !== '' && $params['branch_id'] !== null ? (int) $params['branch_id'] : null;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function resolveBranchAssignment(User $user, array $data): ?int
+    {
+        if ($user->role !== 'admin') {
+            return $user->branch_id;
+        }
+
+        if (!array_key_exists('branch_id', $data)) {
+            return null;
+        }
+
+        return $data['branch_id'] !== '' && $data['branch_id'] !== null ? (int) $data['branch_id'] : null;
+    }
+
+    private function assertBranchAccess(User $user, ?int $branchId): void
+    {
+        if ($user->role === 'admin') {
+            return;
+        }
+
+        if ($user->branch_id !== null && $branchId !== null && $user->branch_id !== $branchId) {
+            throw new UnauthorizedException('Cannot access invoices for another branch.');
+        }
     }
 }

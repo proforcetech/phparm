@@ -100,6 +100,7 @@ export default function UsersList() {
     role: '',
     status: 'active',
     two_factor: '',
+    branch_id: '',
   })
 
   const bulkRoleOptions = useMemo(
@@ -164,6 +165,7 @@ export default function UsersList() {
       role: searchParams.get('role') ?? '',
       status: searchParams.get('status') ?? 'active',
       two_factor: searchParams.get('two_factor') ?? '',
+      branch_id: searchParams.get('branch_id') ?? '',
     }
     const normalizedParams = buildSearchParams(nextFilters)
 
@@ -362,7 +364,7 @@ export default function UsersList() {
       </div>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <Input
@@ -385,6 +387,19 @@ export default function UsersList() {
               }}
             />
           </div>
+          {isAdmin ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Branch</label>
+              <Input
+                modelValue={filters.branch_id}
+                placeholder="Branch ID"
+                onUpdateModelValue={(value) => {
+                  const nextFilters = { ...filters, branch_id: value }
+                  updateSearchParams(nextFilters)
+                }}
+              />
+            </div>
+          ) : null}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <Select
@@ -460,6 +475,9 @@ export default function UsersList() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                    {isAdmin ? (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Branch</th>
+                    ) : null}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Active</th>
@@ -496,6 +514,11 @@ export default function UsersList() {
                           {roleLabels[user.role] || user.role}
                         </Badge>
                       </td>
+                      {isAdmin ? (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {user.branch_id ? `#${user.branch_id}` : '—'}
+                        </td>
+                      ) : null}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
                           {user.email_verified ? (
