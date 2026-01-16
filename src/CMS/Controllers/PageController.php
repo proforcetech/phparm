@@ -102,8 +102,8 @@ class PageController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, canonical_url, og_title, og_description, og_image, og_type, og_url, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :canonical_url, :og_title, :og_description, :og_image, :og_type, :og_url, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -133,7 +133,7 @@ class PageController
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, canonical_url = :canonical_url, og_title = :og_title, og_description = :og_description, og_image = :og_image, og_type = :og_type, og_url = :og_url, '
             . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
@@ -323,6 +323,12 @@ class PageController
             'meta_title' => $row['meta_title'] ?? null,
             'meta_description' => $row['meta_description'] ?? null,
             'meta_keywords' => $row['meta_keywords'] ?? null,
+            'canonical_url' => $row['canonical_url'] ?? null,
+            'og_title' => $row['og_title'] ?? null,
+            'og_description' => $row['og_description'] ?? null,
+            'og_image' => $row['og_image'] ?? null,
+            'og_type' => $row['og_type'] ?? null,
+            'og_url' => $row['og_url'] ?? null,
             'summary' => $row['summary'] ?? null,
             'content' => $row['content'] ?? null,
             'publish_start_at' => $row['publish_start_at'] ?? null,
@@ -361,6 +367,12 @@ class PageController
             'meta_title' => $data['meta_title'] ?? $existing?->meta_title,
             'meta_description' => $data['meta_description'] ?? $existing?->meta_description,
             'meta_keywords' => $data['meta_keywords'] ?? $existing?->meta_keywords,
+            'canonical_url' => $data['canonical_url'] ?? $existing?->canonical_url,
+            'og_title' => $data['og_title'] ?? $existing?->og_title,
+            'og_description' => $data['og_description'] ?? $existing?->og_description,
+            'og_image' => $data['og_image'] ?? $existing?->og_image,
+            'og_type' => $data['og_type'] ?? $existing?->og_type,
+            'og_url' => $data['og_url'] ?? $existing?->og_url,
             'summary' => $data['summary'] ?? $existing?->summary,
             'content' => $data['content'] ?? $existing?->content,
             'publish_start_at' => $data['publish_start_at'] ?? $existing?->publish_start_at,

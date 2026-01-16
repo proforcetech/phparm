@@ -25,6 +25,12 @@ const createDefaultForm = () => ({
   meta_title: '',
   meta_description: '',
   meta_keywords: '',
+  canonical_url: '',
+  og_title: '',
+  og_description: '',
+  og_image: '',
+  og_type: '',
+  og_url: '',
   summary: '',
   content: '',
 })
@@ -159,10 +165,28 @@ export default function CMSPageForm() {
     setForm((prev) => ({ ...prev, slug }))
   }
 
+  const isValidUrl = (value) => {
+    try {
+      new URL(value)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const validateForm = () => {
     const errors = []
     if (!form.title) errors.push('Title is required')
     if (!form.slug) errors.push('Slug is required')
+    if (form.canonical_url && !isValidUrl(form.canonical_url)) {
+      errors.push('Canonical URL must be a valid URL')
+    }
+    if (form.og_image && !isValidUrl(form.og_image)) {
+      errors.push('Open Graph Image URL must be a valid URL')
+    }
+    if (form.og_url && !isValidUrl(form.og_url)) {
+      errors.push('Open Graph URL must be a valid URL')
+    }
     return errors
   }
 
@@ -429,6 +453,56 @@ export default function CMSPageForm() {
                     placeholder="keyword1, keyword2, keyword3"
                     value={form.meta_keywords}
                     onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, meta_keywords: value }))}
+                  />
+
+                  <Input
+                    label="Canonical URL"
+                    placeholder="https://example.com/your-page"
+                    value={form.canonical_url}
+                    type="url"
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, canonical_url: value }))}
+                    helperText="Preferred URL for search engines when duplicates exist"
+                  />
+
+                  <Input
+                    label="Open Graph Title"
+                    placeholder="Title for social sharing cards"
+                    value={form.og_title}
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, og_title: value }))}
+                  />
+
+                  <Textarea
+                    label="Open Graph Description"
+                    rows={3}
+                    maxlength={200}
+                    placeholder="Description used for social previews..."
+                    value={form.og_description}
+                    onUpdateModelValue={(value) =>
+                      setForm((prev) => ({ ...prev, og_description: value }))
+                    }
+                  />
+
+                  <Input
+                    label="Open Graph Image URL"
+                    placeholder="https://example.com/preview.jpg"
+                    value={form.og_image}
+                    type="url"
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, og_image: value }))}
+                  />
+
+                  <Input
+                    label="Open Graph Type"
+                    placeholder="website, article, product, etc."
+                    value={form.og_type}
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, og_type: value }))}
+                  />
+
+                  <Input
+                    label="Open Graph URL"
+                    placeholder="https://example.com/your-page"
+                    value={form.og_url}
+                    type="url"
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, og_url: value }))}
                   />
                 </div>
               </Card>

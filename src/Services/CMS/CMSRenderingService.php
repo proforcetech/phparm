@@ -139,6 +139,39 @@ private function extractComponentSlugs(string $template): array
             $metaTags .= '<meta name="keywords" content="' . htmlspecialchars($page->meta_keywords) . '">' . "\n";
         }
 
+        if ($page->canonical_url && !$this->hasCanonicalLink($html)) {
+            $metaTags .= '<link rel="canonical" href="' . htmlspecialchars($page->canonical_url) . '">' . "\n";
+        }
+
+        $hasOpenGraph = $page->og_title || $page->og_description || $page->og_image || $page->og_type || $page->og_url;
+        if ($hasOpenGraph) {
+            $ogTitle = $page->og_title ?? $page->meta_title ?? $page->title;
+            $ogDescription = $page->og_description ?? $page->meta_description;
+            $ogImage = $page->og_image;
+            $ogType = $page->og_type;
+            $ogUrl = $page->og_url ?? $page->canonical_url;
+
+            if ($ogTitle && !$this->hasMetaProperty($html, 'og:title')) {
+                $metaTags .= '<meta property="og:title" content="' . htmlspecialchars($ogTitle) . '">' . "\n";
+            }
+
+            if ($ogDescription && !$this->hasMetaProperty($html, 'og:description')) {
+                $metaTags .= '<meta property="og:description" content="' . htmlspecialchars($ogDescription) . '">' . "\n";
+            }
+
+            if ($ogImage && !$this->hasMetaProperty($html, 'og:image')) {
+                $metaTags .= '<meta property="og:image" content="' . htmlspecialchars($ogImage) . '">' . "\n";
+            }
+
+            if ($ogType && !$this->hasMetaProperty($html, 'og:type')) {
+                $metaTags .= '<meta property="og:type" content="' . htmlspecialchars($ogType) . '">' . "\n";
+            }
+
+            if ($ogUrl && !$this->hasMetaProperty($html, 'og:url')) {
+                $metaTags .= '<meta property="og:url" content="' . htmlspecialchars($ogUrl) . '">' . "\n";
+            }
+        }
+
         // Inject CSS
         $css = '';
         if ($templateCss) $css .= "/* Template CSS */\n" . $templateCss . "\n";
@@ -180,6 +213,12 @@ private function extractComponentSlugs(string $template): array
             'meta_title' => $page->meta_title ?? $page->title,
             'meta_description' => $page->meta_description ?? '',
             'meta_keywords' => $page->meta_keywords ?? '',
+            'canonical_url' => $page->canonical_url ?? '',
+            'og_title' => $page->og_title ?? '',
+            'og_description' => $page->og_description ?? '',
+            'og_image' => $page->og_image ?? '',
+            'og_type' => $page->og_type ?? '',
+            'og_url' => $page->og_url ?? '',
             'slug' => $page->slug,
             'year' => date('Y'),
             'breadcrumbs' => $this->generateBreadcrumbs($page),
@@ -222,6 +261,39 @@ private function extractComponentSlugs(string $template): array
             $html .= '<meta name="keywords" content="' . htmlspecialchars($page->meta_keywords) . '">';
         }
 
+        if ($page->canonical_url) {
+            $html .= '<link rel="canonical" href="' . htmlspecialchars($page->canonical_url) . '">';
+        }
+
+        $hasOpenGraph = $page->og_title || $page->og_description || $page->og_image || $page->og_type || $page->og_url;
+        if ($hasOpenGraph) {
+            $ogTitle = $page->og_title ?? $page->meta_title ?? $page->title;
+            $ogDescription = $page->og_description ?? $page->meta_description;
+            $ogImage = $page->og_image;
+            $ogType = $page->og_type;
+            $ogUrl = $page->og_url ?? $page->canonical_url;
+
+            if ($ogTitle) {
+                $html .= '<meta property="og:title" content="' . htmlspecialchars($ogTitle) . '">';
+            }
+
+            if ($ogDescription) {
+                $html .= '<meta property="og:description" content="' . htmlspecialchars($ogDescription) . '">';
+            }
+
+            if ($ogImage) {
+                $html .= '<meta property="og:image" content="' . htmlspecialchars($ogImage) . '">';
+            }
+
+            if ($ogType) {
+                $html .= '<meta property="og:type" content="' . htmlspecialchars($ogType) . '">';
+            }
+
+            if ($ogUrl) {
+                $html .= '<meta property="og:url" content="' . htmlspecialchars($ogUrl) . '">';
+            }
+        }
+
         if ($page->custom_css) {
             $html .= '<style>' . $page->custom_css . '</style>';
         }
@@ -240,6 +312,16 @@ private function extractComponentSlugs(string $template): array
     private function generateBreadcrumbs(Page $page): string
     {
         return '<nav class="breadcrumbs"><a href="/">Home</a> &raquo; <span>' . htmlspecialchars($page->title) . '</span></nav>';
+    }
+
+    private function hasMetaProperty(string $html, string $property): bool
+    {
+        return preg_match('/<meta[^>]+property=[\'"]' . preg_quote($property, '/') . '[\'"]/i', $html) === 1;
+    }
+
+    private function hasCanonicalLink(string $html): bool
+    {
+        return preg_match('/<link[^>]+rel=[\'"]canonical[\'"]/i', $html) === 1;
     }
 
     private function loadPublishedPageBySlug(string $slug): ?Page
