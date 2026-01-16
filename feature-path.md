@@ -246,6 +246,8 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 2. Employee Self-Services (ESS) Portal
 
+[x] Employee Self-Services (ESS) Portal
+
  Concept: Reduce administrative overhead by letting staff help themselves.
 
  Recommendations:
@@ -254,10 +256,10 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Features:
 
-[ ] Time Clock: Clock In/Out (with geolocation for mobile techs). Expanding upon current time keeping functionality.
-[ ] Schedule View: "When am I working next?"
-[ ] Pay History: View/Download PDF pay stubs.
-[ ] Profile Update: Change address/phone number.
+[x] Time Clock: Clock In/Out (with geolocation for mobile techs). Expanding upon current time keeping functionality.
+[x] Schedule View: "When am I working next?"
+[x] Pay History: View/Download PDF pay stubs.
+[x] Profile Update: Change address/phone number.
 
 ## 3. Cash Register (POS) & Direct Sales
 

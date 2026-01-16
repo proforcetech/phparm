@@ -108,6 +108,11 @@ import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
 import CustomerWorkorders from '../views/customer-portal/Workorders'
 import CustomerWorkorderTimeline from '../views/customer-portal/WorkorderTimeline'
+import EssDashboard from '../views/ess/Dashboard'
+import EssTimeClock from '../views/ess/TimeClock'
+import EssSchedule from '../views/ess/Schedule'
+import EssPayHistory from '../views/ess/PayHistory'
+import EssProfile from '../views/ess/Profile'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
@@ -115,6 +120,7 @@ import TrackingView from '../views/tracking/TrackingView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
+import EssLayout from '../components/layout/EssLayout'
 import NotFound from '../views/NotFound'
 
 const reactBasename = import.meta.env.VITE_REACT_BASE || ''
@@ -281,6 +287,11 @@ const protectedRoutes = [
   { path: '/portal/profile', name: 'CustomerProfile', auth: 'requiresAuth', element: <CustomerProfile /> },
   { path: '/portal/workorders', name: 'CustomerWorkorders', auth: 'requiresAuth', element: <CustomerWorkorders /> },
   { path: '/portal/workorders/:id', name: 'CustomerWorkorderTimeline', auth: 'requiresAuth', element: <CustomerWorkorderTimeline /> },
+  { path: '/ess', name: 'EssDashboard', auth: 'requiresAuth', element: <EssDashboard /> },
+  { path: '/ess/time-clock', name: 'EssTimeClock', auth: 'requiresAuth', element: <EssTimeClock /> },
+  { path: '/ess/schedule', name: 'EssSchedule', auth: 'requiresAuth', element: <EssSchedule /> },
+  { path: '/ess/pay-history', name: 'EssPayHistory', auth: 'requiresAuth', element: <EssPayHistory /> },
+  { path: '/ess/profile', name: 'EssProfile', auth: 'requiresAuth', element: <EssProfile /> },
 ]
 
 const settingsRoutes = [
@@ -308,6 +319,7 @@ const publicChildren = [...guestRoutes, ...publicRoutes].map(withAuthLoader)
 
 const adminRoutes = protectedRoutes.filter((route) => route.path.startsWith('/cp'))
 const customerRoutes = protectedRoutes.filter((route) => route.path.startsWith('/portal'))
+const essRoutes = protectedRoutes.filter((route) => route.path.startsWith('/ess'))
 
 const toChildRoute = (route, basePath) => {
   const suffix = route.path.replace(basePath, '')
@@ -320,6 +332,7 @@ const toChildRoute = (route, basePath) => {
 
 const adminChildren = adminRoutes.map((route) => toChildRoute(route, '/cp'))
 const customerChildren = customerRoutes.map((route) => toChildRoute(route, '/portal'))
+const essChildren = essRoutes.map((route) => toChildRoute(route, '/ess'))
 
 adminChildren.push({
   path: 'settings',
@@ -345,6 +358,11 @@ adminChildren.push({
 })
 
 customerChildren.push({
+  path: '*',
+  element: <NotFound />,
+})
+
+essChildren.push({
   path: '*',
   element: <NotFound />,
 })
@@ -376,5 +394,11 @@ export const router = createBrowserRouter([
     loader: requireAuth,
     element: <CustomerLayout />,
     children: customerChildren,
+  },
+  {
+    path: '/ess',
+    loader: requireAuth,
+    element: <EssLayout />,
+    children: essChildren,
   },
 ], { basename: reactBasename })
