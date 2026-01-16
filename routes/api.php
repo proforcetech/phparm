@@ -4185,9 +4185,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $connection,
         new \App\Services\Messaging\MessagingService($connection)
     );
+    $leaveRequestService = new \App\Services\Leave\LeaveRequestService($connection);
     $appointmentController = new \App\Services\Appointment\AppointmentController(
-        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks, $appointmentMessagingNotifications),
-        new \App\Services\Appointment\AvailabilityService($connection),
+        new \App\Services\Appointment\AppointmentService(
+            $connection,
+            $appointmentAudit,
+            $appointmentWebhooks,
+            $appointmentMessagingNotifications,
+            $leaveRequestService
+        ),
+        new \App\Services\Appointment\AvailabilityService($connection, $leaveRequestService),
         $gate
     );
 
@@ -5704,6 +5711,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
             $gate
         );
+        $leaveReportController = new \App\Services\Reports\LeaveReportController(
+            new \App\Services\Reports\LeaveReportService($connection),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -5860,6 +5871,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'branch_id' => $request->queryParam('branch_id'),
             ];
             $data = $technicianMarginController->report($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/reports/leave-summary', function (Request $request) use ($leaveReportController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'employee_id' => $request->queryParam('employee_id'),
+            ];
+            $data = $leaveReportController->summary($user, $params);
             return Response::json($data);
         });
     });

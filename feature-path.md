@@ -327,8 +327,9 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Integration:
 
-[ ] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
-[ ] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar: Approved leave must block the employee out on the Dispatch and Appointment boards automatically.
+[x] Payroll: Approved paid leave adds "PTO Hours" to the payroll run.
+[x] Calendar/Payroll Integration: Dispatch and appointment scheduling respects approved leave while payroll reporting includes PTO hours.
 
 ## 8. Branches / Multi-Location
 
