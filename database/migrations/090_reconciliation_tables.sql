@@ -1,10 +1,10 @@
 CREATE TABLE IF NOT EXISTS reconciliation_sessions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'open',
-    created_by INT NULL,
+    created_by INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_reconciliation_sessions_dates (start_date, end_date),
@@ -12,13 +12,13 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
 );
 
 CREATE TABLE IF NOT EXISTS reconciliation_bank_transactions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    session_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    session_id INT UNSIGNED NOT NULL,
     transaction_date DATE NOT NULL,
     description VARCHAR(255) NOT NULL,
     reference VARCHAR(255) NULL,
     amount DECIMAL(12,2) NOT NULL,
-    created_by INT NULL,
+    created_by UNSIGNED INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_recon_bank_session (session_id),
     INDEX idx_recon_bank_date (transaction_date),
@@ -29,15 +29,15 @@ CREATE TABLE IF NOT EXISTS reconciliation_bank_transactions (
 );
 
 CREATE TABLE IF NOT EXISTS reconciliation_matches (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    session_id INT NOT NULL,
-    bank_transaction_id INT NULL,
-    ledger_entry_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    session_id INT UNSIGNED NOT NULL,
+    bank_transaction_id INT UNSIGNED NULL,
+    ledger_entry_id INT UNSIGNED NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'matched',
     amount_difference DECIMAL(12,2) NOT NULL DEFAULT 0,
     discrepancy_reason VARCHAR(255) NULL,
     notes TEXT NULL,
-    created_by INT NULL,
+    created_by INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_recon_matches_session (session_id),
     INDEX idx_recon_matches_status (status),
