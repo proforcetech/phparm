@@ -171,7 +171,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 13. Must-Have Inventory Features (Currently Missing)
 
-[ ] Core Tracking System:
+[x] Core Tracking System:
 
  Gap: Auto parts often have a "Core Charge" (a deposit on the old part).
 

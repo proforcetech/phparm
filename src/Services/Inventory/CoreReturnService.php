@@ -34,10 +34,10 @@ class CoreReturnService
      * Create a core return record when a part with core is sold
      *
      * @param array<string, mixed> $data
-     * @param int $userId
+     * @param int|null $userId
      * @return array<string, mixed>
      */
-    public function create(array $data, int $userId): array
+    public function create(array $data, ?int $userId): array
     {
         $customerReturnDays = $this->getSettingValue('inventory.core_tracking.customer_return_days', 30);
         $vendorReturnDays = $this->getSettingValue('inventory.core_tracking.vendor_return_days', 45);
@@ -412,7 +412,7 @@ class CoreReturnService
      * @param string|null $notes
      * @param int $userId
      */
-    private function logHistory(int $coreReturnId, ?string $oldStatus, string $newStatus, ?string $notes, int $userId): void
+    private function logHistory(int $coreReturnId, ?string $oldStatus, string $newStatus, ?string $notes, ?int $userId): void
     {
         $sql = 'INSERT INTO core_return_history (core_return_id, old_status, new_status, notes, created_by)
                 VALUES (:core_return_id, :old_status, :new_status, :notes, :created_by)';
