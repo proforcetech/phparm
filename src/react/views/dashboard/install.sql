@@ -40,6 +40,16 @@ two_factor_setup_pending TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Indicates whethe
    INDEX idx_users_branch ON users (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS user_password_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_password_history_user (user_id),
+    INDEX idx_user_password_history_created_at (created_at),
+    CONSTRAINT fk_user_password_history_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 
 

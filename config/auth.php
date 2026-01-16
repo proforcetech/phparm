@@ -5,6 +5,9 @@ return [
         'expire_minutes' => 60,
         'throttle_minutes' => 2,
         'min_length' => 12,
+        'min_entropy' => 50,
+        'min_categories' => 3,
+        'history_limit' => 5,
     ],
     'verification' => [
         'require_staff_verification' => false,

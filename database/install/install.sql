@@ -40,6 +40,16 @@ CREATE TABLE users (
    INDEX idx_users_branch (branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE user_password_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_password_history_user (user_id),
+    INDEX idx_user_password_history_created_at (created_at),
+    CONSTRAINT fk_user_password_history_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE customers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(120) NOT NULL,
@@ -1706,6 +1716,16 @@ CREATE TABLE users (
     INDEX idx_users_last_activity (last_activity_at),
     INDEX idx_users_active (active),
     INDEX idx_users_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_password_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_password_history_user (user_id),
+    INDEX idx_user_password_history_created_at (created_at),
+    CONSTRAINT fk_user_password_history_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE customers (
