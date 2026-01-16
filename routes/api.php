@@ -5689,9 +5689,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     // Financial routes (Admin/Manager only)
     $router->group([Middleware::auth(), Middleware::role('admin', 'manager')], function (Router $router) use ($connection, $gate, $settingsRepository) {
 
+        $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection);
         $financialController = new \App\Services\Financial\FinancialController(
-            new \App\Services\Financial\FinancialEntryService($connection),
+            $financialEntryService,
             new \App\Services\Financial\FinancialReportService($connection),
+            $gate
+        );
+        $cashDrawerController = new \App\Services\Financial\CashDrawerController(
+            new \App\Services\Financial\CashDrawerService($connection, $financialEntryService),
             $gate
         );
         $financialCategoryController = new \App\Services\Financial\FinancialCategoryController($connection, $gate);
@@ -5814,6 +5819,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'search' => $request->queryParam('search'),
             ];
             $data = $financialController->exportEntries($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-drawer/active', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $data = $cashDrawerController->active($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/cash-drawer/start', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $data = $cashDrawerController->start($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/financial/cash-drawer/{id}/close', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cashDrawerController->close($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/cash-drawer/closeouts', function (Request $request) use ($cashDrawerController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status', 'closed'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+            ];
+            $data = $cashDrawerController->closeouts($user, $filters);
             return Response::json($data);
         });
 

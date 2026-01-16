@@ -42,4 +42,16 @@ export default {
   exportReport(params = {}) {
     return api.get('/financial/reports/export', { params }).then((res) => res.data)
   },
+  cashDrawerActive() {
+    return api.get('/financial/cash-drawer/active').then((res) => res.data)
+  },
+  cashDrawerStart(payload) {
+    return api.post('/financial/cash-drawer/start', payload).then((res) => res.data)
+  },
+  cashDrawerClose(sessionId, payload) {
+    return api.post(`/financial/cash-drawer/${sessionId}/close`, payload).then((res) => res.data)
+  },
+  cashDrawerCloseouts(params = {}) {
+    return api.get('/financial/cash-drawer/closeouts', { params }).then((res) => res.data)
+  },
 }
