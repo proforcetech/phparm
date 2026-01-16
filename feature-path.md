@@ -288,7 +288,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  No: Move to "Defective/Warranty" bin (triggering the Vendor Warranty flow).
 
-[ ] Refunds: Limit refunds to the original payment method (e.g., prevent cash refunds for credit card purchases).
+[x] Refunds: Limit refunds to the original payment method (e.g., prevent cash refunds for credit card purchases).
 
 ## 5. Banking (Payment, Reconcile, Deposits)
 

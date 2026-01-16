@@ -228,11 +228,16 @@ class InvoiceController
             throw new InvalidArgumentException('amount is required');
         }
 
+        if (!isset($data['payment_method']) && !isset($data['method'])) {
+            throw new InvalidArgumentException('payment_method is required');
+        }
+
         $result = $this->payments->refundPayment(
             $id,
             (string) $data['transaction_id'],
             (float) $data['amount'],
-            (string) ($data['reason'] ?? '')
+            (string) ($data['reason'] ?? ''),
+            (string) ($data['payment_method'] ?? $data['method'] ?? '')
         );
 
         return [

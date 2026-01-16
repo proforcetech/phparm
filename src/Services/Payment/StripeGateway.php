@@ -274,6 +274,7 @@ class StripeGateway implements PaymentGatewayInterface
             'transaction_id' => $paymentIntent->id,
             'amount' => $paymentIntent->amount / 100,
             'currency' => $paymentIntent->currency,
+            'payment_method' => $paymentIntent->payment_method ?? null,
             'status' => 'succeeded',
             'handled' => true,
         ];
@@ -291,6 +292,7 @@ class StripeGateway implements PaymentGatewayInterface
             'transaction_id' => $paymentIntent->id,
             'amount' => $paymentIntent->amount / 100,
             'currency' => $paymentIntent->currency,
+            'payment_method' => $paymentIntent->payment_method ?? null,
             'status' => 'failed',
             'error' => $paymentIntent->last_payment_error?->message ?? 'Payment failed',
             'handled' => true,
