@@ -497,6 +497,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
     reviewed_by INT NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    payroll_included TINYINT(1) NOT NULL DEFAULT 0,
+    payroll_included_at DATETIME NULL,
     en_route_at DATETIME NULL,
     on_site_at DATETIME NULL,
     wrap_up_at DATETIME NULL,

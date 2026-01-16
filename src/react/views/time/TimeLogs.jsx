@@ -53,6 +53,7 @@ export default function TimeLogs() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [reviewError, setReviewError] = useState('')
   const [reviewing, setReviewing] = useState(false)
+  const [includeInPayroll, setIncludeInPayroll] = useState(true)
   const [laborTasks, setLaborTasks] = useState([])
 
   const [filters, setFilters] = useState({
@@ -104,6 +105,7 @@ export default function TimeLogs() {
     { key: 'status', label: 'Status' },
     { key: 'context', label: 'Context' },
     { key: 'manual_override', label: 'Source' },
+    { key: 'payroll', label: 'Payroll' },
     { key: 'adjustments', label: 'Adjustments' },
   ]), [])
 
@@ -209,6 +211,7 @@ export default function TimeLogs() {
     })
     setReviewNotes('')
     setReviewError('')
+    setIncludeInPayroll(row.status === 'pending' ? true : Boolean(row.payroll_included))
   }
 
   const debouncedRefresh = () => {
@@ -296,7 +299,10 @@ export default function TimeLogs() {
     try {
       const payload = reviewNotes ? { notes: reviewNotes } : {}
       if (decision === 'approved') {
-        await timeTrackingService.approve(selectedEntry.id, payload)
+        await timeTrackingService.approve(selectedEntry.id, {
+          ...payload,
+          include_in_payroll: includeInPayroll,
+        })
       } else {
         await timeTrackingService.reject(selectedEntry.id, payload)
       }
@@ -465,6 +471,14 @@ export default function TimeLogs() {
               manual_override: ({ value }) => (
                 <Badge variant={value ? 'warning' : 'secondary'}>{value ? 'Manual' : 'Timer'}</Badge>
               ),
+              payroll: ({ row }) => {
+                if (row.status !== 'approved') {
+                  return <Badge variant="secondary">Not approved</Badge>
+                }
+                return row.payroll_included
+                  ? <Badge variant="success">Included</Badge>
+                  : <Badge variant="warning">Excluded</Badge>
+              },
               adjustments: ({ row }) => (
                 <div className="space-y-2">
                   {row.adjustments?.length === 0 ? (
@@ -499,6 +513,11 @@ export default function TimeLogs() {
                 <div className="flex flex-col items-end gap-1">
                   <Badge variant={row.manual_override ? 'warning' : 'secondary'}>{row.manual_override ? 'Manual' : 'Timer'}</Badge>
                   <Badge variant={statusVariant(row.status)} size="sm">{statusLabel(row.status)}</Badge>
+                  {row.status === 'approved' ? (
+                    <Badge variant={row.payroll_included ? 'success' : 'warning'} size="sm">
+                      {row.payroll_included ? 'Payroll included' : 'Payroll excluded'}
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
               {row.task_name ? (
@@ -694,11 +713,25 @@ export default function TimeLogs() {
                     rows={2}
                     placeholder="Review notes (optional)"
                   />
+                  <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                    <input
+                      checked={includeInPayroll}
+                      onChange={(event) => setIncludeInPayroll(event.target.checked)}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                    />
+                    Include approved hours in the next payroll run
+                  </label>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="primary" size="sm" loading={reviewing} onClick={() => review('approved')}>Approve</Button>
                     <Button variant="danger" size="sm" loading={reviewing} onClick={() => review('rejected')}>Reject</Button>
                   </div>
                 </div>
+              ) : null}
+              {selectedEntry.status === 'approved' ? (
+                <p className="text-xs text-gray-600">
+                  Payroll: {selectedEntry.payroll_included ? 'Included' : 'Excluded'}
+                </p>
               ) : null}
               {selectedEntry.status !== 'pending' && selectedEntry.review_notes ? (
                 <p className="text-xs text-gray-600">Notes: {selectedEntry.review_notes}</p>
