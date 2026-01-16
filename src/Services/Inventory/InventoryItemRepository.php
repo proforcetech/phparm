@@ -252,6 +252,9 @@ class InventoryItemRepository
             'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
             'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
             'cost' => 'cost',
+            'core_cost' => $this->resolveColumn('core_cost'),
+            'core_price' => $this->resolveColumn('core_price'),
+            'core_eligible' => $this->resolveColumn('is_core_eligible', 'core_eligible'),
             'sale_price' => $this->resolveColumn('sale_price', 'price'),
             'list_price' => $this->resolveColumn('list_price'),
             'markup' => 'markup',
@@ -311,6 +314,9 @@ class InventoryItemRepository
             'low_stock_threshold' => $this->resolveColumn('low_stock_threshold', 'reorder_threshold'),
             'reorder_quantity' => $this->resolveColumn('reorder_quantity'),
             'cost' => 'cost',
+            'core_cost' => $this->resolveColumn('core_cost'),
+            'core_price' => $this->resolveColumn('core_price'),
+            'core_eligible' => $this->resolveColumn('is_core_eligible', 'core_eligible'),
             'sale_price' => $this->resolveColumn('sale_price', 'price'),
             'list_price' => $this->resolveColumn('list_price'),
             'markup' => 'markup',
@@ -518,6 +524,13 @@ class InventoryItemRepository
             ? (float) $row['sale_price']
             : (float) ($row['price'] ?? 0);
         $row['list_price'] = (float) ($row['list_price'] ?? 0);
+        $row['core_cost'] = array_key_exists('core_cost', $row) && $row['core_cost'] !== null
+            ? (float) $row['core_cost']
+            : null;
+        $row['core_price'] = array_key_exists('core_price', $row) && $row['core_price'] !== null
+            ? (float) $row['core_price']
+            : null;
+        $row['core_eligible'] = (bool) ($row['is_core_eligible'] ?? $row['core_eligible'] ?? 0);
         $row['manufacturer_part_number'] = $row['manufacturer_part_number'] ?? null;
         $row['markup'] = isset($row['markup']) && $row['markup'] !== null ? (float) $row['markup'] : null;
         $row['is_tracked'] = (bool) ($row['is_tracked'] ?? 1);

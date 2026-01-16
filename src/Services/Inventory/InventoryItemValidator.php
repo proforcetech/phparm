@@ -57,6 +57,9 @@ class InventoryItemValidator
             'low_stock_threshold' => $this->parseIntField($data['low_stock_threshold'] ?? null, 'Low stock threshold'),
             'reorder_quantity' => $this->parseIntField($data['reorder_quantity'] ?? null, 'Reorder quantity'),
             'cost' => $this->parseFloatField($data['cost'] ?? null, 'Cost'),
+            'core_cost' => $this->parseOptionalFloatField($data['core_cost'] ?? null, 'Core cost'),
+            'core_price' => $this->parseOptionalFloatField($data['core_price'] ?? null, 'Core price'),
+            'core_eligible' => $this->parseBoolField($data['core_eligible'] ?? null, 'Core eligible'),
             'sale_price' => $this->parseFloatField($data['sale_price'] ?? null, 'Sale price'),
             'list_price' => $this->parseFloatField($data['list_price'] ?? null, 'List price'),
             'location' => isset($data['location']) && $data['location'] !== ''
@@ -150,6 +153,24 @@ class InventoryItemValidator
         return (float) $filtered;
     }
 
+    private function parseOptionalFloatField($value, string $label): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $filtered = filter_var($value, FILTER_VALIDATE_FLOAT);
+        if ($filtered === false) {
+            throw new InvalidArgumentException("{$label} must be a number.");
+        }
+
+        if ($filtered < 0) {
+            throw new InvalidArgumentException("{$label} cannot be negative.");
+        }
+
+        return (float) $filtered;
+    }
+
     private function calculateMarkup(float $cost, float $salePrice): ?float
     {
         if ($cost <= 0.0) {
@@ -157,5 +178,23 @@ class InventoryItemValidator
         }
 
         return round((($salePrice - $cost) / $cost) * 100, 2);
+    }
+
+    private function parseBoolField($value, string $label): bool
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $filtered = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($filtered === null) {
+            throw new InvalidArgumentException("{$label} must be true or false.");
+        }
+
+        return $filtered;
     }
 }

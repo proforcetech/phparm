@@ -15,6 +15,9 @@ class InventoryItem extends BaseModel
     public bool $is_low_stock = false;
     public int $reorder_quantity = 0;
     public float $cost = 0.0;
+    public ?float $core_cost = null;
+    public ?float $core_price = null;
+    public bool $core_eligible = false;
     public float $sale_price = 0.0;
     public float $list_price = 0.0;
     public ?float $markup = null;

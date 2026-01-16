@@ -38,11 +38,14 @@ export default function InventoryList() {
   const canDelete = hasPermission('inventory.delete')
   const canManageLookups = hasPermission('inventory.manage') || hasPermission('inventory.edit')
 
+  const formatCurrency = (value) => `$${Number(value || 0).toFixed(2)}`
+
   const columns = useMemo(() => ([
     { key: 'name', label: 'Item' },
     { key: 'category', label: 'Category' },
     { key: 'stock_quantity', label: 'Stock' },
     { key: 'pricing', label: 'Pricing' },
+    { key: 'core', label: 'Core' },
     { key: 'reorder_quantity', label: 'Reorder' },
   ]), [])
 
@@ -194,6 +197,26 @@ export default function InventoryList() {
                       <span className="font-semibold">Price:</span> ${Number(row.sale_price).toFixed(2)}
                     </div>
                     <div className="text-xs text-gray-500">Markup: {row.markup ?? '—'}%</div>
+                  </div>
+                ),
+                core: ({ row }) => (
+                  <div className="text-sm text-gray-800">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={row.core_eligible ? 'primary' : 'secondary'}>
+                        {row.core_eligible ? 'Eligible' : 'Not Eligible'}
+                      </Badge>
+                      {row.core_eligible ? (
+                        <span className="text-xs text-gray-500">Core charge tracked</span>
+                      ) : null}
+                    </div>
+                    {row.core_eligible ? (
+                      <div className="mt-2 text-xs text-gray-500">
+                        <div>Customer: {formatCurrency(row.core_price)}</div>
+                        <div>Vendor: {formatCurrency(row.core_cost)}</div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-gray-400">No core balance</div>
+                    )}
                   </div>
                 ),
                 reorder_quantity: ({ row }) => (

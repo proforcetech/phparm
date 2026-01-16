@@ -21,6 +21,9 @@ const emptyForm = {
   low_stock_threshold: 0,
   markup: null,
   cost: 0,
+  core_cost: '',
+  core_price: '',
+  core_eligible: false,
   sale_price: 0,
   notes: '',
 }
@@ -319,6 +322,50 @@ export default function InventoryForm() {
                 helperText="Calculated as cost × (1 + markup/100). You can override this if needed."
                 onUpdateModelValue={handleSalePriceChange}
               />
+            </div>
+          </div>
+
+          <div className="rounded-md border border-gray-200 p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Core tracking</p>
+                <p className="text-xs text-gray-500">Track refundable core charges for this item.</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={Boolean(form.core_eligible)}
+                  onChange={(event) => setForm((prev) => ({ ...prev, core_eligible: event.target.checked }))}
+                />
+                Core eligible
+              </label>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Core cost (vendor)</label>
+                <Input
+                  modelValue={form.core_cost ?? ''}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  disabled={!form.core_eligible}
+                  onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, core_cost: value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Core price (customer)</label>
+                <Input
+                  modelValue={form.core_price ?? ''}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  disabled={!form.core_eligible}
+                  onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, core_price: value }))}
+                />
+              </div>
             </div>
           </div>
 

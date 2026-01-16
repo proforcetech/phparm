@@ -14,6 +14,8 @@ class WorkorderItem extends BaseModel
     public float $quantity;
     public float $unit_price;
     public ?float $list_price = null;
+    public ?float $core_price = null;
+    public ?int $core_return_id = null;
     public bool $taxable = true;
     public float $line_total = 0.0;
     public int $position = 0;
