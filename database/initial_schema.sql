@@ -476,3 +476,18 @@ CREATE TABLE `cms_components` (
     INDEX `idx_created_by` (`created_by`),
     INDEX `idx_updated_by` (`updated_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cms_search_index` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `source_type` VARCHAR(32) NOT NULL,
+    `source_id` INT UNSIGNED NOT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `slug` VARCHAR(255) NULL,
+    `summary` TEXT NULL,
+    `content` LONGTEXT NULL,
+    `status` VARCHAR(50) NULL,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uniq_cms_search_source` (`source_type`, `source_id`),
+    INDEX `idx_cms_search_status` (`status`),
+    FULLTEXT KEY `ft_cms_search_text` (`title`, `summary`, `content`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
