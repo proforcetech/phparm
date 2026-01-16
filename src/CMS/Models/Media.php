@@ -15,7 +15,14 @@ class Media extends BaseModel
     public ?int $size_bytes = null;
     public ?string $title = null;
     public ?string $alt_text = null;
+    public ?string $folder = null;
+    /** @var array<int, string> */
+    public array $tags = [];
     public ?string $published_at = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
+    /** @var array<string, mixed>|null */
+    public ?array $variants = null;
+    public ?string $srcset = null;
+    public ?string $webp_srcset = null;
 }

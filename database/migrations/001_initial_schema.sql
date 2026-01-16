@@ -337,6 +337,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
     reviewed_by INT NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    payroll_included TINYINT(1) NOT NULL DEFAULT 0,
+    payroll_included_at DATETIME NULL,
     start_latitude DECIMAL(10,6) NULL,
     start_longitude DECIMAL(10,6) NULL,
     start_accuracy DECIMAL(10,2) NULL,

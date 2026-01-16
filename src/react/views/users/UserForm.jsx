@@ -11,6 +11,7 @@ import Textarea from '../../components/ui/Textarea'
 import userService from '../../../services/user.service'
 import roleService from '../../../services/role.service'
 import { useToast } from '../../stores/toast.jsx'
+import { useAuthStore } from '../../stores/auth.jsx'
 
 const twoFactorOptions = [
   { label: 'Disabled', value: 'none' },
@@ -37,6 +38,7 @@ export default function UserForm() {
   const { id } = useParams()
   const navigate = useNavigate()
   const toast = useToast()
+  const { isAdmin } = useAuthStore()
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -47,6 +49,7 @@ export default function UserForm() {
     role: 'technician',
     email_verified: false,
     two_factor_type: 'none',
+    branch_id: '',
     employee: {
       hire_date: '',
       emergency_contact: '',
@@ -130,6 +133,9 @@ export default function UserForm() {
           skills: parseSkills(form.employee.skills || ''),
         },
       }
+      if (isAdmin) {
+        payload.branch_id = form.branch_id === '' ? null : Number(form.branch_id)
+      }
 
       if (form.password) {
         payload.password = form.password
@@ -170,6 +176,7 @@ export default function UserForm() {
         email_verified: user.email_verified,
         two_factor_type: user.two_factor_type || 'none',
         password: '',
+        branch_id: user.branch_id ? String(user.branch_id) : '',
         employee: {
           hire_date: user.employee?.hire_date || '',
           emergency_contact: user.employee?.emergency_contact || '',
@@ -310,6 +317,17 @@ export default function UserForm() {
                   </div>
                 </div>
               )}
+
+              {isAdmin ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    modelValue={form.branch_id}
+                    label="Branch ID"
+                    placeholder="e.g. 101"
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, branch_id: value }))}
+                  />
+                </div>
+              ) : null}
 
               <div className="border-t border-gray-200 pt-6">
                 <h4 className="text-sm font-medium text-gray-900 mb-4">Account Status</h4>

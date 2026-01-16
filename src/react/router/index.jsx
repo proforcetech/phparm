@@ -32,6 +32,7 @@ import AppointmentBook from '../views/appointments/AppointmentBook'
 import AvailabilitySettings from '../views/appointments/AvailabilitySettings'
 import TimeLogs from '../views/time/TimeLogs'
 import TechnicianPortal from '../views/time/TechnicianPortal'
+import LeaveRequestsAdmin from '../views/time/LeaveRequestsAdmin'
 import CustomerList from '../views/customers/CustomerList'
 import CustomerForm from '../views/customers/CustomerForm'
 import CustomerDetail from '../views/customers/CustomerDetail'
@@ -60,6 +61,7 @@ import DocumentVault from '../views/documents/DocumentVault'
 import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
 import Reconciliation from '../views/financial/Reconciliation'
+import AccountCategories from '../views/financial/AccountCategories'
 import FinancialVendors from '../views/financial/VendorList'
 import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
@@ -97,6 +99,7 @@ import CMSComponentList from '../views/cms/CMSComponentList'
 import CMSComponentForm from '../views/cms/CMSComponentForm'
 import CMSTemplateList from '../views/cms/CMSTemplateList'
 import CMSTemplateForm from '../views/cms/CMSTemplateForm'
+import CMSMediaLibrary from '../views/cms/CMSMediaLibrary'
 import NotFoundManager from '../views/cms/NotFoundManager'
 import CustomerPortalDashboard from '../views/customer-portal/Dashboard'
 import CustomerPortalInvoices from '../views/customer-portal/Invoices'
@@ -115,6 +118,7 @@ import EssTimeClock from '../views/ess/TimeClock'
 import EssSchedule from '../views/ess/Schedule'
 import EssPayHistory from '../views/ess/PayHistory'
 import EssProfile from '../views/ess/Profile'
+import EssLeaveRequests from '../views/ess/LeaveRequests'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
@@ -215,6 +219,7 @@ const protectedRoutes = [
   { path: '/cp/appointments/create', name: 'AppointmentBook', auth: 'requiresAuth', element: <AppointmentBook /> },
   { path: '/cp/appointments/availability-settings', name: 'AvailabilitySettings', auth: 'requiresAuth', element: <AvailabilitySettings /> },
   { path: '/cp/time-logs', name: 'TimeLogs', auth: 'requiresAuth', element: <TimeLogs /> },
+  { path: '/cp/leave-requests', name: 'LeaveRequests', auth: 'requiresAuth', element: <LeaveRequestsAdmin /> },
   { path: '/cp/my-time', name: 'TechnicianTime', auth: 'requiresAuth', element: <TechnicianPortal /> },
   { path: '/cp/customers', name: 'CustomerList', auth: 'requiresAuth', element: <CustomerList /> },
   { path: '/cp/customers/create', name: 'CustomerCreate', auth: 'requiresAuth', element: <CustomerForm /> },
@@ -247,6 +252,7 @@ const protectedRoutes = [
   { path: '/cp/towing/pricing', name: 'TowingPricingMatrix', auth: 'requiresAuth', element: <TowingPricingMatrix /> },
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
   { path: '/cp/financial/reconciliation', name: 'FinancialReconciliation', auth: 'requiresAuth', element: <Reconciliation /> },
+  { path: '/cp/financial/categories', name: 'FinancialCategories', auth: 'requiresAuth', element: <AccountCategories /> },
   { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
   { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
@@ -272,6 +278,7 @@ const protectedRoutes = [
   { path: '/cp/cms/menus', name: 'CMSMenuList', auth: 'requiresAuth', element: <CMSMenuList /> },
   { path: '/cp/cms/menus/create', name: 'CMSMenuCreate', auth: 'requiresAuth', element: <CMSMenuForm /> },
   { path: '/cp/cms/menus/:id', name: 'CMSMenuEdit', auth: 'requiresAuth', element: <CMSMenuForm /> },
+  { path: '/cp/cms/media', name: 'CMSMediaLibrary', auth: 'requiresAuth', element: <CMSMediaLibrary /> },
   { path: '/cp/cms/components', name: 'CMSComponentList', auth: 'requiresAuth', element: <CMSComponentList /> },
   { path: '/cp/cms/components/create', name: 'CMSComponentCreate', auth: 'requiresAuth', element: <CMSComponentForm /> },
   { path: '/cp/cms/components/:id', name: 'CMSComponentEdit', auth: 'requiresAuth', element: <CMSComponentForm /> },
@@ -295,6 +302,7 @@ const protectedRoutes = [
   { path: '/ess/time-clock', name: 'EssTimeClock', auth: 'requiresAuth', element: <EssTimeClock /> },
   { path: '/ess/schedule', name: 'EssSchedule', auth: 'requiresAuth', element: <EssSchedule /> },
   { path: '/ess/pay-history', name: 'EssPayHistory', auth: 'requiresAuth', element: <EssPayHistory /> },
+  { path: '/ess/leave-requests', name: 'EssLeaveRequests', auth: 'requiresAuth', element: <EssLeaveRequests /> },
   { path: '/ess/profile', name: 'EssProfile', auth: 'requiresAuth', element: <EssProfile /> },
 ]
 

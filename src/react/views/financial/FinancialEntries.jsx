@@ -57,22 +57,47 @@ export default function FinancialEntries() {
   }, [])
 
   const loadLookups = () => {
-    loadLookup('categories', setCategoryOptions)
-    loadLookup('vendors', setVendorOptions)
+    loadCategoryOptions()
+    loadVendorOptions()
   }
 
-  const loadLookup = async (type, setTarget) => {
-    setLookupsLoading((prev) => ({ ...prev, [type]: true }))
-    setLookupError((prev) => ({ ...prev, [type]: '' }))
+  const formatCategoryLabel = (category) => {
+    const typeLabel = category.type
+      ? category.type.charAt(0).toUpperCase() + category.type.slice(1)
+      : 'Unassigned'
+    return `${category.name} (${typeLabel})`
+  }
+
+  const loadCategoryOptions = async () => {
+    setLookupsLoading((prev) => ({ ...prev, categories: true }))
+    setLookupError((prev) => ({ ...prev, categories: '' }))
     try {
-      const params = type === 'vendors' ? { parts_supplier: true } : {}
-      const data = await inventoryMetaService.list(type, params)
-      setTarget(data.map((item) => ({ label: item.name, value: item.name })))
+      const data = await financialService.listCategories()
+      setCategoryOptions(
+        (data || []).map((item) => ({
+          label: formatCategoryLabel(item),
+          value: item.name,
+        }))
+      )
     } catch (err) {
       console.error(err)
-      setLookupError((prev) => ({ ...prev, [type]: 'Unable to load options' }))
+      setLookupError((prev) => ({ ...prev, categories: 'Unable to load options' }))
     } finally {
-      setLookupsLoading((prev) => ({ ...prev, [type]: false }))
+      setLookupsLoading((prev) => ({ ...prev, categories: false }))
+    }
+  }
+
+  const loadVendorOptions = async () => {
+    setLookupsLoading((prev) => ({ ...prev, vendors: true }))
+    setLookupError((prev) => ({ ...prev, vendors: '' }))
+    try {
+      const data = await inventoryMetaService.list('vendors', { parts_supplier: true })
+      setVendorOptions(data.map((item) => ({ label: item.name, value: item.name })))
+    } catch (err) {
+      console.error(err)
+      setLookupError((prev) => ({ ...prev, vendors: 'Unable to load options' }))
+    } finally {
+      setLookupsLoading((prev) => ({ ...prev, vendors: false }))
     }
   }
 

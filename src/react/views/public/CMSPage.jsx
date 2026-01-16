@@ -89,14 +89,37 @@ export default function CMSPage() {
     addedTagsRef.current.forEach((tag) => tag.remove())
     addedTagsRef.current = []
 
-    const metaTags = doc.querySelectorAll('meta[name="description"], meta[name="keywords"]')
+    const metaTags = doc.querySelectorAll(
+      'meta[name="description"], meta[name="keywords"], meta[property^="og:"]'
+    )
     metaTags.forEach((metaTag) => {
       const clonedTag = document.createElement('meta')
-      clonedTag.setAttribute('name', metaTag.getAttribute('name'))
-      clonedTag.setAttribute('content', metaTag.getAttribute('content'))
+      const name = metaTag.getAttribute('name')
+      const property = metaTag.getAttribute('property')
+      const content = metaTag.getAttribute('content')
+
+      if (name) {
+        clonedTag.setAttribute('name', name)
+      }
+      if (property) {
+        clonedTag.setAttribute('property', property)
+      }
+      if (content) {
+        clonedTag.setAttribute('content', content)
+      }
+
       document.head.appendChild(clonedTag)
       addedTagsRef.current.push(clonedTag)
     })
+
+    const canonicalLink = doc.querySelector('link[rel="canonical"]')
+    if (canonicalLink?.getAttribute('href')) {
+      const clonedLink = document.createElement('link')
+      clonedLink.setAttribute('rel', 'canonical')
+      clonedLink.setAttribute('href', canonicalLink.getAttribute('href'))
+      document.head.appendChild(clonedLink)
+      addedTagsRef.current.push(clonedLink)
+    }
 
     const styleTags = doc.querySelectorAll('style')
     const scriptTags = doc.querySelectorAll('script')

@@ -6,6 +6,9 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSRevisionService;
+use App\Services\CMS\CMSComponentUsageService;
+use App\Services\CMS\CMSIndexService;
 use PDO;
 
 /**
@@ -21,14 +24,28 @@ class CMSApiController
     private string $tablePrefix;
     private ?CMSCacheService $cacheService;
     private AccessGate $gate;
+    private CMSRevisionService $revisions;
 
-    public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null)
+    public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null, ?CMSRevisionService $revisions = null)
+    private CMSComponentUsageService $componentUsage;
+    private CMSIndexService $indexService;
+
+    public function __construct(
+        Connection $connection,
+        CMSAuthBridge $authBridge,
+        AccessGate $gate,
+        ?CMSCacheService $cacheService = null,
+        ?CMSComponentUsageService $componentUsage = null
+    )
     {
         $this->connection = $connection;
         $this->authBridge = $authBridge;
         $this->gate = $gate;
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
         $this->cacheService = $cacheService;
+        $this->revisions = $revisions ?? new CMSRevisionService($connection);
+        $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
+        $this->indexService = new CMSIndexService($connection, $this->tablePrefix);
     }
 
     /**
@@ -200,6 +217,11 @@ class CMSApiController
     {
         $this->requireEditAccess($user);
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->requirePublishAccess($user);
+        }
+
         $pdo = $this->connection->pdo();
 
         // Generate slug if not provided
@@ -210,9 +232,11 @@ class CMSApiController
         $stmt = $pdo->prepare("
             INSERT INTO {$this->table('pages')} (
                 title, slug, template_id, status, meta_title, meta_description, meta_keywords,
+                canonical_url, og_title, og_description, og_image, og_type, og_url,
                 summary, content, created_at, updated_at
             ) VALUES (
                 :title, :slug, :status, :tempate_id, :meta_title, :meta_description, :meta_keywords,
+                :canonical_url, :og_title, :og_description, :og_image, :og_type, :og_url,
                 :summary, :content, NOW(), NOW()
             )
         ");
@@ -225,13 +249,30 @@ class CMSApiController
             'meta_title' => $data['meta_title'] ?? null,
             'meta_description' => $data['meta_description'] ?? null,
             'meta_keywords' => $data['meta_keywords'] ?? null,
+            'canonical_url' => $data['canonical_url'] ?? null,
+            'og_title' => $data['og_title'] ?? null,
+            'og_description' => $data['og_description'] ?? null,
+            'og_image' => $data['og_image'] ?? null,
+            'og_type' => $data['og_type'] ?? null,
+            'og_url' => $data['og_url'] ?? null,
             'summary' => $data['summary'] ?? null,
             'content' => $data['content'] ?? '',
         ]);
 
         $id = (int) $pdo->lastInsertId();
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page !== null) {
+            $this->queuePageRevalidation($page);
+        }
+
+        return $page ?? [];
+        if ($page) {
+            $this->componentUsage->syncForPage($id, $page);
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -240,6 +281,16 @@ class CMSApiController
     public function updatePage(?User $user, int $id, array $data): array
     {
         $this->requireEditAccess($user);
+
+        $existing = $this->getPage($user, $id);
+        if ($existing === null) {
+            throw new \RuntimeException('Page not found');
+        }
+
+        $requestedStatus = $data['status'] ?? $existing['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->requirePublishAccess($user);
+        }
 
         $pdo = $this->connection->pdo();
 
@@ -252,6 +303,12 @@ class CMSApiController
                 meta_title = :meta_title,
                 meta_description = :meta_description,
                 meta_keywords = :meta_keywords,
+                canonical_url = :canonical_url,
+                og_title = :og_title,
+                og_description = :og_description,
+                og_image = :og_image,
+                og_type = :og_type,
+                og_url = :og_url,
                 summary = :summary,
                 content = :content,
                 updated_at = NOW()
@@ -267,6 +324,12 @@ class CMSApiController
             'meta_title' => $data['meta_title'] ?? null,
             'meta_description' => $data['meta_description'] ?? null,
             'meta_keywords' => $data['meta_keywords'] ?? null,
+            'canonical_url' => $data['canonical_url'] ?? null,
+            'og_title' => $data['og_title'] ?? null,
+            'og_description' => $data['og_description'] ?? null,
+            'og_image' => $data['og_image'] ?? null,
+            'og_type' => $data['og_type'] ?? null,
+            'og_url' => $data['og_url'] ?? null,
             'summary' => $data['summary'] ?? null,
             'content' => $data['content'] ?? '',
         ]);
@@ -274,7 +337,18 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($data['slug'] ?? '');
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page !== null) {
+            $this->queuePageRevalidation($page);
+        }
+
+        return $page ?? [];
+        if ($page) {
+            $this->componentUsage->syncForPage($id, $page);
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -282,7 +356,7 @@ class CMSApiController
      */
     public function publishPage(?User $user, int $id): array
     {
-        $this->requireEditAccess($user);
+        $this->requirePublishAccess($user);
 
         $pdo = $this->connection->pdo();
 
@@ -307,7 +381,18 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($page['slug']);
 
-        return $this->getPage($user, $id);
+        $published = $this->getPage($user, $id);
+        if ($published !== null) {
+            $this->queuePageRevalidation($published);
+        }
+
+        return $published ?? [];
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -324,7 +409,9 @@ class CMSApiController
         if ($page) {
             $stmt = $pdo->prepare("DELETE FROM {$this->table('pages')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
+            $this->componentUsage->clearForPage($id);
             $this->invalidatePageCache($page['slug']);
+            $this->indexService->deleteEntry('page', $id);
             return true;
         }
 
@@ -398,6 +485,8 @@ class CMSApiController
 
         $pdo = $this->connection->pdo();
 
+        $this->validateComponentData($data);
+
         // Generate slug if not provided
         if (empty($data['slug'])) {
             $data['slug'] = $this->generateSlug($data['name'] ?? 'untitled');
@@ -405,10 +494,10 @@ class CMSApiController
 
         $stmt = $pdo->prepare("
             INSERT INTO {$this->table('components')} (
-                name, slug, type, description, content, css, javascript,
+                name, slug, type, description, content, css, javascript, css_assets, js_assets,
                 cache_ttl, is_active, created_by, updated_by, created_at, updated_at
             ) VALUES (
-                :name, :slug, :type, :description, :content, :css, :javascript,
+                :name, :slug, :type, :description, :content, :css, :javascript, :css_assets, :js_assets,
                 :cache_ttl, :is_active, :created_by, :updated_by, NOW(), NOW()
             )
         ");
@@ -421,6 +510,8 @@ class CMSApiController
             'content' => $data['content'] ?? '',
             'css' => $data['css'] ?? '',
             'javascript' => $data['javascript'] ?? '',
+            'css_assets' => $data['css_assets'] ?? '',
+            'js_assets' => $data['js_assets'] ?? '',
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
             'created_by' => $user->id,
@@ -429,7 +520,17 @@ class CMSApiController
 
         $id = (int) $pdo->lastInsertId();
 
-        return $this->getComponent($user, $id);
+        $component = $this->getComponent($user, $id);
+        if ($component !== null) {
+            $this->revisions->recordRevision('component', $id, $component, $user?->id, 'created');
+        }
+
+        return $component ?? [];
+        if ($component) {
+            $this->indexService->indexComponent($component);
+        }
+
+        return $component;
     }
 
     /**
@@ -440,6 +541,10 @@ class CMSApiController
         $this->requireEditAccess($user);
 
         $pdo = $this->connection->pdo();
+        $existing = $this->getComponent($user, $id);
+        $existingSlug = $existing['slug'] ?? null;
+
+        $this->validateComponentData($data);
 
         $stmt = $pdo->prepare("
             UPDATE {$this->table('components')} SET
@@ -450,6 +555,8 @@ class CMSApiController
                 content = :content,
                 css = :css,
                 javascript = :javascript,
+                css_assets = :css_assets,
+                js_assets = :js_assets,
                 cache_ttl = :cache_ttl,
                 is_active = :is_active,
                 updated_by = :updated_by,
@@ -460,21 +567,49 @@ class CMSApiController
         $stmt->execute([
             'id' => $id,
             'name' => $data['name'] ?? '',
-            'slug' => $data['slug'] ?? '',
+            'slug' => $data['slug'] ?? ($existing['slug'] ?? ''),
             'type' => $data['type'] ?? 'custom',
             'description' => $data['description'] ?? '',
             'content' => $data['content'] ?? '',
             'css' => $data['css'] ?? '',
             'javascript' => $data['javascript'] ?? '',
+            'css_assets' => $data['css_assets'] ?? '',
+            'js_assets' => $data['js_assets'] ?? '',
             'cache_ttl' => (int) ($data['cache_ttl'] ?? 3600),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
             'updated_by' => $user->id,
         ]);
 
         // Invalidate cache
-        $this->invalidateComponentCache($data['slug'] ?? '');
+        $newSlug = (string) ($data['slug'] ?? ($existing['slug'] ?? ''));
+        if ($newSlug !== '') {
+            $this->invalidateComponentCache($newSlug);
+        }
+        if ($existing !== null && $existing['slug'] !== $newSlug) {
+            $this->invalidateComponentCache($existing['slug']);
+        }
 
-        return $this->getComponent($user, $id);
+        $this->queueComponentRevalidation($id, array_filter([
+            $existing['slug'] ?? null,
+            $newSlug !== '' ? $newSlug : null,
+        ]));
+        $this->invalidateComponentCache($data['slug'] ?? '');
+        if ($existingSlug && $existingSlug !== ($data['slug'] ?? $existingSlug)) {
+            $this->invalidateComponentCache($existingSlug);
+        }
+        $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
+
+        $component = $this->getComponent($user, $id);
+        if ($component !== null) {
+            $this->revisions->recordRevision('component', $id, $component, $user?->id, 'updated');
+        }
+
+        return $component ?? [];
+        if ($component) {
+            $this->indexService->indexComponent($component);
+        }
+
+        return $component;
     }
 
     /**
@@ -491,6 +626,9 @@ class CMSApiController
             $stmt = $pdo->prepare("DELETE FROM {$this->table('components')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
             $this->invalidateComponentCache($component['slug']);
+            $this->queueComponentRevalidation($id, [$component['slug']]);
+            $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
+            $this->indexService->deleteEntry('component', $id);
             return true;
         }
 
@@ -514,6 +652,90 @@ class CMSApiController
         unset($component['id']);
 
         return $this->createComponent($user, $component);
+    }
+
+    /**
+     * List component revisions
+     */
+    public function listComponentRevisions(?User $user, int $id): ?array
+    {
+        $this->gate->assert($user, 'cms.components.view');
+        $this->authBridge->initializeCMSSession($user);
+
+        if ($this->getComponent($user, $id) === null) {
+            return null;
+        }
+
+        return [
+            'data' => $this->revisions->listRevisions('component', $id),
+        ];
+    }
+
+    /**
+     * Restore component revision
+     */
+    public function restoreComponentRevision(?User $user, int $id, int $revisionId): ?array
+    {
+        $this->requireEditAccess($user);
+
+        $existing = $this->getComponent($user, $id);
+        if ($existing === null) {
+            return null;
+        }
+
+        $revision = $this->revisions->getRevision('component', $id, $revisionId);
+        if ($revision === null) {
+            return null;
+        }
+
+        $snapshot = json_decode($revision['snapshot_data'] ?? '', true);
+        if (!is_array($snapshot)) {
+            return null;
+        }
+
+        $payload = $this->normalizeComponentSnapshot($snapshot);
+
+        $stmt = $this->connection->pdo()->prepare("
+            UPDATE {$this->table('components')} SET
+                name = :name,
+                slug = :slug,
+                type = :type,
+                description = :description,
+                content = :content,
+                css = :css,
+                javascript = :javascript,
+                cache_ttl = :cache_ttl,
+                is_active = :is_active,
+                updated_by = :updated_by,
+                updated_at = NOW()
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            'id' => $id,
+            'name' => $payload['name'],
+            'slug' => $payload['slug'],
+            'type' => $payload['type'],
+            'description' => $payload['description'],
+            'content' => $payload['content'],
+            'css' => $payload['css'],
+            'javascript' => $payload['javascript'],
+            'cache_ttl' => $payload['cache_ttl'],
+            'is_active' => $payload['is_active'],
+            'updated_by' => $user?->id,
+        ]);
+
+        $this->invalidateComponentCache($existing['slug'] ?? '');
+        if (($existing['slug'] ?? '') !== $payload['slug']) {
+            $this->invalidateComponentCache($payload['slug']);
+        }
+
+        $component = $this->getComponent($user, $id);
+        if ($component !== null) {
+            $this->revisions->recordRevision('component', $id, $component, $user?->id, 'restored');
+        }
+
+        return $component;
     }
 
     // ================================================
@@ -835,6 +1057,11 @@ class CMSApiController
             WHERE type = 'footer' AND is_active = 1 ORDER BY name
         ")->fetchAll(PDO::FETCH_ASSOC);
 
+        $components = $pdo->query("
+            SELECT id, name, type FROM {$this->table('components')}
+            WHERE type NOT IN ('header', 'footer') AND is_active = 1 ORDER BY name
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
         $pages = $pdo->query("
             SELECT id, title, slug FROM {$this->table('pages')}
             ORDER BY title
@@ -849,6 +1076,7 @@ class CMSApiController
             'templates' => $templates,
             'header_components' => $headerComponents,
             'footer_components' => $footerComponents,
+            'components' => $components,
             'parent_pages' => $pages,
             'categories' => $categories,
         ];
@@ -879,6 +1107,12 @@ class CMSApiController
         // Use AccessGate for consistent permission checking
         $this->gate->assert($user, 'cms.*');
         // Initialize CMS session after successful access check
+        $this->authBridge->initializeCMSSession($user);
+    }
+
+    private function requirePublishAccess(?User $user): void
+    {
+        $this->gate->assert($user, 'cms.pages.publish');
         $this->authBridge->initializeCMSSession($user);
     }
 
@@ -958,6 +1192,21 @@ class CMSApiController
         $this->cacheService?->forgetPrefix('page:' . $slug);
     }
 
+    /**
+     * @param array<int, string> $slugs
+     */
+    private function invalidatePageCaches(array $slugs): void
+    {
+        $uniqueSlugs = array_values(array_unique(array_filter($slugs)));
+        if (empty($uniqueSlugs)) {
+            return;
+        }
+
+        foreach ($uniqueSlugs as $slug) {
+            $this->invalidatePageCache($slug);
+        }
+    }
+
     private function invalidateComponentCache(string $slug): void
     {
         if (empty($slug)) {
@@ -969,6 +1218,29 @@ class CMSApiController
         $stmt->execute(['key' => '%component_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('component:' . $slug);
+        $this->invalidateAllPageCache();
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return array<string, mixed>
+     */
+    private function normalizeComponentSnapshot(array $snapshot): array
+    {
+        $name = (string) ($snapshot['name'] ?? '');
+        $slug = (string) ($snapshot['slug'] ?? $this->generateSlug($name ?: 'component'));
+
+        return [
+            'name' => $name,
+            'slug' => $slug,
+            'type' => (string) ($snapshot['type'] ?? 'custom'),
+            'description' => $snapshot['description'] ?? '',
+            'content' => $snapshot['content'] ?? '',
+            'css' => $snapshot['css'] ?? '',
+            'javascript' => $snapshot['javascript'] ?? '',
+            'cache_ttl' => (int) ($snapshot['cache_ttl'] ?? 0),
+            'is_active' => !empty($snapshot['is_active']) ? 1 : 0,
+        ];
     }
 
     private function invalidateTemplateCache(string $slug): void
@@ -982,5 +1254,230 @@ class CMSApiController
         $stmt->execute(['key' => '%template_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('template:' . $slug);
+    }
+
+    /**
+     * @param array<string, mixed> $page
+     */
+    private function queuePageRevalidation(array $page): void
+    {
+        if (!$this->cacheService || !$this->cacheService->shouldPreRenderOnSave()) {
+            return;
+        }
+
+        if (($page['status'] ?? '') !== 'published') {
+            return;
+        }
+
+        $slug = (string) ($page['slug'] ?? '');
+        if ($slug === '') {
+            return;
+        }
+
+        $categoryId = isset($page['category_id']) ? (int) $page['category_id'] : null;
+        $path = $this->buildPagePath($categoryId, $slug);
+        if ($path === '') {
+            return;
+        }
+
+        $connection = $this->connection;
+        $cache = $this->cacheService;
+
+        $cache->enqueueRevalidation(function () use ($connection, $cache, $path): void {
+            $renderingService = new CMSRenderingService($connection, $cache);
+            $renderingService->renderPage($path, true);
+        });
+    }
+
+    /**
+     * @param array<int, string> $slugs
+     */
+    private function queueComponentRevalidation(int $componentId, array $slugs): void
+    {
+        if (!$this->cacheService || !$this->cacheService->shouldRevalidateOnChange()) {
+            return;
+        }
+
+        if ($componentId <= 0 && empty($slugs)) {
+            return;
+        }
+
+        $pages = $this->findPagesUsingComponent($componentId, $slugs);
+        foreach ($pages as $page) {
+            $this->queuePageRevalidation($page);
+        }
+    }
+
+    private function buildPagePath(?int $categoryId, string $slug): string
+    {
+        $normalizedSlug = $this->normalizeSlugPath($slug);
+        if ($normalizedSlug === '') {
+            return '';
+        }
+
+        $segments = $this->resolveCategorySegments($categoryId);
+        if (empty($segments)) {
+            return $normalizedSlug;
+        }
+
+        $segments[] = $normalizedSlug;
+
+        return implode('/', $segments);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveCategorySegments(?int $categoryId): array
+    {
+        if ($categoryId === null) {
+            return [];
+        }
+
+        $pdo = $this->connection->pdo();
+        $segments = [];
+        $currentId = $categoryId;
+
+        while ($currentId !== null) {
+            $stmt = $pdo->prepare("SELECT slug, parent_id FROM {$this->table('categories')} WHERE id = :id LIMIT 1");
+            $stmt->execute(['id' => $currentId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$row) {
+                break;
+            }
+
+            $segments[] = (string) $row['slug'];
+            $parentId = $row['parent_id'];
+            $currentId = $parentId !== null ? (int) $parentId : null;
+        }
+
+        return array_reverse($segments);
+    }
+
+    /**
+     * @param array<int, string> $slugs
+     * @return array<int, array<string, mixed>>
+     */
+    private function findPagesUsingComponent(int $componentId, array $slugs): array
+    {
+        $pdo = $this->connection->pdo();
+        $conditions = [
+            '(header_component_id = :component_id OR footer_component_id = :component_id)',
+        ];
+        $params = ['component_id' => $componentId];
+
+        $tagIndex = 0;
+        foreach ($slugs as $slug) {
+            $slug = trim($slug);
+            if ($slug === '') {
+                continue;
+            }
+
+            $tagKey = 'tag_' . $tagIndex;
+            $conditions[] = "content LIKE :{$tagKey}";
+            $params[$tagKey] = '%{{component:' . $slug . '}}%';
+            $tagIndex++;
+        }
+
+        $sql = "SELECT id, slug, category_id, status
+            FROM {$this->table('pages')}
+            WHERE status = 'published'
+            AND (" . implode(' OR ', $conditions) . ')';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    private function invalidateAllPageCache(): void
+    {
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare("DELETE FROM {$this->table('cache')} WHERE cache_key LIKE :key");
+        $stmt->execute(['key' => '%page_%']);
+
+        $this->cacheService?->forgetPrefix('page:');
+    private function validateComponentData(array $data): void
+    {
+        $type = $data['type'] ?? 'custom';
+        $content = (string) ($data['content'] ?? '');
+        $errors = [];
+
+        $rules = [
+            'header' => [
+                'cta' => 'Header components require a call-to-action link with text (e.g., <a href="/contact">Contact Us</a>).',
+            ],
+            'navigation' => [
+                'links' => 'Navigation components require at least one link with text (e.g., <a href="/about">About</a>).',
+            ],
+            'sidebar' => [
+                'image' => 'Sidebar components require at least one image URL (e.g., <img src="https://example.com/image.jpg">).',
+            ],
+            'widget' => [
+                'cta' => 'Widget components require a call-to-action link with text (e.g., <a href="/signup">Get Started</a>).',
+                'image' => 'Widget components require at least one image URL (e.g., <img src="https://example.com/image.jpg">).',
+            ],
+            'footer' => [
+                'links' => 'Footer components require at least one link with text (e.g., <a href="/privacy">Privacy Policy</a>).',
+            ],
+            'custom' => [],
+        ];
+
+        $typeRules = $rules[$type] ?? [];
+        if ($typeRules === []) {
+            return;
+        }
+
+        $linksWithText = $this->extractLinksWithText($content);
+        $imageSources = $this->extractImageSources($content);
+
+        foreach ($typeRules as $rule => $message) {
+            if ($rule === 'cta' && count($linksWithText) === 0) {
+                $errors[] = $message;
+            }
+
+            if ($rule === 'links' && count($linksWithText) === 0) {
+                $errors[] = $message;
+            }
+
+            if ($rule === 'image' && count($imageSources) === 0) {
+                $errors[] = $message;
+            }
+        }
+
+        if ($errors !== []) {
+            throw new \InvalidArgumentException('Component validation failed: ' . implode(' ', $errors));
+        }
+    }
+
+    /**
+     * @return array<int, array{href: string, text: string}>
+     */
+    private function extractLinksWithText(string $content): array
+    {
+        $matches = [];
+        preg_match_all('/<a[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', $content, $matches, PREG_SET_ORDER);
+
+        $links = [];
+        foreach ($matches as $match) {
+            $href = trim($match[1] ?? '');
+            $text = trim(strip_tags($match[2] ?? ''));
+            if ($href !== '' && $text !== '') {
+                $links[] = ['href' => $href, 'text' => $text];
+            }
+        }
+
+        return $links;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractImageSources(string $content): array
+    {
+        $matches = [];
+        preg_match_all('/<img[^>]*src=[\'"]([^\'"]+)[\'"][^>]*>/is', $content, $matches);
+        $sources = array_filter(array_map('trim', $matches[1] ?? []), static fn ($src) => $src !== '');
+
+        return array_values($sources);
     }
 }

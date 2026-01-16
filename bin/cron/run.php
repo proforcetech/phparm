@@ -79,6 +79,12 @@ $jobs = [
         'schedule' => '0 * * * *', // Every hour
         'description' => 'Generates job density data for dispatcher heatmaps',
     ],
+    'cms-search-reindex' => [
+        'name' => 'CMS Search Reindex',
+        'script' => __DIR__ . '/cms-search-reindex.php',
+        'schedule' => '0 3 * * 0', // Weekly on Sunday at 3 AM
+        'description' => 'Rebuilds the CMS search index for pages and components',
+    ],
 ];
 
 if (isset($options['list'])) {

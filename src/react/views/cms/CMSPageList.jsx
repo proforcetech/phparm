@@ -111,6 +111,30 @@ export default function CMSPageList() {
     }).format(new Date(date))
   }
 
+  const statusLabel = (status) => {
+    switch (status) {
+      case 'published':
+        return 'Published'
+      case 'pending':
+        return 'Pending'
+      case 'draft':
+      default:
+        return 'Draft'
+    }
+  }
+
+  const statusVariant = (status) => {
+    switch (status) {
+      case 'published':
+        return 'success'
+      case 'pending':
+        return 'info'
+      case 'draft':
+      default:
+        return 'warning'
+    }
+  }
+
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
@@ -151,6 +175,7 @@ export default function CMSPageList() {
             >
               <option value="">All Status</option>
               <option value="published">Published</option>
+              <option value="pending">Pending</option>
               <option value="draft">Draft</option>
             </select>
           </div>
@@ -219,8 +244,8 @@ export default function CMSPageList() {
                         <div className="text-sm text-gray-500">{page.template_name || 'None'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <Badge variant={page.status === 'published' ? 'success' : 'warning'}>
-                          {page.status === 'published' ? 'Published' : 'Draft'}
+                        <Badge variant={statusVariant(page.status)}>
+                          {statusLabel(page.status)}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
