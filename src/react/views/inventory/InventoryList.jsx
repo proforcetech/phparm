@@ -416,17 +416,6 @@ export default function InventoryList() {
               ) : undefined}
               renderEmpty={() => <p className="text-sm text-gray-500">No inventory items found for the current filters.</p>}
             />
-             >
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="text-sm text-gray-600">Page {page} ({items.length} items)</div>
-              <div className="flex items-center gap-2">
-                <Button disabled={page === 1} variant="secondary" onClick={previousPage}>Previous</Button>
-                <Button disabled={!hasNextPage} variant="secondary" onClick={nextPage}>Next</Button>
-              </div>
-            </div>
-          </div>
-        </Card>
-        />
 
         <Card className="space-y-3">
           <h3 className="text-lg font-semibold text-gray-900">Quick actions</h3>
