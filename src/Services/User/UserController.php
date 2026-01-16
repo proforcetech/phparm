@@ -12,10 +12,13 @@ use App\Support\Auth\PasswordPolicy;
 use App\Support\Auth\RolePermissions;
 use App\Support\Auth\TotpService;
 use App\Support\Auth\UnauthorizedException;
+use DateTime;
 use InvalidArgumentException;
 
 class UserController
 {
+    private const EMPLOYEE_PAY_STRUCTURES = ['Hourly', 'Flat Rate', 'Commission', 'Salary'];
+
     private UserRepository $repository;
     private AccessGate $gate;
     private TotpService $totpService;
@@ -197,6 +200,9 @@ class UserController
         $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
 
         $employeePayload = $this->normalizeEmployeePayload($data);
+        if ($employeePayload !== null) {
+            $this->validateEmployeePayload($employeePayload);
+        }
         unset($data['employee']);
         $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
@@ -255,6 +261,9 @@ class UserController
         $temporaryPassword = bin2hex(random_bytes(24));
         $temporaryPasswordHash = password_hash($temporaryPassword, PASSWORD_DEFAULT);
         $employeePayload = $this->normalizeEmployeePayload($data);
+        if ($employeePayload !== null) {
+            $this->validateEmployeePayload($employeePayload);
+        }
         $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
         $newUser = $this->repository->create([
@@ -332,6 +341,9 @@ class UserController
         }
 
         $employeePayload = $this->normalizeEmployeePayload($data);
+        if ($employeePayload !== null) {
+            $this->validateEmployeePayload($employeePayload);
+        }
         unset($data['employee']);
         $data['branch_id'] = $this->resolveBranchAssignment($user, $data);
 
@@ -705,6 +717,35 @@ class UserController
         ), static fn ($skill) => $skill !== ''));
 
         return $skills;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function validateEmployeePayload(array $payload): void
+    {
+        if ($payload['hire_date'] !== null) {
+            $date = DateTime::createFromFormat('Y-m-d', $payload['hire_date']);
+            $errors = DateTime::getLastErrors();
+
+            if ($date === false || $errors === false || $errors['warning_count'] > 0 || $errors['error_count'] > 0) {
+                throw new InvalidArgumentException('Hire date must be in YYYY-MM-DD format');
+            }
+        }
+
+        if ($payload['pay_structure'] !== null
+            && !in_array($payload['pay_structure'], self::EMPLOYEE_PAY_STRUCTURES, true)
+        ) {
+            throw new InvalidArgumentException('Invalid pay structure');
+        }
+
+        if ($payload['skills'] !== null) {
+            foreach ($payload['skills'] as $skill) {
+                if (!is_string($skill) || trim($skill) === '') {
+                    throw new InvalidArgumentException('Skills must be a list of non-empty strings');
+                }
+            }
+        }
     }
 
     private function serializeEmployee(?Employee $employee): ?array
