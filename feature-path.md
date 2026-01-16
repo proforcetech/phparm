@@ -313,6 +313,8 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
+[x] Credit Memos: Do not just "delete" the invoice. Create a negative invoice (Credit Memo).
+[ ] Restock Logic: Ask the user: "Is this item sellable?"
 [ ] Credit Memos: Do not just "delete" the invoice. Create a negative invoice (Credit Memo).
 [x] Restock Logic: Ask the user: "Is this item sellable?"
 

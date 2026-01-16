@@ -71,6 +71,10 @@ export default function InvoiceDetail() {
   const [sending, setSending] = useState(false)
   const [deleteModal, setDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [returnModal, setReturnModal] = useState(false)
+  const [returnItems, setReturnItems] = useState([])
+  const [returnNotes, setReturnNotes] = useState('')
+  const [creatingReturn, setCreatingReturn] = useState(false)
   const [refundModal, setRefundModal] = useState(false)
   const [refunding, setRefunding] = useState(false)
   const [refundError, setRefundError] = useState('')
@@ -139,6 +143,54 @@ export default function InvoiceDetail() {
     }
   }
 
+  const openReturnModal = () => {
+    const items = (invoice?.items || invoice?.line_items || []).map((item) => ({
+      invoice_item_id: item.id,
+      description: item.description || item.name || 'Line item',
+      max_quantity: item.quantity || 0,
+      quantity: 0,
+      unit_price: item.unit_price || item.price || 0,
+    }))
+    setReturnItems(items)
+    setReturnNotes('')
+    setReturnModal(true)
+  }
+
+  const updateReturnQuantity = (itemId, value) => {
+    const parsed = parseFloat(value)
+    setReturnItems((prev) =>
+      prev.map((item) => {
+        if (item.invoice_item_id !== itemId) return item
+        const maxQty = item.max_quantity || 0
+        const nextQty = Number.isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), maxQty)
+        return { ...item, quantity: nextQty }
+      }),
+    )
+  }
+
+  const handleCreateCreditMemo = async () => {
+    const items = returnItems.filter((item) => item.quantity > 0)
+    if (items.length === 0) {
+      error('Select at least one item to return')
+      return
+    }
+
+    setCreatingReturn(true)
+    try {
+      await invoiceService.createCreditMemo(id, {
+        notes: returnNotes || null,
+        items: items.map((item) => ({
+          invoice_item_id: item.invoice_item_id,
+          quantity: item.quantity,
+        })),
+      })
+      success('Credit memo created')
+      setReturnModal(false)
+      loadInvoice()
+    } catch {
+      error('Failed to create credit memo')
+    } finally {
+      setCreatingReturn(false)
   const openRefundModal = (payment) => {
     setRefundPayment(payment)
     setRefundForm({
@@ -213,6 +265,8 @@ export default function InvoiceDetail() {
   const lineItems = invoice.items || invoice.line_items || []
   const payments = invoice.payments || []
   const payerAllocations = invoice.payer_allocations || []
+  const returnHistory = invoice.credit_memos || []
+  const originalInvoice = invoice.original_invoice || null
   const customer = invoice.customer || null
   const vehicle = invoice.vehicle || null
   const serviceType = invoice.service_type || null
@@ -231,7 +285,9 @@ export default function InvoiceDetail() {
             </svg>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Invoice {invoice.number}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {invoice.is_credit_memo ? 'Credit Memo' : 'Invoice'} {invoice.number}
+            </h1>
             <p className="mt-1 text-sm text-gray-500">
               {invoice.customer?.name || 'Unknown Customer'}
             </p>
@@ -250,6 +306,11 @@ export default function InvoiceDetail() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
               Send Invoice
+            </Button>
+          ) : null}
+          {!invoice.is_credit_memo ? (
+            <Button variant="secondary" onClick={openReturnModal}>
+              Create Credit Memo
             </Button>
           ) : null}
           <Button onClick={() => navigate(`/cp/invoices/${id}/edit`)}>Edit</Button>
@@ -273,6 +334,21 @@ export default function InvoiceDetail() {
               <dt className="text-sm font-medium text-gray-500">Invoice Number</dt>
               <dd className="mt-1 text-sm text-gray-900">{invoice.number}</dd>
             </div>
+            {invoice.is_credit_memo ? (
+              <div>
+                <dt className="text-sm font-medium text-gray-500">Original Invoice</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {originalInvoice ? (
+                    <Link
+                      to={`/cp/invoices/${originalInvoice.id}`}
+                      className="text-primary-600 hover:text-primary-500"
+                    >
+                      {originalInvoice.number}
+                    </Link>
+                  ) : '—'}
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt className="text-sm font-medium text-gray-500">Issue Date</dt>
               <dd className="mt-1 text-sm text-gray-900">{formatDate(invoice.issue_date)}</dd>
@@ -406,6 +482,44 @@ export default function InvoiceDetail() {
               </table>
             </div>
           )}
+
+          {!invoice.is_credit_memo ? (
+            <>
+              <h4 className="text-sm font-medium text-gray-900 mb-3 mt-8">Return History</h4>
+              {returnHistory.length === 0 ? (
+                <p className="text-gray-500 text-sm py-4">No returns recorded</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Credit Memo</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Issued</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {returnHistory.map((memo) => (
+                        <tr key={memo.id || memo.number}>
+                          <td className="px-4 py-2 text-sm text-gray-900">
+                            <Link to={`/cp/invoices/${memo.id}`} className="text-primary-600 hover:text-primary-500">
+                              {memo.number}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{formatDate(memo.issue_date)}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                            {formatCurrency(memo.total)}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{memo.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ) : null}
         </Card>
 
         <Card>
@@ -497,6 +611,56 @@ export default function InvoiceDetail() {
         </div>
       </Modal>
 
+      <Modal open={returnModal} title="Create Credit Memo" onClose={() => setReturnModal(false)}>
+        <p className="text-sm text-gray-600 mb-4">
+          Select the items being returned. Quantities will be credited as a negative invoice.
+        </p>
+        {returnItems.length === 0 ? (
+          <p className="text-sm text-gray-500">No line items available for return.</p>
+        ) : (
+          <div className="overflow-x-auto mb-4">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Sold</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Return Qty</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {returnItems.map((item) => (
+                  <tr key={item.invoice_item_id}>
+                    <td className="px-3 py-2 text-sm text-gray-900">{item.description}</td>
+                    <td className="px-3 py-2 text-sm text-gray-500 text-right">{item.max_quantity}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        max={item.max_quantity}
+                        step="0.01"
+                        className="w-20 rounded border border-gray-300 px-2 py-1 text-sm text-right"
+                        value={item.quantity}
+                        onChange={(event) => updateReturnQuantity(item.invoice_item_id, event.target.value)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-sm text-gray-500 text-right">{formatCurrency(item.unit_price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+        <textarea
+          className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-700"
+          rows={3}
+          value={returnNotes}
+          onChange={(event) => setReturnNotes(event.target.value)}
+        />
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" onClick={() => setReturnModal(false)}>Cancel</Button>
+          <Button loading={creatingReturn} onClick={handleCreateCreditMemo}>Create Credit Memo</Button>
       <Modal open={refundModal} title="Refund Payment" onClose={() => setRefundModal(false)}>
         <div className="space-y-4">
           <p className="text-sm text-gray-600">

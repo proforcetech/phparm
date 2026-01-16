@@ -26,6 +26,14 @@ export default {
   },
 
   /**
+   * Create a credit memo for a return
+   */
+  async createCreditMemo(id, data) {
+    const response = await api.post(`/invoices/${id}/credit-memos`, data)
+    return response.data
+  },
+
+  /**
    * Update existing invoice
    */
   async update(id, data) {
