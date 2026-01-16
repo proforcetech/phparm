@@ -38,6 +38,16 @@ class InventoryItemValidator
             $notes = null;
         }
 
+        $binLocation = isset($data['bin_location']) && $data['bin_location'] !== ''
+            ? $this->sanitizeText((string) $data['bin_location'], 160, 'Bin location')
+            : null;
+        if ($binLocation === '') {
+            $binLocation = null;
+        }
+        if ($binLocation !== null) {
+            $this->validateBinLocationFormat($binLocation);
+        }
+
         $sku = isset($data['sku']) && $data['sku'] !== '' ? $this->sanitize((string) $data['sku'], 120, 'SKU') : null;
         if ($sku !== null && !preg_match('/^[A-Za-z0-9]+$/', $sku)) {
             throw new InvalidArgumentException('SKU must be alphanumeric.');
@@ -56,6 +66,10 @@ class InventoryItemValidator
             'stock_quantity' => $this->parseIntField($data['stock_quantity'] ?? null, 'Stock quantity'),
             'low_stock_threshold' => $this->parseIntField($data['low_stock_threshold'] ?? null, 'Low stock threshold'),
             'reorder_quantity' => $this->parseIntField($data['reorder_quantity'] ?? null, 'Reorder quantity'),
+            'reorder_point_override' => $this->parseNullableIntField($data['reorder_point_override'] ?? null, 'Reorder point override'),
+            'reorder_point_override_reason' => isset($data['reorder_point_override_reason']) && $data['reorder_point_override_reason'] !== ''
+                ? $this->sanitizeText((string) $data['reorder_point_override_reason'], 255, 'Reorder point override reason')
+                : null,
             'cost' => $this->parseFloatField($data['cost'] ?? null, 'Cost'),
             'core_cost' => $this->parseOptionalFloatField($data['core_cost'] ?? null, 'Core cost'),
             'core_price' => $this->parseOptionalFloatField($data['core_price'] ?? null, 'Core price'),
@@ -65,6 +79,7 @@ class InventoryItemValidator
             'location' => isset($data['location']) && $data['location'] !== ''
                 ? $this->sanitize((string) $data['location'], 160, 'Location')
                 : null,
+            'bin_location' => $binLocation,
             'vendor' => isset($data['vendor']) && $data['vendor'] !== ''
                 ? $this->sanitize((string) $data['vendor'], 160, 'Vendor')
                 : null,
@@ -74,6 +89,10 @@ class InventoryItemValidator
 
         if ($normalized['sale_price'] < $normalized['cost']) {
             throw new InvalidArgumentException('Sale price cannot be lower than cost.');
+        }
+
+        if ($normalized['reorder_point_override_reason'] === '') {
+            $normalized['reorder_point_override_reason'] = null;
         }
 
         $normalized['markup'] = isset($data['markup']) && $data['markup'] !== ''
@@ -133,6 +152,24 @@ class InventoryItemValidator
         }
 
         return $filtered;
+    }
+
+    private function parseNullableIntField($value, string $label): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $filtered = filter_var($value, FILTER_VALIDATE_INT);
+        if ($filtered === false) {
+            throw new InvalidArgumentException("{$label} must be a whole number.");
+        }
+
+        if ($filtered < 0) {
+            throw new InvalidArgumentException("{$label} cannot be negative.");
+        }
+
+        return (int) $filtered;
     }
 
     private function parseFloatField($value, string $label): float
@@ -196,5 +233,10 @@ class InventoryItemValidator
         }
 
         return $filtered;
+    private function validateBinLocationFormat(string $value): void
+    {
+        if (!preg_match('/^Aisle\\s+[A-Za-z0-9-]+(?:\\s*,\\s*(?:Shelf|Bin)\\s+[A-Za-z0-9-]+)?$/i', $value)) {
+            throw new InvalidArgumentException('Bin location must use format "Aisle 1, Shelf B".');
+        }
     }
 }

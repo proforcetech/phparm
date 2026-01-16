@@ -79,7 +79,12 @@ export default function Login() {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('expired') === '1' && params.get('message')) {
-      setSessionExpiredMessage(params.get('message'))
+      const message = params.get('message')
+      console.warn('[Auth] Session expired message from URL:', { message, fullUrl: window.location.href })
+      setSessionExpiredMessage(message)
+      // Clear the query params from URL to prevent stale messages on page refresh
+      const cleanUrl = window.location.pathname
+      window.history.replaceState({}, '', cleanUrl)
     }
   }, [location.search])
 

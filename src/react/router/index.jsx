@@ -48,12 +48,14 @@ import InventoryForm from '../views/inventory/InventoryForm'
 import InventoryAlerts from '../views/inventory/InventoryAlerts'
 import InventoryStockOrders from '../views/inventory/InventoryStockOrders'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
+import WarrantyClaims from '../views/warranty/WarrantyClaims'
 import ImpoundIntake from '../views/storage/ImpoundIntake'
 import StorageFeeLedger from '../views/storage/StorageFeeLedger'
 import NoticeGeneration from '../views/storage/NoticeGeneration'
 import ReleaseChecklist from '../views/storage/ReleaseChecklist'
 import AuctionManagement from '../views/storage/AuctionManagement'
 import InventorySpotChecks from '../views/storage/InventorySpotChecks'
+import DocumentVault from '../views/documents/DocumentVault'
 import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
 import FinancialVendors from '../views/financial/VendorList'
@@ -216,6 +218,7 @@ const protectedRoutes = [
   { path: '/cp/vehicles/create', name: 'VehicleCreate', auth: 'requiresAuth', element: <VehicleForm /> },
   { path: '/cp/vehicles/:id/edit', name: 'VehicleEdit', auth: 'requiresAuth', element: <VehicleForm /> },
   { path: '/cp/vehicles/:id', name: 'VehicleDetail', auth: 'requiresAuth', element: <VehicleDetail /> },
+  { path: '/cp/document-vault', name: 'DocumentVault', auth: 'requiresAuth', element: <DocumentVault /> },
   { path: '/cp/inventory', name: 'InventoryList', auth: 'requiresAuth', element: <InventoryList /> },
   { path: '/cp/inventory/categories', name: 'InventoryCategories', auth: 'requiresAuth', element: <InventoryLookupManager /> },
   { path: '/cp/inventory/vendors', name: 'InventoryVendors', auth: 'requiresAuth', element: <InventoryLookupManager /> },
@@ -225,6 +228,7 @@ const protectedRoutes = [
   { path: '/cp/inventory/alerts', name: 'InventoryAlerts', auth: 'requiresAuth', element: <InventoryAlerts /> },
   { path: '/cp/inventory/stock-orders', name: 'InventoryStockOrders', auth: 'requiresAuth', element: <InventoryStockOrders /> },
   { path: '/cp/inventory/pull-requests', name: 'InventoryPullRequests', auth: 'requiresAuth', element: <InventoryPullRequests /> },
+  { path: '/cp/warranty', name: 'WarrantyClaims', auth: 'requiresAuth', element: <WarrantyClaims /> },
   { path: '/cp/storage/impound-intake', name: 'ImpoundIntake', auth: 'requiresAuth', element: <ImpoundIntake /> },
   { path: '/cp/storage/ledger', name: 'StorageFeeLedger', auth: 'requiresAuth', element: <StorageFeeLedger /> },
   { path: '/cp/storage/notices', name: 'StorageNotices', auth: 'requiresAuth', element: <NoticeGeneration /> },

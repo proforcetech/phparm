@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS vehicle_master (
 CREATE TABLE IF NOT EXISTS customer_vehicles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
-    vehicle_master_id UNSIGNED INT NULL,
+    vehicle_master_id INT UNSIGNED NULL,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
     model VARCHAR(120) NOT NULL,
@@ -108,12 +108,34 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     stock_quantity INT DEFAULT 0,
     low_stock_threshold INT DEFAULT 0,
     reorder_quantity INT DEFAULT 0,
+    reorder_point_override INT NULL,
+    reorder_point_override_reason VARCHAR(255) NULL,
+    reorder_point_override_updated_at TIMESTAMP NULL,
+    reorder_point_override_updated_by INT UNSIGNED NULL,
     cost DECIMAL(12,2) DEFAULT 0,
     sale_price DECIMAL(12,2) DEFAULT 0,
     markup DECIMAL(6,2) NULL,
     location VARCHAR(160) NULL,
+    bin_location VARCHAR(160) NULL,
     vendor VARCHAR(160) NULL,
-    notes TEXT NULL
+    notes TEXT NULL,
+    INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    inventory_item_id INT UNSIGNED NOT NULL,
+    previous_override INT NULL,
+    new_override INT NULL,
+    reason VARCHAR(255) NULL,
+    changed_by INT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_reorder_history_item (inventory_item_id),
+    INDEX idx_inventory_reorder_history_user (changed_by),
+    CONSTRAINT fk_inventory_reorder_history_item FOREIGN KEY (inventory_item_id)
+        REFERENCES inventory_items (id) ON DELETE CASCADE,
+    CONSTRAINT fk_inventory_reorder_history_user FOREIGN KEY (changed_by)
+        REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS estimates (
@@ -258,6 +280,8 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
     subject VARCHAR(160) NOT NULL,
     description TEXT NOT NULL,
     status VARCHAR(40) NOT NULL,
+    financial_impact DECIMAL(12,2) NOT NULL DEFAULT 0,
+    credit_received_amount DECIMAL(12,2) NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     INDEX idx_warranty_customer (customer_id),

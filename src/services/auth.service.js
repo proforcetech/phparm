@@ -20,10 +20,9 @@ export const authService = {
   /**
    * Verify two-factor authentication code
    */
-  async verifyTwoFactor(data) {
-    const { email, password, two_factor_code, remember, recaptcha_token, isCustomer = false } = data
+  async verifyTwoFactor(challengeToken, code, isCustomer = false) {
     const endpoint = isCustomer ? '/auth/customer-verify-2fa' : '/auth/verify-2fa'
-    const response = await api.post(endpoint, { email, password, two_factor_code, remember, recaptcha_token })
+    const response = await api.post(endpoint, { challenge_token: challengeToken, code })
     return response.data
   },
 

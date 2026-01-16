@@ -139,7 +139,16 @@ class WarrantyController
             throw new InvalidArgumentException('status is required');
         }
 
-        $claim = $this->service->updateStatus($id, (string) $data['status'], $user->id);
+        $financialImpact = isset($data['financial_impact']) ? (float) $data['financial_impact'] : null;
+        $creditReceivedAmount = isset($data['credit_received_amount']) ? (float) $data['credit_received_amount'] : null;
+
+        $claim = $this->service->updateStatus(
+            $id,
+            (string) $data['status'],
+            $user->id,
+            $financialImpact,
+            $creditReceivedAmount
+        );
 
         if ($claim === null) {
             throw new InvalidArgumentException('Warranty claim not found');

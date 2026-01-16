@@ -10,7 +10,9 @@ import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import estimateService from '../../../services/estimate.service'
 import customerService from '../../../services/customer.service'
+import technicianService from '../../../services/technician.service'
 import bundleService from '../../../services/bundle.service'
+import api from '../../../services/api'
 import { useToast } from '../../stores/toast'
 
 const statusOptions = [
@@ -19,13 +21,6 @@ const statusOptions = [
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
 ]
-
-const createEmptyLineItem = () => ({
-  description: '',
-  quantity: 1,
-  unit_price: 0,
-  notes: '',
-})
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-US', {
@@ -49,6 +44,14 @@ export default function EstimateForm() {
   const [bundleLoading, setBundleLoading] = useState(false)
   const [bundleSelection, setBundleSelection] = useState('')
   const [addingBundle, setAddingBundle] = useState(false)
+  const [customerVehicles, setCustomerVehicles] = useState([])
+  const [vehiclesLoading, setVehiclesLoading] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [pricingSettings, setPricingSettings] = useState({
+    laborRate: null,
+    laborTaxable: false,
+    feeTaxable: false,
+  })
   const [form, setForm] = useState({
     customer_id: null,
     vehicle_id: null,
@@ -64,11 +67,21 @@ export default function EstimateForm() {
     customer_notes: '',
     internal_notes: '',
     status: 'pending',
-    line_items: [createEmptyLineItem()],
+    line_items: [],
   })
 
   const isEditing = Boolean(id)
   const today = new Date().toISOString().substring(0, 10)
+
+  const createEmptyLineItem = useCallback(() => ({
+    type: 'LABOR',
+    description: '',
+    quantity: 1,
+    unit_price: pricingSettings.laborRate ?? 0,
+    taxable: pricingSettings.laborTaxable,
+    discount_type: 'fixed',
+    notes: '',
+  }), [pricingSettings.laborRate, pricingSettings.laborTaxable])
 
   const subtotal = useMemo(() => {
     return form.line_items.reduce((sum, item) => {
@@ -117,12 +130,15 @@ export default function EstimateForm() {
         is_mobile: Boolean(data.is_mobile),
         line_items: data.line_items?.length
           ? data.line_items.map((item) => ({
+              type: item.type || 'LABOR',
               description: item.description || '',
               quantity: Number(item.quantity) || 1,
               unit_price: Number(item.unit_price) || 0,
+              taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+              discount_type: item.discount_type || 'fixed',
               notes: item.notes || '',
             }))
-          : [createEmptyLineItem()],
+          : [],
       }))
     } catch (loadError) {
       console.error('Failed to load estimate:', loadError)
@@ -146,6 +162,24 @@ export default function EstimateForm() {
     }
   }, [])
 
+  const loadPricingSettings = useCallback(async () => {
+    try {
+      const response = await api.get('/settings')
+      const settings = response.data || {}
+      setPricingSettings({
+        laborRate: Number(settings['pricing.labor_rate']?.value) || 0,
+        laborTaxable: settings['pricing.labor_taxable']?.value === true || settings['pricing.labor_taxable']?.value === 'true',
+        feeTaxable: settings['pricing.fee_taxable']?.value === true || settings['pricing.fee_taxable']?.value === 'true',
+      })
+    } catch (err) {
+      console.error('Failed to load pricing settings', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadPricingSettings()
+  }, [loadPricingSettings])
+
   useEffect(() => {
     if (isEditing) {
       loadEstimate()
@@ -155,6 +189,37 @@ export default function EstimateForm() {
   useEffect(() => {
     loadBundles()
   }, [loadBundles])
+
+  useEffect(() => {
+    if (!isEditing && form.line_items.length === 0 && pricingSettings.laborRate !== null) {
+      setForm((prev) => ({ ...prev, line_items: [createEmptyLineItem()] }))
+    }
+  }, [isEditing, form.line_items.length, createEmptyLineItem, pricingSettings.laborRate])
+
+  const loadCustomerVehicles = useCallback(async (customerId) => {
+    if (!customerId) {
+      setCustomerVehicles([])
+      return
+    }
+    setVehiclesLoading(true)
+    try {
+      const vehicles = await customerService.getCustomerVehicles(customerId)
+      setCustomerVehicles(Array.isArray(vehicles) ? vehicles : [])
+    } catch (vehicleError) {
+      console.error('Failed to load customer vehicles:', vehicleError)
+      setCustomerVehicles([])
+    } finally {
+      setVehiclesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (form.customer_id) {
+      loadCustomerVehicles(form.customer_id)
+    } else {
+      setCustomerVehicles([])
+    }
+  }, [form.customer_id, loadCustomerVehicles])
 
   const addLineItem = () => {
     setForm((prev) => ({
@@ -181,10 +246,24 @@ export default function EstimateForm() {
       ...prev,
       line_items: prev.line_items.map((item, idx) => {
         if (idx !== index) return item
-        return {
-          ...item,
-          [field]: value,
+        const updated = { ...item, [field]: value }
+
+        if (field === 'type' && value !== item.type) {
+          if (value === 'LABOR') {
+            updated.unit_price = pricingSettings.laborRate ?? 0
+            updated.taxable = pricingSettings.laborTaxable
+          } else if (value === 'FEE') {
+            updated.taxable = pricingSettings.feeTaxable
+          } else if (value === 'DISCOUNT') {
+            updated.taxable = false
+            updated.discount_type = 'fixed'
+            updated.quantity = 1
+          } else if (value === 'PART') {
+            updated.taxable = true
+          }
         }
+
+        return updated
       }),
     }))
   }
@@ -199,25 +278,16 @@ export default function EstimateForm() {
         return
       }
 
-      const typeLabel = (type) => {
-        if (!type) return ''
-        const normalized = type.toUpperCase()
-        if (normalized === 'LABOR') return 'Labor'
-        if (normalized === 'PART') return 'Part'
-        if (normalized === 'FEE') return 'Fee'
-        if (normalized === 'DISCOUNT') return 'Discount'
-        return type
-      }
-
       const nextItems = items.map((item) => {
-        const prefix = typeLabel(item.type)
-        const description = prefix ? `${prefix}: ${item.description}` : item.description
         const unitPrice = Number(item.unit_price) || 0
         const adjustedPrice = item.type === 'DISCOUNT' ? -Math.abs(unitPrice) : unitPrice
         return {
-          description,
+          type: item.type || 'LABOR',
+          description: item.description || '',
           quantity: Number(item.quantity) || 1,
           unit_price: adjustedPrice,
+          taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
+          discount_type: item.discount_type || 'fixed',
           notes: '',
         }
       })
@@ -262,9 +332,12 @@ export default function EstimateForm() {
         internal_notes: form.internal_notes || null,
         status: form.status || 'pending',
         line_items: form.line_items.map((item) => ({
+          type: item.type || 'LABOR',
           description: item.description,
           quantity: Number(item.quantity) || 0,
           unit_price: Number(item.unit_price) || 0,
+          taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
+          discount_type: item.discount_type || 'fixed',
           notes: item.notes || null,
         })),
       }
@@ -299,6 +372,41 @@ export default function EstimateForm() {
       return []
     }
   }, [])
+
+  const searchTechnicians = useCallback(async (query) => {
+    try {
+      return await technicianService.searchTechnicians(query)
+    } catch (searchError) {
+      console.error('Technician search failed:', searchError)
+      return []
+    }
+  }, [])
+
+  const handleCustomerSelect = (customer) => {
+    setSelectedCustomer(customer)
+    setForm((prev) => ({
+      ...prev,
+      customer_id: customer?.id || null,
+      vehicle_id: null,
+    }))
+  }
+
+  const formatVehicleLabel = (vehicle) => {
+    const parts = []
+    if (vehicle.year) parts.push(vehicle.year)
+    if (vehicle.make) parts.push(vehicle.make)
+    if (vehicle.model) parts.push(vehicle.model)
+    if (parts.length === 0) return `Vehicle #${vehicle.id}`
+    return parts.join(' ')
+  }
+
+  const getUnitPriceLabel = (item) => {
+    if (item.type === 'LABOR') return 'Hourly Rate'
+    if (item.type === 'DISCOUNT') {
+      return item.discount_type === 'percent' ? 'Percentage (%)' : 'Amount ($)'
+    }
+    return 'Unit Price'
+  }
 
   return (
     <div>
@@ -341,21 +449,27 @@ export default function EstimateForm() {
                       itemLabel={(item) => item.name || `Customer #${item.id}`}
                       itemSubtext={(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`}
                       required
-                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value }))}
-                      onSelect={() => {}}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value, vehicle_id: null }))}
+                      onSelect={handleCustomerSelect}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Vehicle ID *</label>
-                    <Input
+                    <label className="block text-sm font-medium text-gray-700">Vehicle *</label>
+                    <Select
                       value={form.vehicle_id ?? ''}
-                      type="number"
-                      placeholder="Vehicle ID"
-                      className="mt-1"
+                      placeholder={vehiclesLoading ? 'Loading vehicles...' : (form.customer_id ? 'Select a vehicle' : 'Select a customer first')}
+                      options={customerVehicles.map((vehicle) => ({
+                        value: vehicle.id,
+                        label: formatVehicleLabel(vehicle) + (vehicle.license_plate ? ` (${vehicle.license_plate})` : ''),
+                      }))}
+                      disabled={!form.customer_id || vehiclesLoading}
                       required
-                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, vehicle_id: value }))}
+                      onChange={(event) => setForm((prev) => ({ ...prev, vehicle_id: event.target.value ? Number(event.target.value) : null }))}
                     />
+                    {form.customer_id && !vehiclesLoading && customerVehicles.length === 0 ? (
+                      <p className="mt-1 text-xs text-amber-600">No vehicles found for this customer.</p>
+                    ) : null}
                   </div>
 
                   <div>
@@ -383,13 +497,16 @@ export default function EstimateForm() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Technician ID</label>
-                    <Input
-                      value={form.technician_id ?? ''}
-                      type="number"
-                      placeholder="Assign technician (optional)"
-                      className="mt-1"
+                    <Autocomplete
+                      modelValue={form.technician_id}
+                      label="Technician"
+                      placeholder="Search by name or email..."
+                      searchFn={searchTechnicians}
+                      itemValue={(item) => item.id}
+                      itemLabel={(item) => item.name || `Technician #${item.id}`}
+                      itemSubtext={(item) => item.email || ''}
                       onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, technician_id: value }))}
+                      onSelect={() => {}}
                     />
                   </div>
 
@@ -453,7 +570,22 @@ export default function EstimateForm() {
                   {form.line_items.map((item, index) => (
                     <div key={index} className="border border-gray-200 rounded-lg p-4">
                       <div className="grid grid-cols-12 gap-3">
-                        <div className="col-span-12 md:col-span-5">
+                        <div className="col-span-6 md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700">Type</label>
+                          <select
+                            value={item.type}
+                            onChange={(event) => updateLineItem(index, 'type', event.target.value)}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            required
+                          >
+                            <option value="LABOR">Labor</option>
+                            <option value="PART">Part</option>
+                            <option value="FEE">Fee</option>
+                            <option value="DISCOUNT">Discount</option>
+                          </select>
+                        </div>
+
+                        <div className="col-span-6 md:col-span-4">
                           <Input
                             value={item.description}
                             placeholder="Service or part description"
@@ -463,23 +595,37 @@ export default function EstimateForm() {
                           />
                         </div>
 
-                        <div className="col-span-4 md:col-span-2">
-                          <Input
-                            value={item.quantity}
-                            type="number"
-                            label="Quantity"
-                            min="1"
-                            step="1"
-                            required
-                            onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
-                          />
-                        </div>
+                        {item.type === 'DISCOUNT' ? (
+                          <div className="col-span-4 md:col-span-1">
+                            <label className="block text-sm font-medium text-gray-700">Discount Type</label>
+                            <select
+                              value={item.discount_type || 'fixed'}
+                              onChange={(event) => updateLineItem(index, 'discount_type', event.target.value)}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            >
+                              <option value="fixed">Flat Rate ($)</option>
+                              <option value="percent">Percentage (%)</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="col-span-4 md:col-span-1">
+                            <Input
+                              value={item.quantity}
+                              type="number"
+                              label="Qty"
+                              min="0"
+                              step="0.01"
+                              required
+                              onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
+                            />
+                          </div>
+                        )}
 
                         <div className="col-span-4 md:col-span-2">
                           <Input
                             value={item.unit_price}
                             type="number"
-                            label="Unit Price"
+                            label={getUnitPriceLabel(item)}
                             min="0"
                             step="0.01"
                             required
@@ -513,11 +659,25 @@ export default function EstimateForm() {
                         </div>
                       </div>
 
-                      <div className="mt-3">
+                      <div className="mt-3 flex items-center justify-between">
+                        {item.type !== 'DISCOUNT' ? (
+                          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={item.taxable}
+                              onChange={(event) => updateLineItem(index, 'taxable', event.target.checked)}
+                              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            Taxable
+                          </label>
+                        ) : (
+                          <span />
+                        )}
                         <Textarea
                           value={item.notes}
                           placeholder="Additional notes (optional)"
-                          rows={2}
+                          rows={1}
+                          className="flex-1 ml-4 max-w-md"
                           onUpdateModelValue={(value) => updateLineItem(index, 'notes', value)}
                         />
                       </div>

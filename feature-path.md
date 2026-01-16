@@ -179,7 +179,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Workflow: When an item with a core is sold, the system should automatically track that a "Core Return" is expected from the customer, and subsequently from the shop to the vendor.
 
-[ ] Transaction Audit Log (Ledger):
+[x] Transaction Audit Log (Ledger):
 
  Gap: Changing quantity from 10 to 5 without context is dangerous.
 
@@ -193,7 +193,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Ref: src/Services/Inventory/InventoryItemRepository.php (Update methods should write to this log).
 
-[ ] Bin Locations / Aisle Mapping:
+[x] Bin Locations / Aisle Mapping:
 
  Gap: Knowing you have 5 filters is useless if you don't know where they are.
 
@@ -201,19 +201,19 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 ## 14. Additional Inventory Features
 
-[ ] Barcode / QR Code Integration:
+[x] Barcode / QR Code Integration:
 
  Feature: Allow the frontend (InventoryList.jsx) to accept input from a USB barcode scanner or use the device camera to scan a VIN or UPC to instantly find the part.
 
-[ ] Vendor Warranty Claims Workflow:
+[x] Vendor Warranty Claims Workflow:
 
  Feature: A dedicated view to manage "Defective" inventory.
 
- Status flow: Defective Detected -> RMA Requested -> Shipped to Vendor -> Credit Received.
+ Status flow: Defective -> RMA Requested -> Shipped -> Credit Received.
 
  Ref: Link this to the cp/inventory/alerts page so unpaid warranty claims are highlighted.
 
-[ ] Stock Forecasting:
+[x] Stock Forecasting:
 
  Feature: Use historical usage data (from Workorders) to suggest "Reorder Points" dynamically. If you sell 10 oil filters a week, the system should suggest a min-stock of 15, rather than a static number set by a human.
 
@@ -239,10 +239,10 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] New Model: Create an Employee model linked 1:1 to the User model.
+[x] New Model: Create an Employee model linked 1:1 to the User model.
 [ ] Fields: Store hire_date, emergency_contact, pay_structure (Hourly, Flat Rate, Commission, Salary), and skills (e.g., "Level 3 Tech", "Heavy Duty Towing").
 
-[ ] Document Vault: storage for contracts, certifications (ASE, WreckMaster), and expiration dates for driver's licenses.
+[x] Document Vault: storage for contracts, certifications (ASE, WreckMaster), and expiration dates for driver's licenses.
 
 ## 2. Employee Self-Services (ESS) Portal
 

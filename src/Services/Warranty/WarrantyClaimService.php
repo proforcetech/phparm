@@ -32,9 +32,11 @@ class WarrantyClaimService
             throw new InvalidArgumentException('Invoice does not belong to customer for warranty claim.');
         }
 
+        $financialImpact = $this->normalizeAmount($payload['financial_impact'] ?? 0);
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO warranty_claims (customer_id, invoice_id, vehicle_id, subject, description, status, created_at, updated_at)
-            VALUES (:customer_id, :invoice_id, :vehicle_id, :subject, :description, :status, NOW(), NOW())
+            INSERT INTO warranty_claims (customer_id, invoice_id, vehicle_id, subject, description, status, financial_impact, created_at, updated_at)
+            VALUES (:customer_id, :invoice_id, :vehicle_id, :subject, :description, :status, :financial_impact, NOW(), NOW())
         SQL);
 
         $stmt->execute([
@@ -43,7 +45,8 @@ class WarrantyClaimService
             'vehicle_id' => $payload['vehicle_id'] ?? null,
             'subject' => $payload['subject'],
             'description' => $payload['description'],
-            'status' => 'open',
+            'status' => 'defective',
+            'financial_impact' => $financialImpact,
         ]);
 
         $claimId = (int) $this->connection->pdo()->lastInsertId();
@@ -101,9 +104,15 @@ class WarrantyClaimService
         return $this->list($filters, $limit, $offset);
     }
 
-    public function updateStatus(int $claimId, string $status, ?int $actorId = null): ?WarrantyClaim
+    public function updateStatus(
+        int $claimId,
+        string $status,
+        ?int $actorId = null,
+        ?float $financialImpact = null,
+        ?float $creditReceivedAmount = null
+    ): ?WarrantyClaim
     {
-        $allowed = ['open', 'in_review', 'resolved', 'rejected'];
+        $allowed = ['defective', 'rma_requested', 'shipped', 'credit_received'];
         if (!in_array($status, $allowed, true)) {
             throw new InvalidArgumentException('Invalid status for warranty claim.');
         }
@@ -113,8 +122,21 @@ class WarrantyClaimService
             return null;
         }
 
-        $stmt = $this->connection->pdo()->prepare('UPDATE warranty_claims SET status = :status, updated_at = NOW() WHERE id = :id');
-        $stmt->execute(['status' => $status, 'id' => $claimId]);
+        $sets = ['status = :status', 'updated_at = NOW()'];
+        $bindings = ['status' => $status, 'id' => $claimId];
+
+        if ($financialImpact !== null) {
+            $sets[] = 'financial_impact = :financial_impact';
+            $bindings['financial_impact'] = $financialImpact;
+        }
+
+        if ($creditReceivedAmount !== null) {
+            $sets[] = 'credit_received_amount = :credit_received_amount';
+            $bindings['credit_received_amount'] = $creditReceivedAmount;
+        }
+
+        $stmt = $this->connection->pdo()->prepare('UPDATE warranty_claims SET ' . implode(', ', $sets) . ' WHERE id = :id');
+        $stmt->execute($bindings);
 
         $after = $this->find($claimId);
         $this->log('warranty.status_changed', $claimId, $actorId, [
@@ -191,7 +213,7 @@ class WarrantyClaimService
             return null;
         }
 
-        if (in_array($claim->status, ['resolved', 'rejected'], true)) {
+        if (in_array($claim->status, ['credit_received'], true)) {
             throw new InvalidArgumentException('Cannot reply to a closed warranty claim.');
         }
 
@@ -234,9 +256,16 @@ class WarrantyClaimService
             'subject' => (string) $row['subject'],
             'description' => (string) $row['description'],
             'status' => (string) $row['status'],
+            'financial_impact' => isset($row['financial_impact']) ? (float) $row['financial_impact'] : 0.0,
+            'credit_received_amount' => $row['credit_received_amount'] !== null ? (float) $row['credit_received_amount'] : null,
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ]);
+    }
+
+    public function findById(int $claimId): ?WarrantyClaim
+    {
+        return $this->find($claimId);
     }
 
     /**
@@ -253,6 +282,18 @@ class WarrantyClaimService
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ]);
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function normalizeAmount($value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        return (float) $value;
     }
 
     private function log(string $event, int $claimId, ?int $actorId, array $context = []): void

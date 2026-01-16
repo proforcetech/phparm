@@ -50,6 +50,7 @@ class InventoryCsvService
                     $item->sale_price,
                     $item->markup,
                     $item->location,
+                    $item->bin_location,
                     $item->vendor,
                     $item->notes,
                 ]));
@@ -167,6 +168,7 @@ class InventoryCsvService
             'sale_price',
             'markup',
             'location',
+            'bin_location',
             'vendor',
             'notes',
         ];

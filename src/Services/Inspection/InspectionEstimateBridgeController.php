@@ -3,6 +3,7 @@
 namespace App\Services\Inspection;
 
 use App\Support\Auth\AccessGate;
+use App\Support\SettingsRepository;
 use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -15,11 +16,13 @@ class InspectionEstimateBridgeController
 {
     private InspectionEstimateBridgeService $service;
     private AccessGate $gate;
+    private SettingsRepository $settings;
 
-    public function __construct(InspectionEstimateBridgeService $service, AccessGate $gate)
+    public function __construct(InspectionEstimateBridgeService $service, AccessGate $gate, SettingsRepository $settings)
     {
         $this->service = $service;
         $this->gate = $gate;
+        $this->settings = $settings;
     }
 
     /**
@@ -110,7 +113,8 @@ class InspectionEstimateBridgeController
                 return $this->jsonError($response, 'item_ids array is required', 400);
             }
 
-            $laborRate = (float) ($body['labor_rate'] ?? 100.00);
+            $defaultLaborRate = (float) $this->settings->get('pricing.labor_rate', 0);
+            $laborRate = (float) ($body['labor_rate'] ?? $defaultLaborRate);
             $taxRate = (float) ($body['tax_rate'] ?? 0.0);
 
             $result = $this->service->addToEstimate(
@@ -157,7 +161,8 @@ class InspectionEstimateBridgeController
                 return $this->jsonError($response, 'item_ids array is required', 400);
             }
 
-            $laborRate = (float) ($body['labor_rate'] ?? 100.00);
+            $defaultLaborRate = (float) $this->settings->get('pricing.labor_rate', 0);
+            $laborRate = (float) ($body['labor_rate'] ?? $defaultLaborRate);
             $taxRate = (float) ($body['tax_rate'] ?? 0.0);
 
             $result = $this->service->createEstimateFromFailedItems(
@@ -208,7 +213,8 @@ class InspectionEstimateBridgeController
                 return $this->jsonError($response, 'item_ids array is required', 400);
             }
 
-            $laborRate = (float) ($body['labor_rate'] ?? 100.00);
+            $defaultLaborRate = (float) $this->settings->get('pricing.labor_rate', 0);
+            $laborRate = (float) ($body['labor_rate'] ?? $defaultLaborRate);
             $taxRate = (float) ($body['tax_rate'] ?? 0.0);
 
             $result = $this->service->addToWorkorder(

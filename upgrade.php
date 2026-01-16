@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * PHPArm Database Upgrade Script
+ *
+ * This script applies incremental database migrations to an existing installation.
+ * For new installations, use install_db.php instead.
+ */
+
 require_once __DIR__ . '/vendor/autoload.php';
 
 // Manually load .env file
@@ -24,7 +31,7 @@ if (file_exists(__DIR__ . '/.env')) {
 use App\Database\Connection;
 
 echo "================================\n";
-echo "PHPArm Database Migrations\n";
+echo "PHPArm Database Upgrade\n";
 echo "================================\n\n";
 
 try {
@@ -153,15 +160,15 @@ try {
     
     echo "\n================================\n";
     if ($runCount > 0) {
-        echo "✓ Migrations completed!\n";
-        echo "  Executed: {$runCount} migration(s)\n";
+        echo "✓ Upgrade completed!\n";
+        echo "  Applied: {$runCount} upgrade(s)\n";
     } else {
-        echo "✓ All migrations up to date!\n";
+        echo "✓ Database is up to date!\n";
     }
     echo "================================\n\n";
-    
+
 } catch (Exception $e) {
-    echo "\n✗ Migration failed!\n";
+    echo "\n✗ Upgrade failed!\n";
     echo "Error: " . $e->getMessage() . "\n\n";
     exit(1);
 }

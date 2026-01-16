@@ -268,7 +268,7 @@ export default function VehicleList() {
               <label className="block text-sm font-medium text-gray-700">VIN</label>
               <Input
                 value={vin}
-                maxlength={17}
+                maxLength={17}
                 placeholder="Enter 17-character VIN"
                 onUpdateModelValue={(value) => setVin(value)}
               />

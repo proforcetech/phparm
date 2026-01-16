@@ -340,13 +340,23 @@ return function (Router $router, array $config, $connection) {
     $paymentConfig = require __DIR__ . '/../config/payments.php';
 
     // Public security configuration
-    $router->get('/api/public/security/recaptcha', function () use ($recaptchaConfigLoader) {
-        $recaptchaConfig = $recaptchaConfigLoader();
-        return Response::json([
-            'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
-            'site_key' => $recaptchaConfig['site_key'] ?? null,
-            'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
-        ]);
+    $router->get('/api/public/security/recaptcha', function (Request $request) use ($recaptchaConfigLoader) {
+        try {
+            $recaptchaConfig = $recaptchaConfigLoader();
+            return Response::json([
+                'enabled' => (bool) ($recaptchaConfig['enabled'] ?? false),
+                'site_key' => $recaptchaConfig['site_key'] ?? null,
+                'score_threshold' => (float) ($recaptchaConfig['score_threshold'] ?? 0.5),
+            ]);
+        } catch (Throwable $e) {
+            error_log('Recaptcha config error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return Response::json([
+                'enabled' => false,
+                'site_key' => null,
+                'score_threshold' => 0.5,
+                'error' => 'Failed to load recaptcha configuration',
+            ], 500);
+        }
     });
 
     // Public vehicle data endpoints for estimate request form
@@ -2397,6 +2407,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/inventory/{id}/transactions', function (Request $request) use ($inventoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $params = [
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $inventoryController->transactions($user, $id, $params);
+            return Response::json($data);
+        });
+
         $router->get('/api/inventory/{id}', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -4175,7 +4197,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $gate,
         $totpService,
         $rolePermissions,
-        new \App\Services\ImportExport\CsvExportService($connection)
+        new \App\Services\ImportExport\CsvExportService($connection),
+        new \App\Services\Employee\EmployeeRepository($connection)
     );
 
     // Role controller for role management
@@ -4955,7 +4978,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inspection routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $settingsRepository) {
 
         $inspectionController = new \App\Services\Inspection\InspectionController(
             new \App\Services\Inspection\InspectionTemplateService($connection),
@@ -5061,8 +5084,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Inspection-to-Estimate Bridge routes
-        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection);
-        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate);
+        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection, null, $settingsRepository);
+        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate, $settingsRepository);
 
         $router->get('/api/inspections/{id}/failed-items', function (Request $request) use ($bridgeController) {
             $id = (int) $request->getAttribute('id');
@@ -5397,6 +5420,269 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $data = $creditController->submitCustomerPayment($user, $request->body());
             return Response::json($data);
+        });
+    });
+
+    // Document Vault routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $search = trim((string) $request->queryParam('search', ''));
+            $type = $request->queryParam('type');
+            $status = $request->queryParam('status');
+            $expiringDays = (int) $request->queryParam('expiring_days', 30);
+            if ($expiringDays <= 0) {
+                $expiringDays = 30;
+            }
+
+            $expiringDate = date('Y-m-d', strtotime('+' . $expiringDays . ' days'));
+            $conditions = [];
+            $params = ['expiring_date' => $expiringDate];
+
+            if ($search !== '') {
+                $conditions[] = '(d.title LIKE :search OR d.category LIKE :search OR d.document_number LIKE :search OR d.issuing_authority LIKE :search)';
+                $params['search'] = '%' . $search . '%';
+            }
+
+            if (!empty($type)) {
+                $conditions[] = 'd.document_type = :type';
+                $params['type'] = $type;
+            }
+
+            if (!empty($status)) {
+                if ($status === 'expired') {
+                    $conditions[] = 'd.expiration_date IS NOT NULL AND d.expiration_date < CURDATE()';
+                } elseif ($status === 'expiring') {
+                    $conditions[] = 'd.expiration_date IS NOT NULL AND d.expiration_date >= CURDATE() AND d.expiration_date <= :expiring_date';
+                } elseif ($status === 'active') {
+                    $conditions[] = '(d.expiration_date IS NULL OR d.expiration_date > :expiring_date)';
+                }
+            }
+
+            $sql = <<<SQL
+                SELECT
+                    d.*,
+                    u.name AS uploaded_by_name,
+                    CASE
+                        WHEN d.expiration_date IS NULL THEN 'active'
+                        WHEN d.expiration_date < CURDATE() THEN 'expired'
+                        WHEN d.expiration_date <= :expiring_date THEN 'expiring'
+                        ELSE 'active'
+                    END AS expiry_status,
+                    CASE
+                        WHEN d.expiration_date IS NULL THEN NULL
+                        ELSE DATEDIFF(d.expiration_date, CURDATE())
+                    END AS days_until_expiration
+                FROM document_vault_documents d
+                LEFT JOIN users u ON u.id = d.uploaded_by
+            SQL;
+
+            if (!empty($conditions)) {
+                $sql .= ' WHERE ' . implode(' AND ', $conditions);
+            }
+
+            $sql .= ' ORDER BY CASE WHEN d.expiration_date IS NULL THEN 1 ELSE 0 END, d.expiration_date ASC, d.created_at DESC';
+
+            $stmt = $connection->pdo()->prepare($sql);
+            $stmt->execute($params);
+            $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json([
+                'data' => $data,
+                'meta' => [
+                    'expiring_days' => $expiringDays,
+                ],
+            ]);
+        });
+
+        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $expiringDays = (int) $request->queryParam('expiring_days', 30);
+            if ($expiringDays <= 0) {
+                $expiringDays = 30;
+            }
+
+            $expiringDate = date('Y-m-d', strtotime('+' . $expiringDays . ' days'));
+            $stmt = $connection->pdo()->prepare(
+                'SELECT
+                    SUM(CASE WHEN expiration_date IS NOT NULL AND expiration_date < CURDATE() THEN 1 ELSE 0 END) AS expired_count,
+                    SUM(CASE WHEN expiration_date IS NOT NULL AND expiration_date >= CURDATE() AND expiration_date <= :expiring_date THEN 1 ELSE 0 END) AS expiring_count,
+                    SUM(CASE WHEN expiration_date IS NOT NULL THEN 1 ELSE 0 END) AS tracked_count,
+                    COUNT(*) AS total_count
+                 FROM document_vault_documents'
+            );
+            $stmt->execute(['expiring_date' => $expiringDate]);
+            $summary = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
+
+            return Response::json([
+                'data' => $summary,
+                'meta' => [
+                    'expiring_days' => $expiringDays,
+                ],
+            ]);
+        });
+
+        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $body = $request->body();
+            $file = $request->file('file');
+            $title = trim((string) ($body['title'] ?? ''));
+            $documentType = trim((string) ($body['document_type'] ?? ''));
+
+            if ($title === '' || $documentType === '') {
+                return Response::badRequest('Title and document type are required');
+            }
+
+            if (!is_array($file) || empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+                return Response::badRequest('A document file is required');
+            }
+
+            $uploadDir = dirname(__DIR__) . '/public/uploads/document-vault';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+                return Response::serverError('Unable to prepare upload directory');
+            }
+
+            $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+            $filename = 'doc_' . uniqid('', true) . ($extension ? '.' . $extension : '');
+            $destination = $uploadDir . '/' . $filename;
+
+            if (!move_uploaded_file($file['tmp_name'], $destination)) {
+                return Response::serverError('Unable to store document');
+            }
+
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo ? finfo_file($finfo, $destination) : null;
+            if ($finfo) {
+                finfo_close($finfo);
+            }
+
+            $relativePath = '/uploads/document-vault/' . $filename;
+
+            $stmt = $connection->pdo()->prepare(
+                'INSERT INTO document_vault_documents
+                    (title, document_type, category, issuing_authority, document_number, issued_date, expiration_date, notes,
+                     file_name, file_path, mime_type, file_size, uploaded_by, created_at, updated_at)
+                 VALUES
+                    (:title, :document_type, :category, :issuing_authority, :document_number, :issued_date, :expiration_date, :notes,
+                     :file_name, :file_path, :mime_type, :file_size, :uploaded_by, NOW(), NOW())'
+            );
+
+            $stmt->execute([
+                'title' => $title,
+                'document_type' => $documentType,
+                'category' => $body['category'] ?? null,
+                'issuing_authority' => $body['issuing_authority'] ?? null,
+                'document_number' => $body['document_number'] ?? null,
+                'issued_date' => $body['issued_date'] ?? null,
+                'expiration_date' => $body['expiration_date'] ?? null,
+                'notes' => $body['notes'] ?? null,
+                'file_name' => $file['name'] ?? $filename,
+                'file_path' => $relativePath,
+                'mime_type' => $mimeType,
+                'file_size' => $file['size'] ?? null,
+                'uploaded_by' => $user->id,
+            ]);
+
+            return Response::created(['success' => true]);
+        });
+
+        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $file = $request->file('file');
+
+            $fields = [
+                'title' => $body['title'] ?? null,
+                'document_type' => $body['document_type'] ?? null,
+                'category' => $body['category'] ?? null,
+                'issuing_authority' => $body['issuing_authority'] ?? null,
+                'document_number' => $body['document_number'] ?? null,
+                'issued_date' => $body['issued_date'] ?? null,
+                'expiration_date' => $body['expiration_date'] ?? null,
+                'notes' => $body['notes'] ?? null,
+            ];
+
+            $updates = [];
+            $params = ['id' => $id];
+
+            foreach ($fields as $column => $value) {
+                if ($value !== null) {
+                    $updates[] = $column . ' = :' . $column;
+                    $params[$column] = $value;
+                }
+            }
+
+            if (is_array($file) && !empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
+                $uploadDir = dirname(__DIR__) . '/public/uploads/document-vault';
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+                    return Response::serverError('Unable to prepare upload directory');
+                }
+
+                $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
+                $filename = 'doc_' . uniqid('', true) . ($extension ? '.' . $extension : '');
+                $destination = $uploadDir . '/' . $filename;
+
+                if (!move_uploaded_file($file['tmp_name'], $destination)) {
+                    return Response::serverError('Unable to store document');
+                }
+
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo ? finfo_file($finfo, $destination) : null;
+                if ($finfo) {
+                    finfo_close($finfo);
+                }
+
+                $updates[] = 'file_name = :file_name';
+                $updates[] = 'file_path = :file_path';
+                $updates[] = 'mime_type = :mime_type';
+                $updates[] = 'file_size = :file_size';
+                $params['file_name'] = $file['name'] ?? $filename;
+                $params['file_path'] = '/uploads/document-vault/' . $filename;
+                $params['mime_type'] = $mimeType;
+                $params['file_size'] = $file['size'] ?? null;
+            }
+
+            if (empty($updates)) {
+                return Response::badRequest('No fields to update');
+            }
+
+            $updates[] = 'updated_at = NOW()';
+
+            $sql = 'UPDATE document_vault_documents SET ' . implode(', ', $updates) . ' WHERE id = :id';
+            $stmt = $connection->pdo()->prepare($sql);
+            $stmt->execute($params);
+
+            return Response::json(['success' => true]);
+        });
+
+        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $stmt = $connection->pdo()->prepare('DELETE FROM document_vault_documents WHERE id = :id');
+            $stmt->execute(['id' => $id]);
+
+            return Response::noContent();
         });
     });
 
@@ -5745,7 +6031,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Settings routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository, $auditLogger) {
 
         $settingsController = new \App\Services\Settings\SettingsController(
             $settingsRepository,
