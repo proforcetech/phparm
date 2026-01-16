@@ -7,6 +7,8 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSComponentUsageService;
+use App\Services\CMS\CMSIndexService;
 use App\Services\CMS\CMSRenderingService;
 use DateTimeImmutable;
 use PDO;
@@ -16,12 +18,23 @@ class PageController
     private Connection $connection;
     private AccessGate $gate;
     private ?CMSCacheService $cache;
+    private CMSComponentUsageService $componentUsage;
 
-    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null)
+    public function __construct(
+        Connection $connection,
+        AccessGate $gate,
+        ?CMSCacheService $cache = null,
+        ?CMSComponentUsageService $componentUsage = null
+    )
+    private CMSIndexService $indexService;
+
+    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null, ?CMSIndexService $indexService = null)
     {
         $this->connection = $connection;
         $this->gate = $gate;
         $this->cache = $cache;
+        $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
+        $this->indexService = $indexService ?? new CMSIndexService($connection);
     }
 
 /**
@@ -110,7 +123,12 @@ class PageController
 
         $page = $this->find((int) $this->connection->pdo()->lastInsertId())?->toArray() ?? [];
 
+        if (!empty($page['id'])) {
+            $this->componentUsage->syncForPage((int) $page['id'], $page);
+        }
+
         $this->invalidateCache($page['slug'] ?? '');
+        $this->indexService->indexPage($page);
 
         return $page;
     }
@@ -140,12 +158,19 @@ class PageController
 
         $stmt->execute($payload);
 
+        $this->componentUsage->syncForPage($id, array_merge($payload, ['id' => $id]));
+
         $this->invalidateCache($payload['slug']);
         if ($payload['slug'] !== $existingSlug) {
             $this->invalidateCache($existingSlug);
         }
 
-        return $this->find($id)?->toArray();
+        $page = $this->find($id)?->toArray();
+        if ($page !== null) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     public function destroy(User $user, int $id): bool
@@ -159,7 +184,9 @@ class PageController
         $deleted = $stmt->execute(['id' => $id]);
 
         if ($deleted && $page !== null) {
+            $this->componentUsage->clearForPage((int) $page['id']);
             $this->invalidateCache($page['slug'] ?? '');
+            $this->indexService->deleteEntry('page', $id);
         }
 
         return $deleted;
@@ -193,7 +220,12 @@ class PageController
 
         $this->invalidateCache($existing->slug);
 
-        return $this->find($id)?->toArray();
+        $page = $this->find($id)?->toArray();
+        if ($page !== null) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
