@@ -269,7 +269,7 @@ The current implementation appears to handle basic CRUD operations but may strug
 
 [x] "Quick Sale" Interface: A high-contrast, touch-friendly UI.
 [ ] Workflow: Bypasses "Vehicle" requirement. Uses a generic "Walk-in Customer" if no name is provided.
-[ ] Cash Drawer Management:
+[x] Cash Drawer Management:
 
  Opening/Closing: Track starting cash float and ending count.
 

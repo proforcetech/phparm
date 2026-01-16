@@ -699,8 +699,8 @@ class InvoiceService
     private function insertPayment(int $invoiceId, array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata) ' .
-            'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata)'
+            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata, paid_at, created_at) ' .
+            'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata, NOW(), NOW())'
         );
         $stmt->execute([
             'invoice_id' => $invoiceId,

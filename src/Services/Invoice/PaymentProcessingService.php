@@ -245,8 +245,8 @@ class PaymentProcessingService
 
         // Insert or update payment record
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata, created_at) '
-            . 'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata, CURRENT_TIMESTAMP) '
+            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata, paid_at, created_at) '
+            . 'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
             . 'ON DUPLICATE KEY UPDATE status = :status, metadata = :metadata'
         );
 
