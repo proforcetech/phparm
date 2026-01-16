@@ -328,6 +328,9 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
+[ ] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
+[x] Bank Feeds: This is complex to build. Strongly recommend integrating a provider like Plaid or Yodlee to fetch transactions automatically.
+[ ] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.
 [x] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
 [ ] Bank Feeds: This is complex to build. Strongly recommend integrating a provider like Plaid or Yodlee to fetch transactions automatically.
 [x] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.

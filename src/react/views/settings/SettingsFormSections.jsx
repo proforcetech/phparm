@@ -505,6 +505,50 @@ export function IntegrationsForm({ form, updateField }) {
           onChange={(event) => updateField(['integrations', 'partsTechMarkup'], event.target.value)}
         />
       </div>
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-200 pt-6">
+        <div className="md:col-span-2">
+          <h3 className="text-base font-semibold text-gray-900">Bank Feeds</h3>
+          <p className="text-sm text-gray-500">
+            Configure your bank feed provider credentials for transaction syncing.
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Bank Feed Provider</label>
+          <Input
+            value={form.integrations.bankFeedsProvider}
+            placeholder="plaid"
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'bankFeedsProvider'], event.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Bank Feed Client ID</label>
+          <Input
+            value={form.integrations.bankFeedsClientId}
+            placeholder="client id"
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'bankFeedsClientId'], event.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Bank Feed Client Secret</label>
+          <Input
+            value={form.integrations.bankFeedsClientSecret}
+            placeholder="client secret"
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'bankFeedsClientSecret'], event.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Bank Feed Access Token</label>
+          <Input
+            value={form.integrations.bankFeedsAccessToken}
+            placeholder="access token"
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'bankFeedsAccessToken'], event.target.value)}
+          />
+        </div>
+      </div>
     </Card>
   )
 }
