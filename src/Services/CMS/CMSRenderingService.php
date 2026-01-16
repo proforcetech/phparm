@@ -11,6 +11,13 @@ use PDO;
 
 class CMSRenderingService
 {
+    private const STATIC_COMPONENT_TYPES = [
+        'header',
+        'footer',
+        'navigation',
+        'sidebar',
+    ];
+
     private Connection $connection;
     private TemplateEngine $templateEngine;
     private ?CMSCacheService $cache;
@@ -194,6 +201,25 @@ private function extractComponentSlugs(string $template): array
 
     private function renderComponent(Component $component): string
     {
+        if ($this->cache && $this->cache->isEnabled() && $this->isStaticComponent($component)) {
+            $cacheKey = $this->buildComponentCacheKey($component->slug);
+            $cached = $this->cache->get($cacheKey);
+
+            if ($cached !== null) {
+                return $cached;
+            }
+
+            $html = $this->renderComponentMarkup($component);
+            $this->cache->set($cacheKey, $html, $this->resolveComponentTtl($component));
+
+            return $html;
+        }
+
+        return $this->renderComponentMarkup($component);
+    }
+
+    private function renderComponentMarkup(Component $component): string
+    {
         $html = $component->content;
 
         if (!empty($component->css)) {
@@ -205,6 +231,32 @@ private function extractComponentSlugs(string $template): array
         }
 
         return $html;
+    }
+
+    private function buildComponentCacheKey(string $slug): string
+    {
+        return 'component:' . $slug . ':rendered';
+    }
+
+    private function isStaticComponent(Component $component): bool
+    {
+        if ($component->cache_ttl <= 0) {
+            return false;
+        }
+
+        return $this->isStaticComponentType($component->type);
+    }
+
+    private function isStaticComponentType(string $type): bool
+    {
+        return in_array($type, self::STATIC_COMPONENT_TYPES, true);
+    }
+
+    private function resolveComponentTtl(Component $component): int
+    {
+        $ttl = $component->cache_ttl > 0 ? $component->cache_ttl : $this->cache?->defaultTtl();
+
+        return max(1, (int) $ttl);
     }
 
     private function renderBasicPage(Page $page): string

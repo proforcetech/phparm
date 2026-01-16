@@ -48,7 +48,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 [ ] Proactive Pre-caching: Currently, the system uses a request-based caching mechanism (CMSCacheService). Implementing "Stale-While-Revalidate" or pre-rendering pages upon save would ensure the first visitor to a new page doesn't experience a "cache miss" delay.
 [ ] Automated Image Pipeline: Extend the MediaController to automatically generate responsive images (Srcset) and WebP versions of uploaded assets to improve Core Web Vitals.
-[ ] Component-Level Caching: For complex pages with many dynamic components, implement partial caching. If one component is dynamic (e.g., a "Current Availability" block) and others are static, the static portions should be cached independently to minimize database lookups.
+[x] Component-Level Caching: For complex pages with many dynamic components, implement partial caching. If one component is dynamic (e.g., a "Current Availability" block) and others are static, the static portions should be cached independently to minimize database lookups.
 [ ] Asset Bundling for CMS Components: If components require specific JS/CSS, implement a dependency manager that bundles only the required assets for a given page, reducing the overall payload size.
 [ ] Staging and Preview Workflow: Implement a status column (Draft, Pending Review, Published) for pages. Add a "Preview" button in CMSPageForm.jsx that renders the page with a temporary token without making it public.
 [ ] Integrated SEO Toolkit: Add a dedicated SEO section to the page editor for managing meta_title, meta_description, canonical_url, and Open Graph tags. The CMSRenderingService should automatically inject these into the head template.
