@@ -341,6 +341,8 @@ export const cmsService = {
       { value: 'navigation', label: 'Navigation' },
       { value: 'sidebar', label: 'Sidebar' },
       { value: 'widget', label: 'Widget' },
+      { value: 'live_coverage_map', label: 'Live Coverage Map' },
+      { value: 'eta', label: 'Estimated Wait Time' },
       { value: 'custom', label: 'Custom' },
     ]
   },

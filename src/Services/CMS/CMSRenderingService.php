@@ -6,6 +6,7 @@ use App\CMS\Models\Component;
 use App\CMS\Models\Page;
 use App\CMS\Models\Template;
 use App\Database\Connection;
+use App\Services\Dispatch\TrafficAwareEtaService;
 use App\Support\Notifications\TemplateEngine;
 use PDO;
 
@@ -14,12 +15,17 @@ class CMSRenderingService
     private Connection $connection;
     private TemplateEngine $templateEngine;
     private ?CMSCacheService $cache;
+    private CMSDynamicComponentService $dynamicComponents;
 
     public function __construct(Connection $connection, ?CMSCacheService $cache = null)
     {
         $this->connection = $connection;
         $this->templateEngine = new TemplateEngine();
         $this->cache = $cache;
+        $this->dynamicComponents = new CMSDynamicComponentService(
+            $connection,
+            new TrafficAwareEtaService($connection, $this->loadDispatchConfig()['eta'] ?? [])
+        );
     }
 
     public function renderPage(string $slug): ?string
@@ -194,6 +200,10 @@ private function extractComponentSlugs(string $template): array
 
     private function renderComponent(Component $component): string
     {
+        if ($this->isDynamicComponent($component)) {
+            return $this->renderDynamicComponent($component);
+        }
+
         $html = $component->content;
 
         if (!empty($component->css)) {
@@ -205,6 +215,57 @@ private function extractComponentSlugs(string $template): array
         }
 
         return $html;
+    }
+
+    private function renderDynamicComponent(Component $component): string
+    {
+        $cacheKey = null;
+        $ttl = $this->resolveDynamicCacheTtl($component);
+
+        if ($this->cache && $ttl > 0) {
+            $cacheKey = $this->cache->buildKey(
+                'component',
+                $component->slug . ':dynamic:' . md5($component->content ?? ''),
+                'default',
+                'html'
+            );
+            $cached = $this->cache->get($cacheKey);
+            if (is_string($cached)) {
+                return $cached;
+            }
+        }
+
+        $html = $this->dynamicComponents->render($component) ?? $component->content;
+
+        if (!empty($component->css)) {
+            $html .= "\n<style>\n" . $component->css . "\n</style>";
+        }
+
+        if (!empty($component->javascript)) {
+            $html .= "\n<script>\n" . $component->javascript . "\n</script>";
+        }
+
+        if ($this->cache && $ttl > 0 && $cacheKey !== null) {
+            $this->cache->set($cacheKey, $html, $ttl);
+        }
+
+        return $html;
+    }
+
+    private function isDynamicComponent(Component $component): bool
+    {
+        return in_array($component->type, ['live_coverage_map', 'eta', 'estimated_wait_time'], true);
+    }
+
+    private function resolveDynamicCacheTtl(Component $component): int
+    {
+        $ttl = (int) ($component->cache_ttl ?? 0);
+
+        if ($ttl <= 0) {
+            return 0;
+        }
+
+        return min($ttl, 300);
     }
 
     private function renderBasicPage(Page $page): string
@@ -368,5 +429,17 @@ private function extractComponentSlugs(string $template): array
     private function mapComponent(array $row): Component
     {
         return new Component($row);
+    }
+
+    private function loadDispatchConfig(): array
+    {
+        $configPath = __DIR__ . '/../../../config/dispatch.php';
+
+        if (!is_file($configPath)) {
+            return [];
+        }
+
+        $config = require $configPath;
+        return is_array($config) ? $config : [];
     }
 }

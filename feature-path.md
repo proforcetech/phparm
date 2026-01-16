@@ -55,7 +55,7 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] Version Control & Revisions: Store snapshots of cms_pages and cms_components in a cms_revisions table. This allows administrators to audit changes and roll back to a known-good state if an error is published.
 [ ] Granular Permissions: Use the existing AccessGate to define specific roles for the CMS, such as CMS_EDITOR (can edit content) vs. CMS_PUBLISHER (can push changes to live).
 [ ] Visual Component Reordering: Transform the component list in CMSPageForm.jsx into a drag-and-drop interface. This allows dispatchers or marketers to easily reorder sections (e.g., moving "Towing Services" above "Battery Jumpstart") without deleting and re-adding.
-[ ] Dynamic Component Blocks: Create specialized components for roadside assistance, such as a "Live Coverage Map" or "Estimated Wait Time" block that pulls data from the dispatch service.
+[x] Dynamic Component Blocks: Create specialized components for roadside assistance, such as a "Live Coverage Map" or "Estimated Wait Time" block that pulls data from the dispatch service.
 [ ] Media Library Folders: As the media library grows, implement a folder/tagging system in MediaController to prevent a flat, unmanageable list of images.
 [ ] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
 [ ] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
