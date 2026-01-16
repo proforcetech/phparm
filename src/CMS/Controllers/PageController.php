@@ -102,8 +102,8 @@ class PageController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, preview_token, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :preview_token, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -133,7 +133,7 @@ class PageController
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
+            'UPDATE cms_pages SET title = :title, slug = :slug, preview_token = :preview_token, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
             . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
@@ -248,7 +248,9 @@ class PageController
                 return null;
             }
 
-            return $this->mapPage($row)->toArray();
+            $page = $this->mapPage($row)->toArray();
+            unset($page['preview_token']);
+            return $page;
         } catch (\Throwable $exception) {
             error_log(sprintf(
                 'CMS publishedPage lookup failed for slug "%s": %s',
@@ -291,6 +293,66 @@ class PageController
         return $renderingService->renderPageContent($page);
     }
 
+    /**
+     * Preview a page via a public token (no auth).
+     *
+     * @param string $token
+     * @return string|null Rendered HTML or null if token invalid
+     */
+    public function previewPageByToken(string $token): ?string
+    {
+        if (trim($token) === '') {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM cms_pages WHERE preview_token = :token LIMIT 1');
+        $stmt->execute(['token' => $token]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            return null;
+        }
+
+        $page = $this->mapPage($row);
+        $renderingService = new CMSRenderingService($this->connection, $this->cache);
+        return $renderingService->renderPageContent($page);
+    }
+
+    /**
+     * Generate or retrieve a preview token for a page.
+     *
+     * @param User $user
+     * @param int $id
+     * @param bool $regenerate
+     * @return array<string, mixed>|null
+     */
+    public function previewToken(User $user, int $id, bool $regenerate = false): ?array
+    {
+        $this->gate->assert($user, 'cms.pages.view');
+
+        $page = $this->find($id);
+        if ($page === null) {
+            return null;
+        }
+
+        $token = $page->preview_token;
+        if ($regenerate || empty($token)) {
+            $token = bin2hex(random_bytes(16));
+            $stmt = $this->connection->pdo()->prepare(
+                'UPDATE cms_pages SET preview_token = :token, updated_at = NOW() WHERE id = :id'
+            );
+            $stmt->execute([
+                'id' => $id,
+                'token' => $token,
+            ]);
+        }
+
+        return [
+            'id' => $id,
+            'preview_token' => $token,
+        ];
+    }
+
     private function find(int $id): ?Page
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM cms_pages WHERE id = :id LIMIT 1');
@@ -313,6 +375,7 @@ class PageController
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
             'slug' => (string) $row['slug'],
+            'preview_token' => $row['preview_token'] ?? null,
             'category_id' => isset($row['category_id']) ? (int) $row['category_id'] : null,
             'template_id' => isset($row['template_id']) ? (int) $row['template_id'] : null,
             'header_component_id' => isset($row['header_component_id']) ? (int) $row['header_component_id'] : null,
@@ -343,6 +406,7 @@ class PageController
         $slugSource = $data['slug'] ?? $title;
         $status = $data['status'] ?? $existing?->status ?? 'draft';
         $publishedAt = $data['published_at'] ?? $existing?->published_at ?? null;
+        $previewToken = $data['preview_token'] ?? $existing?->preview_token ?? null;
 
         if ($status === 'published' && $publishedAt === null) {
             $publishedAt = (new DateTimeImmutable())->format('Y-m-d H:i:s');
@@ -358,6 +422,7 @@ class PageController
             'custom_css' => $data['custom_css'] ?? $existing?->custom_css,
             'custom_js' => $data['custom_js'] ?? $existing?->custom_js,
             'status' => (string) $status,
+            'preview_token' => $previewToken,
             'meta_title' => $data['meta_title'] ?? $existing?->meta_title,
             'meta_description' => $data['meta_description'] ?? $existing?->meta_description,
             'meta_keywords' => $data['meta_keywords'] ?? $existing?->meta_keywords,

@@ -53,6 +53,7 @@ export default function CMSPageForm() {
   const [availableFooterComponents, setAvailableFooterComponents] = useState([])
   const [availableCategories, setAvailableCategories] = useState([])
   const [form, setForm] = useState(createDefaultForm())
+  const [previewing, setPreviewing] = useState(false)
 
   const categoryOptions = useMemo(() => {
     if (!availableCategories.length) return []
@@ -235,6 +236,31 @@ export default function CMSPageForm() {
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  const previewPage = async () => {
+    if (!isEditing) {
+      toast.error('Save the page before previewing.')
+      return
+    }
+
+    try {
+      setPreviewing(true)
+      const data = await cmsService.getPagePreviewToken(id)
+      const token = data.preview_token || data?.data?.preview_token
+
+      if (!token) {
+        throw new Error('Preview token not available')
+      }
+
+      const previewUrl = `/api/cms/page/preview/${token}`
+      window.open(previewUrl, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      console.error('Failed to generate preview token:', err)
+      toast.error(err.response?.data?.message || err.message || 'Failed to generate preview link')
+    } finally {
+      setPreviewing(false)
     }
   }
 
@@ -463,24 +489,26 @@ export default function CMSPageForm() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">Status</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={form.status === 'published'}
-                        onChange={(event) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            status: event.target.checked ? 'published' : 'draft',
-                          }))
-                        }
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                      <span className={`ml-2 text-sm font-medium ${form.status === 'published' ? 'text-green-600' : 'text-gray-500'}`}>
-                        {form.status === 'published' ? 'Published' : 'Draft'}
-                      </span>
-                    </label>
+                    <select
+                      value={form.status}
+                      className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="pending">Pending</option>
+                      <option value="published">Published</option>
+                    </select>
                   </div>
+
+                  <Button
+                    type="button"
+                    className="w-full"
+                    variant="outline"
+                    disabled={!isEditing || previewing}
+                    onClick={previewPage}
+                  >
+                    {previewing ? 'Preparing Preview...' : 'Preview'}
+                  </Button>
 
                   <div className="pt-4 border-t border-gray-200">
                     <Button type="submit" className="w-full" disabled={saving}>
