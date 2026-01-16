@@ -883,6 +883,11 @@ class CMSApiController
             WHERE type = 'footer' AND is_active = 1 ORDER BY name
         ")->fetchAll(PDO::FETCH_ASSOC);
 
+        $components = $pdo->query("
+            SELECT id, name, type FROM {$this->table('components')}
+            WHERE type NOT IN ('header', 'footer') AND is_active = 1 ORDER BY name
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
         $pages = $pdo->query("
             SELECT id, title, slug FROM {$this->table('pages')}
             ORDER BY title
@@ -897,6 +902,7 @@ class CMSApiController
             'templates' => $templates,
             'header_components' => $headerComponents,
             'footer_components' => $footerComponents,
+            'components' => $components,
             'parent_pages' => $pages,
             'categories' => $categories,
         ];

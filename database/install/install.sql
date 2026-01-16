@@ -938,6 +938,7 @@ CREATE TABLE cms_pages (
     meta_keywords VARCHAR(255) NULL,
     summary TEXT NULL,
     content LONGTEXT NULL,
+    component_order TEXT NULL,
     publish_start_at DATETIME NULL,
     publish_end_at DATETIME NULL,
     published_at DATETIME NULL,

@@ -115,8 +115,8 @@ class PageController
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, component_order, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :component_order, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -152,7 +152,7 @@ class PageController
 
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
-            . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
+            . 'summary = :summary, content = :content, component_order = :component_order, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
 
@@ -341,6 +341,14 @@ class PageController
      */
     private function mapPage(array $row): Page
     {
+        $componentOrder = null;
+        if (array_key_exists('component_order', $row) && $row['component_order'] !== null) {
+            $decoded = json_decode((string) $row['component_order'], true);
+            if (is_array($decoded)) {
+                $componentOrder = array_values($decoded);
+            }
+        }
+
         return new Page([
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
@@ -357,6 +365,7 @@ class PageController
             'meta_keywords' => $row['meta_keywords'] ?? null,
             'summary' => $row['summary'] ?? null,
             'content' => $row['content'] ?? null,
+            'component_order' => $componentOrder,
             'publish_start_at' => $row['publish_start_at'] ?? null,
             'publish_end_at' => $row['publish_end_at'] ?? null,
             'published_at' => $row['published_at'] ?? null,
@@ -395,10 +404,39 @@ class PageController
             'meta_keywords' => $data['meta_keywords'] ?? $existing?->meta_keywords,
             'summary' => $data['summary'] ?? $existing?->summary,
             'content' => $data['content'] ?? $existing?->content,
+            'component_order' => $this->serializeComponentOrder($data['component_order'] ?? $existing?->component_order),
             'publish_start_at' => $data['publish_start_at'] ?? $existing?->publish_start_at,
             'publish_end_at' => $data['publish_end_at'] ?? $existing?->publish_end_at,
             'published_at' => $publishedAt,
         ];
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function serializeComponentOrder($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                return null;
+            }
+            $decoded = json_decode($trimmed, true);
+            if (is_array($decoded)) {
+                return json_encode(array_values($decoded));
+            }
+        }
+
+        if (is_array($value)) {
+            $filtered = array_values(array_filter($value, static fn ($item) => is_numeric($item)));
+            return json_encode(array_map('intval', $filtered));
+        }
+
+        return null;
     }
 
     private function invalidateCache(string $slug): void
