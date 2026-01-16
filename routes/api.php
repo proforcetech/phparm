@@ -5704,6 +5704,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
             $gate
         );
+        $reconciliationController = new \App\Services\Financial\ReconciliationController(
+            new \App\Services\Financial\ReconciliationService($connection),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -5820,6 +5824,76 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ];
             $data = $financialController->exportEntries($user, $filters);
             return Response::json($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+            ];
+            $data = $reconciliationController->listSessions($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/financial/reconciliation/sessions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $data = $reconciliationController->createSession($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions/{id}', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->showSession($user, $id);
+            return Response::json($data);
+        });
+
+        $router->put('/api/financial/reconciliation/sessions/{id}', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->updateSession($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions/{id}/bank-transactions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->listBankTransactions($user, $id);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/financial/reconciliation/sessions/{id}/bank-transactions', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->createBankTransaction($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->get('/api/financial/reconciliation/sessions/{id}/ledger-entries', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $filters = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'type' => $request->queryParam('type'),
+            ];
+            $data = $reconciliationController->listLedgerEntries($user, $id, $filters);
+            return Response::json(['data' => $data]);
+        });
+
+        $router->post('/api/financial/reconciliation/sessions/{id}/matches', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $reconciliationController->createMatch($user, $id, $request->body());
+            return Response::created($data);
+        });
+
+        $router->delete('/api/financial/reconciliation/matches/{id}', function (Request $request) use ($reconciliationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $reconciliationController->deleteMatch($user, $id);
+            return Response::noContent();
         });
 
         $router->get('/api/financial/cash-drawer/active', function (Request $request) use ($cashDrawerController) {
