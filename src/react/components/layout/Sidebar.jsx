@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ArchiveBoxIcon, Bars3Icon, CalendarIcon, ChartBarIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CreditCardIcon, CubeIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FolderIcon, GlobeAltIcon, HomeIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, Squares2X2Icon, TruckIcon, UserGroupIcon, UsersIcon } from '@heroicons/react/24/outline'
+import { ArchiveBoxIcon, Bars3Icon, CalendarIcon, ChartBarIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CreditCardIcon, CubeIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FolderIcon, GlobeAltIcon, HomeIcon, PhotoIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, Squares2X2Icon, TruckIcon, UserGroupIcon, UsersIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 
@@ -112,6 +112,11 @@ const adminMenuItems = [
         path: '/cp/cms/menus',
         label: 'CMS Menus',
         icon: Bars3Icon,
+      },
+      {
+        path: '/cp/cms/media',
+        label: 'Media Library',
+        icon: PhotoIcon,
       },
       {
         path: '/cp/cms/components',
