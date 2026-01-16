@@ -67,6 +67,8 @@ class InvoiceService
                 'number' => $this->generateInvoiceNumber(),
                 'status' => 'pending',
                 'estimate_id' => $estimateId,
+                'is_credit_memo' => false,
+                'original_invoice_id' => null,
                 'split_billing' => false,
                 'issue_date' => date('Y-m-d'),
                 'public_token' => $this->generatePublicToken(),
@@ -119,6 +121,8 @@ class InvoiceService
                 'number' => $payload['number'],
                 'status' => 'pending',
                 'estimate_id' => $payload['estimate_id'] ?? null,
+                'is_credit_memo' => !empty($payload['is_credit_memo']),
+                'original_invoice_id' => $payload['original_invoice_id'] ?? null,
                 'due_date' => $payload['due_date'] ?? null,
                 'notes' => $payload['notes'] ?? null,
                 'split_billing' => $splitBilling,
@@ -254,6 +258,7 @@ class InvoiceService
         $rows = array_map(static function ($row) {
             $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
             $row['split_billing'] = isset($row['split_billing']) ? (bool) $row['split_billing'] : false;
+            $row['is_credit_memo'] = isset($row['is_credit_memo']) ? (bool) $row['is_credit_memo'] : false;
 
             return $row;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -284,8 +289,138 @@ class InvoiceService
         $data['line_items'] = $data['items'];
         $data['payments'] = $this->fetchPayments($invoice->id);
         $data['payer_allocations'] = $this->fetchPayerAllocations($invoice->id);
+        $data['credit_memos'] = $this->fetchCreditMemos($invoice->id);
+
+        if (!empty($invoice->is_credit_memo) && $invoice->original_invoice_id !== null) {
+            $data['original_invoice'] = $this->fetchInvoiceSummary($invoice->original_invoice_id);
+        } else {
+            $data['original_invoice'] = null;
+        }
 
         return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function createCreditMemo(int $invoiceId, array $payload, int $actorId): Invoice
+    {
+        $invoice = $this->fetchInvoice($invoiceId);
+        if ($invoice === null) {
+            throw new InvalidArgumentException('Invoice not found');
+        }
+
+        if (!empty($invoice->is_credit_memo)) {
+            throw new InvalidArgumentException('Cannot create a credit memo from a credit memo');
+        }
+
+        $itemsPayload = $payload['items'] ?? [];
+        if (!is_array($itemsPayload) || empty($itemsPayload)) {
+            throw new InvalidArgumentException('Return items are required');
+        }
+
+        $returnItems = [];
+        foreach ($itemsPayload as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $itemId = (int) ($item['invoice_item_id'] ?? $item['id'] ?? 0);
+            $quantity = (float) ($item['quantity'] ?? 0);
+            if ($itemId <= 0 || $quantity <= 0) {
+                continue;
+            }
+
+            $returnItems[$itemId] = $quantity;
+        }
+
+        if (empty($returnItems)) {
+            throw new InvalidArgumentException('No valid return quantities provided');
+        }
+
+        $lineItems = $this->fetchInvoiceItemsByIds($invoiceId, array_keys($returnItems));
+        if (count($lineItems) !== count($returnItems)) {
+            throw new InvalidArgumentException('Some return items were not found on the invoice');
+        }
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $creditMemoId = $this->insertInvoice([
+                'customer_id' => $invoice->customer_id,
+                'vehicle_id' => $invoice->vehicle_id,
+                'is_mobile' => $invoice->is_mobile,
+                'number' => $this->generateCreditMemoNumber($invoice->number),
+                'status' => 'paid',
+                'estimate_id' => null,
+                'is_credit_memo' => true,
+                'original_invoice_id' => $invoiceId,
+                'issue_date' => date('Y-m-d'),
+                'notes' => $payload['notes'] ?? null,
+                'split_billing' => false,
+                'public_token' => $this->generatePublicToken(),
+                'public_token_expires_at' => $this->calculatePublicExpiry(),
+            ]);
+
+            $taxRate = $this->resolveInvoiceTaxRate($invoice);
+            $totals = ['subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0];
+            $insertedItems = 0;
+
+            foreach ($lineItems as $lineItem) {
+                $requestedQty = $returnItems[(int) $lineItem['id']] ?? 0;
+                $originalQty = (float) ($lineItem['quantity'] ?? 0);
+                $returnQty = min($requestedQty, $originalQty);
+                if ($returnQty <= 0) {
+                    continue;
+                }
+
+                $quantity = -1 * abs($returnQty);
+                $unitPrice = (float) ($lineItem['unit_price'] ?? 0.0);
+                $lineTotal = $quantity * $unitPrice;
+                $taxable = (bool) ($lineItem['taxable'] ?? false);
+                $tax = $taxable ? $lineTotal * $taxRate : 0.0;
+                $description = trim((string) ($lineItem['description'] ?? 'Line Item'));
+
+                $this->insertInvoiceItem($creditMemoId, [
+                    'type' => $lineItem['type'] ?? 'line_item',
+                    'sku' => $lineItem['sku'] ?? null,
+                    'inventory_item_id' => $lineItem['inventory_item_id'] ?? null,
+                    'description' => $description !== '' ? 'Return - ' . $description : 'Return Item',
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'list_price' => $lineItem['list_price'] ?? null,
+                    'taxable' => $taxable,
+                    'line_total' => $lineTotal,
+                ]);
+
+                $totals['subtotal'] += $lineTotal;
+                $totals['tax'] += $tax;
+                $insertedItems++;
+            }
+
+            if ($insertedItems === 0) {
+                throw new InvalidArgumentException('No return quantities available for credit memo');
+            }
+
+            $totals['total'] = $totals['subtotal'] + $totals['tax'];
+
+            $this->updateTotals($creditMemoId, $totals);
+            $this->syncInvoiceBalance($creditMemoId);
+
+            $pdo->commit();
+            $creditMemo = $this->fetchInvoice($creditMemoId);
+            $this->log('invoice.credit_memo_created', $creditMemoId, $actorId, [
+                'invoice_id' => $invoiceId,
+                'return_items' => $returnItems,
+                'totals' => $totals,
+            ]);
+
+            return $creditMemo ?? new Invoice(['id' => $creditMemoId]);
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
     }
 
     public function findByPublicToken(string $token): ?Invoice
@@ -302,6 +437,7 @@ class InvoiceService
 
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
         $row['split_billing'] = isset($row['split_billing']) ? (bool) $row['split_billing'] : false;
+        $row['is_credit_memo'] = isset($row['is_credit_memo']) ? (bool) $row['is_credit_memo'] : false;
 
         $invoice = new Invoice($row);
         if ($this->isPublicTokenExpired($invoice)) {
@@ -511,8 +647,8 @@ class InvoiceService
     private function insertInvoice(array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
-            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
+            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, original_invoice_id, is_credit_memo, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
+            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :original_invoice_id, :is_credit_memo, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'],
@@ -521,6 +657,8 @@ class InvoiceService
             'number' => $payload['number'],
             'status' => $payload['status'],
             'estimate_id' => $payload['estimate_id'] ?? null,
+            'original_invoice_id' => $payload['original_invoice_id'] ?? null,
+            'is_credit_memo' => !empty($payload['is_credit_memo']) ? 1 : 0,
             'issue_date' => $payload['issue_date'] ?? date('Y-m-d'),
             'due_date' => $payload['due_date'] ?? null,
             'notes' => $payload['notes'] ?? null,
@@ -725,6 +863,7 @@ class InvoiceService
         }
 
         $row['is_mobile'] = isset($row['is_mobile']) ? (bool) $row['is_mobile'] : false;
+        $row['is_credit_memo'] = isset($row['is_credit_memo']) ? (bool) $row['is_credit_memo'] : false;
 
         return new Invoice($row);
     }
@@ -816,6 +955,79 @@ class InvoiceService
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * @param array<int, int> $itemIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchInvoiceItemsByIds(int $invoiceId, array $itemIds): array
+    {
+        if (empty($itemIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+        $bindings = array_merge([$invoiceId], $itemIds);
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT * FROM invoice_items WHERE invoice_id = ? AND id IN (' . $placeholders . ')'
+        );
+        $stmt->execute($bindings);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchCreditMemos(int $invoiceId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, number, issue_date, total, status FROM invoices WHERE original_invoice_id = :invoice_id ORDER BY issue_date DESC, id DESC'
+        );
+        $stmt->execute(['invoice_id' => $invoiceId]);
+
+        return array_map(static function (array $row): array {
+            if (array_key_exists('total', $row)) {
+                $row['total'] = (float) $row['total'];
+            }
+
+            return $row;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchInvoiceSummary(int $invoiceId): ?array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, number, issue_date, total, status, is_credit_memo, original_invoice_id FROM invoices WHERE id = :id'
+        );
+        $stmt->execute(['id' => $invoiceId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $row['is_credit_memo'] = isset($row['is_credit_memo']) ? (bool) $row['is_credit_memo'] : false;
+        if (array_key_exists('total', $row)) {
+            $row['total'] = (float) $row['total'];
+        }
+
+        return $row;
+    }
+
+    private function resolveInvoiceTaxRate(Invoice $invoice): float
+    {
+        $subtotal = (float) $invoice->subtotal;
+        if (abs($subtotal) < 0.01) {
+            return 0.0;
+        }
+
+        return (float) $invoice->tax / $subtotal;
     }
 
     /**
@@ -958,6 +1170,11 @@ class InvoiceService
     private function generateInvoiceNumber(): string
     {
         return 'INV-' . date('Ymd-His') . '-' . random_int(1000, 9999);
+    }
+
+    private function generateCreditMemoNumber(string $invoiceNumber): string
+    {
+        return 'CM-' . $invoiceNumber . '-' . date('Ymd-His');
     }
 
     private function generatePublicToken(): string

@@ -3791,6 +3791,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
+        $router->post('/api/invoices/{id}/credit-memos', function (Request $request) use ($invoiceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $invoiceController->createCreditMemo($user, $id, $request->body());
+            return Response::created($data);
+        });
+
         $router->patch('/api/invoices/{id}/status', function (Request $request) use ($invoiceController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');

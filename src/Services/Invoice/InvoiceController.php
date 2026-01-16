@@ -121,6 +121,23 @@ class InvoiceController
     }
 
     /**
+     * Create credit memo for invoice returns
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function createCreditMemo(User $user, int $id, array $data): array
+    {
+        if (!$this->gate->can($user, 'invoices.create')) {
+            throw new UnauthorizedException('Cannot create invoices');
+        }
+
+        $creditMemo = $this->service->createCreditMemo($id, $data, $user->id);
+
+        return $creditMemo->toArray();
+    }
+
+    /**
      * Update invoice status
      *
      * @param array<string, mixed> $data
