@@ -63,6 +63,9 @@ export default function UserForm() {
     email: '',
     password: '',
     role: '',
+    hire_date: '',
+    pay_structure: '',
+    skills: '',
   })
   const [roleOptions, setRoleOptions] = useState([])
   const [roleInfo, setRoleInfo] = useState({})
@@ -83,7 +86,15 @@ export default function UserForm() {
   const validateForm = () => {
     let isValid = true
 
-    setErrors({ name: '', email: '', password: '', role: '' })
+    setErrors({
+      name: '',
+      email: '',
+      password: '',
+      role: '',
+      hire_date: '',
+      pay_structure: '',
+      skills: '',
+    })
 
     if (!form.name) {
       setErrors((prev) => ({ ...prev, name: 'Name is required' }))
@@ -105,6 +116,31 @@ export default function UserForm() {
 
     if (!form.role) {
       setErrors((prev) => ({ ...prev, role: 'Role is required' }))
+      isValid = false
+    }
+
+    if (form.employee.hire_date) {
+      const isValidDate = /^\d{4}-\d{2}-\d{2}$/.test(form.employee.hire_date)
+        && !Number.isNaN(Date.parse(form.employee.hire_date))
+
+      if (!isValidDate) {
+        setErrors((prev) => ({ ...prev, hire_date: 'Use a valid hire date (YYYY-MM-DD)' }))
+        isValid = false
+      }
+    }
+
+    if (form.employee.pay_structure) {
+      const validPayStructures = payStructureOptions
+        .map((option) => option.value)
+        .filter(Boolean)
+      if (!validPayStructures.includes(form.employee.pay_structure)) {
+        setErrors((prev) => ({ ...prev, pay_structure: 'Select a valid pay structure' }))
+        isValid = false
+      }
+    }
+
+    if (form.employee.skills && parseSkills(form.employee.skills).length === 0) {
+      setErrors((prev) => ({ ...prev, skills: 'Enter at least one skill' }))
       isValid = false
     }
 
@@ -376,6 +412,7 @@ export default function UserForm() {
                   modelValue={form.employee.hire_date}
                   type="date"
                   label="Hire Date"
+                  error={errors.hire_date}
                   onUpdateModelValue={(value) => setForm((prev) => ({
                     ...prev,
                     employee: { ...prev.employee, hire_date: value },
@@ -386,6 +423,7 @@ export default function UserForm() {
                   <Select
                     modelValue={form.employee.pay_structure}
                     options={payStructureOptions}
+                    error={errors.pay_structure}
                     onUpdateModelValue={(value) => setForm((prev) => ({
                       ...prev,
                       employee: { ...prev.employee, pay_structure: value },
@@ -410,6 +448,7 @@ export default function UserForm() {
                 helperText="List skills separated by commas (e.g., Level 3 Tech, Heavy Duty Towing)."
                 placeholder="Level 3 Tech, Heavy Duty Towing"
                 modelValue={form.employee.skills}
+                error={errors.skills}
                 rows={3}
                 onUpdateModelValue={(value) => setForm((prev) => ({
                   ...prev,
