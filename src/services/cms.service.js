@@ -88,6 +88,14 @@ export const cmsService = {
   },
 
   /**
+   * Get or generate a preview token for a page
+   */
+  async getPagePreviewToken(id, regenerate = false) {
+    const response = await api.post(`/cms/pages/${id}/preview-token`, { regenerate })
+    return response.data
+  },
+
+  /**
    * Delete a page
    */
   async deletePage(id) {

@@ -1732,6 +1732,18 @@ return Response::json([
     };
 
     // Public CMS content delivery endpoints
+    $router->get('/api/cms/page/preview/{token}', function (Request $request) use ($cmsPageController) {
+        $token = (string) $request->getAttribute('token');
+
+        $html = $cmsPageController->previewPageByToken($token);
+
+        if ($html === null) {
+            return Response::notFound('Preview not found');
+        }
+
+        return Response::html($html);
+    });
+
     $router->get('/api/cms/page/{slug}', function (Request $request) use ($cmsPageController, $cmsCacheService, $resolveLocale) {
         $slug = (string) $request->getAttribute('slug');
         $locale = $resolveLocale($request);
@@ -7877,6 +7889,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
 
             return Response::html($html);
+        });
+
+        $router->post('/api/cms/pages/{id}/preview-token', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $regenerate = (bool) ($body['regenerate'] ?? false);
+
+            $data = $cmsPageController->previewToken($user, $id, $regenerate);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
         });
 
         // CMS Categories

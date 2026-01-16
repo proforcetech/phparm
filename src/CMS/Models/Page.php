@@ -16,6 +16,7 @@ class Page extends BaseModel
     public ?string $custom_css = null;
     public ?string $custom_js = null;
     public string $status = 'draft';
+    public ?string $preview_token = null;
     public ?string $meta_title = null;
     public ?string $meta_description = null;
     public ?string $meta_keywords = null;
