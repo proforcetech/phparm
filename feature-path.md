@@ -58,6 +58,9 @@ The current system successfully bridges the gap between Estimates and Invoices t
 [ ] Dynamic Component Blocks: Create specialized components for roadside assistance, such as a "Live Coverage Map" or "Estimated Wait Time" block that pulls data from the dispatch service.
 [ ] Media Library Folders: As the media library grows, implement a folder/tagging system in MediaController to prevent a flat, unmanageable list of images.
 [ ] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
+[x] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
+[ ] Schema Validation for Components: Since components likely use JSON or flexible fields, implement backend validation to ensure that required data (like image URLs or call-to-action text) is present before saving.
+[ ] Search Index Integration: Implement a hook that updates an internal search index (like Meilisearch or a simple full-text DB index) whenever CMS content changes, powering a site-wide search for customers.
 [ ] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
 [x] Schema Validation for Components: Since components likely use JSON or flexible fields, implement backend validation to ensure that required data (like image URLs or call-to-action text) is present before saving.
 [x] Search Index Integration: Implement a hook that updates an internal search index (like Meilisearch or a simple full-text DB index) whenever CMS content changes, powering a site-wide search for customers.

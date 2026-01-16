@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSComponentUsageService;
 use App\Services\CMS\CMSIndexService;
 use PDO;
 
@@ -22,15 +23,23 @@ class CMSApiController
     private string $tablePrefix;
     private ?CMSCacheService $cacheService;
     private AccessGate $gate;
+    private CMSComponentUsageService $componentUsage;
     private CMSIndexService $indexService;
 
-    public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null)
+    public function __construct(
+        Connection $connection,
+        CMSAuthBridge $authBridge,
+        AccessGate $gate,
+        ?CMSCacheService $cacheService = null,
+        ?CMSComponentUsageService $componentUsage = null
+    )
     {
         $this->connection = $connection;
         $this->authBridge = $authBridge;
         $this->gate = $gate;
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
         $this->cacheService = $cacheService;
+        $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
         $this->indexService = new CMSIndexService($connection, $this->tablePrefix);
     }
 
@@ -236,6 +245,7 @@ class CMSApiController
 
         $page = $this->getPage($user, $id);
         if ($page) {
+            $this->componentUsage->syncForPage($id, $page);
             $this->indexService->indexPage($page);
         }
 
@@ -284,6 +294,7 @@ class CMSApiController
 
         $page = $this->getPage($user, $id);
         if ($page) {
+            $this->componentUsage->syncForPage($id, $page);
             $this->indexService->indexPage($page);
         }
 
@@ -342,6 +353,7 @@ class CMSApiController
         if ($page) {
             $stmt = $pdo->prepare("DELETE FROM {$this->table('pages')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
+            $this->componentUsage->clearForPage($id);
             $this->invalidatePageCache($page['slug']);
             $this->indexService->deleteEntry('page', $id);
             return true;
@@ -501,6 +513,7 @@ class CMSApiController
 
         // Invalidate cache
         $this->invalidateComponentCache($data['slug'] ?? '');
+        $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
 
         $component = $this->getComponent($user, $id);
         if ($component) {
@@ -524,6 +537,7 @@ class CMSApiController
             $stmt = $pdo->prepare("DELETE FROM {$this->table('components')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
             $this->invalidateComponentCache($component['slug']);
+            $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
             $this->indexService->deleteEntry('component', $id);
             return true;
         }
@@ -990,6 +1004,21 @@ class CMSApiController
         $stmt->execute(['key' => '%page_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('page:' . $slug);
+    }
+
+    /**
+     * @param array<int, string> $slugs
+     */
+    private function invalidatePageCaches(array $slugs): void
+    {
+        $uniqueSlugs = array_values(array_unique(array_filter($slugs)));
+        if (empty($uniqueSlugs)) {
+            return;
+        }
+
+        foreach ($uniqueSlugs as $slug) {
+            $this->invalidatePageCache($slug);
+        }
     }
 
     private function invalidateComponentCache(string $slug): void
