@@ -5714,11 +5714,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->get('/api/financial/categories/{type:purchase|expense|income}', function (Request $request) use ($financialCategoryController) {
+        $router->get('/api/financial/categories/{type:asset|liability|income|expense|equity}', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
             $type = (string) $request->getAttribute('type');
             $data = $financialCategoryController->index($user, ['type' => $type]);
             return Response::json($data);
+        });
+
+        $router->post('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $data = $financialCategoryController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $financialCategoryController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::json(['message' => 'Category not found'], 404);
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $deleted = $financialCategoryController->destroy($user, $id);
+            return Response::json(['deleted' => $deleted]);
         });
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
