@@ -2317,7 +2317,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inventory routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
         $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
@@ -2999,7 +2999,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Roadside assistance routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
@@ -4197,9 +4197,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $connection,
         new \App\Services\Messaging\MessagingService($connection)
     );
+    $leaveRequestService = new \App\Services\Leave\LeaveRequestService($connection);
     $appointmentController = new \App\Services\Appointment\AppointmentController(
-        new \App\Services\Appointment\AppointmentService($connection, $appointmentAudit, $appointmentWebhooks, $appointmentMessagingNotifications),
-        new \App\Services\Appointment\AvailabilityService($connection),
+        new \App\Services\Appointment\AppointmentService(
+            $connection,
+            $appointmentAudit,
+            $appointmentWebhooks,
+            $appointmentMessagingNotifications,
+            $leaveRequestService
+        ),
+        new \App\Services\Appointment\AvailabilityService($connection, $leaveRequestService),
         $gate
     );
 
@@ -4665,7 +4672,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $etaConfig = require __DIR__ . '/../config/dispatch.php';
         $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
         $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
@@ -4847,7 +4854,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Job Density Heatmap Data
-        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/dispatch/heatmap', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.heatmap.view')) {
                 return Response::forbidden('Permission denied');
@@ -4890,7 +4897,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['data' => $data]);
         });
 
-        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/driver/certifications', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $body = $request->body();
             $driverProfileId = $body['driver_profile_id'] ?? null;
@@ -4938,7 +4945,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/dispatch/certifications/{id}/verify', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'dispatch.certifications.verify')) {
                 return Response::forbidden('Permission denied');
@@ -5309,7 +5316,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Warranty routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $warrantyMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
@@ -5371,7 +5378,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Credit Account routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $creditController = new \App\Services\Credit\CreditAccountController(
             new \App\Services\Credit\CreditAccountService($connection),
@@ -5436,8 +5443,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Document Vault routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
                 return Response::forbidden('Permission denied');
@@ -5511,7 +5518,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate) {
+        $router->get('/api/document-vault/alerts', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
                 return Response::forbidden('Permission denied');
@@ -5542,7 +5549,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate) {
+        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5610,7 +5617,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created(['success' => true]);
         });
 
-        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5684,7 +5691,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['success' => true]);
         });
 
-        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate) {
+        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -5716,6 +5723,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Reports\TechnicianMarginReportService($connection, $settingsRepository),
             $gate
         );
+        $leaveReportController = new \App\Services\Reports\LeaveReportController(
+            new \App\Services\Reports\LeaveReportService($connection),
+            $gate
+        );
 
         $router->get('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
@@ -5726,11 +5737,36 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->get('/api/financial/categories/{type:purchase|expense|income}', function (Request $request) use ($financialCategoryController) {
+        $router->get('/api/financial/categories/{type:asset|liability|income|expense|equity}', function (Request $request) use ($financialCategoryController) {
             $user = $request->getAttribute('user');
             $type = (string) $request->getAttribute('type');
             $data = $financialCategoryController->index($user, ['type' => $type]);
             return Response::json($data);
+        });
+
+        $router->post('/api/financial/categories', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $data = $financialCategoryController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $financialCategoryController->update($user, $id, $request->body());
+
+            if ($data === null) {
+                return Response::json(['message' => 'Category not found'], 404);
+            }
+
+            return Response::json($data);
+        });
+
+        $router->delete('/api/financial/categories/{id}', function (Request $request) use ($financialCategoryController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $deleted = $financialCategoryController->destroy($user, $id);
+            return Response::json(['deleted' => $deleted]);
         });
 
         $router->get('/api/financial/entries', function (Request $request) use ($financialController) {
@@ -5874,6 +5910,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $technicianMarginController->report($user, $params);
             return Response::json($data);
         });
+
+        $router->get('/api/reports/leave-summary', function (Request $request) use ($leaveReportController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'employee_id' => $request->queryParam('employee_id'),
+            ];
+            $data = $leaveReportController->summary($user, $params);
+            return Response::json($data);
+        });
     });
 
     // Customer retention report routes
@@ -5925,13 +5972,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Time Tracking routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
+        $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection, $auditLogger);
         $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
+        $payrollExportService = new \App\Services\Payroll\PayrollExportService(
+            $connection,
+            new \App\Support\SettingsRepository($connection)
+        );
 
         $timeController = new \App\Services\TimeTracking\TimeTrackingController(
             $timeTrackingService,
             new \App\Services\TimeTracking\TechnicianPortalService($connection, $timeTrackingService),
+            $gate
+        );
+
+        $payrollExportController = new \App\Services\Payroll\PayrollExportController(
+            $payrollExportService,
             $gate
         );
 
@@ -6002,6 +6059,69 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $leaveRequestService = new \App\Services\LeaveRequests\LeaveRequestService($connection);
+        $leaveAuditService = new \App\Services\Approval\ApprovalAuditService($connection);
+        $leaveController = new \App\Services\LeaveRequests\LeaveRequestController(
+            $leaveRequestService,
+            $leaveAuditService
+        );
+
+        $router->get('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'user_id' => $request->queryParam('user_id'),
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'search' => $request->queryParam('search'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/leave-requests/mine', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'start_date' => $request->queryParam('start_date'),
+                'end_date' => $request->queryParam('end_date'),
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $leaveController->mine($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $data = $leaveController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/approve', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->approve($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
+        $router->post('/api/leave-requests/{id}/reject', function (Request $request) use ($leaveController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $context = [
+                'ip_address' => $request->getClientIp() ?? '0.0.0.0',
+                'user_agent' => $request->header('USER-AGENT'),
+            ];
+            $data = $leaveController->reject($user, $id, $request->body(), $context);
+            return Response::json($data);
+        });
+
         $router->get('/api/time-tracking/technician/jobs', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->assignedJobs($user);
@@ -6011,6 +6131,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/time-tracking/technician/portal', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->portal($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $payrollExportController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $data = $payrollExportController->export($user, $request->body());
             return Response::json($data);
         });
 
@@ -7588,7 +7724,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Audit routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $auditController = new \App\Services\Audit\AuditController(
             new \App\Services\Audit\AuditLogViewerService($connection),
@@ -7678,6 +7814,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->get('/api/cms/pages/{id}/revisions', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $cmsPageController->revisions($user, $id);
+
+            if ($data === null) {
+                return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
         $router->post('/api/cms/pages', function (Request $request) use ($cmsPageController) {
             $user = $request->getAttribute('user');
             $data = $cmsPageController->store($user, $request->body());
@@ -7691,6 +7839,19 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             if ($data === null) {
                 return Response::notFound('Page not found');
+            }
+
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/pages/{id}/revisions/{revisionId}/restore', function (Request $request) use ($cmsPageController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $revisionId = (int) $request->getAttribute('revisionId');
+            $data = $cmsPageController->restoreRevision($user, $id, $revisionId);
+
+            if ($data === null) {
+                return Response::notFound('Revision not found');
             }
 
             return Response::json($data);
@@ -7862,9 +8023,29 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'status' => $request->queryParam('status'),
                 'search' => $request->queryParam('search'),
+                'folder' => $request->queryParam('folder'),
+                'tag' => $request->queryParam('tag'),
             ];
 
             $data = $cmsMediaController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->get('/api/cms/media/metadata', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->metadata($user);
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media/bulk', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->bulkUpdate($user, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/cms/media/folders/rename', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+            $data = $cmsMediaController->renameFolder($user, $request->body());
             return Response::json($data);
         });
 
@@ -7935,6 +8116,20 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
         });
 
+        $router->get('/api/cms/components/{id}/revisions', function (Request $request) use ($cmsApiController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            try {
+                $data = $cmsApiController->listComponentRevisions($user, $id);
+                if ($data === null) {
+                    return Response::notFound('Component not found');
+                }
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
         $router->post('/api/cms/components', function (Request $request) use ($cmsApiController) {
             $user = $request->getAttribute('user');
             try {
@@ -7950,6 +8145,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
             try {
                 $data = $cmsApiController->updateComponent($user, $id, $request->body());
+                return Response::json($data);
+            } catch (\RuntimeException $e) {
+                return Response::forbidden($e->getMessage());
+            }
+        });
+
+        $router->post('/api/cms/components/{id}/revisions/{revisionId}/restore', function (Request $request) use ($cmsApiController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $revisionId = (int) $request->getAttribute('revisionId');
+            try {
+                $data = $cmsApiController->restoreComponentRevision($user, $id, $revisionId);
+                if ($data === null) {
+                    return Response::notFound('Revision not found');
+                }
                 return Response::json($data);
             } catch (\RuntimeException $e) {
                 return Response::forbidden($e->getMessage());
@@ -8296,7 +8506,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Towing Pricing Matrix routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $towingPricingController = new \App\Services\Towing\TowingPricingController(
             new \App\Services\Towing\TowingPricingService($connection),
             $gate
@@ -8455,8 +8665,8 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     // =========================================================================
 
     // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
-        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
             $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
@@ -8465,7 +8675,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // Admin-only module management routes
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
         $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);

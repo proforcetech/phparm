@@ -20,8 +20,15 @@ class Page extends BaseModel
     public ?string $meta_title = null;
     public ?string $meta_description = null;
     public ?string $meta_keywords = null;
+    public ?string $canonical_url = null;
+    public ?string $og_title = null;
+    public ?string $og_description = null;
+    public ?string $og_image = null;
+    public ?string $og_type = null;
+    public ?string $og_url = null;
     public ?string $summary = null;
     public ?string $content = null;
+    public ?array $component_order = null;
     public ?string $publish_start_at = null;
     public ?string $publish_end_at = null;
     public ?string $published_at = null;

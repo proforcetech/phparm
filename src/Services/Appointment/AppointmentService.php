@@ -4,6 +4,7 @@ namespace App\Services\Appointment;
 
 use App\Database\Connection;
 use App\Models\Appointment;
+use App\Services\Leave\LeaveRequestService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
@@ -18,6 +19,7 @@ class AppointmentService
     private ?AuditLogger $audit;
     private ?WebhookDispatcher $webhooks;
     private ?MessagingNotificationService $messagingNotifications;
+    private ?LeaveRequestService $leaveRequests;
     /**
      * @param array<string, mixed> $config
      */
@@ -25,13 +27,15 @@ class AppointmentService
         Connection $connection,
         ?AuditLogger $audit = null,
         ?WebhookDispatcher $webhooks = null,
-        ?MessagingNotificationService $messagingNotifications = null
+        ?MessagingNotificationService $messagingNotifications = null,
+        ?LeaveRequestService $leaveRequests = null
     )
     {
         $this->connection = $connection;
         $this->audit = $audit;
         $this->webhooks = $webhooks;
         $this->messagingNotifications = $messagingNotifications;
+        $this->leaveRequests = $leaveRequests;
     }
 
     /**
@@ -48,6 +52,9 @@ class AppointmentService
 
         $start = new DateTimeImmutable($payload['start_time']);
         $end = new DateTimeImmutable($payload['end_time']);
+        $technicianId = isset($payload['technician_id']) ? (int) $payload['technician_id'] : null;
+
+        $this->assertTechnicianAvailability($technicianId, $start, $end);
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO appointments (customer_id, vehicle_id, technician_id, status, start_time, end_time, estimate_id, notes) ' .
@@ -56,7 +63,7 @@ class AppointmentService
         $stmt->execute([
             'customer_id' => $payload['customer_id'] ?? null,
             'vehicle_id' => $payload['vehicle_id'] ?? null,
-            'technician_id' => $payload['technician_id'] ?? null,
+            'technician_id' => $technicianId,
             'status' => $payload['status'],
             'start_time' => $start->format('Y-m-d H:i:s'),
             'end_time' => $end->format('Y-m-d H:i:s'),
@@ -82,14 +89,19 @@ class AppointmentService
             return null;
         }
 
+        $start = isset($payload['start_time']) ? new DateTimeImmutable($payload['start_time']) : new DateTimeImmutable($existing->start_time);
+        $end = isset($payload['end_time']) ? new DateTimeImmutable($payload['end_time']) : new DateTimeImmutable($existing->end_time);
+        $technicianId = array_key_exists('technician_id', $payload) ? (int) $payload['technician_id'] : $existing->technician_id;
+        $this->assertTechnicianAvailability($technicianId, $start, $end, $appointmentId);
+
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE appointments SET status = :status, technician_id = :technician_id, start_time = :start_time, end_time = :end_time, notes = :notes, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute([
             'status' => $payload['status'] ?? $existing->status,
-            'technician_id' => $payload['technician_id'] ?? $existing->technician_id,
-            'start_time' => isset($payload['start_time']) ? (new DateTimeImmutable($payload['start_time']))->format('Y-m-d H:i:s') : $existing->start_time,
-            'end_time' => isset($payload['end_time']) ? (new DateTimeImmutable($payload['end_time']))->format('Y-m-d H:i:s') : $existing->end_time,
+            'technician_id' => $technicianId,
+            'start_time' => $start->format('Y-m-d H:i:s'),
+            'end_time' => $end->format('Y-m-d H:i:s'),
             'notes' => $payload['notes'] ?? $existing->notes,
             'id' => $appointmentId,
         ]);
@@ -99,6 +111,40 @@ class AppointmentService
         $this->notify('appointment.updated', $updated, ['before' => $existing->toArray(), 'actor_id' => $actorId]);
 
         return $updated;
+    }
+
+    private function assertTechnicianAvailability(?int $technicianId, DateTimeImmutable $start, DateTimeImmutable $end, ?int $appointmentId = null): void
+    {
+        if ($technicianId === null || $this->leaveRequests === null) {
+            return;
+        }
+
+        if ($this->leaveRequests->isUserOnLeave($technicianId, $start, $end)) {
+            throw new InvalidArgumentException('Technician is on approved leave during this time.');
+        }
+
+        if ($appointmentId === null) {
+            return;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT COUNT(*) FROM appointments '
+            . 'WHERE id != :id '
+            . 'AND technician_id = :technician_id '
+            . 'AND start_time < :end '
+            . 'AND end_time > :start '
+            . 'AND status NOT IN ("cancelled")'
+        );
+        $stmt->execute([
+            'id' => $appointmentId,
+            'technician_id' => $technicianId,
+            'start' => $start->format('Y-m-d H:i:s'),
+            'end' => $end->format('Y-m-d H:i:s'),
+        ]);
+
+        if ((int) $stmt->fetchColumn() > 0) {
+            throw new InvalidArgumentException('Technician already has an appointment during this time.');
+        }
     }
 
     public function findById(int $appointmentId): ?Appointment

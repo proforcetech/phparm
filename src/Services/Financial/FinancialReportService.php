@@ -11,6 +11,11 @@ use PDO;
 
 class FinancialReportService
 {
+    private const ACCOUNT_TYPES = ['asset', 'liability', 'income', 'expense', 'equity'];
+    private const LEGACY_TYPE_MAP = [
+        'purchase' => 'expense',
+    ];
+
     private Connection $connection;
 
     public function __construct(Connection $connection)
@@ -35,7 +40,7 @@ class FinancialReportService
         return [
             'range' => [$start->format('Y-m-d'), $end->format('Y-m-d')],
             'summary' => $summary,
-            'net' => $summary['income'] - $summary['expense'] - $summary['purchase'],
+            'net' => $summary['income'] - $summary['expense'],
             'monthly' => $this->monthlyBreakdown($start, $end, $category, $vendor),
         ];
     }
@@ -45,30 +50,37 @@ class FinancialReportService
      */
     public function summary(DateTimeImmutable $start, DateTimeImmutable $end, ?string $category = null, ?string $vendor = null): array
     {
-        $sql = 'SELECT type, SUM(amount) as total FROM financial_entries WHERE entry_date BETWEEN :start AND :end';
+        $sql = 'SELECT COALESCE(fc.type, fe.type) AS category_type, SUM(fe.amount) AS total '
+            . 'FROM financial_entries fe '
+            . 'LEFT JOIN financial_categories fc ON fc.name = fe.category '
+            . 'WHERE fe.entry_date BETWEEN :start AND :end';
         $params = [
             'start' => $start->format('Y-m-d'),
             'end' => $end->format('Y-m-d'),
         ];
 
         if ($category) {
-            $sql .= ' AND category = :category';
+            $sql .= ' AND fe.category = :category';
             $params['category'] = $category;
         }
 
         if ($vendor) {
-            $sql .= ' AND vendor = :vendor';
+            $sql .= ' AND fe.vendor = :vendor';
             $params['vendor'] = $vendor;
         }
 
-        $sql .= ' GROUP BY type';
+        $sql .= ' GROUP BY category_type';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($params);
 
-        $summary = ['income' => 0.0, 'expense' => 0.0, 'purchase' => 0.0];
+        $summary = array_fill_keys(self::ACCOUNT_TYPES, 0.0);
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $summary[$row['type']] = (float) $row['total'];
+            $normalized = $this->normalizeType((string) $row['category_type']);
+            if ($normalized === null) {
+                continue;
+            }
+            $summary[$normalized] += (float) $row['total'];
         }
 
         return $summary;
@@ -89,7 +101,7 @@ class FinancialReportService
             $results[] = [
                 'month' => $monthStart->format('Y-m'),
                 'summary' => $summary,
-                'net' => $summary['income'] - $summary['expense'] - $summary['purchase'],
+                'net' => $summary['income'] - $summary['expense'],
             ];
         }
 
@@ -105,13 +117,15 @@ class FinancialReportService
         }
 
         $rows = [];
-        $rows[] = ['Month', 'Income', 'Expenses', 'Purchases', 'Net'];
+        $rows[] = ['Month', 'Income', 'Expenses', 'Assets', 'Liabilities', 'Equity', 'Net'];
         foreach ($report['monthly'] as $row) {
             $rows[] = [
                 $row['month'],
                 number_format($row['summary']['income'], 2, '.', ''),
                 number_format($row['summary']['expense'], 2, '.', ''),
-                number_format($row['summary']['purchase'], 2, '.', ''),
+                number_format($row['summary']['asset'], 2, '.', ''),
+                number_format($row['summary']['liability'], 2, '.', ''),
+                number_format($row['summary']['equity'], 2, '.', ''),
                 number_format($row['net'], 2, '.', ''),
             ];
         }
@@ -160,6 +174,22 @@ class FinancialReportService
             'end' => $endRange->format('Y-m-d H:i:s'),
         ]);
         $paidMinutes = (float) ($paidStmt->fetchColumn() ?: 0);
+
+        $ptoStmt = $pdo->prepare(
+            'SELECT SUM(COALESCE(lr.paid_hours, lr.approved_hours, lr.requested_hours, 0)) '
+            . 'FROM leave_requests lr '
+            . 'WHERE lr.status = :status '
+            . 'AND lr.leave_type = :leave_type '
+            . 'AND lr.start_at <= :end '
+            . 'AND lr.end_at >= :start'
+        );
+        $ptoStmt->execute([
+            'status' => 'approved',
+            'leave_type' => 'pto',
+            'start' => $startRange->format('Y-m-d H:i:s'),
+            'end' => $endRange->format('Y-m-d H:i:s'),
+        ]);
+        $ptoHours = (float) ($ptoStmt->fetchColumn() ?: 0);
 
         $warrantyStmt = $pdo->prepare(
             'SELECT status, COUNT(*) AS total FROM warranty_claims WHERE created_at BETWEEN :start AND :end GROUP BY status'
@@ -218,9 +248,11 @@ class FinancialReportService
         $ytdTrends = array_map(static function (array $row) {
             return [
                 'month' => $row['month'],
+                'asset' => (float) ($row['summary']['asset'] ?? 0),
+                'liability' => (float) ($row['summary']['liability'] ?? 0),
                 'income' => (float) ($row['summary']['income'] ?? 0),
                 'expense' => (float) ($row['summary']['expense'] ?? 0),
-                'purchase' => (float) ($row['summary']['purchase'] ?? 0),
+                'equity' => (float) ($row['summary']['equity'] ?? 0),
                 'net' => (float) ($row['net'] ?? 0),
             ];
         }, $ytdMonthly);
@@ -230,7 +262,9 @@ class FinancialReportService
             'ytd_trends' => $ytdTrends,
             'tax_collected' => $taxCollected,
             'billable_hours' => round($billableMinutes / 60, 2),
-            'paid_hours' => round($paidMinutes / 60, 2),
+            'paid_hours' => round(($paidMinutes / 60) + $ptoHours, 2),
+            'worked_hours' => round($paidMinutes / 60, 2),
+            'pto_hours' => round($ptoHours, 2),
             'warranty_claims' => [
                 'total' => $warrantyTotal,
                 'by_status' => $warrantyCounts,
@@ -238,6 +272,16 @@ class FinancialReportService
             'inventory' => $inventory,
             'service_type_stats' => $serviceTypeStats,
         ];
+    }
+
+    private function normalizeType(string $type): ?string
+    {
+        $normalized = strtolower(trim($type));
+        if (isset(self::LEGACY_TYPE_MAP[$normalized])) {
+            $normalized = self::LEGACY_TYPE_MAP[$normalized];
+        }
+
+        return in_array($normalized, self::ACCOUNT_TYPES, true) ? $normalized : null;
     }
 
     /**
