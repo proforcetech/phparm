@@ -7,6 +7,8 @@ use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
+use App\Services\CMS\CMSComponentUsageService;
+use App\Services\CMS\CMSIndexService;
 use App\Services\CMS\CMSRenderingService;
 use App\Services\CMS\CMSRevisionService;
 use DateTimeImmutable;
@@ -20,11 +22,24 @@ class PageController
     private CMSRevisionService $revisions;
 
     public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null, ?CMSRevisionService $revisions = null)
+    private CMSComponentUsageService $componentUsage;
+
+    public function __construct(
+        Connection $connection,
+        AccessGate $gate,
+        ?CMSCacheService $cache = null,
+        ?CMSComponentUsageService $componentUsage = null
+    )
+    private CMSIndexService $indexService;
+
+    public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null, ?CMSIndexService $indexService = null)
     {
         $this->connection = $connection;
         $this->gate = $gate;
         $this->cache = $cache;
         $this->revisions = $revisions ?? new CMSRevisionService($connection);
+        $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
+        $this->indexService = $indexService ?? new CMSIndexService($connection);
     }
 
 /**
@@ -102,11 +117,16 @@ class PageController
     {
         $this->gate->assert($user, 'cms.pages.create');
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
+        }
+
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
-            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_pages (title, slug, category_id, template_id, header_component_id, footer_component_id, custom_css, custom_js, status, meta_title, meta_description, meta_keywords, summary, content, component_order, publish_start_at, publish_end_at, published_at, created_at, updated_at) '
+            . 'VALUES (:title, :slug, :category_id, :template_id, :header_component_id, :footer_component_id, :custom_css, :custom_js, :status, :meta_title, :meta_description, :meta_keywords, :summary, :content, :component_order, :publish_start_at, :publish_end_at, :published_at, NOW(), NOW())'
         );
 
         $stmt->execute($payload);
@@ -115,9 +135,11 @@ class PageController
 
         if (!empty($page['id'])) {
             $this->revisions->recordRevision('page', (int) $page['id'], $page, $user->id, 'created');
+            $this->componentUsage->syncForPage((int) $page['id'], $page);
         }
 
         $this->invalidateCache($page['slug'] ?? '');
+        $this->indexService->indexPage($page);
 
         return $page;
     }
@@ -135,17 +157,24 @@ class PageController
             return null;
         }
 
+        $requestedStatus = $data['status'] ?? $existing->status ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
+        }
+
         $existingSlug = $existing->slug;
         $payload = $this->preparePayload($data, false, $existing);
         $payload['id'] = $id;
 
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE cms_pages SET title = :title, slug = :slug, category_id = :category_id, template_id = :template_id, header_component_id = :header_component_id, footer_component_id = :footer_component_id, custom_css = :custom_css, custom_js = :custom_js, status = :status, meta_title = :meta_title, meta_description = :meta_description, meta_keywords = :meta_keywords, '
-            . 'summary = :summary, content = :content, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
+            . 'summary = :summary, content = :content, component_order = :component_order, publish_start_at = :publish_start_at, publish_end_at = :publish_end_at, published_at = :published_at, updated_at = NOW() '
             . 'WHERE id = :id'
         );
 
         $stmt->execute($payload);
+
+        $this->componentUsage->syncForPage($id, array_merge($payload, ['id' => $id]));
 
         $this->invalidateCache($payload['slug']);
         if ($payload['slug'] !== $existingSlug) {
@@ -158,6 +187,12 @@ class PageController
         }
 
         return $updatedPage;
+        $page = $this->find($id)?->toArray();
+        if ($page !== null) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     public function destroy(User $user, int $id): bool
@@ -171,7 +206,9 @@ class PageController
         $deleted = $stmt->execute(['id' => $id]);
 
         if ($deleted && $page !== null) {
+            $this->componentUsage->clearForPage((int) $page['id']);
             $this->invalidateCache($page['slug'] ?? '');
+            $this->indexService->deleteEntry('page', $id);
         }
 
         return $deleted;
@@ -184,7 +221,7 @@ class PageController
      */
     public function publish(User $user, int $id): ?array
     {
-        $this->gate->assert($user, 'cms.pages.update');
+        $this->assertPublishAccess($user);
 
         $existing = $this->find($id);
         if ($existing === null) {
@@ -273,6 +310,12 @@ class PageController
         }
 
         return $restored;
+        $page = $this->find($id)?->toArray();
+        if ($page !== null) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -388,6 +431,14 @@ class PageController
      */
     private function mapPage(array $row): Page
     {
+        $componentOrder = null;
+        if (array_key_exists('component_order', $row) && $row['component_order'] !== null) {
+            $decoded = json_decode((string) $row['component_order'], true);
+            if (is_array($decoded)) {
+                $componentOrder = array_values($decoded);
+            }
+        }
+
         return new Page([
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
@@ -404,6 +455,7 @@ class PageController
             'meta_keywords' => $row['meta_keywords'] ?? null,
             'summary' => $row['summary'] ?? null,
             'content' => $row['content'] ?? null,
+            'component_order' => $componentOrder,
             'publish_start_at' => $row['publish_start_at'] ?? null,
             'publish_end_at' => $row['publish_end_at'] ?? null,
             'published_at' => $row['published_at'] ?? null,
@@ -442,6 +494,7 @@ class PageController
             'meta_keywords' => $data['meta_keywords'] ?? $existing?->meta_keywords,
             'summary' => $data['summary'] ?? $existing?->summary,
             'content' => $data['content'] ?? $existing?->content,
+            'component_order' => $this->serializeComponentOrder($data['component_order'] ?? $existing?->component_order),
             'publish_start_at' => $data['publish_start_at'] ?? $existing?->publish_start_at,
             'publish_end_at' => $data['publish_end_at'] ?? $existing?->publish_end_at,
             'published_at' => $publishedAt,
@@ -476,6 +529,31 @@ class PageController
             'publish_end_at' => $snapshot['publish_end_at'] ?? null,
             'published_at' => $snapshot['published_at'] ?? null,
         ];
+     * @param mixed $value
+     */
+    private function serializeComponentOrder($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                return null;
+            }
+            $decoded = json_decode($trimmed, true);
+            if (is_array($decoded)) {
+                return json_encode(array_values($decoded));
+            }
+        }
+
+        if (is_array($value)) {
+            $filtered = array_values(array_filter($value, static fn ($item) => is_numeric($item)));
+            return json_encode(array_map('intval', $filtered));
+        }
+
+        return null;
     }
 
     private function invalidateCache(string $slug): void
@@ -494,6 +572,11 @@ class PageController
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
         return trim($value ?: uniqid('page-'), '-');
+    }
+
+    private function assertPublishAccess(User $user): void
+    {
+        $this->gate->assert($user, 'cms.pages.publish');
     }
 
     private function normalizedSlug(string $slug): string

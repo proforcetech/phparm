@@ -3,6 +3,7 @@
 namespace App\Services\Appointment;
 
 use App\Database\Connection;
+use App\Services\Leave\LeaveRequestService;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeInterface;
@@ -12,10 +13,12 @@ use InvalidArgumentException;
 class AvailabilityService
 {
     private Connection $connection;
+    private LeaveRequestService $leaveRequests;
 
-    public function __construct(Connection $connection)
+    public function __construct(Connection $connection, ?LeaveRequestService $leaveRequests = null)
     {
         $this->connection = $connection;
+        $this->leaveRequests = $leaveRequests ?? new LeaveRequestService($connection);
     }
 
     /**
@@ -217,6 +220,10 @@ class AvailabilityService
 
     private function isAvailable(DateTimeImmutable $start, DateTimeImmutable $end, ?int $technicianId): bool
     {
+        if ($technicianId !== null && $this->leaveRequests->isUserOnLeave($technicianId, $start, $end)) {
+            return false;
+        }
+
         $query = 'SELECT COUNT(*) FROM appointments WHERE start_time < :end AND end_time > :start AND status NOT IN ("cancelled")';
         $params = [
             'start' => $start->format('Y-m-d H:i:s'),

@@ -324,6 +324,8 @@ export default function CMSComponentForm() {
                       if (form.type === 'navigation') return 'Navigation menus'
                       if (form.type === 'sidebar') return 'Sidebar content'
                       if (form.type === 'widget') return 'Reusable widgets'
+                      if (form.type === 'live_coverage_map') return 'Live dispatch coverage with driver and hotspot data'
+                      if (form.type === 'eta') return 'Estimated wait time powered by dispatch ETA'
                       return 'Custom component'
                     })()}
                   />

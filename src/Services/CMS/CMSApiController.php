@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Services\CMS\CMSCacheService;
 use App\Services\CMS\CMSRevisionService;
+use App\Services\CMS\CMSComponentUsageService;
+use App\Services\CMS\CMSIndexService;
 use PDO;
 
 /**
@@ -25,6 +27,16 @@ class CMSApiController
     private CMSRevisionService $revisions;
 
     public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null, ?CMSRevisionService $revisions = null)
+    private CMSComponentUsageService $componentUsage;
+    private CMSIndexService $indexService;
+
+    public function __construct(
+        Connection $connection,
+        CMSAuthBridge $authBridge,
+        AccessGate $gate,
+        ?CMSCacheService $cacheService = null,
+        ?CMSComponentUsageService $componentUsage = null
+    )
     {
         $this->connection = $connection;
         $this->authBridge = $authBridge;
@@ -32,6 +44,8 @@ class CMSApiController
         $this->tablePrefix = env('CMS_TABLE_PREFIX', 'cms_');
         $this->cacheService = $cacheService;
         $this->revisions = $revisions ?? new CMSRevisionService($connection);
+        $this->componentUsage = $componentUsage ?? new CMSComponentUsageService($connection);
+        $this->indexService = new CMSIndexService($connection, $this->tablePrefix);
     }
 
     /**
@@ -203,6 +217,11 @@ class CMSApiController
     {
         $this->requireEditAccess($user);
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->requirePublishAccess($user);
+        }
+
         $pdo = $this->connection->pdo();
 
         // Generate slug if not provided
@@ -234,7 +253,13 @@ class CMSApiController
 
         $id = (int) $pdo->lastInsertId();
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->componentUsage->syncForPage($id, $page);
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -243,6 +268,16 @@ class CMSApiController
     public function updatePage(?User $user, int $id, array $data): array
     {
         $this->requireEditAccess($user);
+
+        $existing = $this->getPage($user, $id);
+        if ($existing === null) {
+            throw new \RuntimeException('Page not found');
+        }
+
+        $requestedStatus = $data['status'] ?? $existing['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->requirePublishAccess($user);
+        }
 
         $pdo = $this->connection->pdo();
 
@@ -277,7 +312,13 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($data['slug'] ?? '');
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->componentUsage->syncForPage($id, $page);
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -285,7 +326,7 @@ class CMSApiController
      */
     public function publishPage(?User $user, int $id): array
     {
-        $this->requireEditAccess($user);
+        $this->requirePublishAccess($user);
 
         $pdo = $this->connection->pdo();
 
@@ -310,7 +351,12 @@ class CMSApiController
         // Invalidate cache
         $this->invalidatePageCache($page['slug']);
 
-        return $this->getPage($user, $id);
+        $page = $this->getPage($user, $id);
+        if ($page) {
+            $this->indexService->indexPage($page);
+        }
+
+        return $page;
     }
 
     /**
@@ -327,7 +373,9 @@ class CMSApiController
         if ($page) {
             $stmt = $pdo->prepare("DELETE FROM {$this->table('pages')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
+            $this->componentUsage->clearForPage($id);
             $this->invalidatePageCache($page['slug']);
+            $this->indexService->deleteEntry('page', $id);
             return true;
         }
 
@@ -401,6 +449,8 @@ class CMSApiController
 
         $pdo = $this->connection->pdo();
 
+        $this->validateComponentData($data);
+
         // Generate slug if not provided
         if (empty($data['slug'])) {
             $data['slug'] = $this->generateSlug($data['name'] ?? 'untitled');
@@ -438,6 +488,11 @@ class CMSApiController
         }
 
         return $component ?? [];
+        if ($component) {
+            $this->indexService->indexComponent($component);
+        }
+
+        return $component;
     }
 
     /**
@@ -448,6 +503,8 @@ class CMSApiController
         $this->requireEditAccess($user);
 
         $pdo = $this->connection->pdo();
+
+        $this->validateComponentData($data);
 
         $stmt = $pdo->prepare("
             UPDATE {$this->table('components')} SET
@@ -481,6 +538,7 @@ class CMSApiController
 
         // Invalidate cache
         $this->invalidateComponentCache($data['slug'] ?? '');
+        $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
 
         $component = $this->getComponent($user, $id);
         if ($component !== null) {
@@ -488,6 +546,11 @@ class CMSApiController
         }
 
         return $component ?? [];
+        if ($component) {
+            $this->indexService->indexComponent($component);
+        }
+
+        return $component;
     }
 
     /**
@@ -504,6 +567,8 @@ class CMSApiController
             $stmt = $pdo->prepare("DELETE FROM {$this->table('components')} WHERE id = :id");
             $stmt->execute(['id' => $id]);
             $this->invalidateComponentCache($component['slug']);
+            $this->invalidatePageCaches($this->componentUsage->findPageSlugsForComponent($id));
+            $this->indexService->deleteEntry('component', $id);
             return true;
         }
 
@@ -932,6 +997,11 @@ class CMSApiController
             WHERE type = 'footer' AND is_active = 1 ORDER BY name
         ")->fetchAll(PDO::FETCH_ASSOC);
 
+        $components = $pdo->query("
+            SELECT id, name, type FROM {$this->table('components')}
+            WHERE type NOT IN ('header', 'footer') AND is_active = 1 ORDER BY name
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
         $pages = $pdo->query("
             SELECT id, title, slug FROM {$this->table('pages')}
             ORDER BY title
@@ -946,6 +1016,7 @@ class CMSApiController
             'templates' => $templates,
             'header_components' => $headerComponents,
             'footer_components' => $footerComponents,
+            'components' => $components,
             'parent_pages' => $pages,
             'categories' => $categories,
         ];
@@ -976,6 +1047,12 @@ class CMSApiController
         // Use AccessGate for consistent permission checking
         $this->gate->assert($user, 'cms.*');
         // Initialize CMS session after successful access check
+        $this->authBridge->initializeCMSSession($user);
+    }
+
+    private function requirePublishAccess(?User $user): void
+    {
+        $this->gate->assert($user, 'cms.pages.publish');
         $this->authBridge->initializeCMSSession($user);
     }
 
@@ -1055,6 +1132,21 @@ class CMSApiController
         $this->cacheService?->forgetPrefix('page:' . $slug);
     }
 
+    /**
+     * @param array<int, string> $slugs
+     */
+    private function invalidatePageCaches(array $slugs): void
+    {
+        $uniqueSlugs = array_values(array_unique(array_filter($slugs)));
+        if (empty($uniqueSlugs)) {
+            return;
+        }
+
+        foreach ($uniqueSlugs as $slug) {
+            $this->invalidatePageCache($slug);
+        }
+    }
+
     private function invalidateComponentCache(string $slug): void
     {
         if (empty($slug)) {
@@ -1101,5 +1193,90 @@ class CMSApiController
         $stmt->execute(['key' => '%template_' . $slug . '%']);
 
         $this->cacheService?->forgetPrefix('template:' . $slug);
+    }
+
+    private function validateComponentData(array $data): void
+    {
+        $type = $data['type'] ?? 'custom';
+        $content = (string) ($data['content'] ?? '');
+        $errors = [];
+
+        $rules = [
+            'header' => [
+                'cta' => 'Header components require a call-to-action link with text (e.g., <a href="/contact">Contact Us</a>).',
+            ],
+            'navigation' => [
+                'links' => 'Navigation components require at least one link with text (e.g., <a href="/about">About</a>).',
+            ],
+            'sidebar' => [
+                'image' => 'Sidebar components require at least one image URL (e.g., <img src="https://example.com/image.jpg">).',
+            ],
+            'widget' => [
+                'cta' => 'Widget components require a call-to-action link with text (e.g., <a href="/signup">Get Started</a>).',
+                'image' => 'Widget components require at least one image URL (e.g., <img src="https://example.com/image.jpg">).',
+            ],
+            'footer' => [
+                'links' => 'Footer components require at least one link with text (e.g., <a href="/privacy">Privacy Policy</a>).',
+            ],
+            'custom' => [],
+        ];
+
+        $typeRules = $rules[$type] ?? [];
+        if ($typeRules === []) {
+            return;
+        }
+
+        $linksWithText = $this->extractLinksWithText($content);
+        $imageSources = $this->extractImageSources($content);
+
+        foreach ($typeRules as $rule => $message) {
+            if ($rule === 'cta' && count($linksWithText) === 0) {
+                $errors[] = $message;
+            }
+
+            if ($rule === 'links' && count($linksWithText) === 0) {
+                $errors[] = $message;
+            }
+
+            if ($rule === 'image' && count($imageSources) === 0) {
+                $errors[] = $message;
+            }
+        }
+
+        if ($errors !== []) {
+            throw new \InvalidArgumentException('Component validation failed: ' . implode(' ', $errors));
+        }
+    }
+
+    /**
+     * @return array<int, array{href: string, text: string}>
+     */
+    private function extractLinksWithText(string $content): array
+    {
+        $matches = [];
+        preg_match_all('/<a[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', $content, $matches, PREG_SET_ORDER);
+
+        $links = [];
+        foreach ($matches as $match) {
+            $href = trim($match[1] ?? '');
+            $text = trim(strip_tags($match[2] ?? ''));
+            if ($href !== '' && $text !== '') {
+                $links[] = ['href' => $href, 'text' => $text];
+            }
+        }
+
+        return $links;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractImageSources(string $content): array
+    {
+        $matches = [];
+        preg_match_all('/<img[^>]*src=[\'"]([^\'"]+)[\'"][^>]*>/is', $content, $matches);
+        $sources = array_filter(array_map('trim', $matches[1] ?? []), static fn ($src) => $src !== '');
+
+        return array_values($sources);
     }
 }

@@ -362,6 +362,8 @@ CREATE TABLE time_entries (
     reviewed_by INT UNSIGNED NULL,
     reviewed_at DATETIME NULL,
     review_notes TEXT NULL,
+    payroll_included TINYINT(1) NOT NULL DEFAULT 0,
+    payroll_included_at DATETIME NULL,
     en_route_at DATETIME NULL,
     on_site_at DATETIME NULL,
     wrap_up_at DATETIME NULL,
@@ -486,4 +488,31 @@ CREATE TABLE `cms_revisions` (
     INDEX `idx_cms_revisions_entity` (`entity_type`, `entity_id`),
     INDEX `idx_cms_revisions_created_at` (`created_at`),
     INDEX `idx_cms_revisions_created_by` (`created_by`)
+CREATE TABLE `cms_component_page_usage` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `component_id` INT UNSIGNED NOT NULL,
+    `page_id` INT UNSIGNED NOT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uniq_component_page` (`component_id`, `page_id`),
+    INDEX `idx_component_page_component` (`component_id`),
+    INDEX `idx_component_page_page` (`page_id`),
+    CONSTRAINT `fk_component_page_component`
+        FOREIGN KEY (`component_id`) REFERENCES `cms_components`(`id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `fk_component_page_page`
+        FOREIGN KEY (`page_id`) REFERENCES `cms_pages`(`id`)
+        ON DELETE CASCADE
+CREATE TABLE `cms_search_index` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `source_type` VARCHAR(32) NOT NULL,
+    `source_id` INT UNSIGNED NOT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `slug` VARCHAR(255) NULL,
+    `summary` TEXT NULL,
+    `content` LONGTEXT NULL,
+    `status` VARCHAR(50) NULL,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uniq_cms_search_source` (`source_type`, `source_id`),
+    INDEX `idx_cms_search_status` (`status`),
+    FULLTEXT KEY `ft_cms_search_text` (`title`, `summary`, `content`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
