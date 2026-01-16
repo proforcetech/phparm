@@ -71,6 +71,11 @@ class MenuController
     {
         $this->gate->assert($user, 'cms.menus.create');
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
+        }
+
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
@@ -98,6 +103,11 @@ class MenuController
         $existing = $this->find($id);
         if ($existing === null) {
             return null;
+        }
+
+        $requestedStatus = $data['status'] ?? $existing->status ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
         }
 
         $existingSlug = $existing->slug;
@@ -234,5 +244,10 @@ class MenuController
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
         return trim($value ?: uniqid('menu-'), '-');
+    }
+
+    private function assertPublishAccess(User $user): void
+    {
+        $this->gate->assert($user, 'cms.menus.publish');
     }
 }

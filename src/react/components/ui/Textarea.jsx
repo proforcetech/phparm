@@ -13,6 +13,7 @@ export default function Textarea({
   rows = 4,
   maxlength = null,
   fullWidth = true,
+  textareaRef = null,
   onUpdateModelValue,
   onChange,
   onBlur,
@@ -58,6 +59,7 @@ export default function Textarea({
         rows={rows}
         maxLength={maxlength ?? undefined}
         className={textareaClasses}
+        ref={textareaRef}
         onChange={handleChange}
         onBlur={onBlur}
         onFocus={onFocus}

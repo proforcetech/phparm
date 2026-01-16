@@ -14,6 +14,8 @@ class Component extends BaseModel
     public string $content;
     public ?string $css = null;
     public ?string $javascript = null;
+    public ?string $css_assets = null;
+    public ?string $js_assets = null;
     public bool $is_active = true;
     public int $cache_ttl = 3600;
     public ?int $created_by = null;

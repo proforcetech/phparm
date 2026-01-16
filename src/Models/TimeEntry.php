@@ -17,6 +17,8 @@ class TimeEntry extends BaseModel
     public ?int $reviewed_by = null;
     public ?string $reviewed_at = null;
     public ?string $review_notes = null;
+    public bool $payroll_included = false;
+    public ?string $payroll_included_at = null;
     public ?string $en_route_at = null;
     public ?string $on_site_at = null;
     public ?string $wrap_up_at = null;
