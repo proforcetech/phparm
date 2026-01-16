@@ -161,6 +161,22 @@ class FinancialReportService
         ]);
         $paidMinutes = (float) ($paidStmt->fetchColumn() ?: 0);
 
+        $ptoStmt = $pdo->prepare(
+            'SELECT SUM(COALESCE(lr.paid_hours, lr.approved_hours, lr.requested_hours, 0)) '
+            . 'FROM leave_requests lr '
+            . 'WHERE lr.status = :status '
+            . 'AND lr.leave_type = :leave_type '
+            . 'AND lr.start_at <= :end '
+            . 'AND lr.end_at >= :start'
+        );
+        $ptoStmt->execute([
+            'status' => 'approved',
+            'leave_type' => 'pto',
+            'start' => $startRange->format('Y-m-d H:i:s'),
+            'end' => $endRange->format('Y-m-d H:i:s'),
+        ]);
+        $ptoHours = (float) ($ptoStmt->fetchColumn() ?: 0);
+
         $warrantyStmt = $pdo->prepare(
             'SELECT status, COUNT(*) AS total FROM warranty_claims WHERE created_at BETWEEN :start AND :end GROUP BY status'
         );
@@ -230,7 +246,9 @@ class FinancialReportService
             'ytd_trends' => $ytdTrends,
             'tax_collected' => $taxCollected,
             'billable_hours' => round($billableMinutes / 60, 2),
-            'paid_hours' => round($paidMinutes / 60, 2),
+            'paid_hours' => round(($paidMinutes / 60) + $ptoHours, 2),
+            'worked_hours' => round($paidMinutes / 60, 2),
+            'pto_hours' => round($ptoHours, 2),
             'warranty_claims' => [
                 'total' => $warrantyTotal,
                 'by_status' => $warrantyCounts,
