@@ -6,6 +6,7 @@ import LineChart from '../../components/charts/LineChart'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
+import Select from '../../components/ui/Select'
 import Modal from '../../components/ui/Modal'
 import financialService from '../../../services/financial.service'
 import { useToast } from '../../stores/toast.jsx'
@@ -14,7 +15,7 @@ export default function Reports() {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState({
-    summary: { income: 0, expense: 0, purchase: 0 },
+    summary: { asset: 0, liability: 0, income: 0, expense: 0, equity: 0 },
     net: 0,
     monthly: [],
   })
@@ -34,8 +35,9 @@ export default function Reports() {
   const [showCloseDrawer, setShowCloseDrawer] = useState(false)
   const [startDrawerForm, setStartDrawerForm] = useState({ start_float: '', notes: '' })
   const [closeDrawerForm, setCloseDrawerForm] = useState({ end_float: '', notes: '' })
-  const [totals, setTotals] = useState({ income: 0, expense: 0, purchase: 0 })
+  const [totals, setTotals] = useState({ asset: 0, liability: 0, income: 0, expense: 0, equity: 0 })
   const [filters, setFilters] = useState({ start_date: '', end_date: '', category: '' })
+  const [categoryOptions, setCategoryOptions] = useState([])
 
   useEffect(() => {
     const today = new Date()
@@ -44,6 +46,14 @@ export default function Reports() {
     monthAgo.setMonth(monthAgo.getMonth() - 5)
     const startDate = monthAgo.toISOString().slice(0, 10)
     setFilters({ start_date: startDate, end_date: endDate, category: '' })
+  }, [])
+
+  useEffect(() => {
+    financialService
+      .listCategories()
+      .then((data) => setCategoryOptions(data || []))
+      .catch(() => toast.error('Failed to load categories'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -68,9 +78,11 @@ export default function Reports() {
           monthly: res.monthly || [],
         })
         setTotals({
+          asset: res.summary.asset || 0,
+          liability: res.summary.liability || 0,
           income: res.summary.income || 0,
           expense: res.summary.expense || 0,
-          purchase: res.summary.purchase || 0,
+          equity: res.summary.equity || 0,
         })
         setReportSummary({
           range: summaryRes.range || [],
@@ -168,9 +180,19 @@ export default function Reports() {
           backgroundColor: 'rgba(239, 68, 68, 0.8)',
         },
         {
-          label: 'Purchases',
-          data: report.monthly.map((row) => row.summary.purchase),
-          backgroundColor: 'rgba(249, 115, 22, 0.8)',
+          label: 'Assets',
+          data: report.monthly.map((row) => row.summary.asset),
+          backgroundColor: 'rgba(59, 130, 246, 0.8)',
+        },
+        {
+          label: 'Liabilities',
+          data: report.monthly.map((row) => row.summary.liability),
+          backgroundColor: 'rgba(234, 88, 12, 0.8)',
+        },
+        {
+          label: 'Equity',
+          data: report.monthly.map((row) => row.summary.equity),
+          backgroundColor: 'rgba(99, 102, 241, 0.8)',
         },
       ],
     }
@@ -199,10 +221,24 @@ export default function Reports() {
           tension: 0.3,
         },
         {
-          label: 'Purchases',
-          data: reportSummary.ytd_trends.map((row) => row.purchase),
-          borderColor: 'rgba(249, 115, 22, 0.9)',
-          backgroundColor: 'rgba(249, 115, 22, 0.2)',
+          label: 'Assets',
+          data: reportSummary.ytd_trends.map((row) => row.asset),
+          borderColor: 'rgba(59, 130, 246, 0.9)',
+          backgroundColor: 'rgba(59, 130, 246, 0.2)',
+          tension: 0.3,
+        },
+        {
+          label: 'Liabilities',
+          data: reportSummary.ytd_trends.map((row) => row.liability),
+          borderColor: 'rgba(234, 88, 12, 0.9)',
+          backgroundColor: 'rgba(234, 88, 12, 0.2)',
+          tension: 0.3,
+        },
+        {
+          label: 'Equity',
+          data: reportSummary.ytd_trends.map((row) => row.equity),
+          borderColor: 'rgba(99, 102, 241, 0.9)',
+          backgroundColor: 'rgba(99, 102, 241, 0.2)',
           tension: 0.3,
         },
       ],
@@ -250,6 +286,7 @@ export default function Reports() {
   }
 
   const formatCurrency = (value) => `$${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const formatType = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Unassigned')
   const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '—')
   const formatUserLabel = (row) => row?.opened_by_name || row?.closed_by_name || '—'
 
@@ -258,7 +295,7 @@ export default function Reports() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Financial Reports</h1>
-          <p className="text-sm text-gray-600">Monthly breakdowns of income, expenses, and purchases with CSV export.</p>
+          <p className="text-sm text-gray-600">Monthly breakdowns by account type with CSV export.</p>
         </div>
         <Button variant="secondary" onClick={exportReport}>Export CSV</Button>
       </div>
@@ -293,8 +330,15 @@ export default function Reports() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Category</label>
-            <Input
+            <Select
               modelValue={filters.category}
+              options={[
+                { label: 'All Categories', value: '' },
+                ...categoryOptions.map((category) => ({
+                  label: `${category.name} (${formatType(category.type)})`,
+                  value: category.name,
+                })),
+              ]}
               onUpdateModelValue={(value) => setFilters((prev) => ({ ...prev, category: value }))}
             />
           </div>
@@ -390,7 +434,15 @@ export default function Reports() {
         </table>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <Card>
+          <p className="text-sm text-gray-500">Assets</p>
+          <p className="text-2xl font-semibold text-blue-600">{formatCurrency(totals.asset)}</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-gray-500">Liabilities</p>
+          <p className="text-2xl font-semibold text-orange-600">{formatCurrency(totals.liability)}</p>
+        </Card>
         <Card>
           <p className="text-sm text-gray-500">Income</p>
           <p className="text-2xl font-semibold text-green-600">{formatCurrency(totals.income)}</p>
@@ -400,8 +452,8 @@ export default function Reports() {
           <p className="text-2xl font-semibold text-red-600">{formatCurrency(totals.expense)}</p>
         </Card>
         <Card>
-          <p className="text-sm text-gray-500">Purchases</p>
-          <p className="text-2xl font-semibold text-orange-500">{formatCurrency(totals.purchase)}</p>
+          <p className="text-sm text-gray-500">Equity</p>
+          <p className="text-2xl font-semibold text-indigo-600">{formatCurrency(totals.equity)}</p>
         </Card>
       </div>
 
@@ -533,7 +585,9 @@ export default function Reports() {
               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Income</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Expenses</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Purchases</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Assets</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Liabilities</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Equity</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Net</th>
             </tr>
           </thead>
@@ -543,7 +597,9 @@ export default function Reports() {
                 <td className="px-4 py-2 text-sm text-gray-900">{row.month}</td>
                 <td className="px-4 py-2 text-sm text-right">${row.summary.income.toFixed(2)}</td>
                 <td className="px-4 py-2 text-sm text-right">${row.summary.expense.toFixed(2)}</td>
-                <td className="px-4 py-2 text-sm text-right">${row.summary.purchase.toFixed(2)}</td>
+                <td className="px-4 py-2 text-sm text-right">${row.summary.asset.toFixed(2)}</td>
+                <td className="px-4 py-2 text-sm text-right">${row.summary.liability.toFixed(2)}</td>
+                <td className="px-4 py-2 text-sm text-right">${row.summary.equity.toFixed(2)}</td>
                 <td className={`px-4 py-2 text-sm text-right ${row.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   ${row.net.toFixed(2)}
                 </td>
@@ -551,7 +607,7 @@ export default function Reports() {
             ))}
             {!report.monthly.length && !loading ? (
               <tr>
-                <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={5}>No data found.</td>
+                <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={7}>No data found.</td>
               </tr>
             ) : null}
           </tbody>

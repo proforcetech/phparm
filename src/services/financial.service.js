@@ -21,6 +21,15 @@ export default {
   listCategories(params = {}) {
     return api.get('/financial/categories', { params }).then((res) => res.data)
   },
+  createCategory(payload) {
+    return api.post('/financial/categories', payload).then((res) => res.data)
+  },
+  updateCategory(id, payload) {
+    return api.put(`/financial/categories/${id}`, payload).then((res) => res.data)
+  },
+  deleteCategory(id) {
+    return api.delete(`/financial/categories/${id}`).then((res) => res.data)
+  },
   uploadAttachment(id, file) {
     const formData = new FormData()
     formData.append('file', file)
