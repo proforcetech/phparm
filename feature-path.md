@@ -47,45 +47,18 @@ The current system successfully bridges the gap between Estimates and Invoices t
 ## 3. Performance Enhancements and Changes For CMS
 
 [x] Proactive Pre-caching: Currently, the system uses a request-based caching mechanism (CMSCacheService). Implementing "Stale-While-Revalidate" or pre-rendering pages upon save would ensure the first visitor to a new page doesn't experience a "cache miss" delay.
-[ ] Automated Image Pipeline: Extend the MediaController to automatically generate responsive images (Srcset) and WebP versions of uploaded assets to improve Core Web Vitals.
-[ ] Proactive Pre-caching: Currently, the system uses a request-based caching mechanism (CMSCacheService). Implementing "Stale-While-Revalidate" or pre-rendering pages upon save would ensure the first visitor to a new page doesn't experience a "cache miss" delay.
 [x] Automated Image Pipeline: Extend the MediaController to automatically generate responsive images (Srcset) and WebP versions of uploaded assets to improve Core Web Vitals.
-[ ] Component-Level Caching: For complex pages with many dynamic components, implement partial caching. If one component is dynamic (e.g., a "Current Availability" block) and others are static, the static portions should be cached independently to minimize database lookups.
-[ ] Automated Image Pipeline: Extend the MediaController to automatically generate responsive images (Srcset) and WebP versions of uploaded assets to improve Core Web Vitals.
 [x] Component-Level Caching: For complex pages with many dynamic components, implement partial caching. If one component is dynamic (e.g., a "Current Availability" block) and others are static, the static portions should be cached independently to minimize database lookups.
-[ ] Asset Bundling for CMS Components: If components require specific JS/CSS, implement a dependency manager that bundles only the required assets for a given page, reducing the overall payload size.
-[ ] Component-Level Caching: For complex pages with many dynamic components, implement partial caching. If one component is dynamic (e.g., a "Current Availability" block) and others are static, the static portions should be cached independently to minimize database lookups.
 [x] Asset Bundling for CMS Components: If components require specific JS/CSS, implement a dependency manager that bundles only the required assets for a given page, reducing the overall payload size.
-[ ] Staging and Preview Workflow: Implement a status column (Draft, Pending Review, Published) for pages. Add a "Preview" button in CMSPageForm.jsx that renders the page with a temporary token without making it public.
-[ ] Asset Bundling for CMS Components: If components require specific JS/CSS, implement a dependency manager that bundles only the required assets for a given page, reducing the overall payload size.
 [x] Staging and Preview Workflow: Implement a status column (Draft, Pending Review, Published) for pages. Add a "Preview" button in CMSPageForm.jsx that renders the page with a temporary token without making it public.
-[ ] Integrated SEO Toolkit: Add a dedicated SEO section to the page editor for managing meta_title, meta_description, canonical_url, and Open Graph tags. The CMSRenderingService should automatically inject these into the head template.
-[ ] Staging and Preview Workflow: Implement a status column (Draft, Pending Review, Published) for pages. Add a "Preview" button in CMSPageForm.jsx that renders the page with a temporary token without making it public.
 [x] Integrated SEO Toolkit: Add a dedicated SEO section to the page editor for managing meta_title, meta_description, canonical_url, and Open Graph tags. The CMSRenderingService should automatically inject these into the head template.
-[ ] Version Control & Revisions: Store snapshots of cms_pages and cms_components in a cms_revisions table. This allows administrators to audit changes and roll back to a known-good state if an error is published.
-[ ] Integrated SEO Toolkit: Add a dedicated SEO section to the page editor for managing meta_title, meta_description, canonical_url, and Open Graph tags. The CMSRenderingService should automatically inject these into the head template.
 [x] Version Control & Revisions: Store snapshots of cms_pages and cms_components in a cms_revisions table. This allows administrators to audit changes and roll back to a known-good state if an error is published.
-[ ] Granular Permissions: Use the existing AccessGate to define specific roles for the CMS, such as CMS_EDITOR (can edit content) vs. CMS_PUBLISHER (can push changes to live).
-[ ] Version Control & Revisions: Store snapshots of cms_pages and cms_components in a cms_revisions table. This allows administrators to audit changes and roll back to a known-good state if an error is published.
 [x] Granular Permissions: Use the existing AccessGate to define specific roles for the CMS, such as CMS_EDITOR (can edit content) vs. CMS_PUBLISHER (can push changes to live).
-[ ] Visual Component Reordering: Transform the component list in CMSPageForm.jsx into a drag-and-drop interface. This allows dispatchers or marketers to easily reorder sections (e.g., moving "Towing Services" above "Battery Jumpstart") without deleting and re-adding.
-[ ] Granular Permissions: Use the existing AccessGate to define specific roles for the CMS, such as CMS_EDITOR (can edit content) vs. CMS_PUBLISHER (can push changes to live).
 [x] Visual Component Reordering: Transform the component list in CMSPageForm.jsx into a drag-and-drop interface. This allows dispatchers or marketers to easily reorder sections (e.g., moving "Towing Services" above "Battery Jumpstart") without deleting and re-adding.
-[ ] Dynamic Component Blocks: Create specialized components for roadside assistance, such as a "Live Coverage Map" or "Estimated Wait Time" block that pulls data from the dispatch service.
-[ ] Visual Component Reordering: Transform the component list in CMSPageForm.jsx into a drag-and-drop interface. This allows dispatchers or marketers to easily reorder sections (e.g., moving "Towing Services" above "Battery Jumpstart") without deleting and re-adding.
 [x] Dynamic Component Blocks: Create specialized components for roadside assistance, such as a "Live Coverage Map" or "Estimated Wait Time" block that pulls data from the dispatch service.
-[ ] Media Library Folders: As the media library grows, implement a folder/tagging system in MediaController to prevent a flat, unmanageable list of images.
-[ ] Dynamic Component Blocks: Create specialized components for roadside assistance, such as a "Live Coverage Map" or "Estimated Wait Time" block that pulls data from the dispatch service.
 [x] Media Library Folders: As the media library grows, implement a folder/tagging system in MediaController to prevent a flat, unmanageable list of images.
-[ ] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
-[ ] Media Library Folders: As the media library grows, implement a folder/tagging system in MediaController to prevent a flat, unmanageable list of images.
 [x] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
-[ ] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
-[ ] Internal Linking Tool: Add a search-as-you-type tool in the Rich Text Editor that allows editors to easily find and link to other internal CMS pages by title rather than manually entering URLs.
 [x] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
-[ ] Schema Validation for Components: Since components likely use JSON or flexible fields, implement backend validation to ensure that required data (like image URLs or call-to-action text) is present before saving.
-[ ] Search Index Integration: Implement a hook that updates an internal search index (like Meilisearch or a simple full-text DB index) whenever CMS content changes, powering a site-wide search for customers.
-[ ] Idempotent Cache Invalidation: Ensure that updating a component automatically triggers a cache purge for all pages where that component is used.
 [x] Schema Validation for Components: Since components likely use JSON or flexible fields, implement backend validation to ensure that required data (like image URLs or call-to-action text) is present before saving.
 [x] Search Index Integration: Implement a hook that updates an internal search index (like Meilisearch or a simple full-text DB index) whenever CMS content changes, powering a site-wide search for customers.
 
@@ -93,15 +66,10 @@ The current system successfully bridges the gap between Estimates and Invoices t
 
 ## 4. Dispatch & Recommendation Engine (/src/Services/Dispatch)
 
-[ ] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
-[ ] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
-[ ] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
 [x] Predictive ETA (Traffic-Aware): Integrate the Google Distance Matrix API into DispatchRecommendationService. Standard straight-line distance is often inaccurate in urban towing scenarios.
-[ ] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
 [x] Equipment-to-Job Matching: Implement hard-stop filters. If a job is flagged as "All-Wheel Drive" or "Low Clearance Garage," the system must exclusively recommend Flatbeds or Low-Profile trucks.
 [x] Capacity-Based Dispatching: The recommendation engine should check not just distance, but Workload Velocity. If a driver is 1 mile away but is currently mid-hookup on a complex recovery, they shouldn't be the top recommendation.
 [x] Geofence-Triggered Status Changes: Use the tracking data in TrackingService.php to automatically transition a job to "Arrived" when the driver’s GPS is within 500 feet of the pickup coordinates.
-[ ] Predictive ETA (Traffic-Aware): Integrate the Google Distance Matrix API into DispatchRecommendationService. Standard straight-line distance is often inaccurate in urban towing scenarios.
 [x] "Deadhead" Minimization: The algorithm should favor drivers whose current "drop-off" location for an active job is near the "pick-up" location of the new job.
 
 ## 5. Driver Experience (/src/react/views/driver & /src/Services/drive)
@@ -314,8 +282,6 @@ The current implementation appears to handle basic CRUD operations but may strug
  Recommendations:
 
 [x] Credit Memos: Do not just "delete" the invoice. Create a negative invoice (Credit Memo).
-[ ] Restock Logic: Ask the user: "Is this item sellable?"
-[ ] Credit Memos: Do not just "delete" the invoice. Create a negative invoice (Credit Memo).
 [x] Restock Logic: Ask the user: "Is this item sellable?"
 
  Yes: Increment Inventory count.
@@ -330,14 +296,10 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Recommendations:
 
-[ ] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
 [x] Bank Feeds: This is complex to build. Strongly recommend integrating a provider like Plaid or Yodlee to fetch transactions automatically.
 [ ] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.
 [x] Chart of Accounts: Ensure FinancialCategory covers Asset, Liability, Income, Expense, and Equity accounts.
-[ ] Bank Feeds: This is complex to build. Strongly recommend integrating a provider like Plaid or Yodlee to fetch transactions automatically.
 [x] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.
-[ ] Undeposited Funds: When cash/checks are received, they go to a temporary asset account ("Undeposited Funds"). The "Cash Deposit" feature groups them and moves the total to the "Checking Account" to match the single bank slip.
-[ ] Reconciliation UI: A split-screen view: "Bank Statement Transactions" (left) vs "System Ledger" (right). Users "match" them.
 [x] Undeposited Funds: When cash/checks are received, they go to a temporary asset account ("Undeposited Funds"). The "Cash Deposit" feature groups them and moves the total to the "Checking Account" to match the single bank slip.
 
 ## 6. Payroll
@@ -352,10 +314,8 @@ The current implementation appears to handle basic CRUD operations but may strug
 
  Workflow:
 
-[ ] Timesheet Approval: Manager approves hours/flagged hours.
 [x] Payroll Run: System calculates Gross Pay.
 [x] Timesheet Approval: Manager approves hours/flagged hours.
-[ ] Payroll Run: System calculates Gross Pay.
 [x] Export/Sync: Send this data to a dedicated provider (Gusto, ADP, QuickBooks) to handle taxes and direct deposit. Do not attempt to build a tax engine unless you have a dedicated legal/compliance team.
 
 ## 7. Leave / Vacation Requests
@@ -379,8 +339,6 @@ The current implementation appears to handle basic CRUD operations but may strug
  Recommendations:
 
 [x] Data Structure: Add branch_id to almost every major table (Users, Inventory, Invoices, Workorders).
-[ ] Inventory Transfer: A workflow to move parts from "Main St Branch" to "Downtown Branch" without buying/selling.
-[ ] Data Structure: Add branch_id to almost every major table (Users, Inventory, Invoices, Workorders).
 [x] Inventory Transfer: A workflow to move parts from "Main St Branch" to "Downtown Branch" without buying/selling.
 [ ] Reporting: Ability to filter Dashboards by "Current Branch" vs "All Locations".
 [x] Tenant Scoping: Ensure a user at Branch A cannot accidentally see or edit Branch B's workorders (unless they are a Regional Manager).
