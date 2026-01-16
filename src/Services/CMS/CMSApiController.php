@@ -232,9 +232,11 @@ class CMSApiController
         $stmt = $pdo->prepare("
             INSERT INTO {$this->table('pages')} (
                 title, slug, template_id, status, meta_title, meta_description, meta_keywords,
+                canonical_url, og_title, og_description, og_image, og_type, og_url,
                 summary, content, created_at, updated_at
             ) VALUES (
                 :title, :slug, :status, :tempate_id, :meta_title, :meta_description, :meta_keywords,
+                :canonical_url, :og_title, :og_description, :og_image, :og_type, :og_url,
                 :summary, :content, NOW(), NOW()
             )
         ");
@@ -247,6 +249,12 @@ class CMSApiController
             'meta_title' => $data['meta_title'] ?? null,
             'meta_description' => $data['meta_description'] ?? null,
             'meta_keywords' => $data['meta_keywords'] ?? null,
+            'canonical_url' => $data['canonical_url'] ?? null,
+            'og_title' => $data['og_title'] ?? null,
+            'og_description' => $data['og_description'] ?? null,
+            'og_image' => $data['og_image'] ?? null,
+            'og_type' => $data['og_type'] ?? null,
+            'og_url' => $data['og_url'] ?? null,
             'summary' => $data['summary'] ?? null,
             'content' => $data['content'] ?? '',
         ]);
@@ -290,6 +298,12 @@ class CMSApiController
                 meta_title = :meta_title,
                 meta_description = :meta_description,
                 meta_keywords = :meta_keywords,
+                canonical_url = :canonical_url,
+                og_title = :og_title,
+                og_description = :og_description,
+                og_image = :og_image,
+                og_type = :og_type,
+                og_url = :og_url,
                 summary = :summary,
                 content = :content,
                 updated_at = NOW()
@@ -305,6 +319,12 @@ class CMSApiController
             'meta_title' => $data['meta_title'] ?? null,
             'meta_description' => $data['meta_description'] ?? null,
             'meta_keywords' => $data['meta_keywords'] ?? null,
+            'canonical_url' => $data['canonical_url'] ?? null,
+            'og_title' => $data['og_title'] ?? null,
+            'og_description' => $data['og_description'] ?? null,
+            'og_image' => $data['og_image'] ?? null,
+            'og_type' => $data['og_type'] ?? null,
+            'og_url' => $data['og_url'] ?? null,
             'summary' => $data['summary'] ?? null,
             'content' => $data['content'] ?? '',
         ]);
