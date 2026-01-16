@@ -74,6 +74,7 @@ const adminMenuItems = [
       },
     ],
   },
+  { path: '/cp/document-vault', label: 'Document Vault', icon: DocumentDuplicateIcon, moduleKey: 'documents' },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
   {
