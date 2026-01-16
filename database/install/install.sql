@@ -3004,6 +3004,29 @@ CREATE TABLE inventory_stock_orders (
     INDEX idx_stock_order_expected_arrival (expected_arrival_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS document_vault_documents (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(160) NOT NULL,
+    document_type VARCHAR(40) NOT NULL,
+    category VARCHAR(120) NULL,
+    issuing_authority VARCHAR(160) NULL,
+    document_number VARCHAR(120) NULL,
+    issued_date DATE NULL,
+    expiration_date DATE NULL,
+    notes TEXT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(120) NULL,
+    file_size INT UNSIGNED NULL,
+    uploaded_by INT UNSIGNED NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_document_vault_type (document_type),
+    INDEX idx_document_vault_expiration (expiration_date),
+    INDEX idx_document_vault_uploaded_by (uploaded_by),
+    CONSTRAINT fk_document_vault_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 --- Insert Default Datasets
 
@@ -3074,7 +3097,7 @@ INSERT INTO cms_settings (setting_key, setting_value, setting_type, description)
 -- Insert existing system roles for backwards compatibility
 INSERT INTO custom_roles (name, label, description, permissions, is_system) VALUES
 ('admin', 'Admin', 'Full control across all modules', JSON_ARRAY('*'), 1),
-('manager', 'Manager', 'Manage shop operations, estimates, invoices, schedules, inventory', JSON_ARRAY('users.view', 'users.create', 'users.update', 'users.delete', 'users.invite', 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*', 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*', 'credit.*', 'reports.view', 'settings.view', 'notifications.view', 'service_types.*', 'cms.*'), 1),
+('manager', 'Manager', 'Manage shop operations, estimates, invoices, schedules, inventory', JSON_ARRAY('users.view', 'users.create', 'users.update', 'users.delete', 'users.invite', 'customers.*', 'vehicles.*', 'estimates.*', 'invoices.*', 'payments.*', 'appointments.*', 'inventory.*', 'inspections.*', 'warranty.*', 'reminders.*', 'bundles.*', 'time.*', 'credit.*', 'reports.view', 'documents.*', 'settings.view', 'notifications.view', 'service_types.*', 'cms.*'), 1),
 ('technician', 'Technician', 'Work estimates, inspections, jobs, and time tracking', JSON_ARRAY('customers.view', 'vehicles.view', 'estimates.view', 'estimates.create', 'estimates.update', 'inspections.*', 'time.*', 'appointments.view', 'service_types.view', 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete', 'cms.menus.view', 'cms.menus.create', 'cms.menus.update', 'cms.menus.delete', 'cms.media.view', 'cms.media.create', 'cms.media.update', 'cms.media.delete', 'cms.components.view', 'cms.components.create', 'cms.components.update', 'cms.components.delete', 'cms.dashboard.view', 'cms.templates.view'), 1),
 ('customer', 'Customer', 'Customer portal scoped to their profile and documents', JSON_ARRAY('portal.profile', 'portal.vehicles', 'portal.estimates', 'portal.invoices', 'portal.warranty', 'portal.reminders'), 1)
 ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description), permissions = VALUES(permissions);
