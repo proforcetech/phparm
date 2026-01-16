@@ -1,6 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeftIcon } from '@heroicons/react/24/outline'
+import {
+  ArrowLeftIcon,
+  Bars3Icon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  TrashIcon,
+} from '@heroicons/react/24/outline'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 import Alert from '../../components/ui/Alert'
 import Button from '../../components/ui/Button'
@@ -19,6 +41,7 @@ const createDefaultForm = () => ({
   template_id: null,
   header_component_id: null,
   footer_component_id: null,
+  component_order: [],
   custom_css: '',
   custom_js: '',
   status: 'draft',
@@ -33,6 +56,106 @@ const parseNullableId = (value) => {
   if (value === '') return null
   const parsed = Number(value)
   return Number.isNaN(parsed) ? value : parsed
+}
+
+const normalizeComponentOrder = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item))
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => Number(item))
+          .filter((item) => Number.isFinite(item))
+      }
+    } catch (err) {
+      return []
+    }
+  }
+
+  return []
+}
+
+function SortableComponentItem({
+  component,
+  index,
+  total,
+  onRemove,
+  onMove,
+  instructionsId,
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(component.id),
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between ${
+        isDragging ? 'ring-2 ring-primary-300' : ''
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50"
+          aria-label={`Drag to reorder ${component.name}`}
+          aria-describedby={instructionsId}
+          {...attributes}
+          {...listeners}
+        >
+          <Bars3Icon className="h-5 w-5" />
+        </button>
+        <div>
+          <p className="text-sm font-medium text-gray-900">{component.name}</p>
+          <p className="text-xs text-gray-500">Type: {component.type}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => onMove(index, index - 1)}
+          disabled={index === 0}
+        >
+          <ChevronUpIcon className="mr-1 h-4 w-4" />
+          Move up
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => onMove(index, index + 1)}
+          disabled={index === total - 1}
+        >
+          <ChevronDownIcon className="mr-1 h-4 w-4" />
+          Move down
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="text-red-600 hover:text-red-700"
+          onClick={() => onRemove(component.id)}
+        >
+          <TrashIcon className="mr-1 h-4 w-4" />
+          Remove
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 export default function CMSPageForm() {
@@ -51,8 +174,28 @@ export default function CMSPageForm() {
   const [availableTemplates, setAvailableTemplates] = useState([])
   const [availableHeaderComponents, setAvailableHeaderComponents] = useState([])
   const [availableFooterComponents, setAvailableFooterComponents] = useState([])
+  const [availableComponents, setAvailableComponents] = useState([])
   const [availableCategories, setAvailableCategories] = useState([])
   const [form, setForm] = useState(createDefaultForm())
+  const [componentSelection, setComponentSelection] = useState('')
+
+  const componentLookup = useMemo(
+    () => new Map(availableComponents.map((component) => [component.id, component])),
+    [availableComponents]
+  )
+
+  const orderedComponents = useMemo(
+    () =>
+      normalizeComponentOrder(form.component_order)
+        .map((id) => componentLookup.get(id))
+        .filter(Boolean),
+    [componentLookup, form.component_order]
+  )
+  const [linkQuery, setLinkQuery] = useState('')
+  const [linkResults, setLinkResults] = useState([])
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [linkError, setLinkError] = useState(null)
+  const contentRef = useRef(null)
 
   const categoryOptions = useMemo(() => {
     if (!availableCategories.length) return []
@@ -104,6 +247,37 @@ export default function CMSPageForm() {
     return categoryOptions.find((category) => category.id === form.category_id) || null
   }, [categoryOptions, form.category_id])
 
+  const categoryPathMap = useMemo(() => {
+    const map = new Map()
+    categoryOptions.forEach((category) => {
+      if (category.id) {
+        map.set(category.id, category.slugPath)
+      }
+    })
+    return map
+  }, [categoryOptions])
+
+  const resolvePageUrl = useCallback(
+    (page) => {
+      if (!page?.slug) return ''
+      if (!page.category_id) return `/${page.slug}`
+      const categoryPath = categoryPathMap.get(page.category_id)
+      if (!categoryPath?.length) return `/${page.slug}`
+      return `/${categoryPath.join('/')}/${page.slug}`
+    },
+    [categoryPathMap]
+  )
+
+  const escapeHtml = useCallback((value) => {
+    if (!value) return ''
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }, [])
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -113,22 +287,27 @@ export default function CMSPageForm() {
       setAvailableTemplates(formOptions.templates || [])
       setAvailableHeaderComponents(formOptions.header_components || [])
       setAvailableFooterComponents(formOptions.footer_components || [])
+      setAvailableComponents(formOptions.components || [])
       setAvailableCategories(formOptions.categories || [])
 
       if (isEditing) {
         const pageData = await pageStore.fetchPage(id)
         const draft = pageStore.drafts[draftKey]
-        setForm({
+        const nextForm = {
           ...createDefaultForm(),
           ...pageData,
           ...(draft || {}),
-        })
+        }
+        nextForm.component_order = normalizeComponentOrder(nextForm.component_order)
+        setForm(nextForm)
       } else {
         const draft = pageStore.drafts[draftKey]
-        setForm({
+        const nextForm = {
           ...createDefaultForm(),
           ...(draft || {}),
-        })
+        }
+        nextForm.component_order = normalizeComponentOrder(nextForm.component_order)
+        setForm(nextForm)
       }
     } catch (err) {
       console.error('Failed to load data:', err)
@@ -146,6 +325,44 @@ export default function CMSPageForm() {
   useEffect(() => {
     pageStore.setDraft(draftKey, form)
   }, [draftKey, form, pageStore.setDraft])
+
+  useEffect(() => {
+    const searchTerm = linkQuery.trim()
+    if (!searchTerm) {
+      setLinkResults([])
+      setLinkLoading(false)
+      setLinkError(null)
+      return
+    }
+
+    let isActive = true
+    const timer = setTimeout(async () => {
+      try {
+        setLinkLoading(true)
+        setLinkError(null)
+        const response = await cmsService.getPages({ search: searchTerm, limit: 8, status: 'published' })
+        const pages = Array.isArray(response?.data) ? response.data : response
+        const filtered = (pages || []).filter((page) => `${page.id}` !== `${id}`)
+        if (isActive) {
+          setLinkResults(filtered)
+        }
+      } catch (err) {
+        console.error('Failed to search CMS pages:', err)
+        if (isActive) {
+          setLinkError(err.response?.data?.message || 'Failed to search CMS pages')
+        }
+      } finally {
+        if (isActive) {
+          setLinkLoading(false)
+        }
+      }
+    }, 250)
+
+    return () => {
+      isActive = false
+      clearTimeout(timer)
+    }
+  }, [id, linkQuery])
 
   const generateSlug = (title) => {
     if (isEditing) return
@@ -236,6 +453,88 @@ export default function CMSPageForm() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const componentSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const handleComponentDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) {
+      return
+    }
+
+    const componentOrder = normalizeComponentOrder(form.component_order)
+    const oldIndex = componentOrder.findIndex((id) => String(id) === String(active.id))
+    const newIndex = componentOrder.findIndex((id) => String(id) === String(over.id))
+
+    if (oldIndex === -1 || newIndex === -1) {
+      return
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      component_order: arrayMove(componentOrder, oldIndex, newIndex),
+    }))
+  }
+
+  const handleMoveComponent = (fromIndex, toIndex) => {
+    const componentOrder = normalizeComponentOrder(form.component_order)
+    if (toIndex < 0 || toIndex >= componentOrder.length) {
+      return
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      component_order: arrayMove(componentOrder, fromIndex, toIndex),
+    }))
+  }
+
+  const handleRemoveComponent = (componentId) => {
+    setForm((prev) => ({
+      ...prev,
+      component_order: normalizeComponentOrder(prev.component_order).filter((id) => id !== componentId),
+    }))
+  }
+
+  const handleAddComponent = () => {
+    if (!componentSelection) return
+    const nextId = Number(componentSelection)
+    if (!Number.isFinite(nextId)) return
+
+    setForm((prev) => {
+      const componentOrder = normalizeComponentOrder(prev.component_order)
+      if (componentOrder.includes(nextId)) {
+        return prev
+      }
+      return {
+        ...prev,
+        component_order: [...componentOrder, nextId],
+      }
+    })
+    setComponentSelection('')
+  const insertInternalLink = (page) => {
+    if (!page) return
+    const url = resolvePageUrl(page)
+    const linkHtml = `<a href="${url}" data-cms-page-id="${page.id}">${escapeHtml(page.title)}</a>`
+    const textarea = contentRef.current
+    const currentValue = textarea?.value ?? form.content ?? ''
+    const selectionStart = textarea?.selectionStart ?? currentValue.length
+    const selectionEnd = textarea?.selectionEnd ?? currentValue.length
+    const updated =
+      currentValue.slice(0, selectionStart) + linkHtml + currentValue.slice(selectionEnd)
+
+    setForm((prev) => ({ ...prev, content: updated }))
+
+    requestAnimationFrame(() => {
+      if (textarea) {
+        const nextCursor = selectionStart + linkHtml.length
+        textarea.focus()
+        textarea.setSelectionRange(nextCursor, nextCursor)
+      }
+    })
   }
 
   return (
@@ -385,6 +684,77 @@ export default function CMSPageForm() {
                     <p className="mt-1 text-xs text-gray-500">Choose a footer component for this page</p>
                   </div>
 
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700">Visual Components</h4>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Add and reorder the visual components that appear within the page body.
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <select
+                        value={componentSelection}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                        onChange={(event) => setComponentSelection(event.target.value)}
+                      >
+                        <option value="">Select a component</option>
+                        {availableComponents.map((component) => {
+                          const isSelected = normalizeComponentOrder(form.component_order).includes(component.id)
+                          return (
+                            <option key={component.id} value={component.id} disabled={isSelected}>
+                              {component.name} {isSelected ? '(Added)' : ''}
+                            </option>
+                          )
+                        })}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="sm:w-auto"
+                        onClick={handleAddComponent}
+                        disabled={!componentSelection}
+                      >
+                        Add Component
+                      </Button>
+                    </div>
+
+                    <p id="component-reorder-instructions" className="mt-3 text-xs text-gray-500">
+                      Drag the handle to reorder, or press space/enter on the handle and use arrow keys.
+                      Use the move buttons for precise keyboard control.
+                    </p>
+
+                    {orderedComponents.length ? (
+                      <div className="mt-4">
+                        <DndContext
+                          sensors={componentSensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleComponentDragEnd}
+                        >
+                          <SortableContext
+                            items={orderedComponents.map((component) => String(component.id))}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-3">
+                              {orderedComponents.map((component, index) => (
+                                <SortableComponentItem
+                                  key={component.id}
+                                  component={component}
+                                  index={index}
+                                  total={orderedComponents.length}
+                                  onMove={handleMoveComponent}
+                                  onRemove={handleRemoveComponent}
+                                  instructionsId="component-reorder-instructions"
+                                />
+                              ))}
+                            </div>
+                          </SortableContext>
+                        </DndContext>
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                        No visual components added yet.
+                      </div>
+                    )}
+                  </div>
+
                   <Textarea
                     label="Summary"
                     rows={2}
@@ -400,7 +770,62 @@ export default function CMSPageForm() {
                     placeholder="Enter HTML content..."
                     value={form.content}
                     onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, content: value }))}
+                    textareaRef={contentRef}
                   />
+
+                  <div className="rounded-md border border-gray-200 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">Internal Linking Tool</h4>
+                        <p className="text-xs text-gray-500">
+                          Search published pages by title and insert links directly into the editor.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <Input
+                        label="Search pages"
+                        placeholder="Start typing a page title..."
+                        value={linkQuery}
+                        onUpdateModelValue={setLinkQuery}
+                      />
+                    </div>
+                    {linkLoading ? (
+                      <p className="mt-3 text-sm text-gray-500">Searching pages...</p>
+                    ) : linkError ? (
+                      <p className="mt-3 text-sm text-red-600">{linkError}</p>
+                    ) : linkQuery.trim() ? (
+                      <div className="mt-3 space-y-2">
+                        {linkResults.length ? (
+                          linkResults.map((page) => (
+                            <div
+                              key={page.id}
+                              className="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm"
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900">{page.title}</p>
+                                <p className="text-xs text-gray-500">{resolvePageUrl(page)}</p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => insertInternalLink(page)}
+                              >
+                                Insert Link
+                              </Button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-gray-500">No pages found.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm text-gray-500">
+                        Start typing to search for published pages.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </Card>
 

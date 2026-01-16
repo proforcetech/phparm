@@ -21,6 +21,7 @@ class Page extends BaseModel
     public ?string $meta_keywords = null;
     public ?string $summary = null;
     public ?string $content = null;
+    public ?array $component_order = null;
     public ?string $publish_start_at = null;
     public ?string $publish_end_at = null;
     public ?string $published_at = null;
