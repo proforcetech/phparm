@@ -5938,10 +5938,19 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate) {
 
         $timeTrackingService = new \App\Services\TimeTracking\TimeTrackingService($connection);
+        $payrollExportService = new \App\Services\Payroll\PayrollExportService(
+            $connection,
+            new \App\Support\SettingsRepository($connection)
+        );
 
         $timeController = new \App\Services\TimeTracking\TimeTrackingController(
             $timeTrackingService,
             new \App\Services\TimeTracking\TechnicianPortalService($connection, $timeTrackingService),
+            $gate
+        );
+
+        $payrollExportController = new \App\Services\Payroll\PayrollExportController(
+            $payrollExportService,
             $gate
         );
 
@@ -6084,6 +6093,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/time-tracking/technician/portal', function (Request $request) use ($timeController) {
             $user = $request->getAttribute('user');
             $data = $timeController->portal($user);
+            return Response::json($data);
+        });
+
+        $router->get('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'page' => $request->queryParam('page', 1),
+                'per_page' => $request->queryParam('per_page', 25),
+            ];
+            $data = $payrollExportController->index($user, $filters);
+            return Response::json($data);
+        });
+
+        $router->post('/api/payroll/exports', function (Request $request) use ($payrollExportController) {
+            $user = $request->getAttribute('user');
+            $data = $payrollExportController->export($user, $request->body());
             return Response::json($data);
         });
 
