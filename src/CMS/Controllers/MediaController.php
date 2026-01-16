@@ -76,6 +76,11 @@ class MediaController
     {
         $this->gate->assert($user, 'cms.media.create');
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
+        }
+
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
@@ -102,6 +107,11 @@ class MediaController
         $existing = $this->find($id);
         if ($existing === null) {
             return null;
+        }
+
+        $requestedStatus = $data['status'] ?? $existing->status ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
         }
 
         $existingSlug = $existing->slug;
@@ -199,7 +209,7 @@ class MediaController
     {
         $fileName = $data['file_name'] ?? $existing?->file_name ?? 'media';
         $slugSource = $data['slug'] ?? $fileName;
-        $status = $data['status'] ?? $existing?->status ?? 'published';
+        $status = $data['status'] ?? $existing?->status ?? 'draft';
         $publishedAt = $data['published_at'] ?? $existing?->published_at ?? null;
 
         if ($status === 'published' && $publishedAt === null) {
@@ -233,5 +243,10 @@ class MediaController
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
         return trim($value ?: uniqid('media-'), '-');
+    }
+
+    private function assertPublishAccess(User $user): void
+    {
+        $this->gate->assert($user, 'cms.media.publish');
     }
 }

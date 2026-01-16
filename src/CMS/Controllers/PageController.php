@@ -99,6 +99,11 @@ class PageController
     {
         $this->gate->assert($user, 'cms.pages.create');
 
+        $requestedStatus = $data['status'] ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
+        }
+
         $payload = $this->preparePayload($data, true);
 
         $stmt = $this->connection->pdo()->prepare(
@@ -126,6 +131,11 @@ class PageController
         $existing = $this->find($id);
         if ($existing === null) {
             return null;
+        }
+
+        $requestedStatus = $data['status'] ?? $existing->status ?? 'draft';
+        if ($requestedStatus === 'published') {
+            $this->assertPublishAccess($user);
         }
 
         $existingSlug = $existing->slug;
@@ -172,7 +182,7 @@ class PageController
      */
     public function publish(User $user, int $id): ?array
     {
-        $this->gate->assert($user, 'cms.pages.update');
+        $this->assertPublishAccess($user);
 
         $existing = $this->find($id);
         if ($existing === null) {
@@ -385,6 +395,11 @@ class PageController
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? '';
         return trim($value ?: uniqid('page-'), '-');
+    }
+
+    private function assertPublishAccess(User $user): void
+    {
+        $this->gate->assert($user, 'cms.pages.publish');
     }
 
     private function normalizedSlug(string $slug): string
