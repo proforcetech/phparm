@@ -2366,6 +2366,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $inventoryLookupService = new \App\Services\Inventory\InventoryLookupService($connection);
         $inventoryLookupController = new \App\Services\Inventory\InventoryLookupController($inventoryLookupService, $gate);
         $stockOrderController = new \App\Services\Inventory\InventoryStockOrderController($stockOrderRepository, $gate);
+        $transferRepository = new \App\Services\Inventory\InventoryTransferRepository($connection, $auditLogger);
+        $transferController = new \App\Services\Inventory\InventoryTransferController($transferRepository, $gate);
 
         $router->get('/api/inventory', function (Request $request) use ($inventoryController) {
             $user = $request->getAttribute('user');
@@ -2499,6 +2501,80 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $inventoryController->destroy($user, $id);
             return Response::noContent();
+        });
+
+        // Inventory transfer requests
+        $router->get('/api/inventory/transfers', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'requested_by' => $request->queryParam('requested_by'),
+                'source_location' => $request->queryParam('source_location'),
+                'destination_location' => $request->queryParam('destination_location'),
+                'created_from' => $request->queryParam('created_from'),
+                'created_to' => $request->queryParam('created_to'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+
+            $data = $transferController->index($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/transfers/report', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $params = [
+                'status' => $request->queryParam('status'),
+                'requested_by' => $request->queryParam('requested_by'),
+                'source_location' => $request->queryParam('source_location'),
+                'destination_location' => $request->queryParam('destination_location'),
+                'created_from' => $request->queryParam('created_from'),
+                'created_to' => $request->queryParam('created_to'),
+            ];
+
+            $data = $transferController->report($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inventory/transfers/{id}', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->show($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $data = $transferController->store($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/approve', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->approve($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/reject', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->reject($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/cancel', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->cancel($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->post('/api/inventory/transfers/{id}/complete', function (Request $request) use ($transferController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $transferController->complete($user, $id, $request->body());
+            return Response::json($data);
         });
 
         // CSV Export
