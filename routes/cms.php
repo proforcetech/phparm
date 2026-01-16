@@ -451,9 +451,31 @@ return function (Router $router, array $config, $connection) {
     // Static assets (CSS, JS, images)
     $router->get('/cms/assets/{path}', function (Request $request) {
         $path = $request->getAttribute('path');
-        $assetPath = CMS_ASSETS . '/' . $path;
+        $assetRoots = [];
 
-        if (!file_exists($assetPath) || !is_file($assetPath)) {
+        if (defined('CMS_CACHE')) {
+            $assetRoots[] = rtrim(CMS_CACHE, '/') . '/assets';
+        }
+
+        if (defined('CMS_ASSETS')) {
+            $assetRoots[] = rtrim(CMS_ASSETS, '/');
+        }
+
+        $assetPath = null;
+
+        foreach ($assetRoots as $root) {
+            $candidate = realpath($root . '/' . $path);
+            if ($candidate === false) {
+                continue;
+            }
+
+            if (str_starts_with($candidate, $root . DIRECTORY_SEPARATOR) && is_file($candidate)) {
+                $assetPath = $candidate;
+                break;
+            }
+        }
+
+        if ($assetPath === null) {
             return Response::notFound('Asset not found');
         }
 

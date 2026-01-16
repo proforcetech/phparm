@@ -19,6 +19,8 @@ const defaultForm = {
   content: '',
   css: '',
   javascript: '',
+  css_assets: '',
+  js_assets: '',
   cache_ttl: 3600,
   is_active: true,
 }
@@ -49,6 +51,8 @@ export default function CMSComponentForm() {
           content: componentData.content || '',
           css: componentData.css || '',
           javascript: componentData.javascript || '',
+          css_assets: componentData.css_assets || '',
+          js_assets: componentData.js_assets || '',
           cache_ttl: componentData.cache_ttl || 3600,
           is_active: !!componentData.is_active,
         })
@@ -174,12 +178,32 @@ export default function CMSComponentForm() {
               <Card header={<h3 className="text-lg font-medium text-gray-900">Styles & Scripts</h3>}>
                 <div className="space-y-4">
                   <Textarea
+                    label="CSS Asset Dependencies"
+                    rows={4}
+                    className="font-mono text-sm"
+                    placeholder="assets/components/hero.css"
+                    value={form.css_assets}
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, css_assets: value }))}
+                    helperText="List one CSS asset per line to bundle for pages using this component."
+                  />
+
+                  <Textarea
                     label="CSS"
                     rows={8}
                     className="font-mono text-sm"
                     placeholder="/* Component CSS styles */"
                     value={form.css}
                     onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, css: value }))}
+                  />
+
+                  <Textarea
+                    label="JS Asset Dependencies"
+                    rows={4}
+                    className="font-mono text-sm"
+                    placeholder="assets/components/hero.js"
+                    value={form.js_assets}
+                    onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, js_assets: value }))}
+                    helperText="List one JavaScript asset per line to bundle for pages using this component."
                   />
 
                   <Textarea
