@@ -497,14 +497,6 @@ export default function CMSPageForm() {
   const previewPage = async () => {
     if (!isEditing) {
       toast.error('Save the page before previewing.')
-  const formatRevisionAction = (action) => {
-    if (!action) return 'Saved'
-    const normalized = action.toString()
-    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
-  }
-
-  const restoreRevision = async (revisionId) => {
-    if (!window.confirm('Restore this revision? This will overwrite the current page content.')) {
       return
     }
 
@@ -525,6 +517,20 @@ export default function CMSPageForm() {
     } finally {
       setPreviewing(false)
     }
+  }
+
+  const formatRevisionAction = (action) => {
+    if (!action) return 'Saved'
+    const normalized = action.toString()
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
+  const restoreRevision = async (revisionId) => {
+    if (!window.confirm('Restore this revision? This will overwrite the current page content.')) {
+      return
+    }
+
+    try {
       setRestoringRevisionId(revisionId)
       setError(null)
       await cmsService.restorePageRevision(id, revisionId)
@@ -536,6 +542,7 @@ export default function CMSPageForm() {
     } finally {
       setRestoringRevisionId(null)
     }
+  }
   const componentSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
