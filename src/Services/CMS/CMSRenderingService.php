@@ -195,6 +195,8 @@ private function extractComponentSlugs(string $template): array
 
         if (trim($cssBundleTags) !== '') {
             $metaTags .= $cssBundleTags;
+        }
+
         if ($page->canonical_url && !$this->hasCanonicalLink($html)) {
             $metaTags .= '<link rel="canonical" href="' . htmlspecialchars($page->canonical_url) . '">' . "\n";
         }
@@ -356,6 +358,8 @@ private function extractComponentSlugs(string $template): array
         $ttl = $component->cache_ttl > 0 ? $component->cache_ttl : $this->cache?->defaultTtl();
 
         return max(1, (int) $ttl);
+    }
+
     private function initializeAssetBundler(): ?CMSAssetBundler
     {
         if (!defined('CMS_ASSETS') || !defined('CMS_CACHE')) {
@@ -431,6 +435,8 @@ private function extractComponentSlugs(string $template): array
             $this->componentAssets['css'],
             $this->componentAssets['js']
         );
+    }
+
     private function renderDynamicComponent(Component $component): string
     {
         $cacheKey = null;
@@ -559,6 +565,8 @@ private function extractComponentSlugs(string $template): array
     private function hasCanonicalLink(string $html): bool
     {
         return preg_match('/<link[^>]+rel=[\'"]canonical[\'"]/i', $html) === 1;
+    }
+
     private function hydrateInternalLinks(string $content): string
     {
         if ($content === '' || stripos($content, 'data-cms-page-id') === false) {

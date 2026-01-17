@@ -25,8 +25,6 @@ class CMSApiController
     private ?CMSCacheService $cacheService;
     private AccessGate $gate;
     private CMSRevisionService $revisions;
-
-    public function __construct(Connection $connection, CMSAuthBridge $authBridge, AccessGate $gate, ?CMSCacheService $cacheService = null, ?CMSRevisionService $revisions = null)
     private CMSComponentUsageService $componentUsage;
     private CMSIndexService $indexService;
 
@@ -1389,6 +1387,8 @@ class CMSApiController
         $stmt->execute($params);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
     private function invalidateAllPageCache(): void
     {
         $pdo = $this->connection->pdo();
@@ -1396,6 +1396,8 @@ class CMSApiController
         $stmt->execute(['key' => '%page_%']);
 
         $this->cacheService?->forgetPrefix('page:');
+    }
+
     private function validateComponentData(array $data): void
     {
         $type = $data['type'] ?? 'custom';

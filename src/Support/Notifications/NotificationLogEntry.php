@@ -13,8 +13,6 @@ class NotificationLogEntry
     public ?string $error;
 
     public function __construct(string $channel, string $recipient, string $template, array $payload, ?string $status = null, ?array $meta = null, ?string $error = null)
-
-    public function __construct(string $channel, string $recipient, string $template, array $payload, ?string $status = null)
     {
         $this->channel = $channel;
         $this->recipient = $recipient;

@@ -195,7 +195,7 @@ class InventoryPullRequestRepository
         }
         $sql .= '
             ORDER BY pr.created_at DESC
-            LIMIT :limit";
+            LIMIT :limit';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($filteredStatuses as $index => $status) {

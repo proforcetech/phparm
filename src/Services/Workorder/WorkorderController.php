@@ -731,15 +731,6 @@ class WorkorderController
         }
 
         // Auto-transition workorder status based on job statuses
-        if ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
-            $this->repository->updateStatus(
-                $workorderId,
-                Workorder::STATUS_COMPLETED,
-                $actorId,
-                'All jobs completed',
-                null,
-                $location
-            );
         if ($allGoa && $workorder->status !== Workorder::STATUS_GOA) {
             $this->service->markGoneOnArrival($workorderId, ['notes' => 'All jobs marked GOA'], $actorId);
         } elseif ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
