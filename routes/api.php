@@ -3168,7 +3168,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
         $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
-        $invoiceService = new \App\Services\Invoice\InvoiceService($connection, $auditLogger);
+        $coreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+        $invoiceService = new \App\Services\Invoice\InvoiceService($connection, $coreReturnService, $auditLogger);
         $estimateController = new \App\Services\Estimate\EstimateController(
             $estimateRepository,
             $gate,
@@ -3535,8 +3536,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
     // Public invoice routes
     $publicGatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
+    $publicCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
     $publicInvoiceController = new \App\Services\Invoice\InvoicePublicController(
-        new \App\Services\Invoice\InvoiceService($connection),
+        new \App\Services\Invoice\InvoiceService($connection, $publicCoreReturnService, $auditLogger),
         new \App\Services\Invoice\PaymentProcessingService($connection, $publicGatewayFactory),
         new \App\Services\Invoice\InvoicePublicPaymentTokenService($connection),
         new \App\Support\Pdf\InvoicePdfGenerator($connection)
@@ -3873,7 +3875,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
 // Invoice routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $paymentConfig) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $paymentConfig, $auditLogger) {
 
         // Payment gateway setup
         $gatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
@@ -3882,8 +3884,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
         );
+        $invoiceCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
         $invoiceController = new \App\Services\Invoice\InvoiceController(
-            new \App\Services\Invoice\InvoiceService($connection),
+            new \App\Services\Invoice\InvoiceService($connection, $invoiceCoreReturnService, $auditLogger),
             new \App\Services\Invoice\PaymentProcessingService($connection, $gatewayFactory),
             $gate,
             new \App\Support\Pdf\InvoicePdfGenerator($connection),
