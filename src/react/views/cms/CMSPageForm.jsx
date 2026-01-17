@@ -603,6 +603,8 @@ export default function CMSPageForm() {
       }
     })
     setComponentSelection('')
+  }
+
   const insertInternalLink = (page) => {
     if (!page) return
     const url = resolvePageUrl(page)
