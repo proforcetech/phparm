@@ -325,9 +325,8 @@ export default function CMSPageForm() {
         const nextForm = {
           ...createDefaultForm(),
           ...(draft || {}),
-        })
-        setRevisions([])
         }
+        setRevisions([])
         nextForm.component_order = normalizeComponentOrder(nextForm.component_order)
         setForm(nextForm)
       }
