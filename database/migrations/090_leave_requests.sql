@@ -1,3 +1,4 @@
+/* 1. Create the Requests Table */
 CREATE TABLE IF NOT EXISTS leave_requests (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
@@ -16,29 +17,7 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     INDEX idx_leave_requests_dates (start_date, end_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-SET @has_fk_leave_requests_user := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'leave_requests' AND constraint_name = 'fk_leave_requests_user'
-);
-SET @has_leave_requests_user_match := (
-    employee_id INT UNSIGNED NOT NULL,
-    leave_type VARCHAR(40) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    start_at DATETIME NOT NULL,
-    end_at DATETIME NOT NULL,
-    requested_hours DECIMAL(6,2) NULL,
-    approved_hours DECIMAL(6,2) NULL,
-    paid_hours DECIMAL(6,2) NULL,
-    reason TEXT NULL,
-    created_by INT UNSIGNED NULL,
-    approved_by INT UNSIGNED NULL,
-    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_leave_employee (employee_id),
-    INDEX idx_leave_status (status),
-    INDEX idx_leave_range (start_at, end_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+/* 2. Create the Balances Table */
 CREATE TABLE IF NOT EXISTS leave_balances (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     employee_id INT UNSIGNED NOT NULL,
@@ -51,112 +30,84 @@ CREATE TABLE IF NOT EXISTS leave_balances (
     INDEX idx_leave_balance_employee (employee_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-SET @has_fk_leave_employee := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'leave_requests' AND constraint_name = 'fk_leave_requests_employee'
-);
-SET @has_leave_employee_match := (
-    SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'employees'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'leave_requests'
-      AND c.column_name = 'employee_id'
-);
-SET @fk_leave_employee_sql := IF(@has_fk_leave_employee = 0 AND @has_leave_employee_match = 1,
-    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_employee FOREIGN KEY (employee_id) REFERENCES employees (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_leave_employee_stmt FROM @fk_leave_employee_sql;
-EXECUTE fk_leave_employee_stmt;
-DEALLOCATE PREPARE fk_leave_employee_stmt;
+/* --------------------------------------------------------- */
+/* 3. Conditional Foreign Keys for leave_requests (user_id)  */
+/* --------------------------------------------------------- */
 
-SET @has_fk_leave_created_by := (
+/* Check if FK exists */
+SET @has_fk_leave_user := (
     SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'leave_requests' AND constraint_name = 'fk_leave_requests_created_by'
+    WHERE table_schema = DATABASE() AND table_name = 'leave_requests' AND constraint_name = 'fk_leave_requests_user'
 );
-SET @has_leave_created_match := (
+
+/* Check if column and parent table exist */
+SET @has_user_col_match := (
     SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'leave_requests'
+    JOIN information_schema.tables t ON t.table_schema = c.table_schema
+    WHERE c.table_schema = DATABASE() 
+      AND c.table_name = 'leave_requests' 
       AND c.column_name = 'user_id'
+      AND t.table_name = 'users'
 );
-SET @fk_leave_requests_user_sql := IF(@has_fk_leave_requests_user = 0 AND @has_leave_requests_user_match = 1,
-    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_leave_requests_user_stmt FROM @fk_leave_requests_user_sql;
-EXECUTE fk_leave_requests_user_stmt;
-DEALLOCATE PREPARE fk_leave_requests_user_stmt;
 
-SET @has_fk_leave_requests_reviewer := (
+/* Add Constraint if valid */
+SET @sql_fk_user := IF(@has_fk_leave_user = 0 AND @has_user_col_match = 1,
+    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE',
+    'SELECT "FK leave_requests_user already exists or invalid" as status');
+
+PREPARE stmt_fk_user FROM @sql_fk_user;
+EXECUTE stmt_fk_user;
+DEALLOCATE PREPARE stmt_fk_user;
+
+/* ------------------------------------------------------------ */
+/* 4. Conditional Foreign Keys for leave_requests (reviewer_id) */
+/* ------------------------------------------------------------ */
+
+SET @has_fk_leave_reviewer := (
     SELECT COUNT(*) FROM information_schema.table_constraints
     WHERE table_schema = DATABASE() AND table_name = 'leave_requests' AND constraint_name = 'fk_leave_requests_reviewer'
 );
-SET @has_leave_requests_reviewer_match := (
-      AND c.column_name = 'created_by'
-);
-SET @fk_leave_created_sql := IF(@has_fk_leave_created_by = 0 AND @has_leave_created_match = 1,
-    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_leave_created_stmt FROM @fk_leave_created_sql;
-EXECUTE fk_leave_created_stmt;
-DEALLOCATE PREPARE fk_leave_created_stmt;
 
-SET @has_fk_leave_approved_by := (
-    SELECT COUNT(*) FROM information_schema.table_constraints
-    WHERE table_schema = DATABASE() AND table_name = 'leave_requests' AND constraint_name = 'fk_leave_requests_approved_by'
-);
-SET @has_leave_approved_match := (
+SET @has_reviewer_col_match := (
     SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'users'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'leave_requests'
+    JOIN information_schema.tables t ON t.table_schema = c.table_schema
+    WHERE c.table_schema = DATABASE() 
+      AND c.table_name = 'leave_requests' 
       AND c.column_name = 'reviewer_id'
+      AND t.table_name = 'users'
 );
-SET @fk_leave_requests_reviewer_sql := IF(@has_fk_leave_requests_reviewer = 0 AND @has_leave_requests_reviewer_match = 1,
-    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_reviewer FOREIGN KEY (reviewer_id) REFERENCES users (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_leave_requests_reviewer_stmt FROM @fk_leave_requests_reviewer_sql;
-EXECUTE fk_leave_requests_reviewer_stmt;
-DEALLOCATE PREPARE fk_leave_requests_reviewer_stmt;
-      AND c.column_name = 'approved_by'
-);
-SET @fk_leave_approved_sql := IF(@has_fk_leave_approved_by = 0 AND @has_leave_approved_match = 1,
-    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_approved_by FOREIGN KEY (approved_by) REFERENCES users (id) ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE fk_leave_approved_stmt FROM @fk_leave_approved_sql;
-EXECUTE fk_leave_approved_stmt;
-DEALLOCATE PREPARE fk_leave_approved_stmt;
 
-SET @has_fk_leave_balance_employee := (
+SET @sql_fk_reviewer := IF(@has_fk_leave_reviewer = 0 AND @has_reviewer_col_match = 1,
+    'ALTER TABLE leave_requests ADD CONSTRAINT fk_leave_requests_reviewer FOREIGN KEY (reviewer_id) REFERENCES users (id) ON DELETE SET NULL',
+    'SELECT "FK leave_requests_reviewer already exists or invalid" as status');
+
+PREPARE stmt_fk_reviewer FROM @sql_fk_reviewer;
+EXECUTE stmt_fk_reviewer;
+DEALLOCATE PREPARE stmt_fk_reviewer;
+
+/* ------------------------------------------------------------ */
+/* 5. Conditional Foreign Keys for leave_balances (employee_id) */
+/* ------------------------------------------------------------ */
+
+SET @has_fk_bal_employee := (
     SELECT COUNT(*) FROM information_schema.table_constraints
     WHERE table_schema = DATABASE() AND table_name = 'leave_balances' AND constraint_name = 'fk_leave_balances_employee'
 );
-SET @has_leave_balance_match := (
+
+/* Note: Checks if 'employees' table exists, otherwise assumes 'users' or skips */
+SET @has_bal_col_match := (
     SELECT COUNT(*) FROM information_schema.columns c
-    JOIN information_schema.columns r
-      ON c.table_schema = r.table_schema
-     AND c.column_type = r.column_type
-     AND r.table_name = 'employees'
-     AND r.column_name = 'id'
-    WHERE c.table_schema = DATABASE()
-      AND c.table_name = 'leave_balances'
+    JOIN information_schema.tables t ON t.table_schema = c.table_schema
+    WHERE c.table_schema = DATABASE() 
+      AND c.table_name = 'leave_balances' 
       AND c.column_name = 'employee_id'
+      AND t.table_name = 'employees'
 );
-SET @fk_leave_balance_sql := IF(@has_fk_leave_balance_employee = 0 AND @has_leave_balance_match = 1,
+
+SET @sql_fk_bal := IF(@has_fk_bal_employee = 0 AND @has_bal_col_match = 1,
     'ALTER TABLE leave_balances ADD CONSTRAINT fk_leave_balances_employee FOREIGN KEY (employee_id) REFERENCES employees (id) ON DELETE CASCADE',
-    'SELECT 1');
-PREPARE fk_leave_balance_stmt FROM @fk_leave_balance_sql;
-EXECUTE fk_leave_balance_stmt;
-DEALLOCATE PREPARE fk_leave_balance_stmt;
+    'SELECT "FK leave_balances_employee already exists or target missing" as status');
+
+PREPARE stmt_fk_bal FROM @sql_fk_bal;
+EXECUTE stmt_fk_bal;
+DEALLOCATE PREPARE stmt_fk_bal;
