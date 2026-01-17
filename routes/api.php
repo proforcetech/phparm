@@ -5881,6 +5881,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         );
         $reconciliationController = new \App\Services\Financial\ReconciliationController(
             new \App\Services\Financial\ReconciliationService($connection),
+            $gate
+        );
         $leaveReportController = new \App\Services\Reports\LeaveReportController(
             new \App\Services\Reports\LeaveReportService($connection),
             $gate
