@@ -89,23 +89,20 @@ export default {
    * @returns {Promise}
    */
   async updateStatus(id, status, notes = null, options = {}) {
-    const { allowQueue = true, clientEventId = null, location } = options
+    const {
+      allowQueue = true,
+      clientEventId = null,
+      location,
+      payload = {},
+    } = options
     const hasLocationOverride = Object.prototype.hasOwnProperty.call(options, 'location')
     const locationPayload = await buildLocationPayload(location, !hasLocationOverride)
-    if (!allowQueue) {
-      return api.patch(`/workorders/${id}/status`, {
-        status,
-        notes,
-        client_event_id: clientEventId,
-        ...(locationPayload ? { location: locationPayload } : {}),
-      })
-  updateStatus(id, status, notes = null, options = {}) {
-    const { allowQueue = true, clientEventId = null, payload = {} } = options
     const requestPayload = {
       status,
       notes,
       client_event_id: clientEventId,
       ...payload,
+      ...(locationPayload ? { location: locationPayload } : {}),
     }
     if (!allowQueue) {
       return api.patch(`/workorders/${id}/status`, requestPayload)
