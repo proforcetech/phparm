@@ -664,6 +664,9 @@ export default function InvoiceDetail() {
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={() => setReturnModal(false)}>Cancel</Button>
           <Button loading={creatingReturn} onClick={handleCreateCreditMemo}>Create Credit Memo</Button>
+        </div>
+      </Modal>
+
       <Modal open={refundModal} title="Refund Payment" onClose={() => setRefundModal(false)}>
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
