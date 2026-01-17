@@ -231,10 +231,11 @@ class InventoryItemValidator
         $filtered = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
         if ($filtered === null) {
             throw new InvalidArgumentException("{$label} must be true or false.");
-       
-        return $filtered;
+        }
 
-         }
+        return $filtered;
+    }
+
     private function validateBinLocationFormat(string $value): void
     {
         if (!preg_match('/^Aisle\\s+[A-Za-z0-9-]+(?:\\s*,\\s*(?:Shelf|Bin)\\s+[A-Za-z0-9-]+)?$/i', $value)) {
