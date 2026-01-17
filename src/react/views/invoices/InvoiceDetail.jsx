@@ -191,6 +191,9 @@ export default function InvoiceDetail() {
       error('Failed to create credit memo')
     } finally {
       setCreatingReturn(false)
+    }
+  }
+
   const openRefundModal = (payment) => {
     setRefundPayment(payment)
     setRefundForm({
