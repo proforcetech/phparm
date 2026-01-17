@@ -105,10 +105,8 @@ class MediaController
         $payload['variants'] = $variants !== null ? json_encode($variants, JSON_UNESCAPED_SLASHES) : null;
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO cms_media (file_name, slug, url, mime_type, size_bytes, title, alt_text, status, published_at, variants, created_at, updated_at) '
-            . 'VALUES (:file_name, :slug, :url, :mime_type, :size_bytes, :title, :alt_text, :status, :published_at, :variants, NOW(), NOW())'
-            'INSERT INTO cms_media (file_name, slug, url, mime_type, size_bytes, title, alt_text, folder, tags, status, published_at, created_at, updated_at) '
-            . 'VALUES (:file_name, :slug, :url, :mime_type, :size_bytes, :title, :alt_text, :folder, :tags, :status, :published_at, NOW(), NOW())'
+            'INSERT INTO cms_media (file_name, slug, url, mime_type, size_bytes, title, alt_text, folder, tags, status, published_at, variants, created_at, updated_at) '
+            . 'VALUES (:file_name, :slug, :url, :mime_type, :size_bytes, :title, :alt_text, :folder, :tags, :status, :published_at, :variants, NOW(), NOW())'
         );
         $stmt->execute($payload);
 
@@ -151,9 +149,8 @@ class MediaController
 
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE cms_media SET file_name = :file_name, slug = :slug, url = :url, mime_type = :mime_type, size_bytes = :size_bytes, '
-            . 'title = :title, alt_text = :alt_text, status = :status, published_at = :published_at, variants = :variants, updated_at = NOW() '
+            . 'title = :title, alt_text = :alt_text, folder = :folder, tags = :tags, status = :status, published_at = :published_at, variants = :variants, updated_at = NOW() '
             . 'WHERE id = :id'
-            . 'title = :title, alt_text = :alt_text, folder = :folder, tags = :tags, status = :status, published_at = :published_at, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute($payload);
 
@@ -352,6 +349,8 @@ class MediaController
         if (!empty($row['variants'])) {
             $decoded = json_decode((string) $row['variants'], true);
             $variants = is_array($decoded) ? $decoded : null;
+        }
+
         $tags = [];
         if (!empty($row['tags'])) {
             $decoded = json_decode((string) $row['tags'], true);
@@ -711,6 +710,8 @@ class MediaController
                 }
             }
         }
+    }
+
     private function assertPublishAccess(User $user): void
     {
         $this->gate->assert($user, 'cms.media.publish');
