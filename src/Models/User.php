@@ -22,7 +22,6 @@ class User extends BaseModel
      */
     public ?array $two_factor_recovery_codes = null;
     public bool $two_factor_setup_pending = false;
-    public ?int $branch_id = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
     public ?string $last_activity_at = null;
