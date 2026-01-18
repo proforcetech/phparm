@@ -147,7 +147,7 @@ class TimeTrackingService
 
         $sql = 'SELECT te.*, e.is_mobile, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
             . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin, ru.name AS reviewer_name, '
-            . 'CASE WHEN te.duration_minutes > 0 AND te.flat_rate_minutes > 0 THEN ROUND((te.flat_rate_minutes / te.duration_minutes) * 100, 2) ELSE NULL END AS efficiency_percentage ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
+            . 'NULL AS efficiency_percentage ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($params as $key => $value) {
