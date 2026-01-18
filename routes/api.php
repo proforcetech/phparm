@@ -3337,7 +3337,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             if ($data) {
                 try {
                     $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
-                    $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+                    $coreReturnSvc = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+                    $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $coreReturnSvc, $auditLogger);
 
                     // Check if workorder already exists
                     $existingWorkorder = $workorderRepository->findByEstimateId($id);
@@ -3757,7 +3758,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $workorderCreated = null;
             try {
                 $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
-                $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+                $coreReturnSvc = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+                $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $coreReturnSvc, $auditLogger);
 
                 // Check if workorder already exists
                 $existingWorkorder = $workorderRepository->findByEstimateId($estimateId);
@@ -4007,7 +4009,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     // Workorder routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
-        $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $auditLogger);
+        $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+        $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $auditLogger);
         $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
         $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
