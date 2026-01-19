@@ -80,12 +80,12 @@ api.interceptors.response.use(
       // Prevent multiple simultaneous logout attempts
       isHandlingSessionExpiration = true
 
-      // Log the intercepted auth failure for debugging
+      // Log the intercepted auth failure for debugging (avoid logging full response to prevent sensitive data exposure)
       console.warn('[Auth] Session expiration detected:', {
         status,
         url: error.config?.url,
         method: error.config?.method,
-        responseData: responseData,
+        message: responseData?.message || 'No message provided',
       })
 
       // Check user role before clearing to determine which login page to use

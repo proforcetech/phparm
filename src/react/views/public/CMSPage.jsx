@@ -171,10 +171,10 @@ export default function CMSPage() {
   }
 
   const mountEmbeddedComponents = () => {
-    const componentElements = document.querySelectorAll('[data-vue-component]')
+    const componentElements = document.querySelectorAll('[data-react-component], [data-vue-component]')
 
     componentElements.forEach((element) => {
-      const componentName = element.getAttribute('data-vue-component')
+      const componentName = element.getAttribute('data-react-component') || element.getAttribute('data-vue-component')
 
       if (!componentName) {
         return
@@ -187,8 +187,18 @@ export default function CMSPage() {
         return
       }
 
+      let props = {}
+      const propsJson = element.getAttribute('data-component-props')
+      if (propsJson) {
+        try {
+          props = JSON.parse(propsJson)
+        } catch (e) {
+          console.warn('Failed to parse component props:', e)
+        }
+      }
+
       const root = createRoot(element)
-      root.render(<Component />)
+      root.render(<Component {...props} />)
       mountedRootsRef.current.push(root)
     })
   }

@@ -258,7 +258,7 @@ const protectedRoutes = [
   { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
   { path: '/cp/reports', name: 'FinancialReports', auth: 'requiresAuth', element: <FinancialReports /> },
   { path: '/cp/reports/customer-retention', name: 'CustomerRetentionReport', auth: 'requiresAuth', element: <CustomerRetentionReport /> },
-  { path: '/cp/reports', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
+  { path: '/cp/reports/overview', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
   { path: '/cp/audit', name: 'AuditLogs', auth: 'requiresAuth', element: <AuditLogs /> },
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
@@ -361,6 +361,7 @@ adminChildren.push({
     { path: 'payments', element: <SettingsPayments /> },
     { path: 'integrations', element: <SettingsIntegrations /> },
     { path: 'services', element: <ServiceTypes /> },
+    { path: 'modules', element: <ModuleSettings /> },
   ],
 })
 

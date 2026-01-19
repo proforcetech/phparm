@@ -19,6 +19,8 @@ class OfflineSyncService {
   constructor() {
     this.isSyncing = false
     this.boundSync = this.sync.bind(this)
+    this.boundHandleOnline = this.handleOnline.bind(this)
+    this.boundHandleOffline = this.handleOffline.bind(this)
     this.periodicSyncTimer = null
     this.offlineCheckTimer = null
     this.syncListeners = new Set()
@@ -44,8 +46,8 @@ class OfflineSyncService {
   start() {
     if (typeof window === 'undefined') return
 
-    window.addEventListener('online', this.handleOnline.bind(this))
-    window.addEventListener('offline', this.handleOffline.bind(this))
+    window.addEventListener('online', this.boundHandleOnline)
+    window.addEventListener('offline', this.boundHandleOffline)
 
     // Initial sync if online
     if (navigator.onLine) {
@@ -59,8 +61,8 @@ class OfflineSyncService {
   stop() {
     if (typeof window === 'undefined') return
 
-    window.removeEventListener('online', this.handleOnline.bind(this))
-    window.removeEventListener('offline', this.handleOffline.bind(this))
+    window.removeEventListener('online', this.boundHandleOnline)
+    window.removeEventListener('offline', this.boundHandleOffline)
 
     this.stopPeriodicSync()
     this.stopOfflineCheck()

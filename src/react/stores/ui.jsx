@@ -13,6 +13,7 @@ export function UIProvider({ children }) {
   const [theme, setThemeState] = useState('light')
   const [isMobile, setIsMobile] = useState(false)
   const resizeHandlerRef = useRef(null)
+  const removeNotificationRef = useRef(null)
 
   const hasOpenModal = useMemo(
     () => Object.values(modals).some((isOpen) => isOpen === true),
@@ -61,6 +62,13 @@ export function UIProvider({ children }) {
 
   const isModalOpen = useCallback((modalId) => modals[modalId] === true, [modals])
 
+  const removeNotification = useCallback((id) => {
+    setNotifications((prev) => prev.filter((notification) => notification.id !== id))
+  }, [])
+
+  // Keep ref updated to avoid stale closures in setTimeout
+  removeNotificationRef.current = removeNotification
+
   const addNotification = useCallback((notification) => {
     const id = Date.now()
     setNotifications((prev) => [
@@ -75,15 +83,11 @@ export function UIProvider({ children }) {
     const duration = notification.duration || 5000
     if (duration > 0) {
       setTimeout(() => {
-        removeNotification(id)
+        removeNotificationRef.current(id)
       }, duration)
     }
 
     return id
-  }, [])
-
-  const removeNotification = useCallback((id) => {
-    setNotifications((prev) => prev.filter((notification) => notification.id !== id))
   }, [])
 
   const clearNotifications = useCallback(() => {
