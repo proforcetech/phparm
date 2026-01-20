@@ -2,9 +2,9 @@
 -- This tracks all impersonation events for security auditing purposes
 
 CREATE TABLE IF NOT EXISTS impersonation_sessions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    impersonator_id INT NOT NULL,
-    impersonated_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    impersonator_id INT UNSIGNED NOT NULL,
+    impersonated_id INT UNSIGNED NOT NULL,
     session_token VARCHAR(64) NOT NULL UNIQUE,
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME NULL,
