@@ -3269,7 +3269,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 
         $bundleController = new \App\Services\Estimate\BundleController(
-            new \App\Services\Estimate\BundleService($connection),
+            new \App\Services\Estimate\BundleService(
+                $connection,
+                new \App\Services\Inventory\InventoryVehicleCompatibilityRepository($connection)
+            ),
             $gate
         );
 
@@ -3331,8 +3334,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/estimates/bundles/{id}/items', function (Request $request) use ($bundleController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
+            $estimateId = $request->queryParam('estimate_id');
+            $estimateId = $estimateId !== null ? (int) $estimateId : null;
 
-            $items = $bundleController->fetchItemsForEstimate($user, $id);
+            $items = $bundleController->fetchItemsForEstimate($user, $id, $estimateId);
             return Response::json(['items' => $items]);
         });
 

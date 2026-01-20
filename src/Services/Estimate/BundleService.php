@@ -5,6 +5,7 @@ namespace App\Services\Estimate;
 use App\Database\Connection;
 use App\Models\Bundle;
 use App\Models\BundleItem;
+use App\Services\Inventory\InventoryVehicleCompatibilityRepository;
 use InvalidArgumentException;
 use PDO;
 use Throwable;
@@ -12,11 +13,13 @@ use Throwable;
 class BundleService
 {
     private Connection $connection;
+    private InventoryVehicleCompatibilityRepository $compatibilityRepository;
     private const ALLOWED_ITEM_TYPES = ['LABOR', 'PART', 'FEE', 'DISCOUNT'];
 
-    public function __construct(Connection $connection)
+    public function __construct(Connection $connection, InventoryVehicleCompatibilityRepository $compatibilityRepository)
     {
         $this->connection = $connection;
+        $this->compatibilityRepository = $compatibilityRepository;
     }
 
     /**
@@ -261,6 +264,66 @@ class BundleService
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function applyToEstimate(int $bundleId, int $estimateId): array
+    {
+        $bundle = $this->find($bundleId);
+        if ($bundle === null) {
+            throw new InvalidArgumentException('Bundle not found or has no items.');
+        }
+
+        $vehicleContext = $this->fetchEstimateVehicleContext($estimateId);
+        $vehicleId = $vehicleContext['vehicle_id'];
+        $vehicleMasterId = $vehicleContext['vehicle_master_id'];
+
+        // TODO: Link bundles to part types to avoid brittle description matching.
+        $items = [];
+        foreach ($this->fetchItems($bundleId) as $item) {
+            $data = [
+                'type' => $item->type,
+                'description' => $item->description,
+                'quantity' => $item->quantity,
+                'unit_price' => $item->unit_price,
+                'taxable' => $item->taxable,
+                'discount_type' => $item->discount_type ?? 'fixed',
+                'sort_order' => $item->sort_order,
+            ];
+
+            if ($item->type !== 'PART') {
+                $items[] = $data;
+                continue;
+            }
+
+            $data['sku'] = null;
+            $data['list_price'] = 0.0;
+            $data['cost'] = 0.0;
+            $data['manual_completion_required'] = $vehicleId === null || $vehicleMasterId === null;
+
+            if ($vehicleMasterId !== null) {
+                $match = $this->compatibilityRepository->findMatchingInventoryItem($item->description, $vehicleMasterId);
+                if ($match !== null) {
+                    $data['sku'] = $match['sku'] ?? null;
+                    $data['inventory_item_id'] = (int) $match['id'];
+                    $data['description'] = trim((string) ($match['description'] ?? '')) !== ''
+                        ? $match['description']
+                        : ($match['name'] ?? $item->description);
+                    $data['unit_price'] = isset($match['sale_price']) ? (float) $match['sale_price'] : $item->unit_price;
+                    $data['list_price'] = isset($match['list_price']) ? (float) $match['list_price'] : 0.0;
+                    $data['cost'] = isset($match['cost']) ? (float) $match['cost'] : 0.0;
+                    $data['manual_completion_required'] = false;
+                } else {
+                    $data['manual_completion_required'] = true;
+                }
+            }
+
+            $items[] = $data;
+        }
+
+        return $items;
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $items
      */
     private function persistItems(int $bundleId, array $items): void
@@ -308,6 +371,28 @@ class BundleService
 
             return $item;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @return array{vehicle_id: int|null, vehicle_master_id: int|null}
+     */
+    private function fetchEstimateVehicleContext(int $estimateId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT e.vehicle_id, cv.vehicle_master_id FROM estimates e ' .
+            'LEFT JOIN customer_vehicles cv ON e.vehicle_id = cv.id WHERE e.id = :estimate_id'
+        );
+        $stmt->execute(['estimate_id' => $estimateId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            throw new InvalidArgumentException('Estimate not found.');
+        }
+
+        return [
+            'vehicle_id' => isset($row['vehicle_id']) ? (int) $row['vehicle_id'] : null,
+            'vehicle_master_id' => isset($row['vehicle_master_id']) ? (int) $row['vehicle_master_id'] : null,
+        ];
     }
 
     /**

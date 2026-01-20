@@ -26,8 +26,8 @@ export default {
     return response.data
   },
 
-  async fetchItemsForEstimate(id) {
-    const response = await api.get(`/estimates/bundles/${id}/items`)
+  async fetchItemsForEstimate(id, params = {}) {
+    const response = await api.get(`/estimates/bundles/${id}/items`, { params })
     return response.data
   },
 }
