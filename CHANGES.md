@@ -34,7 +34,7 @@
 
             Customers (Client profiles).
 
-    Smart Bundle Application
+    ✅ Smart Bundle Application
 
         Logic: When applying a Bundle (Canned Job) to an Estimate:
 

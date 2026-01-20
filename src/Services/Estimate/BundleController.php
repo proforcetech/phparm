@@ -89,11 +89,15 @@ class BundleController
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function fetchItemsForEstimate(User $user, int $bundleId): array
+    public function fetchItemsForEstimate(User $user, int $bundleId, ?int $estimateId = null): array
     {
         $this->assertEstimateAccess($user);
 
-        $items = $this->bundles->fetchBundleItems($bundleId);
+        if ($estimateId !== null) {
+            $items = $this->bundles->applyToEstimate($bundleId, $estimateId);
+        } else {
+            $items = $this->bundles->fetchBundleItems($bundleId);
+        }
 
         if (empty($items)) {
             throw new InvalidArgumentException('Bundle not found or has no items.');

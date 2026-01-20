@@ -293,7 +293,7 @@ export default function EstimateForm() {
     if (!bundleSelection) return
     setAddingBundle(true)
     try {
-      const items = await bundleService.fetchItemsForEstimate(bundleSelection)
+      const items = await bundleService.fetchItemsForEstimate(bundleSelection, id ? { estimate_id: id } : {})
       if (!Array.isArray(items) || items.length === 0) {
         error('Selected bundle has no items.')
         return
