@@ -106,7 +106,7 @@ class MessagingNotificationService
             'scope_type' => 'department',
             'scope_value' => 'inventory',
             'participants' => [
-                'roles' => ['parts'],
+                'roles' => ['parts', 'parts_manager'],
             ],
         ],
         'inventory.pull_request.pulled' => [
@@ -151,7 +151,7 @@ class MessagingNotificationService
             'scope_type' => 'department',
             'scope_value' => 'inventory',
             'participants' => [
-                'roles' => ['parts'],
+                'roles' => ['parts', 'parts_manager'],
             ],
         ],
         'roadside.assistance.requested' => [

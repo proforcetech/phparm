@@ -54,7 +54,7 @@ Suggestions for Improvement
 
     Import Templates: Provide downloadable CSV templates for each import type in the UI to reduce user errors during bulk uploads.
 
-    ✅ Notification Hooks: When a "Purchase Request" or Stock Order is auto-generated during the workflow, trigger a notification to the Parts Manager.
+    ✅ Notification Hooks (Completed): When a "Purchase Request" or Stock Order is auto-generated during the workflow, trigger a notification to the Parts Manager.
 
     Validation: For CSV imports, implement a "Dry Run" feature that validates the file (checking for duplicate SKUs or invalid emails) before actually persisting data.
 
