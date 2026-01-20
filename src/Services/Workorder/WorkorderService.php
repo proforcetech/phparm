@@ -8,6 +8,8 @@ use App\Models\Invoice;
 use App\Models\Workorder;
 use App\Models\WorkorderJob;
 use App\Services\Inventory\CoreReturnService;
+use App\Services\Inventory\InventoryPullRequestService;
+use App\Services\Inventory\InventoryStockOrderService;
 use App\Services\Financial\FinancialEntryService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
@@ -21,17 +23,23 @@ class WorkorderService
     private WorkorderRepository $repository;
     private ?AuditLogger $audit;
     private CoreReturnService $coreReturns;
+    private InventoryPullRequestService $inventoryPullRequests;
+    private InventoryStockOrderService $inventoryStockOrders;
 
     public function __construct(
         Connection $connection,
         WorkorderRepository $repository,
         CoreReturnService $coreReturns,
+        InventoryPullRequestService $inventoryPullRequests,
+        InventoryStockOrderService $inventoryStockOrders,
         ?AuditLogger $audit = null
     ) {
         $this->connection = $connection;
         $this->repository = $repository;
         $this->audit = $audit;
         $this->coreReturns = $coreReturns;
+        $this->inventoryPullRequests = $inventoryPullRequests;
+        $this->inventoryStockOrders = $inventoryStockOrders;
     }
 
     /**
@@ -120,6 +128,7 @@ class WorkorderService
 
             // Copy approved jobs and their items to workorder
             $this->copyApprovedJobsToWorkorder($workorderId, $approvedJobs, $technicianId, 0, $branchId);
+            $this->createInventoryRequestsForWorkorderParts($workorderId, $actorId, $branchId);
 
             // Record initial status history
             $this->recordStatusHistory($workorderId, null, Workorder::STATUS_PENDING, $actorId, 'Workorder created from estimate');
@@ -654,6 +663,75 @@ class WorkorderService
             ]);
 
             $position++;
+        }
+    }
+
+    private function createInventoryRequestsForWorkorderParts(
+        int $workorderId,
+        ?int $actorId,
+        ?int $branchId
+    ): void
+    {
+        $pdo = $this->connection->pdo();
+
+        $stmt = $pdo->prepare(<<<SQL
+            SELECT
+                wi.workorder_job_id,
+                wi.inventory_item_id,
+                wi.sku,
+                wi.description,
+                wi.quantity,
+                wi.unit_price,
+                ii.stock_quantity,
+                ii.cost,
+                ii.sale_price,
+                ii.vendor
+            FROM workorder_items wi
+            JOIN workorder_jobs wj ON wi.workorder_job_id = wj.id
+            LEFT JOIN inventory_items ii ON wi.inventory_item_id = ii.id
+            WHERE wj.workorder_id = :workorder_id
+              AND UPPER(wi.type) = 'PART'
+            ORDER BY wi.id ASC
+        SQL);
+        $stmt->execute(['workorder_id' => $workorderId]);
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($items as $item) {
+            $quantity = (float) ($item['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $quantityRequested = max(1, (int) ceil($quantity));
+            $inventoryItemId = isset($item['inventory_item_id']) ? (int) $item['inventory_item_id'] : null;
+            $stockQuantity = isset($item['stock_quantity']) ? (int) $item['stock_quantity'] : 0;
+
+            if ($inventoryItemId !== null && $stockQuantity >= $quantityRequested) {
+                $this->inventoryPullRequests->create([
+                    'branch_id' => $branchId,
+                    'workorder_id' => $workorderId,
+                    'workorder_job_id' => (int) $item['workorder_job_id'],
+                    'inventory_item_id' => $inventoryItemId,
+                    'sku' => $item['sku'] ?? null,
+                    'description' => $item['description'],
+                    'quantity_requested' => $quantityRequested,
+                    'unit_cost' => (float) ($item['cost'] ?? 0),
+                    'unit_price' => (float) ($item['unit_price'] ?? ($item['sale_price'] ?? 0)),
+                    'vendor' => $item['vendor'] ?? null,
+                    'notes' => 'Auto-generated from estimate conversion.',
+                ], $actorId);
+                continue;
+            }
+
+            $this->inventoryStockOrders->create([
+                'branch_id' => $branchId,
+                'inventory_item_id' => $inventoryItemId,
+                'sku' => $item['sku'] ?? null,
+                'description' => $item['description'],
+                'quantity_ordered' => $quantityRequested,
+                'vendor' => $item['vendor'] ?? null,
+                'notes' => 'Auto-generated from estimate conversion.',
+            ], $actorId);
         }
     }
 
