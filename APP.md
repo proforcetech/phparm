@@ -106,14 +106,9 @@ Target Audience: Technicians (Mechanics) & Drivers (Tow/Transport) Recommended T
 
 Implementation Roadmap
 
-    Setup: Initialize React Native CLI/Expo project. Setup Redux/Zustand (mirroring src/react/stores/).
-
-    API Bridge: Port src/react/services/*.js to the mobile project. Ensure axios or fetch interceptors handle JWT injection.
-
-    Technician MVP: Login -> Time Clock -> View Jobs.
-
-    Driver MVP: Login -> View Dispatch List -> Status Updates.
-
-    Media & Offline: Implement camera capture and offline queueing (SQLite).
-
-    Release: TestFlight (iOS) and Play Console (Android).
+- [x] Setup: Initialize Expo project + Zustand stores mirroring `src/react/stores/`.
+- [x] API Bridge: Port `src/react/services/*.js` to mobile, with JWT injection in axios/fetch interceptors.
+- [ ] Technician MVP: Login -> Time Clock -> View Jobs.
+- [ ] Driver MVP: Login -> View Dispatch List -> Status Updates.
+- [ ] Media & Offline: Implement camera capture and offline queueing (SQLite).
+- [ ] Release: TestFlight (iOS) and Play Console (Android).
