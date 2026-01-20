@@ -10,7 +10,7 @@
 
             No Match: Allow manual entry for all fields (treat as a non-inventory/outside-purchase part).
 
-    Workflow Automation (Estimate to Workorder)
+    ✅ Workflow Automation (Estimate to Workorder)
 
         Trigger: Execute logic immediately upon converting an Accepted Estimate into a Workorder.
 
