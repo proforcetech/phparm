@@ -37,7 +37,7 @@ export default function Autocomplete({
   const [selectedItem, setSelectedItem] = useState(null)
 
   const inputClasses = useMemo(() => {
-    const base = 'block w-full rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm'
+    const base = 'block w-full rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm'
     const state = error
       ? 'border-red-300 text-red-900 placeholder-red-300'
       : 'border-gray-300'
@@ -290,7 +290,7 @@ export default function Autocomplete({
               results.map((item, index) => (
                 <div
                   key={getItemValue(item)}
-                  className={`cursor-pointer select-none relative py-2 px-4 hover:bg-indigo-50 ${index === highlightedIndex ? 'bg-indigo-50' : ''}`}
+                  className={`cursor-pointer select-none relative py-2 px-4 hover:bg-primary-50 ${index === highlightedIndex ? 'bg-primary-50' : ''}`}
                   onMouseDown={(event) => {
                     event.preventDefault()
                     selectItem(item)

@@ -480,7 +480,7 @@ export default function EstimateForm() {
                           type="radio"
                           checked={!form.is_mobile}
                           onChange={() => setForm((prev) => ({ ...prev, is_mobile: false }))}
-                          className="h-4 w-4 text-indigo-600"
+                          className="h-4 w-4 text-primary-600"
                         />
                         In shop
                       </label>
@@ -489,7 +489,7 @@ export default function EstimateForm() {
                           type="radio"
                           checked={form.is_mobile}
                           onChange={() => setForm((prev) => ({ ...prev, is_mobile: true }))}
-                          className="h-4 w-4 text-indigo-600"
+                          className="h-4 w-4 text-primary-600"
                         />
                         Mobile (location required for time tracking)
                       </label>
@@ -575,7 +575,7 @@ export default function EstimateForm() {
                           <select
                             value={item.type}
                             onChange={(event) => updateLineItem(index, 'type', event.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
                             required
                           >
                             <option value="LABOR">Labor</option>
@@ -601,7 +601,7 @@ export default function EstimateForm() {
                             <select
                               value={item.discount_type || 'fixed'}
                               onChange={(event) => updateLineItem(index, 'discount_type', event.target.value)}
-                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
                             >
                               <option value="fixed">Flat Rate ($)</option>
                               <option value="percent">Percentage (%)</option>
@@ -666,7 +666,7 @@ export default function EstimateForm() {
                               type="checkbox"
                               checked={item.taxable}
                               onChange={(event) => updateLineItem(index, 'taxable', event.target.checked)}
-                              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                             />
                             Taxable
                           </label>

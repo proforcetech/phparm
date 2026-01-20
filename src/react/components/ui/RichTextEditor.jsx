@@ -6,12 +6,12 @@ const modules = {
     [{ header: [1, 2, 3, false] }],
     ['bold', 'italic', 'underline', 'strike'],
     [{ list: 'ordered' }, { list: 'bullet' }],
-    ['link'],
+    ['link', 'image'],
     ['clean'],
   ],
 }
 
-const formats = ['header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'link']
+const formats = ['header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'link', 'image']
 
 export default function RichTextEditor({
   value,

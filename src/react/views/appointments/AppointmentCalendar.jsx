@@ -121,6 +121,44 @@ export default function AppointmentCalendar() {
     navigate(`/cp/appointments/create?${query.toString()}`)
   }
 
+  const handleEventDrop = useCallback(async (info) => {
+    const { event } = info
+    const appointmentId = event.id
+    const newStart = event.start
+    const newEnd = event.end
+
+    try {
+      await appointmentService.updateAppointment(appointmentId, {
+        start_time: newStart.toISOString(),
+        end_time: newEnd?.toISOString()
+      })
+      toast.success('Appointment rescheduled successfully')
+    } catch (error) {
+      console.error('Failed to reschedule appointment:', error)
+      info.revert()
+      toast.error('Failed to reschedule appointment')
+    }
+  }, [toast])
+
+  const handleEventResize = useCallback(async (info) => {
+    const { event } = info
+    const appointmentId = event.id
+    const newStart = event.start
+    const newEnd = event.end
+
+    try {
+      await appointmentService.updateAppointment(appointmentId, {
+        start_time: newStart.toISOString(),
+        end_time: newEnd?.toISOString()
+      })
+      toast.success('Appointment duration updated')
+    } catch (error) {
+      console.error('Failed to resize appointment:', error)
+      info.revert()
+      toast.error('Failed to update appointment duration')
+    }
+  }, [toast])
+
   const createAppointment = () => {
     navigate('/cp/appointments/create')
   }
@@ -161,9 +199,12 @@ export default function AppointmentCalendar() {
       slotMaxTime: '19:00:00',
       allDaySlot: false,
       height: 'auto',
+      editable: true,
       events,
       eventClick: handleEventClick,
       dateClick: handleDateClick,
+      eventDrop: handleEventDrop,
+      eventResize: handleEventResize,
       eventDidMount: (info) => {
         info.el.style.cursor = 'pointer'
       },
@@ -173,7 +214,7 @@ export default function AppointmentCalendar() {
         meridiem: 'short',
       },
     }),
-    [events]
+    [events, handleEventDrop, handleEventResize]
   )
 
   return (

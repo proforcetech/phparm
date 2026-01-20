@@ -333,6 +333,7 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
               type="button"
               onClick={toggleSidebar}
               className="lg:hidden text-gray-400 hover:text-white focus:outline-none"
+              aria-label="Close navigation menu"
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -345,7 +346,7 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
             </button>
           </div>
 
-          <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto" aria-label="Main navigation">
             {menuItems.map((item) => renderMenuItem(item))}
           </nav>
         </div>

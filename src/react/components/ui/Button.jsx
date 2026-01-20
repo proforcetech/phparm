@@ -40,7 +40,7 @@ export default function Button({
     .join(' ')
 
   return (
-    <button type={type} disabled={disabled || loading} className={classes} {...rest}>
+    <button type={type} disabled={disabled || loading} className={classes} aria-busy={loading} {...rest}>
       {loading ? (
         <svg
           className="animate-spin -ml-1 mr-2 h-4 w-4"

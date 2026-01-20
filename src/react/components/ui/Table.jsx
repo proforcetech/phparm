@@ -134,6 +134,7 @@ export default function Table({
                         type="checkbox"
                         checked={allSelected}
                         onChange={toggleAll}
+                        aria-label="Select all rows"
                         className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-600"
                       />
                     </th>
@@ -200,6 +201,7 @@ export default function Table({
                             checked={isSelected(row)}
                             onChange={() => toggleRow(row)}
                             onClick={(e) => e.stopPropagation()}
+                            aria-label="Select row"
                             className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-600"
                           />
                         </td>

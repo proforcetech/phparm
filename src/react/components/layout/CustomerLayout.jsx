@@ -41,6 +41,7 @@ export default function CustomerLayout({ children }) {
               type="button"
               onClick={toggleSidebar}
               className="text-gray-500 hover:text-gray-700 focus:outline-none"
+              aria-label="Open navigation menu"
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
