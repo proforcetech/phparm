@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import axios from 'axios'
 
 import { getEnv } from '../config/env'
+import { getAuthToken, removeAuthToken } from '../utils/secureStorage'
 
 const { apiBaseUrl } = getEnv()
 
@@ -10,7 +10,7 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('auth_token')
+  const token = await getAuthToken()
   if (token) {
     config.headers = {
       ...config.headers,
@@ -24,7 +24,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error?.response?.status === 401) {
-      await AsyncStorage.removeItem('auth_token')
+      await removeAuthToken()
     }
     return Promise.reject(error)
   }
@@ -34,7 +34,7 @@ export async function fetchWithAuth(
   input: RequestInfo | URL,
   init: RequestInit = {}
 ): Promise<Response> {
-  const token = await AsyncStorage.getItem('auth_token')
+  const token = await getAuthToken()
   const headers = new Headers(init.headers)
 
   if (token) {

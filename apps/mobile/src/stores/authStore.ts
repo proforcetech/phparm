@@ -1,9 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import NetInfo from '@react-native-community/netinfo'
 import { create } from 'zustand'
 
 import { getEnv } from '../config/env'
 import { authService } from '../services/auth.service'
 import { portalService } from '../services/portal.service'
+import { isTokenValid } from '../utils/jwt'
+import { getAuthToken, removeAuthToken, setAuthToken } from '../utils/secureStorage'
 
 type PortalConfig = {
   apiBase: string
@@ -31,6 +34,8 @@ type AuthState = {
   loading: boolean
   error: string | null
   pendingChallenge: PendingChallenge | null
+  initialized: boolean
+  offlineAccess: boolean
   isAuthenticated: () => boolean
   isCustomer: () => boolean
   isStaff: () => boolean
@@ -71,46 +76,70 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: false,
   error: null,
   pendingChallenge: null,
-  isAuthenticated: () => Boolean(get().token),
+  initialized: false,
+  offlineAccess: false,
+  isAuthenticated: () => isTokenValid(get().token),
   isCustomer: () => get().user?.role === 'customer',
   isStaff: () => Boolean(get().user && get().user?.role !== 'customer'),
   isAdmin: () => get().user?.role === 'admin',
   portalReady: () => get().isCustomer() && Boolean(get().portalConfig.nonce),
   checkAuth: async () => {
-    const storedToken = await AsyncStorage.getItem('auth_token')
-    const storedUser = await AsyncStorage.getItem('user')
-    const storedImpersonation = await AsyncStorage.getItem('impersonation')
-    const storedNonce = await AsyncStorage.getItem('portal_nonce')
+    try {
+      const storedToken = await getAuthToken()
+      const storedUser = await AsyncStorage.getItem('user')
+      const storedImpersonation = await AsyncStorage.getItem('impersonation')
+      const storedNonce = await AsyncStorage.getItem('portal_nonce')
+      const tokenIsValid = isTokenValid(storedToken)
 
-    if (storedToken && storedUser) {
-      set({ token: storedToken, user: JSON.parse(storedUser) })
-    }
-
-    if (storedImpersonation) {
-      set({ impersonation: JSON.parse(storedImpersonation) })
-    }
-
-    if (storedNonce) {
-      set((state) => ({
-        portalConfig: { ...state.portalConfig, nonce: storedNonce },
-      }))
-    }
-
-    if (storedToken) {
-      const data = await authService.me()
-      if (data.user) {
-        set({ user: data.user })
-        await AsyncStorage.setItem('user', JSON.stringify(data.user))
+      if (storedToken && tokenIsValid) {
+        set({
+          token: storedToken,
+          user: storedUser ? JSON.parse(storedUser) : null,
+        })
+      } else if (storedToken && !tokenIsValid) {
+        set({ token: null, user: null })
+        await removeAuthToken()
+        await AsyncStorage.removeItem('user')
       }
 
-      if (data.impersonation !== undefined) {
-        set({ impersonation: data.impersonation })
-        if (data.impersonation) {
-          await AsyncStorage.setItem('impersonation', JSON.stringify(data.impersonation))
+      if (storedImpersonation) {
+        set({ impersonation: JSON.parse(storedImpersonation) })
+      }
+
+      if (storedNonce) {
+        set((state) => ({
+          portalConfig: { ...state.portalConfig, nonce: storedNonce },
+        }))
+      }
+
+      if (storedToken && tokenIsValid) {
+        const netState = await NetInfo.fetch()
+        const isConnected = Boolean(netState.isConnected && netState.isInternetReachable !== false)
+
+        if (isConnected) {
+          const data = await authService.me()
+          if (data.user) {
+            set({ user: data.user })
+            await AsyncStorage.setItem('user', JSON.stringify(data.user))
+          }
+
+          if (data.impersonation !== undefined) {
+            set({ impersonation: data.impersonation })
+            if (data.impersonation) {
+              await AsyncStorage.setItem('impersonation', JSON.stringify(data.impersonation))
+            } else {
+              await AsyncStorage.removeItem('impersonation')
+            }
+          }
+          set({ offlineAccess: false })
         } else {
-          await AsyncStorage.removeItem('impersonation')
+          set({ offlineAccess: true })
         }
+      } else {
+        set({ offlineAccess: false })
       }
+    } finally {
+      set({ initialized: true })
     }
   },
   fetchCurrentUser: async () => {
@@ -153,6 +182,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       await handleLoginSuccess(data, set)
+      set({ offlineAccess: false })
       return data
     } catch (err: any) {
       set({ error: err.response?.data?.message || 'Login failed' })
@@ -178,6 +208,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({ pendingChallenge: null })
       await handleLoginSuccess(data, set)
+      set({ offlineAccess: false })
       return data
     } catch (err: any) {
       set({ error: err.response?.data?.message || 'Two-factor verification failed' })
@@ -196,14 +227,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: null,
         token: null,
         impersonation: null,
+        pendingChallenge: null,
+        offlineAccess: false,
         portalConfig: { ...state.portalConfig, nonce: null },
       }))
-      await AsyncStorage.multiRemove([
-        'auth_token',
-        'user',
-        'portal_nonce',
-        'impersonation',
-      ])
+      await removeAuthToken()
+      await AsyncStorage.multiRemove(['user', 'portal_nonce', 'impersonation'])
     }
   },
   register: async (userData) => {
@@ -284,7 +313,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (data.token) {
       set({ token: data.token })
-      await AsyncStorage.setItem('auth_token', data.token)
+      await setAuthToken(data.token)
     }
 
     if (data.api_base) {
@@ -354,10 +383,8 @@ async function handleLoginSuccess(
   if (data.token && data.user) {
     set({ token: data.token, user: data.user, impersonation: null })
 
-    await AsyncStorage.multiSet([
-      ['auth_token', data.token],
-      ['user', JSON.stringify(data.user)],
-    ])
+    await setAuthToken(data.token)
+    await AsyncStorage.setItem('user', JSON.stringify(data.user))
     await AsyncStorage.removeItem('impersonation')
 
     if (data.api_base) {
