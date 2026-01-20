@@ -71,6 +71,42 @@ class DriverDispatchController
     }
 
     /**
+     * @param array<string, mixed> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    public function listJobs(User $user, array $filters = []): array
+    {
+        if (!$this->gate->can($user, 'dispatch.offers.view')) {
+            throw new UnauthorizedException('Cannot view dispatch jobs');
+        }
+
+        $driverProfileId = isset($filters['driver_profile_id']) && $this->gate->can($user, 'dispatch.offers.create')
+            ? (int) $filters['driver_profile_id']
+            : $this->resolveDriverProfileId($user->id);
+
+        if (!$driverProfileId) {
+            throw new InvalidArgumentException('Driver profile not found');
+        }
+
+        $status = $filters['status'] ?? 'accepted';
+        $offers = $this->offers->listOffers($driverProfileId, array_merge($filters, ['status' => $status]));
+
+        return array_map(function (array $offer): array {
+            $payload = $this->decodeOfferPayload($offer['offer_payload'] ?? null);
+            $job = $this->resolveJobDetails($offer);
+
+            return array_merge($offer, [
+                'offer_payload' => $payload,
+                'job' => $job,
+                'pickup_latitude' => $payload['pickup_latitude'] ?? null,
+                'pickup_longitude' => $payload['pickup_longitude'] ?? null,
+                'dropoff_latitude' => $offer['dropoff_latitude'] ?? ($payload['dropoff_latitude'] ?? null),
+                'dropoff_longitude' => $offer['dropoff_longitude'] ?? ($payload['dropoff_longitude'] ?? null),
+            ]);
+        }, $offers);
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
@@ -153,5 +189,77 @@ class DriverDispatchController
         $stmt->execute(['user_id' => $userId]);
         $value = $stmt->fetch(PDO::FETCH_COLUMN);
         return $value !== false ? (int) $value : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveJobDetails(array $offer): array
+    {
+        $jobType = (string) ($offer['job_type'] ?? '');
+        $jobReference = $offer['job_reference'] ?? null;
+
+        if (!is_numeric($jobReference)) {
+            return [];
+        }
+
+        $jobId = (int) $jobReference;
+
+        if ($jobType === 'workorder_job') {
+            return $this->fetchWorkorderJobById($jobId);
+        }
+
+        if ($jobType === 'workorder') {
+            return $this->fetchFirstWorkorderJob($jobId);
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchWorkorderJobById(int $jobId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT wj.id as job_id, wj.title as job_title, wj.status as job_status,
+                    wj.workorder_id, w.number as workorder_number, w.status as workorder_status
+             FROM workorder_jobs wj
+             INNER JOIN workorders w ON w.id = wj.workorder_id
+             WHERE wj.id = :id'
+        );
+        $stmt->execute(['id' => $jobId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchFirstWorkorderJob(int $workorderId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT wj.id as job_id, wj.title as job_title, wj.status as job_status,
+                    wj.workorder_id, w.number as workorder_number, w.status as workorder_status
+             FROM workorder_jobs wj
+             INNER JOIN workorders w ON w.id = wj.workorder_id
+             WHERE wj.workorder_id = :workorder_id
+             ORDER BY wj.position ASC, wj.id ASC
+             LIMIT 1'
+        );
+        $stmt->execute(['workorder_id' => $workorderId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decodeOfferPayload($payload): ?array
+    {
+        if (!is_string($payload) || $payload === '') {
+            return is_array($payload) ? $payload : null;
+        }
+
+        $decoded = json_decode($payload, true);
+        return is_array($decoded) ? $decoded : null;
     }
 }

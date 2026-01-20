@@ -24,6 +24,9 @@ export default {
   getJobOffers(params = {}) {
     return api.get('/dispatch/job-offers', { params })
   },
+  getJobs(params = {}) {
+    return api.get('/dispatch/jobs', { params })
+  },
   createJobOffer(payload) {
     return api.post('/dispatch/job-offers', payload)
   },

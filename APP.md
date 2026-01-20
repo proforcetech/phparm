@@ -50,7 +50,7 @@ Target Audience: Technicians (Mechanics) & Drivers (Tow/Transport) Recommended T
 
         Parts Request: "Request Part" button on the Work Order screen.
 
-3. Driver/Dispatch Module
+3. [x] Driver/Dispatch Module
 
     Job Management:
 
