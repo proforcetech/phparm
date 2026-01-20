@@ -10,6 +10,7 @@ use App\Models\WorkorderJob;
 use App\Services\Inventory\CoreReturnService;
 use App\Services\Inventory\InventoryPullRequestService;
 use App\Services\Inventory\InventoryStockOrderService;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Services\Financial\FinancialEntryService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
@@ -25,6 +26,7 @@ class WorkorderService
     private CoreReturnService $coreReturns;
     private InventoryPullRequestService $inventoryPullRequests;
     private InventoryStockOrderService $inventoryStockOrders;
+    private ?MessagingNotificationService $messagingNotifications;
 
     public function __construct(
         Connection $connection,
@@ -32,7 +34,8 @@ class WorkorderService
         CoreReturnService $coreReturns,
         InventoryPullRequestService $inventoryPullRequests,
         InventoryStockOrderService $inventoryStockOrders,
-        ?AuditLogger $audit = null
+        ?AuditLogger $audit = null,
+        ?MessagingNotificationService $messagingNotifications = null
     ) {
         $this->connection = $connection;
         $this->repository = $repository;
@@ -40,6 +43,7 @@ class WorkorderService
         $this->coreReturns = $coreReturns;
         $this->inventoryPullRequests = $inventoryPullRequests;
         $this->inventoryStockOrders = $inventoryStockOrders;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     /**
@@ -707,7 +711,7 @@ class WorkorderService
             $stockQuantity = isset($item['stock_quantity']) ? (int) $item['stock_quantity'] : 0;
 
             if ($inventoryItemId !== null && $stockQuantity >= $quantityRequested) {
-                $this->inventoryPullRequests->create([
+                $pullRequest = $this->inventoryPullRequests->create([
                     'branch_id' => $branchId,
                     'workorder_id' => $workorderId,
                     'workorder_job_id' => (int) $item['workorder_job_id'],
@@ -720,10 +724,15 @@ class WorkorderService
                     'vendor' => $item['vendor'] ?? null,
                     'notes' => 'Auto-generated from estimate conversion.',
                 ], $actorId);
+                $this->messagingNotifications?->dispatch('inventory.pull_request.auto_generated', [
+                    'pull_request_id' => $pullRequest->id,
+                    'workorder_id' => $workorderId,
+                    'actor_id' => $actorId,
+                ]);
                 continue;
             }
 
-            $this->inventoryStockOrders->create([
+            $stockOrder = $this->inventoryStockOrders->create([
                 'branch_id' => $branchId,
                 'inventory_item_id' => $inventoryItemId,
                 'sku' => $item['sku'] ?? null,
@@ -732,6 +741,13 @@ class WorkorderService
                 'vendor' => $item['vendor'] ?? null,
                 'notes' => 'Auto-generated from estimate conversion.',
             ], $actorId);
+            $this->messagingNotifications?->dispatch('inventory.stock_order.auto_generated', [
+                'stock_order_id' => $stockOrder->id,
+                'workorder_id' => $workorderId,
+                'description' => $item['description'],
+                'quantity_ordered' => $quantityRequested,
+                'actor_id' => $actorId,
+            ]);
         }
     }
 

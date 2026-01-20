@@ -100,6 +100,15 @@ class MessagingNotificationService
                 'roles' => ['admin', 'manager'],
             ],
         ],
+        'inventory.pull_request.auto_generated' => [
+            'subject' => 'Inventory Pull Requests',
+            'message' => '{actor} auto-generated a {request_type} request #{pull_request_id} for workorder #{workorder_number}: {description} (Qty {quantity_requested}).',
+            'scope_type' => 'department',
+            'scope_value' => 'inventory',
+            'participants' => [
+                'roles' => ['parts'],
+            ],
+        ],
         'inventory.pull_request.pulled' => [
             'subject' => 'Inventory Pull Requests',
             'message' => '{actor} pulled inventory for request #{pull_request_id} ({quantity_pulled} pulled, total {total_fulfilled}).',
@@ -134,6 +143,15 @@ class MessagingNotificationService
             'scope_value' => 'inventory',
             'participants' => [
                 'roles' => ['admin', 'manager'],
+            ],
+        ],
+        'inventory.stock_order.auto_generated' => [
+            'subject' => 'Inventory Stock Orders',
+            'message' => '{actor} auto-generated stock order #{stock_order_id} for workorder #{workorder_number}: {description} (Qty {quantity_ordered}).',
+            'scope_type' => 'department',
+            'scope_value' => 'inventory',
+            'participants' => [
+                'roles' => ['parts'],
             ],
         ],
         'roadside.assistance.requested' => [
@@ -329,9 +347,19 @@ class MessagingNotificationService
             $context = array_merge($context, $claim);
         }
 
-        if (str_starts_with($type, 'inventory.')) {
+        if (str_starts_with($type, 'inventory.pull_request.')) {
             $request = $this->fetchPullRequest((int) ($payload['pull_request_id'] ?? 0));
             $context = array_merge($context, $request);
+        }
+
+        if (str_starts_with($type, 'inventory.stock_order.')) {
+            $stockOrder = $this->fetchStockOrder((int) ($payload['stock_order_id'] ?? 0));
+            $context = array_merge($context, $stockOrder);
+        }
+
+        if (str_starts_with($type, 'inventory.') && isset($payload['workorder_id'])) {
+            $workorder = $this->fetchWorkorder((int) ($payload['workorder_id'] ?? 0));
+            $context = array_merge($context, $workorder);
         }
 
         if (str_starts_with($type, 'tracking.')) {
@@ -605,6 +633,32 @@ class MessagingNotificationService
             'total_fulfilled' => (int) ($row['quantity_fulfilled'] ?? 0),
             'request_type' => (string) ($row['request_type'] ?? ''),
             'workorder_number' => (string) ($row['workorder_number'] ?? 'N/A'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchStockOrder(int $stockOrderId): array
+    {
+        if ($stockOrderId === 0) {
+            return [];
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, description, quantity_ordered, vendor FROM inventory_stock_orders WHERE id = :id'
+        );
+        $stmt->execute(['id' => $stockOrderId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return [];
+        }
+
+        return [
+            'stock_order_id' => (int) $row['id'],
+            'description' => (string) ($row['description'] ?? ''),
+            'quantity_ordered' => (int) ($row['quantity_ordered'] ?? 0),
+            'vendor' => (string) ($row['vendor'] ?? ''),
         ];
     }
 
