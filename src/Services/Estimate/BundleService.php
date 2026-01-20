@@ -275,7 +275,6 @@ class BundleService
 
         $vehicleContext = $this->fetchEstimateVehicleContext($estimateId);
         $vehicleId = $vehicleContext['vehicle_id'];
-        $vehicleMasterId = $vehicleContext['vehicle_master_id'];
 
         // TODO: Link bundles to part types to avoid brittle description matching.
         $items = [];
@@ -298,10 +297,10 @@ class BundleService
             $data['sku'] = null;
             $data['list_price'] = 0.0;
             $data['cost'] = 0.0;
-            $data['manual_completion_required'] = $vehicleId === null || $vehicleMasterId === null;
+            $data['manual_completion_required'] = $vehicleId === null;
 
-            if ($vehicleMasterId !== null) {
-                $match = $this->compatibilityRepository->findMatchingInventoryItem($item->description, $vehicleMasterId);
+            if ($vehicleId !== null) {
+                $match = $this->compatibilityRepository->findMatchingInventoryItemForVehicle($item->description, $vehicleId);
                 if ($match !== null) {
                     $data['sku'] = $match['sku'] ?? null;
                     $data['inventory_item_id'] = (int) $match['id'];
@@ -315,6 +314,8 @@ class BundleService
                 } else {
                     $data['manual_completion_required'] = true;
                 }
+            } else {
+                $data['manual_completion_required'] = true;
             }
 
             $items[] = $data;
