@@ -4,7 +4,7 @@ Target Audience: Technicians (Mechanics) & Drivers (Tow/Transport) Recommended T
 
     Justification: You are already using React (src/react) and Tailwind CSS. React Native allows you to share significant business logic, API services, and potentially UI styling/components with your existing web frontend.
 
-1. Authentication & Security
+1. [x] Authentication & Security
 
     Endpoint: /api/auth/login (JWT based on JwtService.php)
 
