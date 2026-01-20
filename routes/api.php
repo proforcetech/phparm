@@ -2417,6 +2417,61 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $inventoryImportService = new \App\Services\ImportExport\InventoryCsvService($connection, $auditLogger);
+        $customerImportService = new \App\Services\ImportExport\CustomerCsvService($connection, $auditLogger);
+        $vendorImportService = new \App\Services\ImportExport\VendorCsvService($connection, $auditLogger);
+        $locationImportService = new \App\Services\ImportExport\LocationCsvService($connection, $auditLogger);
+        $categoryImportService = new \App\Services\ImportExport\CategoryCsvService($connection, $auditLogger);
+
+        $router->post('/api/import/{entity}', function (Request $request) use ($inventoryImportService, $customerImportService, $vendorImportService, $locationImportService, $categoryImportService, $gate) {
+            $user = $request->getAttribute('user');
+            $entity = (string) $request->getAttribute('entity');
+
+            $file = $request->file('file');
+            if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+                throw new InvalidArgumentException('No file uploaded');
+            }
+
+            $csv = file_get_contents($file['tmp_name']);
+            if ($csv === false) {
+                throw new InvalidArgumentException('Unable to read uploaded CSV file.');
+            }
+
+            $dryRunInput = $request->queryParam('dry_run', $request->input('dry_run', false));
+            $dryRun = filter_var($dryRunInput, FILTER_VALIDATE_BOOLEAN);
+
+            switch ($entity) {
+                case 'inventory':
+                    $gate->assert($user, 'inventory.import');
+                    $result = $inventoryImportService->import($csv, $user->id, $dryRun);
+                    break;
+                case 'customers':
+                    if (!$gate->can($user, 'customers.create') && !$gate->can($user, 'customers.update') && !$gate->can($user, 'customers.*')) {
+                        throw new \App\Support\Auth\UnauthorizedException('User lacks permission to import customers.');
+                    }
+                    $result = $customerImportService->import($csv, $user->id, $dryRun);
+                    break;
+                case 'vendors':
+                    $gate->assert($user, 'inventory.manage');
+                    $result = $vendorImportService->import($csv, $user->id, $dryRun);
+                    break;
+                case 'locations':
+                    $gate->assert($user, 'inventory.manage');
+                    $result = $locationImportService->import($csv, $user->id, $dryRun);
+                    break;
+                case 'categories':
+                    $gate->assert($user, 'inventory.manage');
+                    $result = $categoryImportService->import($csv, $user->id, $dryRun);
+                    break;
+                default:
+                    throw new InvalidArgumentException('Unsupported import entity.');
+            }
+
+            return Response::json($result);
+        });
+    });
+
     // Inventory routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
 

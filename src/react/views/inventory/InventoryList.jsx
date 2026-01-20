@@ -1,14 +1,55 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import CsvUploadModal from '../../components/import/CsvUploadModal'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
 import Table from '../../components/ui/Table'
+import { uploadImportCsv } from '../../../services/import.service'
 import inventoryService from '../../../services/inventory.service'
 import { useAuthStore } from '../../stores/auth.jsx'
+
+const inventoryTemplate = {
+  fileName: 'inventory-import-template.csv',
+  headers: [
+    'sku',
+    'name',
+    'description',
+    'category',
+    'stock_quantity',
+    'low_stock_threshold',
+    'reorder_quantity',
+    'cost',
+    'sale_price',
+    'location',
+    'bin_location',
+    'vendor',
+    'notes',
+    'branch_id',
+  ],
+  sampleRows: [
+    {
+      sku: 'ABC123',
+      name: 'Brake Pad Set',
+      description: 'Front brake pad set',
+      category: 'Brakes',
+      stock_quantity: 12,
+      low_stock_threshold: 4,
+      reorder_quantity: 10,
+      cost: 35.5,
+      sale_price: 65,
+      location: 'Aisle 3',
+      bin_location: 'Aisle 3, Bin B',
+      vendor: 'ACME Parts',
+      notes: 'Ceramic pads',
+      branch_id: 1,
+    },
+  ],
+  note: 'Required columns: sku, name, stock_quantity. Include optional fields as needed.',
+}
 
 export default function InventoryList() {
   const navigate = useNavigate()
@@ -25,6 +66,7 @@ export default function InventoryList() {
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [cameraSupported, setCameraSupported] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [pendingFilters, setPendingFilters] = useState({
     query: '',
     category: '',
@@ -125,6 +167,14 @@ export default function InventoryList() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  const handleInventoryImport = async (file, dryRun) => {
+    const result = await uploadImportCsv('inventory', file, { dryRun })
+    if (!dryRun) {
+      await loadItems()
+    }
+    return result
   }
 
   const handleScanLookup = useCallback(async (rawCode) => {
@@ -241,14 +291,22 @@ export default function InventoryList() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
           <p className="mt-1 text-sm text-gray-500">Search, filter, and manage stock</p>
         </div>
-        {canCreate ? (
-          <Button onClick={() => navigate('/cp/inventory/create')}>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setShowImportModal(true)}>
             <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            Add Item
+            Import CSV
           </Button>
-        ) : null}
+          {canCreate ? (
+            <Button onClick={() => navigate('/cp/inventory/create')}>
+              <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Item
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
@@ -470,6 +528,16 @@ export default function InventoryList() {
             <Button variant="outline" onClick={() => setCameraOpen(false)}>Close</Button>
           </div>
         )}
+      />
+
+      <CsvUploadModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import Inventory CSV"
+        description="Upload a CSV file to create or update inventory items."
+        template={inventoryTemplate}
+        confirmLabel="Import Inventory"
+        onUpload={handleInventoryImport}
       />
     </div>
   )

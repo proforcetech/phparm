@@ -10,8 +10,8 @@ use PDO;
 
 class CsvImportService
 {
-    private Connection $connection;
-    private ?AuditLogger $audit;
+    protected Connection $connection;
+    protected ?AuditLogger $audit;
 
     public function __construct(Connection $connection, ?AuditLogger $audit = null)
     {
@@ -58,7 +58,7 @@ class CsvImportService
     /**
      * @return array<int,array<string,string>>
      */
-    private function parseCsv(string $csv): array
+    protected function parseCsv(string $csv): array
     {
         $handle = fopen('php://temp', 'r+');
         fwrite($handle, $csv);
@@ -67,16 +67,44 @@ class CsvImportService
         $rows = [];
         while (($row = fgetcsv($handle)) !== false) {
             if ($headers === null) {
-                $headers = $row;
+                $headers = array_map(function ($header) {
+                    $header = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header);
+                    return strtolower(trim((string) $header));
+                }, $row);
                 continue;
             }
 
-            $rows[] = array_combine($headers, $row);
+            if ($this->isEmptyRow($row)) {
+                continue;
+            }
+
+            $mapped = [];
+            foreach ($headers as $index => $header) {
+                if ($header === '') {
+                    continue;
+                }
+                $mapped[$header] = $row[$index] ?? null;
+            }
+            $rows[] = $mapped;
         }
 
         fclose($handle);
 
         return $rows;
+    }
+
+    /**
+     * @param array<int, mixed> $row
+     */
+    protected function isEmptyRow(array $row): bool
+    {
+        foreach ($row as $value) {
+            if ($value !== null && trim((string) $value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -207,7 +235,7 @@ class CsvImportService
         return false;
     }
 
-    private function log(string $event, $entityId, int $actorId, array $context): void
+    protected function log(string $event, $entityId, int $actorId, array $context): void
     {
         if ($this->audit === null) {
             return;

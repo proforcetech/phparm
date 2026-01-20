@@ -20,7 +20,7 @@
 
             Out of Stock / Non-Inventory: Generate a Purchase Request (or Draft Stock Order) for the item.
 
-    Bulk Data Management
+    ✅ Bulk Data Management
 
         CSV Import Support: Enable bulk creation via CSV upload for the following entities:
 

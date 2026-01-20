@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import CsvUploadModal from '../../components/import/CsvUploadModal'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
@@ -8,9 +9,48 @@ import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import customerService from '../../../services/customer.service'
+import { uploadImportCsv } from '../../../services/import.service'
 import { useToast } from '../../stores/toast.jsx'
 
 const perPage = 20
+const customerTemplate = {
+  fileName: 'customer-import-template.csv',
+  headers: [
+    'first_name',
+    'last_name',
+    'business_name',
+    'email',
+    'phone',
+    'street',
+    'city',
+    'state',
+    'postal_code',
+    'country',
+    'is_commercial',
+    'tax_exempt',
+    'notes',
+    'external_reference',
+  ],
+  sampleRows: [
+    {
+      first_name: 'Jamie',
+      last_name: 'Lee',
+      business_name: 'Lee Automotive',
+      email: 'jamie@example.com',
+      phone: '555-0100',
+      street: '123 Main St',
+      city: 'Denver',
+      state: 'CO',
+      postal_code: '80202',
+      country: 'USA',
+      is_commercial: 'true',
+      tax_exempt: 'false',
+      notes: 'Preferred customer',
+      external_reference: 'CUST-1001',
+    },
+  ],
+  note: 'Provide a unique email or phone number for each customer.',
+}
 
 export default function CustomerList() {
   const navigate = useNavigate()
@@ -22,6 +62,7 @@ export default function CustomerList() {
   const [total, setTotal] = useState(0)
   const [deleteModal, setDeleteModal] = useState({ open: false, customer: null })
   const [deleting, setDeleting] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   const loadCustomers = useCallback(async () => {
     setLoading(true)
@@ -69,6 +110,14 @@ export default function CustomerList() {
     }
   }
 
+  const handleCustomerImport = async (file, dryRun) => {
+    const result = await uploadImportCsv('customers', file, { dryRun })
+    if (!dryRun) {
+      await loadCustomers()
+    }
+    return result
+  }
+
   const hasNext = customers.length === perPage
   const getCustomerDisplayName = (customer) => {
     const firstName = customer?.first_name?.trim() || ''
@@ -86,12 +135,20 @@ export default function CustomerList() {
           <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
           <p className="mt-1 text-sm text-gray-500">Manage your customer database</p>
         </div>
-        <Button onClick={() => navigate('/cp/customers/create')}>
-          <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Customer
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setShowImportModal(true)}>
+            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Import CSV
+          </Button>
+          <Button onClick={() => navigate('/cp/customers/create')}>
+            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Customer
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -200,6 +257,16 @@ export default function CustomerList() {
           </Button>
         </div>
       </Modal>
+
+      <CsvUploadModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import Customers CSV"
+        description="Upload a CSV file to create or update customer profiles."
+        template={customerTemplate}
+        confirmLabel="Import Customers"
+        onUpload={handleCustomerImport}
+      />
     </div>
   )
 }

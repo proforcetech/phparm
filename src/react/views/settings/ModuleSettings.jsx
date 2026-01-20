@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import CsvUploadModal from '../../components/import/CsvUploadModal'
+import Button from '../../components/ui/Button'
 import { moduleService } from '../../../services/modules.service'
+import { uploadImportCsv } from '../../../services/import.service'
 import { useAuthStore } from '../../stores/auth'
 
 const moduleIcons = {
@@ -23,6 +26,30 @@ const moduleIcons = {
   bundles: 'M13.5 16.875h3.375m0 0h3.375m-3.375 0V13.5m0 3.375v3.375M6 10.5h2.25a2.25 2.25 0 002.25-2.25V6a2.25 2.25 0 00-2.25-2.25H6A2.25 2.25 0 003.75 6v2.25A2.25 2.25 0 006 10.5zm0 9.75h2.25A2.25 2.25 0 0010.5 18v-2.25a2.25 2.25 0 00-2.25-2.25H6a2.25 2.25 0 00-2.25 2.25V18A2.25 2.25 0 006 20.25zm9.75-9.75H18a2.25 2.25 0 002.25-2.25V6A2.25 2.25 0 0018 3.75h-2.25A2.25 2.25 0 0013.5 6v2.25a2.25 2.25 0 002.25 2.25z',
   documents: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z',
   financial: 'M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z',
+}
+
+const categoryTemplate = {
+  fileName: 'inventory-category-template.csv',
+  headers: ['name', 'description'],
+  sampleRows: [
+    {
+      name: 'Brakes',
+      description: 'Brake components and kits',
+    },
+  ],
+  note: 'Categories help organize inventory items and services.',
+}
+
+const locationTemplate = {
+  fileName: 'inventory-location-template.csv',
+  headers: ['name', 'description'],
+  sampleRows: [
+    {
+      name: 'Aisle 3',
+      description: 'Front warehouse aisle',
+    },
+  ],
+  note: 'Locations should match the storage or bin names used by the team.',
 }
 
 function ModuleIcon({ moduleKey, className = 'w-6 h-6' }) {
@@ -49,6 +76,7 @@ export default function ModuleSettings() {
   const [saving, setSaving] = useState(null)
   const [error, setError] = useState(null)
   const [confirmDisable, setConfirmDisable] = useState(null)
+  const [importTarget, setImportTarget] = useState(null)
 
   const fetchModules = useCallback(async () => {
     try {
@@ -117,6 +145,10 @@ export default function ModuleSettings() {
     }
   }
 
+  const handleLookupImport = async (entity, file, dryRun) => {
+    return uploadImportCsv(entity, file, { dryRun })
+  }
+
   if (loading) {
     return (
       <div className="p-6">
@@ -147,6 +179,21 @@ export default function ModuleSettings() {
           {error}
         </div>
       )}
+
+      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Import Inventory Lookups</h2>
+          <p className="text-sm text-gray-500">Upload CSV files to manage inventory categories and locations.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setImportTarget('categories')}>
+            Import Categories CSV
+          </Button>
+          <Button variant="secondary" onClick={() => setImportTarget('locations')}>
+            Import Locations CSV
+          </Button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {modules.map((module) => (
@@ -234,6 +281,26 @@ export default function ModuleSettings() {
           </div>
         </div>
       )}
+
+      <CsvUploadModal
+        open={importTarget === 'categories'}
+        onClose={() => setImportTarget(null)}
+        title="Import Categories CSV"
+        description="Upload a CSV file to create or update inventory categories."
+        template={categoryTemplate}
+        confirmLabel="Import Categories"
+        onUpload={(file, dryRun) => handleLookupImport('categories', file, dryRun)}
+      />
+
+      <CsvUploadModal
+        open={importTarget === 'locations'}
+        onClose={() => setImportTarget(null)}
+        title="Import Locations CSV"
+        description="Upload a CSV file to create or update inventory locations."
+        template={locationTemplate}
+        confirmLabel="Import Locations"
+        onUpload={(file, dryRun) => handleLookupImport('locations', file, dryRun)}
+      />
     </div>
   )
 }
