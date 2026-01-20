@@ -4899,6 +4899,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        // Driver dispatch jobs
+        $router->get('/api/dispatch/jobs', function (Request $request) use ($driverDispatchController) {
+            $user = $request->getAttribute('user');
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'driver_profile_id' => $request->queryParam('driver_profile_id'),
+            ];
+            $data = $driverDispatchController->listJobs($user, $filters);
+            return Response::json($data);
+        });
+
         $router->post('/api/dispatch/job-offers', function (Request $request) use ($driverDispatchController) {
             $user = $request->getAttribute('user');
             $data = $driverDispatchController->createOffer($user, $request->body());
