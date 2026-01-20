@@ -12,6 +12,7 @@ import estimateService from '../../../services/estimate.service'
 import customerService from '../../../services/customer.service'
 import technicianService from '../../../services/technician.service'
 import bundleService from '../../../services/bundle.service'
+import inventoryService from '../../../services/inventory.service'
 import api from '../../../services/api'
 import { useToast } from '../../stores/toast'
 
@@ -75,9 +76,11 @@ export default function EstimateForm() {
 
   const createEmptyLineItem = useCallback(() => ({
     type: 'LABOR',
+    sku: '',
     description: '',
     quantity: 1,
     unit_price: pricingSettings.laborRate ?? 0,
+    list_price: 0,
     taxable: pricingSettings.laborTaxable,
     discount_type: 'fixed',
     notes: '',
@@ -131,9 +134,11 @@ export default function EstimateForm() {
         line_items: data.line_items?.length
           ? data.line_items.map((item) => ({
               type: item.type || 'LABOR',
+              sku: item.sku || '',
               description: item.description || '',
               quantity: Number(item.quantity) || 1,
               unit_price: Number(item.unit_price) || 0,
+              list_price: Number(item.list_price) || 0,
               taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
               discount_type: item.discount_type || 'fixed',
               notes: item.notes || '',
@@ -241,6 +246,16 @@ export default function EstimateForm() {
     })
   }
 
+  const updateLineItemFields = (index, fields) => {
+    setForm((prev) => ({
+      ...prev,
+      line_items: prev.line_items.map((item, idx) => {
+        if (idx !== index) return item
+        return { ...item, ...fields }
+      }),
+    }))
+  }
+
   const updateLineItem = (index, field, value) => {
     setForm((prev) => ({
       ...prev,
@@ -260,6 +275,12 @@ export default function EstimateForm() {
             updated.quantity = 1
           } else if (value === 'PART') {
             updated.taxable = true
+            updated.list_price = updated.list_price ?? 0
+          }
+
+          if (value !== 'PART') {
+            updated.sku = ''
+            updated.list_price = 0
           }
         }
 
@@ -283,9 +304,11 @@ export default function EstimateForm() {
         const adjustedPrice = item.type === 'DISCOUNT' ? -Math.abs(unitPrice) : unitPrice
         return {
           type: item.type || 'LABOR',
+          sku: item.sku || '',
           description: item.description || '',
           quantity: Number(item.quantity) || 1,
           unit_price: adjustedPrice,
+          list_price: Number(item.list_price) || 0,
           taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
           discount_type: item.discount_type || 'fixed',
           notes: '',
@@ -333,9 +356,11 @@ export default function EstimateForm() {
         status: form.status || 'pending',
         line_items: form.line_items.map((item) => ({
           type: item.type || 'LABOR',
+          sku: item.sku || null,
           description: item.description,
           quantity: Number(item.quantity) || 0,
           unit_price: Number(item.unit_price) || 0,
+          list_price: item.list_price !== '' && item.list_price !== null ? Number(item.list_price) : 0,
           taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
           discount_type: item.discount_type || 'fixed',
           notes: item.notes || null,
@@ -382,6 +407,44 @@ export default function EstimateForm() {
     }
   }, [])
 
+  const searchInventoryParts = useCallback(async (query) => {
+    const trimmed = query.trim()
+    if (trimmed.length < 2) return []
+    try {
+      const results = await inventoryService.searchParts(trimmed, null, 10)
+      const parts = Array.isArray(results) ? results : (results?.data || [])
+      const hasExact = parts.some((part) => (part.sku || '').toLowerCase() === trimmed.toLowerCase())
+      if (hasExact) return parts
+      return [
+        ...parts,
+        {
+          id: `manual-${trimmed}`,
+          sku: trimmed,
+          name: `Use "${trimmed}"`,
+          isManualEntry: true,
+        },
+      ]
+    } catch (searchError) {
+      console.error('Inventory search failed:', searchError)
+      return []
+    }
+  }, [])
+
+  const populateFromInventory = (index, inventoryItem) => {
+    if (!inventoryItem || inventoryItem.isManualEntry) {
+      updateLineItemFields(index, { sku: inventoryItem?.sku || '' })
+      return
+    }
+
+    const description = inventoryItem.description?.trim()
+    updateLineItemFields(index, {
+      sku: inventoryItem.sku || '',
+      description: description || inventoryItem.name || '',
+      unit_price: inventoryItem.cost ?? inventoryItem.sale_price ?? 0,
+      list_price: inventoryItem.list_price ?? inventoryItem.sale_price ?? 0,
+    })
+  }
+
   const handleCustomerSelect = (customer) => {
     setSelectedCustomer(customer)
     setForm((prev) => ({
@@ -402,6 +465,7 @@ export default function EstimateForm() {
 
   const getUnitPriceLabel = (item) => {
     if (item.type === 'LABOR') return 'Hourly Rate'
+    if (item.type === 'PART') return 'Cost'
     if (item.type === 'DISCOUNT') {
       return item.discount_type === 'percent' ? 'Percentage (%)' : 'Amount ($)'
     }
@@ -567,122 +631,164 @@ export default function EstimateForm() {
                 </div>
 
                 <div className="space-y-4">
-                  {form.line_items.map((item, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4">
-                      <div className="grid grid-cols-12 gap-3">
-                        <div className="col-span-6 md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700">Type</label>
-                          <select
-                            value={item.type}
-                            onChange={(event) => updateLineItem(index, 'type', event.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                            required
-                          >
-                            <option value="LABOR">Labor</option>
-                            <option value="PART">Part</option>
-                            <option value="FEE">Fee</option>
-                            <option value="DISCOUNT">Discount</option>
-                          </select>
-                        </div>
-
-                        <div className="col-span-6 md:col-span-4">
-                          <Input
-                            value={item.description}
-                            placeholder="Service or part description"
-                            label="Description"
-                            required
-                            onUpdateModelValue={(value) => updateLineItem(index, 'description', value)}
-                          />
-                        </div>
-
-                        {item.type === 'DISCOUNT' ? (
-                          <div className="col-span-4 md:col-span-1">
-                            <label className="block text-sm font-medium text-gray-700">Discount Type</label>
+                  {form.line_items.map((item, index) => {
+                    const isPart = item.type === 'PART'
+                    return (
+                      <div key={index} className="border border-gray-200 rounded-lg p-4">
+                        <div className="grid grid-cols-12 gap-3">
+                          <div className="col-span-6 md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700">Type</label>
                             <select
-                              value={item.discount_type || 'fixed'}
-                              onChange={(event) => updateLineItem(index, 'discount_type', event.target.value)}
+                              value={item.type}
+                              onChange={(event) => updateLineItem(index, 'type', event.target.value)}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                              required
                             >
-                              <option value="fixed">Flat Rate ($)</option>
-                              <option value="percent">Percentage (%)</option>
+                              <option value="LABOR">Labor</option>
+                              <option value="PART">Part</option>
+                              <option value="FEE">Fee</option>
+                              <option value="DISCOUNT">Discount</option>
                             </select>
                           </div>
-                        ) : (
-                          <div className="col-span-4 md:col-span-1">
+
+                          {isPart ? (
+                            <div className="col-span-6 md:col-span-2">
+                              <Autocomplete
+                                modelValue={item.sku || ''}
+                                label="Part Number/SKU"
+                                placeholder="Search SKU..."
+                                searchFn={searchInventoryParts}
+                                minChars={2}
+                                itemValue={(part) => part.sku || part.id}
+                                itemLabel={(part) => part.sku || part.name || part.description || 'SKU'}
+                                itemSubtext={(part) => (
+                                  part.isManualEntry
+                                    ? 'Manual entry'
+                                    : `${part.name || part.description || ''}`
+                                )}
+                                onSearchChange={(value) => updateLineItem(index, 'sku', value)}
+                                onUpdateModelValue={(value) => {
+                                  if (value !== null) {
+                                    updateLineItem(index, 'sku', value)
+                                  }
+                                }}
+                                onSelect={(selected) => populateFromInventory(index, selected)}
+                              />
+                            </div>
+                          ) : null}
+
+                          <div className={isPart ? 'col-span-12 md:col-span-3' : 'col-span-6 md:col-span-4'}>
                             <Input
-                              value={item.quantity}
+                              value={item.description}
+                              placeholder="Service or part description"
+                              label="Description"
+                              required
+                              onUpdateModelValue={(value) => updateLineItem(index, 'description', value)}
+                            />
+                          </div>
+
+                          {item.type === 'DISCOUNT' ? (
+                            <div className="col-span-4 md:col-span-1">
+                              <label className="block text-sm font-medium text-gray-700">Discount Type</label>
+                              <select
+                                value={item.discount_type || 'fixed'}
+                                onChange={(event) => updateLineItem(index, 'discount_type', event.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                              >
+                                <option value="fixed">Flat Rate ($)</option>
+                                <option value="percent">Percentage (%)</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="col-span-4 md:col-span-1">
+                              <Input
+                                value={item.quantity}
+                                type="number"
+                                label="Qty"
+                                min="0"
+                                step="0.01"
+                                required
+                                onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
+                              />
+                            </div>
+                          )}
+
+                          <div className={isPart ? 'col-span-6 md:col-span-1' : 'col-span-4 md:col-span-2'}>
+                            <Input
+                              value={item.unit_price}
                               type="number"
-                              label="Qty"
+                              label={getUnitPriceLabel(item)}
                               min="0"
                               step="0.01"
                               required
-                              onUpdateModelValue={(value) => updateLineItem(index, 'quantity', value)}
+                              onUpdateModelValue={(value) => updateLineItem(index, 'unit_price', value)}
                             />
                           </div>
-                        )}
 
-                        <div className="col-span-4 md:col-span-2">
-                          <Input
-                            value={item.unit_price}
-                            type="number"
-                            label={getUnitPriceLabel(item)}
-                            min="0"
-                            step="0.01"
-                            required
-                            onUpdateModelValue={(value) => updateLineItem(index, 'unit_price', value)}
+                          {isPart ? (
+                            <div className="col-span-6 md:col-span-1">
+                              <Input
+                                value={item.list_price}
+                                type="number"
+                                label="List Price"
+                                min="0"
+                                step="0.01"
+                                onUpdateModelValue={(value) => updateLineItem(index, 'list_price', value)}
+                              />
+                            </div>
+                          ) : null}
+
+                          <div className={isPart ? 'col-span-6 md:col-span-1 flex items-end' : 'col-span-4 md:col-span-2 flex items-end'}>
+                            <div>
+                              <p className="text-xs text-gray-500">Amount</p>
+                              <p className="text-sm font-semibold">{formatCurrency((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</p>
+                            </div>
+                          </div>
+
+                          <div className="col-span-12 md:col-span-1 flex items-end justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeLineItem(index)}
+                              disabled={form.line_items.length === 1}
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between">
+                          {item.type !== 'DISCOUNT' ? (
+                            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={item.taxable}
+                                onChange={(event) => updateLineItem(index, 'taxable', event.target.checked)}
+                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                              />
+                              Taxable
+                            </label>
+                          ) : (
+                            <span />
+                          )}
+                          <Textarea
+                            value={item.notes}
+                            placeholder="Additional notes (optional)"
+                            rows={1}
+                            className="flex-1 ml-4 max-w-md"
+                            onUpdateModelValue={(value) => updateLineItem(index, 'notes', value)}
                           />
                         </div>
-
-                        <div className="col-span-4 md:col-span-2 flex items-end">
-                          <div>
-                            <p className="text-xs text-gray-500">Amount</p>
-                            <p className="text-sm font-semibold">{formatCurrency((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))}</p>
-                          </div>
-                        </div>
-
-                        <div className="col-span-12 md:col-span-1 flex items-end justify-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeLineItem(index)}
-                            disabled={form.line_items.length === 1}
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </Button>
-                        </div>
                       </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        {item.type !== 'DISCOUNT' ? (
-                          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={item.taxable}
-                              onChange={(event) => updateLineItem(index, 'taxable', event.target.checked)}
-                              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                            />
-                            Taxable
-                          </label>
-                        ) : (
-                          <span />
-                        )}
-                        <Textarea
-                          value={item.notes}
-                          placeholder="Additional notes (optional)"
-                          rows={1}
-                          className="flex-1 ml-4 max-w-md"
-                          onUpdateModelValue={(value) => updateLineItem(index, 'notes', value)}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
 
                   <Button variant="outline" onClick={addLineItem} className="w-full">
                     <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
