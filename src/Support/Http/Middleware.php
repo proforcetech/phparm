@@ -331,6 +331,100 @@ class Middleware
     }
 
     /**
+     * Generate a CSRF token if one does not exist in the session.
+     * The token is stored in $_SESSION['csrf_token'].
+     */
+    public static function generateCsrfToken(): string
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        }
+
+        return $_SESSION['csrf_token'];
+    }
+
+    /**
+     * Validate the CSRF token from the request header against the session token.
+     * Uses timing-safe comparison to prevent timing attacks.
+     *
+     * @param string $token The token from the request header
+     * @return bool True if the token is valid, false otherwise
+     */
+    public static function validateCsrfToken(string $token): bool
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['csrf_token']) || empty($token)) {
+            return false;
+        }
+
+        return hash_equals($_SESSION['csrf_token'], $token);
+    }
+
+    /**
+     * CSRF protection middleware for state-changing requests.
+     * Validates CSRF token for POST, PUT, PATCH, and DELETE requests.
+     * Allows exemption of specific paths (e.g., webhooks, public endpoints).
+     *
+     * @param array<string> $exemptPaths Paths to exclude from CSRF validation (supports wildcard *)
+     */
+    public static function csrf(array $exemptPaths = []): callable
+    {
+        return function (Request $request, callable $next) use ($exemptPaths) {
+            $method = strtoupper($request->method());
+
+            // Only validate state-changing methods
+            if (!in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+                return $next($request);
+            }
+
+            // Check if path is exempt from CSRF validation
+            $path = $request->path();
+            foreach ($exemptPaths as $exemptPath) {
+                if (self::matchesCsrfExemptPath($path, $exemptPath)) {
+                    return $next($request);
+                }
+            }
+
+            // Get CSRF token from request header
+            $token = $request->header('X-CSRF-Token') ?? $request->header('HTTP_X_CSRF_TOKEN') ?? '';
+
+            if (!self::validateCsrfToken($token)) {
+                return Response::json([
+                    'success' => false,
+                    'error' => 'csrf_token_invalid',
+                    'message' => 'Invalid CSRF token. Please refresh the page and try again.',
+                ], 403);
+            }
+
+            return $next($request);
+        };
+    }
+
+    /**
+     * Check if a path matches a CSRF exempt pattern.
+     *
+     * @param string $path The request path
+     * @param string $pattern The exempt pattern (supports trailing * wildcard)
+     * @return bool True if the path matches the pattern
+     */
+    private static function matchesCsrfExemptPath(string $path, string $pattern): bool
+    {
+        if (str_ends_with($pattern, '*')) {
+            $prefix = rtrim($pattern, '*');
+            return str_starts_with($path, $prefix);
+        }
+
+        return $path === $pattern;
+    }
+
+    /**
      * Rate limiting middleware using IP address.
      *
      * @param int $maxAttempts Maximum requests per window (default: 60)

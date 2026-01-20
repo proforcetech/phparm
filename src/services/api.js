@@ -9,8 +9,9 @@ const api = axios.create({
   withCredentials: true, // Enable sending cookies for session-based auth
 })
 
-// Track if we're already handling session expiration to prevent multiple redirects
-let isHandlingSessionExpiration = false
+// Promise-based singleton to handle session expiration
+// This ensures concurrent requests wait for the same expiration handling
+let sessionExpirationPromise = null
 
 // Request interceptor - add auth token (optional, for future JWT support)
 // Currently using session-based auth via cookies (withCredentials: true)
@@ -27,6 +28,21 @@ api.interceptors.request.use(
     if (portalNonce) {
       config.headers['X-Portal-Nonce'] = portalNonce
     }
+
+    // Add CSRF token for state-changing requests (POST, PUT, PATCH, DELETE)
+    // Token is read from meta tag (preferred) or XSRF-TOKEN cookie (fallback)
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
+      || decodeURIComponent(
+          document.cookie
+            .split('; ')
+            .find(row => row.startsWith('XSRF-TOKEN='))
+            ?.split('=')[1] || ''
+        )
+
+    if (csrfToken && ['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase())) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
+
     return config
   },
   (error) => {
@@ -76,55 +92,63 @@ api.interceptors.response.use(
     }
 
     // Handle session expiration (401 Unauthorized or 403 Forbidden)
-    if ((status === 401 || status === 403) && !isHandlingSessionExpiration) {
-      // Prevent multiple simultaneous logout attempts
-      isHandlingSessionExpiration = true
-
-      // Log the intercepted auth failure for debugging (avoid logging full response to prevent sensitive data exposure)
-      console.warn('[Auth] Session expiration detected:', {
-        status,
-        url: error.config?.url,
-        method: error.config?.method,
-        message: responseData?.message || 'No message provided',
-      })
-
-      // Check user role before clearing to determine which login page to use
-      const storedUser = localStorage.getItem('user')
-      let isCustomer = false
-      try {
-        if (storedUser) {
-          const user = JSON.parse(storedUser)
-          isCustomer = user.role === 'customer'
-        }
-      } catch (e) {
-        // Invalid user data, default to staff login
+    if (status === 401 || status === 403) {
+      // If already handling session expiration, wait for that to complete
+      if (sessionExpirationPromise) {
+        return sessionExpirationPromise.then(() => Promise.reject(error))
       }
 
-      // Clear all authentication data
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('user')
-      localStorage.removeItem('portal_nonce')
+      // Create a new promise for session expiration handling
+      sessionExpirationPromise = new Promise((resolve) => {
+        // Log the intercepted auth failure for debugging (avoid logging full response to prevent sensitive data exposure)
+        console.warn('[Auth] Session expiration detected:', {
+          status,
+          url: error.config?.url,
+          method: error.config?.method,
+          message: responseData?.message || 'No message provided',
+        })
 
-      // Show a user-friendly message about session expiration
-      const isSessionExpired = status === 401
-      const message = isSessionExpired
-        ? 'Your session has expired. Please log in again.'
-        : 'Access denied. Please log in again.'
+        // Check user role before clearing to determine which login page to use
+        const storedUser = localStorage.getItem('user')
+        let isCustomer = false
+        try {
+          if (storedUser) {
+            const user = JSON.parse(storedUser)
+            isCustomer = user.role === 'customer'
+          }
+        } catch (e) {
+          // Invalid user data, default to staff login
+        }
 
-      // Redirect to appropriate login page based on user role
-      const loginPath = isCustomer ? '/customer-login' : '/login'
+        // Clear all authentication data
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+        localStorage.removeItem('portal_nonce')
 
-      const params = new URLSearchParams({
-        expired: isSessionExpired ? '1' : '0',
-        message: message,
+        // Show a user-friendly message about session expiration
+        const isSessionExpired = status === 401
+        const message = isSessionExpired
+          ? 'Your session has expired. Please log in again.'
+          : 'Access denied. Please log in again.'
+
+        // Redirect to appropriate login page based on user role
+        const loginPath = isCustomer ? '/customer-login' : '/login'
+
+        const params = new URLSearchParams({
+          expired: isSessionExpired ? '1' : '0',
+          message: message,
+        })
+
+        window.location.assign(`${loginPath}?${params.toString()}`)
+
+        // Reset promise after a delay to allow redirect
+        setTimeout(() => {
+          sessionExpirationPromise = null
+          resolve()
+        }, 1000)
       })
 
-      window.location.assign(`${loginPath}?${params.toString()}`)
-
-      // Reset flag after navigation completes
-      setTimeout(() => {
-        isHandlingSessionExpiration = false
-      }, 1000)
+      return sessionExpirationPromise.then(() => Promise.reject(error))
     }
 
     return Promise.reject(error)

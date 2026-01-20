@@ -766,6 +766,9 @@ return function (Router $router, array $config, $connection) {
             ]);
         }
 
+        // Regenerate session ID to prevent session fixation attacks
+        session_regenerate_id(true);
+
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $authService->recordLastActivity($user->id);
@@ -872,6 +875,9 @@ return function (Router $router, array $config, $connection) {
             ]);
         }
 
+        // Regenerate session ID to prevent session fixation attacks
+        session_regenerate_id(true);
+
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
@@ -929,6 +935,9 @@ return function (Router $router, array $config, $connection) {
 
         unset($_SESSION['2fa_challenges'][$challengeToken]);
 
+        // Regenerate session ID to prevent session fixation attacks
+        session_regenerate_id(true);
+
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
         $authService->recordLastActivity($user->id);
@@ -981,6 +990,9 @@ return function (Router $router, array $config, $connection) {
         }
 
         unset($_SESSION['2fa_challenges'][$challengeToken]);
+
+        // Regenerate session ID to prevent session fixation attacks
+        session_regenerate_id(true);
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
@@ -1150,12 +1162,38 @@ return function (Router $router, array $config, $connection) {
             return Response::json(['error' => 'User not found'], 404);
         }
 
+        // Regenerate session ID to prevent session fixation attacks
+        session_regenerate_id(true);
+
+        // Generate unique session token for database tracking
+        $sessionToken = bin2hex(random_bytes(32));
+
+        // Record impersonation session in database for audit trail
+        try {
+            $stmt = $connection->pdo()->prepare("
+                INSERT INTO impersonation_sessions
+                (impersonator_id, impersonated_id, session_token, ip_address, user_agent)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $impersonator->id,
+                $targetUser->id,
+                $sessionToken,
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            ]);
+        } catch (\Throwable $e) {
+            // Log error but don't block impersonation if table doesn't exist yet
+            error_log('Failed to record impersonation session: ' . $e->getMessage());
+        }
+
         $_SESSION['impersonation'] = [
             'impersonator_id' => $impersonator->id,
             'impersonator' => $impersonator->toArray(),
             'impersonated_id' => $targetUser->id,
             'impersonated' => $targetUser->toArray(),
             'started_at' => time(),
+            'session_token' => $sessionToken,
         ];
 
         $_SESSION['user_id'] = $targetUser->id;
@@ -1167,7 +1205,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::auth());
 
-    $router->post('/api/auth/impersonate/stop', function (Request $request) {
+    $router->post('/api/auth/impersonate/stop', function (Request $request) use ($connection) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
@@ -1180,6 +1218,20 @@ return function (Router $router, array $config, $connection) {
 
         if (!isset($_SESSION['impersonation']['impersonator'])) {
             return Response::badRequest('No active impersonation session.');
+        }
+
+        // End impersonation session in database
+        if (isset($_SESSION['impersonation']['session_token'])) {
+            try {
+                $stmt = $connection->pdo()->prepare("
+                    UPDATE impersonation_sessions
+                    SET ended_at = NOW(), is_active = FALSE
+                    WHERE session_token = ?
+                ");
+                $stmt->execute([$_SESSION['impersonation']['session_token']]);
+            } catch (\Throwable $e) {
+                error_log('Failed to end impersonation session: ' . $e->getMessage());
+            }
         }
 
         $impersonator = new \App\Models\User($_SESSION['impersonation']['impersonator']);
