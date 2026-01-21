@@ -13,6 +13,45 @@ use RuntimeException;
  *
  * Implements JWT (JSON Web Token) generation and validation using HMAC-SHA256.
  * Tokens are stateless and contain user claims for authentication.
+ *
+ * ## Security Model
+ *
+ * This service supports two token delivery mechanisms with different security profiles:
+ *
+ * ### 1. httpOnly Cookies (Preferred)
+ * Tokens are stored in httpOnly, secure, SameSite=Strict cookies.
+ * - **XSS Protection**: JavaScript cannot access httpOnly cookies
+ * - **CSRF Protection**: SameSite=Strict prevents cross-origin requests from including cookies
+ * - **Automatic**: Browser handles token transmission automatically
+ * - **Use Case**: Web application frontend (React, browser-based)
+ *
+ * ### 2. Bearer Token (API Clients)
+ * Tokens sent via Authorization header: `Authorization: Bearer <token>`
+ * - **XSS Vulnerable**: Tokens stored in localStorage/memory can be stolen via XSS
+ * - **CSRF Immune**: Tokens must be explicitly added to requests, preventing CSRF
+ * - **Explicit**: Client must manage token storage and transmission
+ * - **Use Case**: Mobile apps, third-party API integrations, server-to-server calls
+ *
+ * ## Security Recommendations
+ *
+ * 1. **Web Apps**: Always use httpOnly cookie storage. The middleware prioritizes
+ *    cookie-based auth over bearer tokens for this reason.
+ *
+ * 2. **Mobile Apps**: Use bearer tokens, but implement certificate pinning and
+ *    secure storage (iOS Keychain, Android Keystore).
+ *
+ * 3. **API Clients**: Restrict token scope if possible. Use short-lived access
+ *    tokens with refresh token rotation.
+ *
+ * ## Refresh Token Rotation
+ *
+ * This service implements refresh token rotation with reuse detection:
+ * - Each refresh token can only be used once
+ * - Tokens are grouped into "families" tracking their lineage
+ * - If a token is reused (indicating potential theft), the entire family is revoked
+ * - This limits the damage window if a refresh token is compromised
+ *
+ * @see Middleware::auth() For authentication flow and priority
  */
 class JwtService
 {
@@ -36,14 +75,122 @@ class JwtService
         int $tokenTtlSeconds = 3600,
         int $refreshTtlSeconds = 604800
     ) {
-        if (strlen($secretKey) < 32) {
-            throw new InvalidArgumentException('JWT secret key must be at least 32 characters');
-        }
+        $this->validateSecretKey($secretKey);
 
         $this->connection = $connection;
         $this->secretKey = $secretKey;
         $this->tokenTtlSeconds = $tokenTtlSeconds;
         $this->refreshTtlSeconds = $refreshTtlSeconds;
+    }
+
+    /**
+     * Validate the JWT secret key for security requirements.
+     *
+     * @param string $secretKey The secret key to validate
+     * @throws InvalidArgumentException If the key doesn't meet security requirements
+     */
+    private function validateSecretKey(string $secretKey): void
+    {
+        // Minimum length requirement
+        if (strlen($secretKey) < 32) {
+            throw new InvalidArgumentException('JWT secret key must be at least 32 characters');
+        }
+
+        // Entropy check - ensure the key has sufficient randomness
+        // A good secret should have at least 128 bits of entropy (for HS256)
+        // We estimate entropy by checking character diversity
+        $entropy = $this->estimateEntropy($secretKey);
+        if ($entropy < 100) {
+            throw new InvalidArgumentException(
+                'JWT secret key has insufficient entropy. Use a cryptographically random string. ' .
+                'Generate one with: php -r "echo bin2hex(random_bytes(32));"'
+            );
+        }
+
+        // Check for obvious weak patterns
+        if ($this->hasWeakPattern($secretKey)) {
+            throw new InvalidArgumentException(
+                'JWT secret key appears to use a weak pattern (repeated characters, sequences, or common words). ' .
+                'Use a cryptographically random string.'
+            );
+        }
+    }
+
+    /**
+     * Estimate the entropy of a string in bits.
+     *
+     * @param string $str The string to analyze
+     * @return float Estimated entropy in bits
+     */
+    private function estimateEntropy(string $str): float
+    {
+        $length = strlen($str);
+        if ($length === 0) {
+            return 0;
+        }
+
+        // Calculate character pool size based on character classes present
+        $poolSize = 0;
+        if (preg_match('/[a-z]/', $str)) {
+            $poolSize += 26;
+        }
+        if (preg_match('/[A-Z]/', $str)) {
+            $poolSize += 26;
+        }
+        if (preg_match('/[0-9]/', $str)) {
+            $poolSize += 10;
+        }
+        if (preg_match('/[^a-zA-Z0-9]/', $str)) {
+            $poolSize += 32; // Conservative estimate for special chars
+        }
+
+        if ($poolSize === 0) {
+            return 0;
+        }
+
+        // Entropy = length * log2(poolSize)
+        // Apply a penalty for repeated characters
+        $uniqueChars = count(array_unique(str_split($str)));
+        $uniquenessRatio = $uniqueChars / $length;
+
+        return $length * log($poolSize, 2) * $uniquenessRatio;
+    }
+
+    /**
+     * Check if the string has weak patterns.
+     *
+     * @param string $str The string to check
+     * @return bool True if weak patterns detected
+     */
+    private function hasWeakPattern(string $str): bool
+    {
+        $lower = strtolower($str);
+
+        // Check for repeated characters (e.g., "aaaaa...")
+        if (preg_match('/(.)\1{7,}/', $str)) {
+            return true;
+        }
+
+        // Check for sequential patterns
+        $sequences = ['0123456789', 'abcdefghijklmnopqrstuvwxyz', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+        foreach ($sequences as $seq) {
+            if (strpos($lower, $seq) !== false || strpos($lower, strrev($seq)) !== false) {
+                return true;
+            }
+        }
+
+        // Check for common weak passwords/secrets
+        $weakPatterns = [
+            'password', 'secret', 'changeme', 'default', 'admin', 'test',
+            'your-256-bit-secret', 'change-in-production', 'example'
+        ];
+        foreach ($weakPatterns as $pattern) {
+            if (stripos($str, $pattern) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -66,20 +213,87 @@ class JwtService
 
     /**
      * Generate a refresh token for a user.
+     *
+     * @param User $user The user to generate token for
+     * @param string|null $familyId Token family ID for rotation tracking (null = new family)
+     * @param string|null $ipAddress Client IP address for audit
+     * @param string|null $userAgent Client user agent for audit
+     * @return string The encoded JWT refresh token
      */
-    public function generateRefreshToken(User $user): string
-    {
+    public function generateRefreshToken(
+        User $user,
+        ?string $familyId = null,
+        ?string $ipAddress = null,
+        ?string $userAgent = null
+    ): string {
         $now = time();
+        $jti = bin2hex(random_bytes(16)); // Unique token ID
+        $family = $familyId ?? $this->generateFamilyId();
+
         $payload = [
             'iss' => 'phparm',
             'sub' => $user->id,
             'iat' => $now,
             'exp' => $now + $this->refreshTtlSeconds,
             'type' => 'refresh',
-            'jti' => bin2hex(random_bytes(16)), // Unique token ID
+            'jti' => $jti,
+            'fam' => $family, // Token family for rotation tracking
         ];
 
-        return $this->encode($payload);
+        $token = $this->encode($payload);
+
+        // Store token hash in database for rotation tracking
+        $this->storeRefreshToken($user->id, $token, $family, $now + $this->refreshTtlSeconds, $ipAddress, $userAgent);
+
+        return $token;
+    }
+
+    /**
+     * Generate a unique family ID for token rotation tracking.
+     */
+    private function generateFamilyId(): string
+    {
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
+    /**
+     * Store a refresh token hash in the database.
+     */
+    private function storeRefreshToken(
+        int $userId,
+        string $token,
+        string $familyId,
+        int $expiresAt,
+        ?string $ipAddress,
+        ?string $userAgent
+    ): void {
+        try {
+            $tokenHash = hash('sha256', $token);
+
+            $stmt = $this->connection->pdo()->prepare(
+                'INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, ip_address, user_agent)
+                VALUES (:user_id, :token_hash, :family_id, FROM_UNIXTIME(:expires_at), :ip_address, :user_agent)'
+            );
+
+            $stmt->execute([
+                'user_id' => $userId,
+                'token_hash' => $tokenHash,
+                'family_id' => $familyId,
+                'expires_at' => $expiresAt,
+                'ip_address' => $ipAddress,
+                'user_agent' => $userAgent ? substr($userAgent, 0, 500) : null,
+            ]);
+        } catch (\PDOException $e) {
+            // Log but don't fail - token is still valid even if tracking fails
+            error_log('Failed to store refresh token: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -146,23 +360,137 @@ class JwtService
 
     /**
      * Refresh an access token using a refresh token.
+     * Implements refresh token rotation - each token can only be used once.
      *
+     * @param string $refreshToken The refresh token
+     * @param string|null $ipAddress Client IP address for the new token
+     * @param string|null $userAgent Client user agent for the new token
      * @return array{access_token: string, refresh_token: string, expires_in: int}|null
      */
-    public function refreshTokens(string $refreshToken): ?array
-    {
-        $user = $this->validateRefreshToken($refreshToken);
+    public function refreshTokens(
+        string $refreshToken,
+        ?string $ipAddress = null,
+        ?string $userAgent = null
+    ): ?array {
+        // First validate the token structure and signature
+        $payload = $this->decode($refreshToken);
+        if ($payload === null || ($payload['type'] ?? '') !== 'refresh') {
+            return null;
+        }
 
+        // Check if token has been revoked (token reuse detection)
+        $tokenHash = hash('sha256', $refreshToken);
+        $familyId = $payload['fam'] ?? null;
+
+        if ($this->isRefreshTokenRevoked($tokenHash)) {
+            // Token was already used! This indicates potential token theft.
+            // Revoke the entire token family as a security measure.
+            if ($familyId) {
+                $this->revokeTokenFamily($familyId, 'token_reuse_detected');
+                error_log(sprintf(
+                    'SECURITY: Refresh token reuse detected for family %s. Entire family revoked.',
+                    $familyId
+                ));
+            }
+            return null;
+        }
+
+        // Validate user exists
+        $userId = $payload['sub'] ?? null;
+        if ($userId === null) {
+            return null;
+        }
+
+        $user = $this->findUserById((int) $userId);
         if ($user === null) {
             return null;
         }
 
+        // Mark the current token as used (revoked)
+        $this->revokeRefreshToken($tokenHash, 'rotated');
+
+        // Generate new tokens in the same family
         return [
             'access_token' => $this->generateToken($user),
-            'refresh_token' => $this->generateRefreshToken($user),
+            'refresh_token' => $this->generateRefreshToken($user, $familyId, $ipAddress, $userAgent),
             'expires_in' => $this->tokenTtlSeconds,
             'token_type' => 'Bearer',
         ];
+    }
+
+    /**
+     * Check if a refresh token has been revoked.
+     */
+    private function isRefreshTokenRevoked(string $tokenHash): bool
+    {
+        try {
+            $stmt = $this->connection->pdo()->prepare(
+                'SELECT is_revoked FROM refresh_tokens WHERE token_hash = :token_hash LIMIT 1'
+            );
+            $stmt->execute(['token_hash' => $tokenHash]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            // If token not found in DB, it's from before rotation was implemented - allow it
+            if (!$row) {
+                return false;
+            }
+
+            return (bool) $row['is_revoked'];
+        } catch (\PDOException $e) {
+            error_log('Failed to check refresh token: ' . $e->getMessage());
+            return false; // Fail open to not break auth during DB issues
+        }
+    }
+
+    /**
+     * Revoke a specific refresh token.
+     */
+    private function revokeRefreshToken(string $tokenHash, string $reason): void
+    {
+        try {
+            $stmt = $this->connection->pdo()->prepare(
+                'UPDATE refresh_tokens
+                SET is_revoked = TRUE, revoked_at = NOW(), revoked_reason = :reason
+                WHERE token_hash = :token_hash AND is_revoked = FALSE'
+            );
+            $stmt->execute(['token_hash' => $tokenHash, 'reason' => $reason]);
+        } catch (\PDOException $e) {
+            error_log('Failed to revoke refresh token: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Revoke all tokens in a family (used when token reuse is detected).
+     */
+    private function revokeTokenFamily(string $familyId, string $reason): void
+    {
+        try {
+            $stmt = $this->connection->pdo()->prepare(
+                'UPDATE refresh_tokens
+                SET is_revoked = TRUE, revoked_at = NOW(), revoked_reason = :reason
+                WHERE family_id = :family_id AND is_revoked = FALSE'
+            );
+            $stmt->execute(['family_id' => $familyId, 'reason' => $reason]);
+        } catch (\PDOException $e) {
+            error_log('Failed to revoke token family: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Revoke all refresh tokens for a user (used on logout or password change).
+     */
+    public function revokeAllUserTokens(int $userId, string $reason = 'logout'): void
+    {
+        try {
+            $stmt = $this->connection->pdo()->prepare(
+                'UPDATE refresh_tokens
+                SET is_revoked = TRUE, revoked_at = NOW(), revoked_reason = :reason
+                WHERE user_id = :user_id AND is_revoked = FALSE'
+            );
+            $stmt->execute(['user_id' => $userId, 'reason' => $reason]);
+        } catch (\PDOException $e) {
+            error_log('Failed to revoke user tokens: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -305,10 +633,11 @@ class JwtService
         $sameSite = 'Strict';
 
         // Access token cookie - short-lived, httpOnly, secure
+        // Note: domain key is intentionally omitted to restrict cookie to exact current domain
+        // (prevents subdomain access which could be a security risk if a subdomain is compromised)
         setcookie(self::ACCESS_TOKEN_COOKIE, $accessToken, [
             'expires' => time() + $this->tokenTtlSeconds,
             'path' => '/',
-            'domain' => '',
             'secure' => $secure,
             'httponly' => true,
             'samesite' => $sameSite,
@@ -318,7 +647,6 @@ class JwtService
         setcookie(self::REFRESH_TOKEN_COOKIE, $refreshToken, [
             'expires' => time() + $this->refreshTtlSeconds,
             'path' => '/api/auth', // Restrict to auth endpoints
-            'domain' => '',
             'secure' => $secure,
             'httponly' => true,
             'samesite' => $sameSite,
@@ -337,7 +665,6 @@ class JwtService
         setcookie(self::ACCESS_TOKEN_COOKIE, '', [
             'expires' => $expireTime,
             'path' => '/',
-            'domain' => '',
             'secure' => true,
             'httponly' => true,
             'samesite' => 'Strict',
@@ -346,7 +673,6 @@ class JwtService
         setcookie(self::REFRESH_TOKEN_COOKIE, '', [
             'expires' => $expireTime,
             'path' => '/api/auth',
-            'domain' => '',
             'secure' => true,
             'httponly' => true,
             'samesite' => 'Strict',

@@ -1105,7 +1105,11 @@ return function (Router $router, array $config, $connection) {
             return Response::badRequest('Refresh token required');
         }
 
-        $result = $jwtService->refreshTokens((string) $refreshToken);
+        // Pass IP and user agent for audit logging in token rotation
+        $ipAddress = $request->getClientIp();
+        $userAgent = $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT');
+
+        $result = $jwtService->refreshTokens((string) $refreshToken, $ipAddress, $userAgent);
 
         if ($result === null) {
             return Response::unauthorized('Invalid or expired refresh token');
@@ -1124,11 +1128,16 @@ return function (Router $router, array $config, $connection) {
         }
 
         if (isset($_SESSION['user_id'])) {
+            $userId = (int) $_SESSION['user_id'];
+
             $sessionManager->revokeSessionBySessionId(
-                (int) $_SESSION['user_id'],
+                $userId,
                 session_id(),
-                (int) $_SESSION['user_id']
+                $userId
             );
+
+            // Revoke all refresh tokens for the user (prevents token reuse after logout)
+            $jwtService->revokeAllUserTokens($userId, 'logout');
         }
 
         // Clear JWT cookies (httpOnly - must be cleared server-side)

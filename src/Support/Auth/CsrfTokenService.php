@@ -87,10 +87,10 @@ class CsrfTokenService
      */
     public function setCookie(string $token, bool $secure = true): void
     {
+        // Note: domain key is intentionally omitted to restrict cookie to exact current domain
         $options = [
             'expires' => 0, // Session cookie
             'path' => '/',
-            'domain' => '',
             'secure' => $secure,
             'httponly' => false, // JavaScript needs to read this
             'samesite' => 'Strict',
@@ -113,7 +113,6 @@ class CsrfTokenService
         setcookie(self::COOKIE_NAME, '', [
             'expires' => time() - 3600,
             'path' => '/',
-            'domain' => '',
             'secure' => true,
             'httponly' => false,
             'samesite' => 'Strict',

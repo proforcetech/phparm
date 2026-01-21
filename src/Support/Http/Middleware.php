@@ -247,7 +247,31 @@ class Middleware
      * 2. JWT from httpOnly cookie (preferred for security)
      * 3. Bearer token from Authorization header (API clients)
      *
-     * Also validates impersonation sessions against the database.
+     * ## Security Implications by Method
+     *
+     * **Session-based**: Requires CSRF protection on state-changing requests.
+     * Used primarily for legacy compatibility and server-rendered pages.
+     *
+     * **httpOnly Cookie (Method 2)**: Most secure for browser clients. The cookie
+     * cannot be accessed by JavaScript, protecting against XSS token theft.
+     * Combined with SameSite=Strict, this also prevents CSRF attacks. This method
+     * is preferred and checked before bearer tokens.
+     *
+     * **Bearer Token (Method 3)**: Necessary for mobile apps and API clients that
+     * cannot use cookies. However, tokens must be stored somewhere accessible to
+     * the client (localStorage, memory), making them vulnerable to XSS attacks.
+     * This is an acceptable tradeoff for API clients that:
+     * - Implement certificate pinning
+     * - Use secure storage (Keychain/Keystore)
+     * - Are not browser-based
+     *
+     * The authentication order ensures browser clients will preferentially use
+     * the more secure cookie-based authentication.
+     *
+     * Also validates impersonation sessions against the database with IP checking
+     * to detect potential session hijacking attempts.
+     *
+     * @see JwtService For detailed security model documentation
      */
     public static function auth(): callable
     {
@@ -282,7 +306,8 @@ class Middleware
                 if (isset($_SESSION['impersonation']['session_token'])) {
                     $impersonationService = self::getImpersonationService();
                     $impersonationData = $impersonationService->validateSession(
-                        $_SESSION['impersonation']['session_token']
+                        $_SESSION['impersonation']['session_token'],
+                        $ipAddress // Pass IP for validation to prevent session hijacking
                     );
 
                     if ($impersonationData === null) {

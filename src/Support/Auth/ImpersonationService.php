@@ -74,10 +74,15 @@ class ImpersonationService
      * Validate an active impersonation session.
      *
      * @param string $sessionToken The session token to validate
+     * @param string|null $currentIpAddress The current request IP address for validation
+     * @param bool $strictIpValidation Whether to enforce IP address matching (default: true)
      * @return array|null Session data if valid, null if invalid
      */
-    public function validateSession(string $sessionToken): ?array
-    {
+    public function validateSession(
+        string $sessionToken,
+        ?string $currentIpAddress = null,
+        bool $strictIpValidation = true
+    ): ?array {
         if (empty($sessionToken)) {
             return null;
         }
@@ -100,6 +105,25 @@ class ImpersonationService
 
         if (!$row) {
             return null;
+        }
+
+        // Validate IP address if strict validation is enabled and IP was recorded
+        if ($strictIpValidation && $currentIpAddress !== null && !empty($row['ip_address'])) {
+            if ($row['ip_address'] !== $currentIpAddress) {
+                // IP mismatch - potential session hijacking attempt
+                // Log the suspicious activity and invalidate the session
+                error_log(sprintf(
+                    'Impersonation session IP mismatch: token=%s, stored_ip=%s, current_ip=%s',
+                    substr($sessionToken, 0, 8) . '...',
+                    $row['ip_address'],
+                    $currentIpAddress
+                ));
+
+                // End the potentially compromised session
+                $this->endSession($sessionToken);
+
+                return null;
+            }
         }
 
         // Update last activity

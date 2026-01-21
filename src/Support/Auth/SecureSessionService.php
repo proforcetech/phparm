@@ -149,10 +149,13 @@ class SecureSessionService
 
         // Acquire a simple lock to prevent race conditions
         $lockKey = self::SESSION_LOCK_KEY . '_' . session_id();
-        if (!$this->acquireSessionLock($lockKey)) {
-            // Another request is regenerating, just continue
-            return true;
-        }
+        $lockAcquired = $this->acquireSessionLock($lockKey);
+
+        // If we can't acquire lock, another request may be regenerating.
+        // We still proceed with regeneration to prevent session fixation attacks -
+        // the race condition risk is less severe than leaving the session unchanged.
+        // In the worst case, one request gets a new session while another continues
+        // with the old one briefly, which is acceptable for security.
 
         try {
             // Regenerate with old session destruction
@@ -169,7 +172,9 @@ class SecureSessionService
 
             return $result;
         } finally {
-            $this->releaseSessionLock($lockKey);
+            if ($lockAcquired) {
+                $this->releaseSessionLock($lockKey);
+            }
         }
     }
 
