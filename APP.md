@@ -72,7 +72,7 @@ Target Audience: Technicians (Mechanics) & Drivers (Tow/Transport) Recommended T
 
         Feature: Mandatory photo upload sequence (4 corners of vehicle) before towing (Referencing JobDamageReport.php).
 
-4. Offline Synchronization (Critical)
+4. [x] Offline Synchronization (Critical)
 
     Architecture: Implement an "Offline Queue" similar to src/react/services/offlineSync.js.
 
