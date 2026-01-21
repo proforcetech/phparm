@@ -233,7 +233,7 @@ class MessagingNotificationService
             $this->ensureParticipants($threadId, $participants);
         }
 
-        $this->messaging->postMessage($threadId, $senderId, $message);
+        $this->messaging->postMessage($threadId, $senderId, $message, false);
     }
 
     /**

@@ -231,6 +231,7 @@ return function (Router $router, array $config, $connection) {
 
     $settingsRepository = new \App\Support\SettingsRepository($connection);
     $settingsRepository->seedDefaults($config['settings']['defaults']);
+    $pushNotifications = new \App\Services\Notification\PushNotificationService($connection);
 
     $recaptchaConfigLoader = function () use ($settingsRepository, $config): array {
         $fallback = $config['recaptcha'] ?? [];
@@ -2105,7 +2106,7 @@ return Response::json([
     });
 
     // Customer routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
 
         $customerRepository = new \App\Services\Customer\CustomerRepository($connection);
         $customerController = new \App\Services\Customer\CustomerController($customerRepository, $gate);
@@ -2209,7 +2210,7 @@ return Response::json([
     });
 
     // Service Type routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
 
         $serviceTypeController = new \App\Services\ServiceType\ServiceTypeController(
             new \App\Services\ServiceType\ServiceTypeRepository($connection),
@@ -2251,7 +2252,7 @@ return Response::json([
     });
 
     // Vehicle Master routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
 
         $vehicleRepository = new \App\Services\Vehicle\VehicleMasterRepository($connection);
 
@@ -2417,7 +2418,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $inventoryImportService = new \App\Services\ImportExport\InventoryCsvService($connection, $auditLogger);
         $customerImportService = new \App\Services\ImportExport\CustomerCsvService($connection, $auditLogger);
         $vendorImportService = new \App\Services\ImportExport\VendorCsvService($connection, $auditLogger);
@@ -2473,7 +2474,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inventory routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
 
         $inventoryRepository = new \App\Services\Inventory\InventoryItemRepository($connection);
         $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection);
@@ -2904,7 +2905,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Core Return Tracking routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $coreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
         $coreReturnController = new \App\Services\Inventory\CoreReturnController($coreReturnService, $gate);
 
@@ -4119,7 +4120,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Workorder routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
         $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $auditLogger);
@@ -4146,7 +4147,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $workorderTimeline,
             $gate,
             $workorderMessagingNotifications,
-            $dispatchAuditService
+            $dispatchAuditService,
+            $pushNotifications
         );
 
         // Status-driven notification service
@@ -4491,7 +4493,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     );
 
     $messagingController = new \App\Services\Messaging\MessagingController(
-        new \App\Services\Messaging\MessagingService($connection),
+        new \App\Services\Messaging\MessagingService($connection, $pushNotifications),
         $gate
     );
 
@@ -4507,7 +4509,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $driverDispatchController = new \App\Services\Dispatch\DriverDispatchController(
         $connection,
         new \App\Services\Dispatch\DriverPushTokenService($connection),
-        new \App\Services\Dispatch\DriverJobOfferService($connection),
+        new \App\Services\Dispatch\DriverJobOfferService($connection, $pushNotifications),
         $gate
     );
 
@@ -4953,11 +4955,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $etaConfig = require __DIR__ . '/../config/dispatch.php';
         $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
         $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
-        $offerService = new \App\Services\Dispatch\DriverJobOfferService($connection);
+        $offerService = new \App\Services\Dispatch\DriverJobOfferService($connection, $pushNotifications);
         $waterfallService = new \App\Services\Dispatch\WaterfallDispatchService($connection, $recommendationService, $offerService);
         $geofencingService = new \App\Services\Dispatch\GeofencingService($connection);
         $auditService = new \App\Services\Dispatch\DispatchAuditService($connection);

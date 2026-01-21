@@ -84,7 +84,7 @@ Target Audience: Technicians (Mechanics) & Drivers (Tow/Transport) Recommended T
 
         Sync: Background worker detects connection restoration and flushes the queue to the API.
 
-5. Push Notifications
+5. [x] Push Notifications
 
     Service: Firebase Cloud Messaging (FCM).
 

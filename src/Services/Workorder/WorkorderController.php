@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Workorder;
 use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
+use App\Services\Notification\PushNotificationService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -19,6 +20,7 @@ class WorkorderController
     private AccessGate $gate;
     private ?MessagingNotificationService $messagingNotifications;
     private ?DispatchAuditService $dispatchAudit;
+    private ?PushNotificationService $pushNotifications;
 
     public function __construct(
         WorkorderRepository $repository,
@@ -27,7 +29,8 @@ class WorkorderController
         WorkorderTimelineService $timeline,
         AccessGate $gate,
         ?MessagingNotificationService $messagingNotifications = null,
-        ?DispatchAuditService $dispatchAudit = null
+        ?DispatchAuditService $dispatchAudit = null,
+        ?PushNotificationService $pushNotifications = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
@@ -36,6 +39,7 @@ class WorkorderController
         $this->gate = $gate;
         $this->messagingNotifications = $messagingNotifications;
         $this->dispatchAudit = $dispatchAudit;
+        $this->pushNotifications = $pushNotifications;
     }
 
     /**
@@ -214,6 +218,14 @@ class WorkorderController
             'actor_id' => $user->id,
             'recommended_driver' => is_array($recommendedDriver) ? $recommendedDriver : null,
         ]);
+
+        if ($technicianId !== null && (int) $technicianId !== (int) ($before?->assigned_technician_id ?? 0)) {
+            $this->pushNotifications?->sendWorkorderAssignedNotification(
+                (int) $technicianId,
+                $workorder->id,
+                $workorder->number
+            );
+        }
 
         if ($this->dispatchAudit !== null) {
             $idempotencyKey = $this->dispatchAudit->generateIdempotencyKey(
