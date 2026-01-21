@@ -3,16 +3,19 @@
 namespace App\Services\Dispatch;
 
 use App\Database\Connection;
+use App\Services\Notification\PushNotificationService;
 use InvalidArgumentException;
 use PDO;
 
 class DriverJobOfferService
 {
     private Connection $connection;
+    private ?PushNotificationService $pushNotifications;
 
-    public function __construct(Connection $connection)
+    public function __construct(Connection $connection, ?PushNotificationService $pushNotifications = null)
     {
         $this->connection = $connection;
+        $this->pushNotifications = $pushNotifications;
     }
 
     /**
@@ -61,7 +64,13 @@ class DriverJobOfferService
         ]);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
-        return $this->getOffer($id);
+        $offer = $this->getOffer($id);
+
+        if ($offer !== []) {
+            $this->pushNotifications?->sendJobOfferNotification($driverProfileId, $offer);
+        }
+
+        return $offer;
     }
 
     /**

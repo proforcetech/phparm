@@ -3,6 +3,7 @@
 namespace App\Services\Messaging;
 
 use App\Database\Connection;
+use App\Services\Notification\PushNotificationService;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
 use PDO;
@@ -10,10 +11,12 @@ use PDO;
 class MessagingService
 {
     private Connection $connection;
+    private ?PushNotificationService $pushNotifications;
 
-    public function __construct(Connection $connection)
+    public function __construct(Connection $connection, ?PushNotificationService $pushNotifications = null)
     {
         $this->connection = $connection;
+        $this->pushNotifications = $pushNotifications;
     }
 
     /**
@@ -166,7 +169,7 @@ class MessagingService
     /**
      * @return array<string, mixed>
      */
-    public function postMessage(int $threadId, int $senderId, string $body): array
+    public function postMessage(int $threadId, int $senderId, string $body, bool $sendPush = true): array
     {
         if (trim($body) === '') {
             throw new InvalidArgumentException('Message body is required');
@@ -192,7 +195,13 @@ class MessagingService
         );
         $messageStmt->execute(['thread_id' => $threadId]);
 
-        return $messageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $message = $messageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        if ($sendPush) {
+            $this->notifyChatParticipants($threadId, $senderId, $body);
+        }
+
+        return $message;
     }
 
     /**
@@ -203,7 +212,8 @@ class MessagingService
         int $threadId,
         int $senderId,
         ?string $body,
-        array $attachments
+        array $attachments,
+        bool $sendPush = true
     ): array {
         $body = $body !== null ? trim($body) : '';
         if ($body === '' && $attachments === []) {
@@ -215,7 +225,8 @@ class MessagingService
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
 
-        $this->insertMessage($threadId, $senderId, $body === '' ? '[Attachment]' : $body);
+        $messageBody = $body === '' ? '[Attachment]' : $body;
+        $this->insertMessage($threadId, $senderId, $messageBody);
 
         $messageStmt = $pdo->prepare(
             'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
@@ -238,6 +249,10 @@ class MessagingService
         $updateStmt->execute(['thread_id' => $threadId]);
 
         $pdo->commit();
+
+        if ($sendPush) {
+            $this->notifyChatParticipants($threadId, $senderId, $messageBody);
+        }
 
         return $message;
     }
@@ -396,6 +411,66 @@ class MessagingService
             'sender_id' => $senderId,
             'body' => $body,
         ]);
+    }
+
+    private function notifyChatParticipants(int $threadId, int $senderId, string $message): void
+    {
+        if ($this->pushNotifications === null) {
+            return;
+        }
+
+        $participants = $this->participantsForThreads([$threadId])[$threadId] ?? [];
+        if ($participants === []) {
+            return;
+        }
+
+        $recipientIds = [];
+        $senderName = '';
+
+        foreach ($participants as $participant) {
+            $participantId = (int) $participant['id'];
+            if ($participantId === $senderId) {
+                $senderName = (string) ($participant['name'] ?? '');
+                continue;
+            }
+            $recipientIds[] = $participantId;
+        }
+
+        if ($recipientIds === []) {
+            return;
+        }
+
+        if ($senderName === '') {
+            $senderName = $this->resolveUserName($senderId);
+        }
+
+        $this->pushNotifications->sendChatMessageNotification(
+            $recipientIds,
+            $threadId,
+            $senderId,
+            $senderName,
+            $message
+        );
+    }
+
+    private function resolveUserName(int $userId): string
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT first_name, last_name, name FROM users WHERE id = :id'
+        );
+        $stmt->execute(['id' => $userId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return 'Someone';
+        }
+
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name === '') {
+            $name = trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? ''));
+        }
+
+        return $name !== '' ? $name : 'Someone';
     }
 
     /**

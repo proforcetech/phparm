@@ -1,3 +1,4 @@
+import type { NotificationContent } from 'expo-notifications'
 import * as LocalAuthentication from 'expo-local-authentication'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -9,7 +10,9 @@ import { BiometricUnlockScreen } from './src/screens/BiometricUnlockScreen'
 import { DriverHomeScreen } from './src/screens/DriverHomeScreen'
 import { LoginScreen } from './src/screens/LoginScreen'
 import { TechnicianHomeScreen } from './src/screens/TechnicianHomeScreen'
+import { listenForPushNotifications, syncDriverPushToken } from './src/services/pushNotifications'
 import { useAuthStore } from './src/stores/authStore'
+import { useToastStore } from './src/stores/toastStore'
 import { useUIStore } from './src/stores/uiStore'
 import { getUserRoles, resolvePrimaryInterface } from './src/utils/roles'
 
@@ -22,7 +25,10 @@ export default function App() {
   const logout = useAuthStore((state) => state.logout)
   const initialized = useAuthStore((state) => state.initialized)
   const offlineAccess = useAuthStore((state) => state.offlineAccess)
+  const canRegisterPush = useAuthStore((state) => state.hasPermission('dispatch.tokens.manage'))
   const theme = useUIStore((state) => state.theme)
+  const addChatNotification = useUIStore((state) => state.addChatNotification)
+  const pushInfo = useToastStore((state) => state.info)
   const [biometricAvailable, setBiometricAvailable] = useState(false)
   const [biometricUnlocked, setBiometricUnlocked] = useState(false)
   const [biometricChecking, setBiometricChecking] = useState(false)
@@ -88,6 +94,54 @@ export default function App() {
       isMounted = false
     }
   }, [isAuthenticated, promptBiometric])
+
+  const handlePushNotification = useCallback(
+    (content: NotificationContent) => {
+      const data = (content.data ?? {}) as Record<string, unknown>
+      const type = typeof data.type === 'string' ? data.type : ''
+
+      if (type === 'chat_message') {
+        const senderName = typeof data.sender_name === 'string' ? data.sender_name : 'New message'
+        const message = typeof data.message === 'string' ? data.message : content.body ?? ''
+        addChatNotification({
+          id: typeof data.message_id === 'string' ? data.message_id : undefined,
+          threadId: typeof data.thread_id === 'string' ? data.thread_id : undefined,
+          senderName,
+          message,
+        })
+        if (message || senderName) {
+          pushInfo(`${senderName}${message ? `: ${message}` : ''}`)
+        }
+        return
+      }
+
+      if (type === 'job_offer') {
+        pushInfo('New job offer received.')
+        return
+      }
+
+      if (type === 'workorder_assigned') {
+        const workorderNumber =
+          typeof data.workorder_number === 'string' ? data.workorder_number : undefined
+        const suffix = workorderNumber ? ` #${workorderNumber}` : ''
+        pushInfo(`Work order${suffix} assigned to you.`)
+      }
+    },
+    [addChatNotification, pushInfo]
+  )
+
+  useEffect(() => {
+    if (!isAuthenticated || !canRegisterPush) {
+      return
+    }
+
+    syncDriverPushToken().catch((error) => console.warn('Push token sync failed', error))
+    const unsubscribe = listenForPushNotifications(handlePushNotification)
+
+    return () => {
+      unsubscribe()
+    }
+  }, [canRegisterPush, handlePushNotification, isAuthenticated])
 
   return (
     <AppProviders>
