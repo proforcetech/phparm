@@ -3724,8 +3724,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     // Public estimate routes
     $router->get('/api/public/estimate', function (Request $request) use ($connection, $auditLogger) {
         $token = $request->queryParam('token');
-        if (!$token) {
-            return Response::badRequest(['error' => 'Token is required']);
+        $shortCode = $request->queryParam('short_code');
+        if (!$token && !$shortCode) {
+            return Response::badRequest(['error' => 'Token or short_code is required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -3734,7 +3735,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
         try {
-            $data = $linkService->fetchView($token, $request->getClientIp(), $request->header('USER_AGENT'));
+            $data = $linkService->fetchView(
+                $token ?: null,
+                $request->getClientIp(),
+                $request->header('USER_AGENT'),
+                $shortCode ?: null
+            );
 
             // Convert estimate object to array
             $estimate = $data['estimate']->toArray();
@@ -3781,10 +3787,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->post('/api/public/estimate/approve-job', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
         $token = $body['token'] ?? '';
+        $shortCode = $body['short_code'] ?? '';
         $jobId = (int) ($body['job_id'] ?? 0);
 
-        if (!$token || !$jobId) {
-            return Response::badRequest(['error' => 'Token and job_id are required']);
+        if ((!$token && !$shortCode) || !$jobId) {
+            return Response::badRequest(['error' => 'Token or short_code and job_id are required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -3800,7 +3807,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $request->getClientIp(),
                 $request->header('USER_AGENT'),
                 $body['signer_name'] ?? null,
-                $body['signer_email'] ?? null
+                $body['signer_email'] ?? null,
+                $shortCode ?: null
             );
             return Response::json(['success' => $result]);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
@@ -3811,10 +3819,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->post('/api/public/estimate/reject-job', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
         $token = $body['token'] ?? '';
+        $shortCode = $body['short_code'] ?? '';
         $jobId = (int) ($body['job_id'] ?? 0);
 
-        if (!$token || !$jobId) {
-            return Response::badRequest(['error' => 'Token and job_id are required']);
+        if ((!$token && !$shortCode) || !$jobId) {
+            return Response::badRequest(['error' => 'Token or short_code and job_id are required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -3831,7 +3840,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $request->header('USER_AGENT'),
                 $body['signer_name'] ?? null,
                 $body['signer_email'] ?? null,
-                $body['rejection_reason'] ?? null
+                $body['rejection_reason'] ?? null,
+                $shortCode ?: null
             );
             return Response::json(['success' => $result]);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
@@ -3842,9 +3852,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->post('/api/public/estimate/signature', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
         $token = $body['token'] ?? '';
+        $shortCode = $body['short_code'] ?? '';
 
-        if (!$token || empty($body['name']) || empty($body['signature_data'])) {
-            return Response::badRequest(['error' => 'Token, name, and signature_data are required']);
+        if ((!$token && !$shortCode) || empty($body['name']) || empty($body['signature_data'])) {
+            return Response::badRequest(['error' => 'Token or short_code, name, and signature_data are required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -3863,7 +3874,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $request->header('USER_AGENT'),
                 $body['device_fingerprint'] ?? null,
                 !empty($body['legal_consent']),
-                $body['consent_text'] ?? null
+                $body['consent_text'] ?? null,
+                $shortCode ?: null
             );
 
             // Auto-create workorder after signature is captured

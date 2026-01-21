@@ -98,7 +98,7 @@ Target Audience: Technicians (Mechanics) & Drivers (Tow/Transport) Recommended T
 
         Chat Message Received (MessagingService.php).
 
-6. Customer Facing Features (Phase 2)
+6. [x] Customer Facing Features (Phase 2)
 
     Approvals: Push notification when an estimate is ready. "Approve" button digitally signs the estimate.
 
