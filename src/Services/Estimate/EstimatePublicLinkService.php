@@ -71,9 +71,13 @@ class EstimatePublicLinkService
     /**
      * @return array<string, mixed>
      */
-    public function fetchView(string $token, ?string $ipAddress = null, ?string $userAgent = null): array
-    {
-        $link = $this->resolveLink($token);
+    public function fetchView(
+        ?string $token,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+        ?string $shortCode = null
+    ): array {
+        $link = $this->resolveLink($token, $shortCode);
         $estimate = $this->estimates->find($link->estimate_id);
 
         if ($estimate === null) {
@@ -101,15 +105,16 @@ class EstimatePublicLinkService
     }
 
     public function approveJob(
-        string $token,
+        ?string $token,
         int $jobId,
         ?string $comment = null,
         ?string $ipAddress = null,
         ?string $userAgent = null,
         ?string $signerName = null,
-        ?string $signerEmail = null
+        ?string $signerEmail = null,
+        ?string $shortCode = null
     ): bool {
-        $link = $this->resolveLink($token);
+        $link = $this->resolveLink($token, $shortCode);
         $estimateId = $link->estimate_id;
         $updated = $this->editor->setJobCustomerStatus($estimateId, $jobId, 'approved');
 
@@ -137,16 +142,17 @@ class EstimatePublicLinkService
     }
 
     public function rejectJob(
-        string $token,
+        ?string $token,
         int $jobId,
         ?string $comment = null,
         ?string $ipAddress = null,
         ?string $userAgent = null,
         ?string $signerName = null,
         ?string $signerEmail = null,
-        ?string $rejectionReason = null
+        ?string $rejectionReason = null,
+        ?string $shortCode = null
     ): bool {
-        $link = $this->resolveLink($token);
+        $link = $this->resolveLink($token, $shortCode);
         $estimateId = $link->estimate_id;
         $updated = $this->editor->setJobCustomerStatus($estimateId, $jobId, 'rejected');
 
@@ -175,7 +181,7 @@ class EstimatePublicLinkService
     }
 
     public function captureSignature(
-        string $token,
+        ?string $token,
         string $name,
         ?string $email,
         string $signatureData,
@@ -184,9 +190,10 @@ class EstimatePublicLinkService
         ?string $userAgent = null,
         ?string $deviceFingerprint = null,
         bool $legalConsent = false,
-        ?string $consentText = null
+        ?string $consentText = null,
+        ?string $shortCode = null
     ): EstimateSignature {
-        $link = $this->resolveLink($token);
+        $link = $this->resolveLink($token, $shortCode);
         $estimate = $this->estimates->find($link->estimate_id);
         if ($estimate === null) {
             throw new RuntimeException('Estimate not found for signature.');
@@ -268,9 +275,9 @@ class EstimatePublicLinkService
         return $signature;
     }
 
-    public function addCustomerComment(string $token, string $comment): bool
+    public function addCustomerComment(?string $token, string $comment, ?string $shortCode = null): bool
     {
-        $link = $this->resolveLink($token);
+        $link = $this->resolveLink($token, $shortCode);
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             INSERT INTO estimate_public_comments (estimate_id, comment, created_at)
             VALUES (:estimate_id, :comment, NOW())
@@ -410,28 +417,46 @@ class EstimatePublicLinkService
         $stmt->execute(['id' => $linkId]);
     }
 
-    private function resolveLink(string $token): EstimatePublicLink
+    private function resolveLink(?string $token, ?string $shortCode = null): EstimatePublicLink
     {
-        if ($token === '') {
-            throw new InvalidArgumentException('Public token is required.');
+        if ($token !== null && $token !== '') {
+            $hash = hash('sha256', $token);
+            $stmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_public_links WHERE token_hash = :hash LIMIT 1');
+            $stmt->execute(['hash' => $hash]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$row) {
+                throw new RuntimeException('Invalid or unknown estimate token.');
+            }
+
+            $link = new EstimatePublicLink($row);
+            $this->assertNotExpired($link);
+            return $link;
         }
 
-        $hash = hash('sha256', $token);
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_public_links WHERE token_hash = :hash LIMIT 1');
-        $stmt->execute(['hash' => $hash]);
+        if ($shortCode === null || $shortCode === '') {
+            throw new InvalidArgumentException('Public token or short code is required.');
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM estimate_public_links WHERE short_code = :short_code LIMIT 1');
+        $stmt->execute(['short_code' => $shortCode]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
-            throw new RuntimeException('Invalid or unknown estimate token.');
+            throw new RuntimeException('Invalid or unknown estimate link.');
         }
 
         $link = new EstimatePublicLink($row);
+        $this->assertNotExpired($link);
 
+        return $link;
+    }
+
+    private function assertNotExpired(EstimatePublicLink $link): void
+    {
         if ($link->expires_at !== null && strtotime($link->expires_at) < time()) {
             throw new RuntimeException('This estimate link has expired.');
         }
-
-        return $link;
     }
 
     private function generateToken(): string

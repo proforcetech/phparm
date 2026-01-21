@@ -36,8 +36,8 @@ class StripeGateway implements PaymentGatewayInterface
         $this->validateInvoiceData($invoiceData);
 
         try {
-            $session = \Stripe\Checkout\Session::create([
-                'payment_method_types' => $options['payment_methods'] ?? ['card'],
+            $wallets = $this->normalizeWallets($options['wallets'] ?? $options['wallet'] ?? null);
+            $sessionPayload = [
                 'line_items' => [[
                     'price_data' => [
                         'currency' => $options['currency'] ?? 'usd',
@@ -58,7 +58,16 @@ class StripeGateway implements PaymentGatewayInterface
                     'invoice_id' => (string) $invoiceData['id'],
                     'customer_id' => (string) ($invoiceData['customer_id'] ?? ''),
                 ],
-            ]);
+            ];
+
+            if ($wallets !== []) {
+                $sessionPayload['automatic_payment_methods'] = ['enabled' => true];
+                $sessionPayload['metadata']['wallets'] = implode(',', $wallets);
+            } else {
+                $sessionPayload['payment_method_types'] = $options['payment_methods'] ?? ['card'];
+            }
+
+            $session = \Stripe\Checkout\Session::create($sessionPayload);
 
             return [
                 'checkout_url' => $session->url,
@@ -81,14 +90,26 @@ class StripeGateway implements PaymentGatewayInterface
         }
 
         try {
-            $paymentIntent = \Stripe\PaymentIntent::create([
+            $wallets = $this->normalizeWallets(
+                $paymentData['wallets'] ?? $paymentData['wallet'] ?? $paymentData['wallet_type'] ?? null
+            );
+            $intentPayload = [
                 'amount' => (int) ($paymentData['amount'] * 100), // Convert to cents
                 'currency' => $paymentData['currency'] ?? 'usd',
                 'payment_method' => $paymentData['payment_method'],
                 'confirm' => true,
                 'description' => $paymentData['description'] ?? null,
                 'metadata' => $paymentData['metadata'] ?? [],
-            ]);
+            ];
+
+            if (!empty($paymentData['payment_method_types'])) {
+                $intentPayload['payment_method_types'] = $paymentData['payment_method_types'];
+            } elseif ($wallets !== []) {
+                $intentPayload['automatic_payment_methods'] = ['enabled' => true];
+                $intentPayload['metadata']['wallets'] = implode(',', $wallets);
+            }
+
+            $paymentIntent = \Stripe\PaymentIntent::create($intentPayload);
 
             return [
                 'transaction_id' => $paymentIntent->id,
@@ -217,6 +238,36 @@ class StripeGateway implements PaymentGatewayInterface
         if (!isset($invoiceData['amount']) || $invoiceData['amount'] <= 0) {
             throw new InvalidArgumentException('Valid invoice amount is required');
         }
+    }
+
+    /**
+     * @param mixed $wallets
+     * @return array<int, string>
+     */
+    private function normalizeWallets($wallets): array
+    {
+        if ($wallets === null || $wallets === '') {
+            return [];
+        }
+
+        if (is_string($wallets)) {
+            $wallets = array_filter(array_map('trim', explode(',', $wallets)));
+        }
+
+        if (!is_array($wallets)) {
+            return [];
+        }
+
+        $supported = ['apple_pay', 'google_pay'];
+        $normalized = [];
+        foreach ($wallets as $wallet) {
+            $wallet = strtolower((string) $wallet);
+            if (in_array($wallet, $supported, true) && !in_array($wallet, $normalized, true)) {
+                $normalized[] = $wallet;
+            }
+        }
+
+        return $normalized;
     }
 
     private function assertConfigured(): void

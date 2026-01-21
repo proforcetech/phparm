@@ -119,8 +119,16 @@ class SquareGateway implements PaymentGatewayInterface
                 $paymentRequest->setReferenceId($paymentData['reference_id']);
             }
 
-            if (isset($paymentData['note'])) {
-                $paymentRequest->setNote($paymentData['note']);
+            $walletType = $this->normalizeWalletType($paymentData['wallet_type'] ?? $paymentData['wallet'] ?? null);
+            if (isset($paymentData['note']) || $walletType !== null) {
+                $noteParts = [];
+                if (!empty($paymentData['note'])) {
+                    $noteParts[] = $paymentData['note'];
+                }
+                if ($walletType !== null) {
+                    $noteParts[] = 'Wallet: ' . strtoupper($walletType);
+                }
+                $paymentRequest->setNote(implode(' | ', $noteParts));
             }
 
             $apiResponse = $paymentsApi->createPayment($paymentRequest);
@@ -134,6 +142,7 @@ class SquareGateway implements PaymentGatewayInterface
                     'amount' => $payment->getAmountMoney()->getAmount() / 100,
                     'currency' => $payment->getAmountMoney()->getCurrency(),
                     'payment_method' => $paymentData['source_id'] ?? null,
+                    'wallet_type' => $walletType,
                     'receipt_url' => $payment->getReceiptUrl(),
                     'created_at' => $payment->getCreatedAt(),
                 ];
@@ -299,6 +308,18 @@ class SquareGateway implements PaymentGatewayInterface
             'FAILED' => 'failed',
             default => 'unknown',
         };
+    }
+
+    private function normalizeWalletType(?string $walletType): ?string
+    {
+        if ($walletType === null || $walletType === '') {
+            return null;
+        }
+
+        $walletType = strtolower(trim($walletType));
+        $supported = ['apple_pay', 'google_pay'];
+
+        return in_array($walletType, $supported, true) ? $walletType : null;
     }
 
     /**
