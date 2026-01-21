@@ -118,7 +118,6 @@ export default function CMSTemplateForm() {
     if (navigator.clipboard) {
       navigator.clipboard
         .writeText(text)
-        .then(() => console.log('Copied to clipboard:', text))
         .catch((err) => {
           console.error('Copy failed:', err)
           window.alert(`Copy failed: ${err}`)

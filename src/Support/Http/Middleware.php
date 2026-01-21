@@ -5,9 +5,12 @@ namespace App\Support\Http;
 use App\Database\Connection;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\CsrfTokenService;
+use App\Support\Auth\ImpersonationService;
 use App\Support\Auth\JwtService;
 use App\Support\Auth\ModuleAccessService;
 use App\Support\Auth\RolePermissions;
+use App\Support\Auth\SecureSessionService;
 use App\Support\Auth\UnauthorizedException;
 use App\Support\Auth\UserSessionManager;
 
@@ -18,6 +21,9 @@ class Middleware
     private static ?ModuleAccessService $moduleService = null;
     private static ?UserSessionManager $sessionManager = null;
     private static ?Connection $activityConnection = null;
+    private static ?ImpersonationService $impersonationService = null;
+    private static ?SecureSessionService $secureSessionService = null;
+    private static ?CsrfTokenService $csrfTokenService = null;
 
     /**
      * Get or create the default rate limiter instance.
@@ -142,6 +148,51 @@ class Middleware
     }
 
     /**
+     * Get or create the impersonation service instance.
+     */
+    private static function getImpersonationService(): ImpersonationService
+    {
+        if (self::$impersonationService === null) {
+            $dbConfigPath = dirname(__DIR__, 3) . '/config/database.php';
+            $dbConfig = file_exists($dbConfigPath) ? require $dbConfigPath : [];
+            $connection = new Connection($dbConfig);
+
+            self::$impersonationService = new ImpersonationService($connection);
+        }
+        return self::$impersonationService;
+    }
+
+    /**
+     * Set a custom impersonation service instance (for testing).
+     */
+    public static function setImpersonationService(ImpersonationService $service): void
+    {
+        self::$impersonationService = $service;
+    }
+
+    /**
+     * Get or create the secure session service instance.
+     */
+    private static function getSecureSessionService(): SecureSessionService
+    {
+        if (self::$secureSessionService === null) {
+            self::$secureSessionService = new SecureSessionService();
+        }
+        return self::$secureSessionService;
+    }
+
+    /**
+     * Get or create the CSRF token service instance.
+     */
+    private static function getCsrfTokenService(): CsrfTokenService
+    {
+        if (self::$csrfTokenService === null) {
+            self::$csrfTokenService = new CsrfTokenService();
+        }
+        return self::$csrfTokenService;
+    }
+
+    /**
      * Require access to a specific module.
      *
      * This middleware checks:
@@ -189,17 +240,31 @@ class Middleware
     }
 
     /**
-     * Authenticate user from session or bearer token
+     * Authenticate user from session, httpOnly cookie, or bearer token.
+     *
+     * Authentication priority:
+     * 1. Session-based auth (for backwards compatibility)
+     * 2. JWT from httpOnly cookie (preferred for security)
+     * 3. Bearer token from Authorization header (API clients)
+     *
+     * Also validates impersonation sessions against the database.
      */
     public static function auth(): callable
     {
         return function (Request $request, callable $next) {
-            // Check session first
-            if (session_status() === PHP_SESSION_NONE) {
-                session_start();
+            $secureSession = self::getSecureSessionService();
+            $secureSession->start();
+
+            // Validate session is not expired
+            if (!$secureSession->validate()) {
+                throw new UnauthorizedException('Session expired');
             }
 
+            // Clean up expired 2FA challenges
+            $secureSession->cleanExpiredTwoFactorChallenges();
+
             $user = null;
+            $isImpersonating = false;
 
             // Try session-based auth
             if (isset($_SESSION['user_id'])) {
@@ -209,20 +274,51 @@ class Middleware
                 $userAgent = $request->header('HTTP_USER_AGENT') ?? $request->header('USER_AGENT');
 
                 if (!$sessionManager->ensureSessionActive((int) $_SESSION['user_id'], $sessionId, $ipAddress, $userAgent)) {
-                    session_destroy();
+                    $secureSession->destroy();
                     throw new UnauthorizedException('Session has been revoked');
                 }
 
-                // In a real implementation, fetch user from database
+                // Validate impersonation session if present
+                if (isset($_SESSION['impersonation']['session_token'])) {
+                    $impersonationService = self::getImpersonationService();
+                    $impersonationData = $impersonationService->validateSession(
+                        $_SESSION['impersonation']['session_token']
+                    );
+
+                    if ($impersonationData === null) {
+                        // Impersonation session is invalid - save impersonator data before clearing
+                        $impersonatorId = $_SESSION['impersonation']['impersonator_id'] ?? null;
+                        $impersonatorData = $_SESSION['impersonation']['impersonator'] ?? null;
+
+                        // Clear the invalid impersonation session
+                        unset($_SESSION['impersonation']);
+
+                        // Restore original user if we have impersonator data
+                        if ($impersonatorId !== null && $impersonatorData !== null) {
+                            $_SESSION['user_id'] = $impersonatorId;
+                            $_SESSION['user'] = $impersonatorData;
+                        }
+                    } else {
+                        $isImpersonating = true;
+                    }
+                }
+
                 $user = $_SESSION['user'] ?? null;
             }
 
-            // Try bearer token auth
+            // Try JWT from httpOnly cookie
+            if ($user === null) {
+                $jwtService = self::getJwtService();
+                $cookieUser = $jwtService->validateTokenFromCookie();
+                if ($cookieUser !== null) {
+                    $user = $cookieUser;
+                }
+            }
+
+            // Try bearer token auth (for API clients)
             if ($user === null) {
                 $token = $request->bearerToken();
                 if ($token !== null) {
-                    // In a real implementation, validate token and fetch user
-                    // For now, we'll just decode a simple token
                     $user = self::validateToken($token);
                 }
             }
@@ -239,6 +335,9 @@ class Middleware
                 $userModel = $user;
                 $request->setAttribute('user', $userModel);
             }
+
+            // Store impersonation status in request for access by handlers
+            $request->setAttribute('is_impersonating', $isImpersonating);
 
             if ($userModel instanceof User) {
                 self::recordUserActivity($userModel->id);
@@ -333,18 +432,13 @@ class Middleware
     /**
      * Generate a CSRF token if one does not exist in the session.
      * The token is stored in $_SESSION['csrf_token'].
+     *
+     * @deprecated Use CsrfTokenService instead
      */
     public static function generateCsrfToken(): string
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-
-        if (!isset($_SESSION['csrf_token'])) {
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-        }
-
-        return $_SESSION['csrf_token'];
+        $csrfService = self::getCsrfTokenService();
+        return $csrfService->getToken();
     }
 
     /**
@@ -353,8 +447,31 @@ class Middleware
      *
      * @param string $token The token from the request header
      * @return bool True if the token is valid, false otherwise
+     * @deprecated Use CsrfTokenService instead
      */
     public static function validateCsrfToken(string $token): bool
+    {
+        $csrfService = self::getCsrfTokenService();
+        return $csrfService->validateToken($token);
+    }
+
+    /**
+     * Get the CSRF token service for external use.
+     *
+     * @return CsrfTokenService
+     */
+    public static function csrfService(): CsrfTokenService
+    {
+        return self::getCsrfTokenService();
+    }
+
+    /**
+     * Legacy validation method - kept for backwards compatibility.
+     *
+     * @param string $token The token from the request header
+     * @return bool True if the token is valid, false otherwise
+     */
+    private static function validateCsrfTokenLegacy(string $token): bool
     {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();

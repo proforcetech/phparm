@@ -83,12 +83,21 @@ export function AuthProvider({ children }) {
   }, [])
 
   const handleLoginSuccess = useCallback((data) => {
-    if (data.token && data.user) {
-      setToken(data.token)
+    if (data.user) {
+      // Token may be provided for backwards compatibility, but JWT is now primarily
+      // stored in httpOnly cookies for security (XSS protection)
+      if (data.token) {
+        setToken(data.token)
+        // Only store token in localStorage if explicitly provided (backwards compat)
+        // New secure flow uses httpOnly cookies which don't need localStorage
+        if (data.use_legacy_storage) {
+          localStorage.setItem('auth_token', data.token)
+        }
+      }
+
       setUser(data.user)
       setImpersonation(null)
 
-      localStorage.setItem('auth_token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
       localStorage.removeItem('impersonation')
 
@@ -313,6 +322,19 @@ export function AuthProvider({ children }) {
     return data
   }, [])
 
+  const startImpersonation = useCallback(async (userId) => {
+    const data = await authService.impersonate(userId)
+    if (data.user) {
+      setUser(data.user)
+      localStorage.setItem('user', JSON.stringify(data.user))
+    }
+    setImpersonation(data.impersonation ?? null)
+    if (data.impersonation) {
+      localStorage.setItem('impersonation', JSON.stringify(data.impersonation))
+    }
+    return data
+  }, [])
+
   const hasPermission = useCallback((permission) => {
     if (!user) return false
     if (user.role?.toLowerCase() === 'admin') return true
@@ -370,6 +392,7 @@ export function AuthProvider({ children }) {
       acceptInvite,
       updateProfile,
       verifyTwoFactor,
+      startImpersonation,
       stopImpersonation,
       hasPermission,
       hasModule,
@@ -398,6 +421,7 @@ export function AuthProvider({ children }) {
       updateProfile,
       user,
       verifyTwoFactor,
+      startImpersonation,
       stopImpersonation,
       hasPermission,
       hasModule,

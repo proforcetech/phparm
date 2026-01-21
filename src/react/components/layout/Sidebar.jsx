@@ -204,6 +204,21 @@ const isActiveRoute = (currentPath, targetPath) => {
   return currentPath.startsWith(targetPath)
 }
 
+/**
+ * Tooltip component for collapsed sidebar items
+ */
+function SidebarTooltip({ label, children }) {
+  return (
+    <div className="group relative">
+      {children}
+      <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-sm rounded-md whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+        {label}
+        <div className="absolute top-1/2 -left-1 -translate-y-1/2 border-4 border-transparent border-r-gray-900" />
+      </div>
+    </div>
+  )
+}
+
 const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
   const { user, hasModuleAccess } = useAuthStore()
   const { pathname } = useLocation()
@@ -272,6 +287,32 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
     const isChildActive = item.children?.some((child) => isActiveRoute(pathname, child.path))
     const isCurrentActive = isActive || isChildActive
 
+    // Collapsed mode - show icon only with tooltip
+    if (isCollapsed) {
+      const menuLink = (
+        <Link
+          to={item.path}
+          className={`flex items-center justify-center p-3 rounded-md transition-colors ${
+            isCurrentActive
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          }`}
+          aria-label={item.label}
+        >
+          {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : null}
+        </Link>
+      )
+
+      return (
+        <div key={item.path} className="hidden lg:block">
+          <SidebarTooltip label={item.label}>
+            {menuLink}
+          </SidebarTooltip>
+        </div>
+      )
+    }
+
+    // Expanded mode - show full menu item
     return (
       <div key={item.path} className="space-y-1">
         <Link
@@ -282,8 +323,8 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
               : 'text-gray-300 hover:bg-gray-700 hover:text-white'
           }`}
         >
-          {Icon ? <Icon className="h-5 w-5 mr-3" /> : null}
-          {item.label}
+          {Icon ? <Icon className="h-5 w-5 mr-3" aria-hidden="true" /> : null}
+          <span>{item.label}</span>
         </Link>
 
         {item.children?.length ? (
@@ -302,8 +343,8 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
                       : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                   }`}
                 >
-                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-3" /> : null}
-                  {child.label}
+                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-3" aria-hidden="true" /> : null}
+                  <span>{child.label}</span>
                 </Link>
               )
             })}
@@ -318,24 +359,30 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       <aside
         className={`fixed inset-y-0 left-0 bg-gray-900 w-64 ${
           isCollapsed ? 'lg:w-20' : 'lg:w-64'
-        } transform transition-transform duration-300 ease-in-out z-30 ${
+        } transform transition-all duration-300 ease-in-out z-30 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        aria-label="Main sidebar navigation"
       >
         <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
+          <div className={`flex items-center h-16 bg-gray-800 ${isCollapsed ? 'lg:justify-center lg:px-2' : 'justify-between px-4'}`}>
             <span
               className={`text-lg font-semibold text-white ${isCollapsed ? 'lg:hidden' : ''}`}
             >
               Menu
             </span>
+            {isCollapsed && (
+              <span className="hidden lg:block text-lg font-semibold text-white">
+                M
+              </span>
+            )}
             <button
               type="button"
               onClick={toggleSidebar}
-              className="lg:hidden text-gray-400 hover:text-white focus:outline-none"
+              className="lg:hidden text-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-md"
               aria-label="Close navigation menu"
             >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -346,8 +393,13 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
             </button>
           </div>
 
-          <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto" aria-label="Main navigation">
-            {menuItems.map((item) => renderMenuItem(item))}
+          <nav
+            className={`flex-1 py-4 overflow-y-auto ${isCollapsed ? 'lg:px-2 px-2' : 'px-2'}`}
+            aria-label="Main navigation"
+          >
+            <div className={isCollapsed ? 'lg:space-y-2 space-y-1' : 'space-y-1'}>
+              {menuItems.map((item) => renderMenuItem(item))}
+            </div>
           </nav>
         </div>
       </aside>

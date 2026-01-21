@@ -16,6 +16,9 @@ use RuntimeException;
  */
 class JwtService
 {
+    private const ACCESS_TOKEN_COOKIE = 'jwt_access_token';
+    private const REFRESH_TOKEN_COOKIE = 'jwt_refresh_token';
+
     private Connection $connection;
     private string $secretKey;
     private int $tokenTtlSeconds;
@@ -284,5 +287,135 @@ class JwtService
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row ? new User($row) : null;
+    }
+
+    /**
+     * Set JWT tokens as httpOnly secure cookies.
+     *
+     * This method should be called after successful authentication to store
+     * tokens in secure cookies instead of returning them in the response body.
+     *
+     * @param string $accessToken The JWT access token
+     * @param string $refreshToken The JWT refresh token
+     * @param bool $secure Whether to set Secure flag (should be true in production)
+     * @return void
+     */
+    public function setTokenCookies(string $accessToken, string $refreshToken, bool $secure = true): void
+    {
+        $sameSite = 'Strict';
+
+        // Access token cookie - short-lived, httpOnly, secure
+        setcookie(self::ACCESS_TOKEN_COOKIE, $accessToken, [
+            'expires' => time() + $this->tokenTtlSeconds,
+            'path' => '/',
+            'domain' => '',
+            'secure' => $secure,
+            'httponly' => true,
+            'samesite' => $sameSite,
+        ]);
+
+        // Refresh token cookie - longer-lived, httpOnly, secure
+        setcookie(self::REFRESH_TOKEN_COOKIE, $refreshToken, [
+            'expires' => time() + $this->refreshTtlSeconds,
+            'path' => '/api/auth', // Restrict to auth endpoints
+            'domain' => '',
+            'secure' => $secure,
+            'httponly' => true,
+            'samesite' => $sameSite,
+        ]);
+    }
+
+    /**
+     * Clear JWT token cookies (for logout).
+     *
+     * @return void
+     */
+    public function clearTokenCookies(): void
+    {
+        $expireTime = time() - 3600;
+
+        setcookie(self::ACCESS_TOKEN_COOKIE, '', [
+            'expires' => $expireTime,
+            'path' => '/',
+            'domain' => '',
+            'secure' => true,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+
+        setcookie(self::REFRESH_TOKEN_COOKIE, '', [
+            'expires' => $expireTime,
+            'path' => '/api/auth',
+            'domain' => '',
+            'secure' => true,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+    }
+
+    /**
+     * Get access token from httpOnly cookie.
+     *
+     * @return string|null The access token or null if not present
+     */
+    public function getAccessTokenFromCookie(): ?string
+    {
+        return $_COOKIE[self::ACCESS_TOKEN_COOKIE] ?? null;
+    }
+
+    /**
+     * Get refresh token from httpOnly cookie.
+     *
+     * @return string|null The refresh token or null if not present
+     */
+    public function getRefreshTokenFromCookie(): ?string
+    {
+        return $_COOKIE[self::REFRESH_TOKEN_COOKIE] ?? null;
+    }
+
+    /**
+     * Validate token from cookie and return user.
+     *
+     * @return User|null The authenticated user or null
+     */
+    public function validateTokenFromCookie(): ?User
+    {
+        $token = $this->getAccessTokenFromCookie();
+
+        if ($token === null) {
+            return null;
+        }
+
+        return $this->validateToken($token);
+    }
+
+    /**
+     * Get the access token cookie name for external reference.
+     *
+     * @return string
+     */
+    public static function getAccessTokenCookieName(): string
+    {
+        return self::ACCESS_TOKEN_COOKIE;
+    }
+
+    /**
+     * Get the refresh token cookie name for external reference.
+     *
+     * @return string
+     */
+    public static function getRefreshTokenCookieName(): string
+    {
+        return self::REFRESH_TOKEN_COOKIE;
+    }
+
+    /**
+     * Check if running in secure context (HTTPS).
+     *
+     * @return bool True if HTTPS is enabled
+     */
+    public static function isSecureContext(): bool
+    {
+        return isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
     }
 }

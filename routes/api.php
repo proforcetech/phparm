@@ -324,6 +324,49 @@ return function (Router $router, array $config, $connection) {
         '/api/messages*' => ['max' => 120, 'decay' => 60],
     ]));
 
+    // Apply CSRF protection to all state-changing API endpoints
+    // Exempt paths include: webhooks, public endpoints, and auth login endpoints
+    $csrfExemptPaths = [
+        '/api/webhooks/*',
+        '/api/public/*',
+        '/api/auth/login',
+        '/api/auth/customer-login',
+        '/api/auth/forgot-password',
+        '/api/auth/reset-password',
+        '/api/auth/verify-email',
+        '/api/auth/accept-invite',
+        '/api/auth/refresh',
+        '/api/health',
+        '/health',
+    ];
+    $router->middleware(Middleware::csrf($csrfExemptPaths));
+
+    // Initialize CSRF token service for session initialization
+    $csrfTokenService = new \App\Support\Auth\CsrfTokenService();
+    $secureSessionService = new \App\Support\Auth\SecureSessionService();
+    $impersonationService = new \App\Support\Auth\ImpersonationService($connection);
+
+    // CSRF Token endpoint - returns token for JavaScript clients
+    // This endpoint also initializes the session and sets the XSRF-TOKEN cookie
+    // Rate limited to prevent session flooding attacks
+    $router->get('/api/csrf-token', function (Request $request) use ($csrfTokenService) {
+        // Start secure session and generate/get CSRF token
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        $token = $csrfTokenService->getToken();
+
+        // Set the XSRF-TOKEN cookie for JavaScript access
+        $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $csrfTokenService->setCookie($token, $isSecure);
+
+        return Response::json([
+            'token' => $token,
+            'cookie_name' => \App\Support\Auth\CsrfTokenService::getCookieName(),
+        ]);
+    })->middleware(Middleware::throttle(30, 60));
+
     // Health check (public)
     $router->get('/health', function (Request $request) use ($connection) {
         $health = [
@@ -785,9 +828,16 @@ return function (Router $router, array $config, $connection) {
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
 
+        // Set JWT tokens in httpOnly secure cookies (XSS protection)
+        $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $jwtService->setTokenCookies($accessToken, $refreshToken, $isSecure);
+
+        // Also set CSRF token cookie for the new session
+        $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
+
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $accessToken,
+            'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
             'token_type' => 'Bearer',
@@ -895,9 +945,16 @@ return function (Router $router, array $config, $connection) {
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
 
+        // Set JWT tokens in httpOnly secure cookies (XSS protection)
+        $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $jwtService->setTokenCookies($accessToken, $refreshToken, $isSecure);
+
+        // Also set CSRF token cookie for the new session
+        $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
+
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $accessToken,
+            'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
             'token_type' => 'Bearer',
@@ -907,7 +964,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager) {
+    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -953,9 +1010,16 @@ return function (Router $router, array $config, $connection) {
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
 
+        // Set JWT tokens in httpOnly secure cookies (XSS protection)
+        $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $jwtService->setTokenCookies($accessToken, $refreshToken, $isSecure);
+
+        // Also set CSRF token cookie for the new session
+        $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
+
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $accessToken,
+            'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
             'token_type' => 'Bearer',
@@ -963,7 +1027,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager) {
+    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -1010,9 +1074,16 @@ return function (Router $router, array $config, $connection) {
         $accessToken = $jwtService->generateToken($user);
         $refreshToken = $jwtService->generateRefreshToken($user);
 
+        // Set JWT tokens in httpOnly secure cookies (XSS protection)
+        $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $jwtService->setTokenCookies($accessToken, $refreshToken, $isSecure);
+
+        // Also set CSRF token cookie for the new session
+        $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
+
         return Response::json([
             'user' => $user->toArray(),
-            'token' => $accessToken,
+            'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
             'token_type' => 'Bearer',
@@ -1022,9 +1093,13 @@ return function (Router $router, array $config, $connection) {
         ]);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    // Token refresh endpoint
-    $router->post('/api/auth/refresh', function (Request $request) use ($jwtService) {
-        $refreshToken = $request->input('refresh_token');
+    // Token refresh endpoint - supports both cookie and request body token
+    $router->post('/api/auth/refresh', function (Request $request) use ($jwtService, $csrfTokenService) {
+        // Try to get refresh token from cookie first, then from request body
+        $refreshToken = $jwtService->getRefreshTokenFromCookie();
+        if (!$refreshToken) {
+            $refreshToken = $request->input('refresh_token');
+        }
 
         if (!$refreshToken) {
             return Response::badRequest('Refresh token required');
@@ -1036,10 +1111,14 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid or expired refresh token');
         }
 
+        // Set new tokens in httpOnly cookies
+        $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $jwtService->setTokenCookies($result['access_token'], $result['refresh_token'], $isSecure);
+
         return Response::json($result);
     })->middleware(Middleware::throttleStrict(10, 60));
 
-    $router->post('/api/auth/logout', function (Request $request) use ($sessionManager) {
+    $router->post('/api/auth/logout', function (Request $request) use ($sessionManager, $jwtService, $csrfTokenService) {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
@@ -1051,6 +1130,13 @@ return function (Router $router, array $config, $connection) {
                 (int) $_SESSION['user_id']
             );
         }
+
+        // Clear JWT cookies (httpOnly - must be cleared server-side)
+        $jwtService->clearTokenCookies();
+
+        // Clear CSRF token from session and cookie
+        $csrfTokenService->clearToken();
+
         session_destroy();
 
         return Response::json(['message' => 'Logged out successfully']);

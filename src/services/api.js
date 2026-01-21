@@ -6,18 +6,90 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Enable sending cookies for session-based auth
+  withCredentials: true, // Enable sending cookies for session-based auth and httpOnly JWT cookies
 })
 
 // Promise-based singleton to handle session expiration
 // This ensures concurrent requests wait for the same expiration handling
 let sessionExpirationPromise = null
 
-// Request interceptor - add auth token (optional, for future JWT support)
-// Currently using session-based auth via cookies (withCredentials: true)
+// Cache for CSRF token to avoid repeated DOM queries
+let cachedCsrfToken = null
+let csrfTokenFetchPromise = null
+
+/**
+ * Get CSRF token from multiple sources with fallback chain:
+ * 1. Cached token (if available)
+ * 2. Meta tag in document head
+ * 3. XSRF-TOKEN cookie
+ * 4. Fetch from /api/csrf-token endpoint
+ */
+async function getCsrfToken() {
+  // Return cached token if available
+  if (cachedCsrfToken) {
+    return cachedCsrfToken
+  }
+
+  // Try meta tag first
+  const metaToken = document.querySelector('meta[name="csrf-token"]')?.content
+  if (metaToken) {
+    cachedCsrfToken = metaToken
+    return metaToken
+  }
+
+  // Try cookie
+  const cookieToken = decodeURIComponent(
+    document.cookie
+      .split('; ')
+      .find(row => row.startsWith('XSRF-TOKEN='))
+      ?.split('=')[1] || ''
+  )
+  if (cookieToken) {
+    cachedCsrfToken = cookieToken
+    return cookieToken
+  }
+
+  // Fetch from endpoint if not available (with deduplication)
+  if (!csrfTokenFetchPromise) {
+    csrfTokenFetchPromise = axios.get(`${env.API_BASE_URL}/api/csrf-token`, {
+      withCredentials: true
+    })
+      .then(response => {
+        cachedCsrfToken = response.data?.token || null
+        csrfTokenFetchPromise = null
+        return cachedCsrfToken
+      })
+      .catch(() => {
+        csrfTokenFetchPromise = null
+        return null
+      })
+  }
+
+  return csrfTokenFetchPromise
+}
+
+/**
+ * Clear the cached CSRF token (call after logout or when token is rejected)
+ */
+export function clearCsrfToken() {
+  cachedCsrfToken = null
+}
+
+/**
+ * Refresh the CSRF token by fetching a new one from the server
+ */
+export async function refreshCsrfToken() {
+  clearCsrfToken()
+  return getCsrfToken()
+}
+
+// Request interceptor - handles auth and CSRF tokens
+// JWT is now stored in httpOnly cookies, so we don't need to add Authorization header
+// for most requests. Bearer token is only used for explicit API clients.
 api.interceptors.request.use(
-  (config) => {
-    // Optional: Add JWT token if available (for future token-based auth)
+  async (config) => {
+    // Only add Bearer token from localStorage for backwards compatibility
+    // New auth flow uses httpOnly cookies (sent automatically with withCredentials: true)
     const token = localStorage.getItem('auth_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -30,17 +102,11 @@ api.interceptors.request.use(
     }
 
     // Add CSRF token for state-changing requests (POST, PUT, PATCH, DELETE)
-    // Token is read from meta tag (preferred) or XSRF-TOKEN cookie (fallback)
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content
-      || decodeURIComponent(
-          document.cookie
-            .split('; ')
-            .find(row => row.startsWith('XSRF-TOKEN='))
-            ?.split('=')[1] || ''
-        )
-
-    if (csrfToken && ['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase())) {
-      config.headers['X-CSRF-Token'] = csrfToken
+    if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase())) {
+      const csrfToken = await getCsrfToken()
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken
+      }
     }
 
     return config
@@ -50,10 +116,10 @@ api.interceptors.request.use(
   }
 )
 
-// Response interceptor - handle session expiration
+// Response interceptor - handle session expiration and CSRF errors
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status
     const responseData = error.response?.data
 
@@ -91,8 +157,23 @@ api.interceptors.response.use(
       }
     }
 
+    // Handle CSRF token errors - refresh token and retry once
+    if (status === 403 && responseData?.error === 'csrf_token_invalid') {
+      // Only retry once to prevent infinite loops
+      if (!error.config._csrfRetry) {
+        error.config._csrfRetry = true
+        clearCsrfToken()
+        const newToken = await refreshCsrfToken()
+        if (newToken) {
+          error.config.headers['X-CSRF-Token'] = newToken
+          return api.request(error.config)
+        }
+      }
+    }
+
     // Handle session expiration (401 Unauthorized or 403 Forbidden)
-    if (status === 401 || status === 403) {
+    // Skip CSRF errors as they're handled above
+    if ((status === 401 || status === 403) && responseData?.error !== 'csrf_token_invalid') {
       // If already handling session expiration, wait for that to complete
       if (sessionExpirationPromise) {
         return sessionExpirationPromise.then(() => Promise.reject(error))

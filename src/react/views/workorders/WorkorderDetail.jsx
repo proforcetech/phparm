@@ -571,7 +571,7 @@ export default function WorkorderDetail() {
         populateSubEstimateFromInventory(jobIndex, itemIndex, inventoryItem)
       }
     } catch {
-      console.log('SKU not found in inventory')
+      // SKU not found in inventory - silently ignore
     }
   }
 

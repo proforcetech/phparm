@@ -74,7 +74,7 @@ export default function UsersList() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
-  const { isAdmin, hasPermission } = useAuthStore()
+  const { isAdmin, hasPermission, user: currentUser, startImpersonation } = useAuthStore()
   const canViewAudit = isAdmin && hasPermission('audit.view')
 
   const [users, setUsers] = useState([])
@@ -82,12 +82,15 @@ export default function UsersList() {
   const [deleting, setDeleting] = useState(false)
   const [resetting2FA, setResetting2FA] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [impersonating, setImpersonating] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReset2FAModal, setShowReset2FAModal] = useState(false)
   const [showBulkDeactivateModal, setShowBulkDeactivateModal] = useState(false)
   const [showBulkRoleModal, setShowBulkRoleModal] = useState(false)
+  const [showImpersonateModal, setShowImpersonateModal] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [userToReset2FA, setUserToReset2FA] = useState(null)
+  const [userToImpersonate, setUserToImpersonate] = useState(null)
   const [roleOptions, setRoleOptions] = useState(defaultRoleOptions)
   const [roleLabels, setRoleLabels] = useState({})
   const [selectedUserIds, setSelectedUserIds] = useState([])
@@ -275,6 +278,29 @@ export default function UsersList() {
       toast.error(error.response?.data?.message || 'Failed to reset 2FA')
     } finally {
       setResetting2FA(false)
+    }
+  }
+
+  const confirmImpersonate = (user) => {
+    setUserToImpersonate(user)
+    setShowImpersonateModal(true)
+  }
+
+  const handleImpersonate = async () => {
+    if (!userToImpersonate) return
+
+    setImpersonating(true)
+    try {
+      await startImpersonation(userToImpersonate.id)
+      toast.success(`Now impersonating ${userToImpersonate.name}`)
+      setShowImpersonateModal(false)
+      setUserToImpersonate(null)
+      navigate('/cp/dashboard')
+    } catch (error) {
+      console.error('Failed to impersonate user:', error)
+      toast.error(error.response?.data?.message || 'Failed to impersonate user')
+    } finally {
+      setImpersonating(false)
     }
   }
 
@@ -557,13 +583,25 @@ export default function UsersList() {
                             </Button>
                           ) : null}
                           {user.two_factor_enabled ? (
-                            <Button variant="ghost" size="sm" onClick={() => confirmReset2FA(user)}>
+                            <Button variant="ghost" size="sm" onClick={() => confirmReset2FA(user)} title="Reset 2FA">
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                               </svg>
                             </Button>
                           ) : null}
-                          <Button variant="ghost" size="sm" onClick={() => confirmDelete(user)}>
+                          {isAdmin && currentUser?.id !== user.id ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => confirmImpersonate(user)}
+                              title="Impersonate user"
+                            >
+                              <svg className="h-4 w-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </Button>
+                          ) : null}
+                          <Button variant="ghost" size="sm" onClick={() => confirmDelete(user)} title="Delete user">
                             <svg className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -645,6 +683,33 @@ export default function UsersList() {
         <p className="text-sm text-gray-600">
           Update <strong>{selectedCount}</strong> users to <strong>{roleLabels[bulkRole] || bulkRole}</strong> role?
         </p>
+      </Modal>
+
+      <Modal
+        open={showImpersonateModal}
+        title="Impersonate User"
+        onClose={() => setShowImpersonateModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowImpersonateModal(false)}>Cancel</Button>
+            <Button variant="warning" onClick={handleImpersonate} loading={impersonating}>
+              Start Impersonation
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            You are about to impersonate <strong>{userToImpersonate?.name}</strong> ({userToImpersonate?.email}).
+          </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+            <p className="text-sm text-amber-800">
+              <strong>Warning:</strong> While impersonating, all your actions will be performed as this user.
+              A banner will be displayed to remind you that you are impersonating someone.
+              This session will be logged for audit purposes.
+            </p>
+          </div>
+        </div>
       </Modal>
     </div>
   )

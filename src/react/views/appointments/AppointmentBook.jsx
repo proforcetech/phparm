@@ -128,7 +128,6 @@ export default function AppointmentBook() {
   }, [])
 
   const onCustomerSelect = async (customer) => {
-    console.log('Selected customer:', customer)
     await loadCustomerVehicles(customer.id)
   }
 
