@@ -24,7 +24,7 @@ class CustomerCsvService extends CsvImportService
     /**
      * @return array{created:int,updated:int,failed:int,errors:array<int,string>,dry_run:bool}
      */
-    public function import(string $csv, int $actorId, bool $dryRun = false): array
+    public function import(string $dataset, string $csv, int $actorId, bool $dryRun = false): array
     {
         $rows = $this->parseCsv($csv);
         $stats = ['created' => 0, 'updated' => 0, 'failed' => 0, 'errors' => [], 'dry_run' => $dryRun];
