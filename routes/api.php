@@ -4237,15 +4237,6 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Messaging\MessagingService($connection)
         );
 
-        // Correctly instantiate InventoryPullRequestService
-        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
-            $connection,
-            $auditLogger,
-            $messagingNotifications
-        );
-        $InventoryPullRequestService = new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository);
-
-// 1. Instantiate FinancialEntryService (Required by StockOrderRepository)
         $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger);
 
         $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
