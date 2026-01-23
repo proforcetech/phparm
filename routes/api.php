@@ -4230,12 +4230,28 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-        $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $InventoryPullRequestService, $inventoryStockOrders, $auditLogger, $messagingNotifications);
-        $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
-        $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+
+// --- ADD/FIX THESE LINES ---
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
         );
+
+        // Correctly instantiate InventoryPullRequestService
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
+            $connection,
+            $auditLogger,
+            $messagingNotifications
+        );
+        $InventoryPullRequestService = new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository);
+
+        // Correctly instantiate InventoryStockOrderService
+        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection, $auditLogger);
+        $inventoryStockOrders = new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository);
+        // ---------------------------
+        
+        $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $InventoryPullRequestService, $inventoryStockOrders, $auditLogger, $messagingNotifications);
+        $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
         $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
         $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
         $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
