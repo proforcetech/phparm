@@ -4230,28 +4230,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-
-       // --- ADD/FIX THESE LINES ---
-                    $workorderMessagingNotifications, = new \App\Services\Messaging\MessagingNotificationService(
-            $connection,
-            new \App\Services\Messaging\MessagingService($connection)
-        );
+        $workorderMessagingNotifications, = new \App\Services\Messaging\MessagingNotificationService($connection new \App\Services\Messaging\MessagingService($connection));
 
         $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger, $messagingNotifications);
 
-        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
-            $connection,
-            $auditLogger,
-            $messagingNotifications
-        );
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger, $messagingNotifications);
         $InventoryPullRequestService = new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository);
 
-        // 2. Fix InventoryStockOrderRepository: Pass financialEntryService as 2nd argument
-        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository(
-            $connection,
-            $financialEntryService, // <--- This was missing or incorrect
-            $auditLogger
-        );
+        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection, $financialEntryService, $auditLogger);
         $inventoryStockOrders = new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository);
           
         $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $InventoryPullRequestService, $inventoryStockOrders, $auditLogger, $messagingNotifications);
