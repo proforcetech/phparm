@@ -4245,11 +4245,6 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         );
         $InventoryPullRequestService = new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository);
 
-        // Correctly instantiate InventoryStockOrderService
-        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection, $auditLogger);
-        $inventoryStockOrders = new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository);
-        // ---------------------------
-
 // 1. Instantiate FinancialEntryService (Required by StockOrderRepository)
         $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger);
 
@@ -4268,6 +4263,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         );
         $inventoryStockOrders = new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository);
         
+        // Correctly instantiate InventoryStockOrderService
+        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection, $auditLogger);
+        $inventoryStockOrders = new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository);
+        // ---------------------------
+       
         $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $InventoryPullRequestService, $inventoryStockOrders, $auditLogger, $messagingNotifications);
         $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
         $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
