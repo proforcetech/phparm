@@ -4231,6 +4231,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
         $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
 
         $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger, $messagingNotifications);
 
