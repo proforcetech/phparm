@@ -4237,7 +4237,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             new \App\Services\Messaging\MessagingService($connection)
         );
 
-        $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $financialEntries, $auditLogger);
+        $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger, $messagingNotifications);
 
         $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
             $connection,
