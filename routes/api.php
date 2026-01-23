@@ -4230,7 +4230,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
         $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
         $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-        $workorderMessagingNotifications, = new \App\Services\Messaging\MessagingNotificationService($connection new \App\Services\Messaging\MessagingService($connection));
+        $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
 
         $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger, $messagingNotifications);
 
