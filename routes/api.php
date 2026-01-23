@@ -4232,7 +4232,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
 
        // --- ADD/FIX THESE LINES ---
-        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+                    $workorderMessagingNotifications, = new \App\Services\Messaging\MessagingNotificationService(
             $connection,
             new \App\Services\Messaging\MessagingService($connection)
         );
