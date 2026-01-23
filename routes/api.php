@@ -331,6 +331,8 @@ return function (Router $router, array $config, $connection) {
         '/api/public/*',
         '/api/auth/login',
         '/api/auth/customer-login',
+        '/api/auth/verify-2fa',
+        '/api/auth/customer-verify-2fa',
         '/api/auth/forgot-password',
         '/api/auth/reset-password',
         '/api/auth/verify-email',
