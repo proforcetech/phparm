@@ -1,12 +1,12 @@
 -- Core users and access
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     description VARCHAR(255) NULL,
     UNIQUE KEY unique_role_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     email VARCHAR(160) NOT NULL UNIQUE,
@@ -21,7 +21,7 @@ CREATE TABLE users (
     last_activity_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE user_password_history (
+CREATE TABLE IF NOT EXISTS user_password_history (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE user_password_history (
     CONSTRAINT fk_user_password_history_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(120) NOT NULL,
     last_name VARCHAR(120) NOT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE customers (
     updated_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE vehicle_master (
+CREATE TABLE IF NOT EXISTS vehicle_master (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     year SMALLINT NOT NULL,
     make VARCHAR(120) NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE vehicle_master (
     UNIQUE KEY vehicle_unique (year, make, model, engine, transmission, drive, trim)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE customer_vehicles (
+CREATE TABLE IF NOT EXISTS customer_vehicles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
     vehicle_master_id INT UNSIGNED NULL,
@@ -86,7 +86,7 @@ CREATE TABLE customer_vehicles (
     CONSTRAINT fk_customer_vehicle_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE service_types (
+CREATE TABLE IF NOT EXISTS service_types (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
     alias VARCHAR(120) NOT NULL,
@@ -101,7 +101,7 @@ CREATE TABLE service_types (
     UNIQUE KEY uniq_service_types_alias (alias)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_items (
+CREATE TABLE IF NOT EXISTS inventory_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
@@ -126,7 +126,7 @@ CREATE TABLE inventory_items (
     INDEX idx_inventory_reorder_override_user (reorder_point_override_updated_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_reorder_point_history (
+CREATE TABLE IF NOT EXISTS inventory_reorder_point_history (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     inventory_item_id INT UNSIGNED NOT NULL,
     previous_override INT NULL,
@@ -142,7 +142,7 @@ CREATE TABLE inventory_reorder_point_history (
         REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_lookups (
+CREATE TABLE IF NOT EXISTS inventory_lookups (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(32) NOT NULL,
     name VARCHAR(160) NOT NULL,
@@ -151,7 +151,7 @@ CREATE TABLE inventory_lookups (
     INDEX idx_inventory_lookups_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_transactions (
+CREATE TABLE IF NOT EXISTS inventory_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     inventory_item_id INT UNSIGNED NOT NULL,
     quantity_before INT NOT NULL,
@@ -171,7 +171,7 @@ CREATE TABLE inventory_transactions (
         REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_transfers (
+CREATE TABLE IF NOT EXISTS inventory_transfers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     status ENUM('pending', 'approved', 'rejected', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
     source_location VARCHAR(160) NULL,
@@ -203,7 +203,7 @@ CREATE TABLE inventory_transfers (
         REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inventory_transfer_items (
+CREATE TABLE IF NOT EXISTS inventory_transfer_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     transfer_id INT UNSIGNED NOT NULL,
     source_inventory_item_id INT UNSIGNED NOT NULL,
@@ -222,7 +222,7 @@ CREATE TABLE inventory_transfer_items (
         REFERENCES inventory_items (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE estimates (
+CREATE TABLE IF NOT EXISTS estimates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT UNSIGNED NOT NULL,
@@ -246,7 +246,7 @@ CREATE TABLE estimates (
     CONSTRAINT fk_estimate_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE estimate_jobs (
+CREATE TABLE IF NOT EXISTS estimate_jobs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     estimate_id INT UNSIGNED NOT NULL,
     service_type_id INT UNSIGNED NOT NULL,
@@ -263,7 +263,7 @@ CREATE TABLE estimate_jobs (
     CONSTRAINT fk_estimate_jobs_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE estimate_items (
+CREATE TABLE IF NOT EXISTS estimate_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     estimate_job_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
@@ -276,7 +276,7 @@ CREATE TABLE estimate_items (
     CONSTRAINT fk_estimate_item_job FOREIGN KEY (estimate_job_id) REFERENCES estimate_jobs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE invoices (
+CREATE TABLE IF NOT EXISTS invoices (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
     customer_id INT UNSIGNED NOT NULL,
@@ -302,7 +302,7 @@ CREATE TABLE invoices (
     CONSTRAINT fk_invoices_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE invoice_items (
+CREATE TABLE IF NOT EXISTS invoice_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
@@ -315,7 +315,7 @@ CREATE TABLE invoice_items (
     CONSTRAINT fk_invoice_item_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
     gateway VARCHAR(40) NOT NULL,
@@ -328,7 +328,7 @@ CREATE TABLE payments (
     CONSTRAINT fk_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE invoice_payer_allocations (
+CREATE TABLE IF NOT EXISTS invoice_payer_allocations (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
     payer_role ENUM('primary', 'secondary') NOT NULL,
@@ -341,7 +341,7 @@ CREATE TABLE invoice_payer_allocations (
     CONSTRAINT fk_invoice_payer_allocations_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE appointments (
+CREATE TABLE IF NOT EXISTS appointments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
     vehicle_id INT UNSIGNED NOT NULL,
@@ -358,7 +358,7 @@ CREATE TABLE appointments (
     CONSTRAINT fk_appointment_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE warranty_claims (
+CREATE TABLE IF NOT EXISTS warranty_claims (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
     invoice_id INT UNSIGNED NULL,
@@ -374,7 +374,7 @@ CREATE TABLE warranty_claims (
     CONSTRAINT fk_warranty_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE reminder_campaigns (
+CREATE TABLE IF NOT EXISTS reminder_campaigns (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     channel VARCHAR(20) NOT NULL,
@@ -385,7 +385,7 @@ CREATE TABLE reminder_campaigns (
     next_run_at DATETIME NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE bundles (
+CREATE TABLE IF NOT EXISTS bundles (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
@@ -399,7 +399,7 @@ CREATE TABLE bundles (
     CONSTRAINT fk_bundle_service_type FOREIGN KEY (service_type_id) REFERENCES service_types (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE bundle_items (
+CREATE TABLE IF NOT EXISTS bundle_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     bundle_id INT UNSIGNED NOT NULL,
     type VARCHAR(40) NOT NULL,
@@ -412,7 +412,7 @@ CREATE TABLE bundle_items (
     CONSTRAINT fk_bundle_item_bundle FOREIGN KEY (bundle_id) REFERENCES bundles (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE time_entries (
+CREATE TABLE IF NOT EXISTS time_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     technician_id INT UNSIGNED NOT NULL,
     estimate_job_id INT UNSIGNED NULL,
@@ -452,7 +452,7 @@ CREATE TABLE time_entries (
     updated_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE time_adjustments (
+CREATE TABLE IF NOT EXISTS time_adjustments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     time_entry_id INT UNSIGNED NOT NULL,
     actor_id INT UNSIGNED NOT NULL,
@@ -481,7 +481,7 @@ CREATE TABLE time_adjustments (
     CONSTRAINT fk_time_adjustment_entry FOREIGN KEY (time_entry_id) REFERENCES time_entries (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE credit_accounts (
+CREATE TABLE IF NOT EXISTS credit_accounts (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     customer_id INT UNSIGNED NOT NULL,
     type VARCHAR(20) NOT NULL,
@@ -494,7 +494,7 @@ CREATE TABLE credit_accounts (
     CONSTRAINT fk_credit_account_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE financial_entries (
+CREATE TABLE IF NOT EXISTS financial_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(20) NOT NULL,
     category VARCHAR(120) NOT NULL,
@@ -507,16 +507,16 @@ CREATE TABLE financial_entries (
     attachment_path VARCHAR(255) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inspection_templates (
+CREATE TABLE IF NOT EXISTS inspection_templates (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     active TINYINT(1) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE inspection_s_
+CREATE TABLE IF NOT EXISTS inspection_s_
 
-CREATE TABLE `cms_components` (
+CREATE TABLE IF NOT EXISTS `cms_components` (
     `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `name` VARCHAR(100) NOT NULL UNIQUE,
     `slug` VARCHAR(100) NOT NULL UNIQUE,
@@ -541,7 +541,7 @@ CREATE TABLE `cms_components` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Bank feed transactions and matching
-CREATE TABLE bank_transactions (
+CREATE TABLE IF NOT EXISTS bank_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     provider VARCHAR(40) NOT NULL,
     external_id VARCHAR(255) NOT NULL,
@@ -560,7 +560,7 @@ CREATE TABLE bank_transactions (
     INDEX idx_bank_transactions_amount (amount)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE bank_transaction_matches (
+CREATE TABLE IF NOT EXISTS bank_transaction_matches (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     bank_transaction_id INT UNSIGNED NOT NULL,
     reference_type VARCHAR(40) NOT NULL,
@@ -573,7 +573,7 @@ CREATE TABLE bank_transaction_matches (
     INDEX idx_bank_transaction_matches_reference (reference_type, reference_id),
     CONSTRAINT fk_bank_transaction_matches_transaction
         FOREIGN KEY (bank_transaction_id) REFERENCES bank_transactions (id) ON DELETE CASCADE
-CREATE TABLE `cms_revisions` (
+CREATE TABLE IF NOT EXISTS`cms_revisions` (
     `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `entity_type` VARCHAR(50) NOT NULL,
     `entity_id` INT UNSIGNED NOT NULL,
@@ -584,7 +584,7 @@ CREATE TABLE `cms_revisions` (
     INDEX `idx_cms_revisions_entity` (`entity_type`, `entity_id`),
     INDEX `idx_cms_revisions_created_at` (`created_at`),
     INDEX `idx_cms_revisions_created_by` (`created_by`)
-CREATE TABLE `cms_component_page_usage` (
+CREATE TABLE IF NOT EXISTS `cms_component_page_usage` (
     `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `component_id` INT UNSIGNED NOT NULL,
     `page_id` INT UNSIGNED NOT NULL,
@@ -598,7 +598,7 @@ CREATE TABLE `cms_component_page_usage` (
     CONSTRAINT `fk_component_page_page`
         FOREIGN KEY (`page_id`) REFERENCES `cms_pages`(`id`)
         ON DELETE CASCADE
-CREATE TABLE `cms_search_index` (
+CREATE TABLE IF NOT EXISTS `cms_search_index` (
     `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `source_type` VARCHAR(32) NOT NULL,
     `source_id` INT UNSIGNED NOT NULL,
