@@ -191,10 +191,12 @@ The following items require verification that they are **fully integrated and te
 
 ### ⚠️ NEEDS ATTENTION
 
-1. **Role-Based 2FA Enforcement** (MEDIUM PRIORITY)
+1. **Role-Based 2FA Enforcement** ✅ COMPLETE (January 23, 2026)
    - Framework: ✅ TwoFactorSetupWizard exists
-   - Backend: ❓ Need to verify role-based mandatory 2FA enforcement
-   - Frontend: ❓ Need to verify prompt for unconfigured users
+   - Backend: ✅ Role-based mandatory 2FA enforcement via `security.mandatory_2fa_roles` setting
+   - Frontend: ✅ Settings UI to configure which roles require 2FA
+   - Recovery: ✅ Hashed recovery codes with single-use enforcement
+   - Login: ✅ Recovery code login fallback if authenticator lost
 
 2. **CMS Media Pipeline** (MEDIUM PRIORITY)
    - Schema: ✅ Media variants table exists (migration 090_add_cms_media_variants.sql)
@@ -322,6 +324,8 @@ POST   /api/dispatch/drivers/location     - Update driver location
 5. ✅ **Secure Sessions** - SecureSessionService with idle/absolute timeout, regeneration
 6. ✅ **2FA Challenge Support** - Session-based challenge tokens with TTL and cleanup
 7. ✅ **JWT Secret Validation** - Entropy checking, weak pattern detection
+8. ✅ **2FA Recovery Codes** - Hashed storage, single-use enforcement, regeneration endpoint
+9. ✅ **Role-Based 2FA Enforcement** - Configurable mandatory 2FA per role via settings UI
 
 ### Remaining Security Recommendations
 
