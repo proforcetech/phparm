@@ -56,6 +56,64 @@ class TotpService
         return str_pad((string) $otp, $this->digits, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * Generate recovery codes for 2FA backup.
+     *
+     * @param int $count Number of codes to generate
+     * @param int $length Length of each code
+     * @return array{codes: array<string>, hashes: array<string>} Plain codes and their hashes
+     */
+    public function generateRecoveryCodes(int $count = 8, int $length = 8): array
+    {
+        $codes = [];
+        $hashes = [];
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing chars (0, O, 1, I)
+
+        for ($i = 0; $i < $count; $i++) {
+            $code = '';
+            for ($j = 0; $j < $length; $j++) {
+                $code .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+            $codes[] = $code;
+            $hashes[] = $this->hashRecoveryCode($code);
+        }
+
+        return ['codes' => $codes, 'hashes' => $hashes];
+    }
+
+    /**
+     * Hash a recovery code for secure storage.
+     *
+     * @param string $code Plain recovery code
+     * @return string Hashed code
+     */
+    public function hashRecoveryCode(string $code): string
+    {
+        // Normalize: uppercase and remove spaces/dashes
+        $normalized = strtoupper(preg_replace('/[\s\-]/', '', $code));
+        return hash('sha256', $normalized);
+    }
+
+    /**
+     * Verify a recovery code against stored hashes.
+     *
+     * @param string $code User-provided recovery code
+     * @param array<string> $storedHashes Array of hashed recovery codes
+     * @return int|false Index of matched code or false if not found
+     */
+    public function verifyRecoveryCode(string $code, array $storedHashes): int|false
+    {
+        $hash = $this->hashRecoveryCode($code);
+
+        foreach ($storedHashes as $index => $storedHash) {
+            if (hash_equals($storedHash, $hash)) {
+                return $index;
+            }
+        }
+
+        return false;
+    }
+
     private function base32Decode(string $secret): string
     {
         $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

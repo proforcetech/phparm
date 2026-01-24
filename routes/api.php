@@ -966,12 +966,13 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService) {
+    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService, $connection) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
+        $recoveryCode = $request->input('recovery_code');
 
-        if (!$challengeToken || !$code) {
-            return Response::badRequest('Challenge token and code are required');
+        if (!$challengeToken || (!$code && !$recoveryCode)) {
+            return Response::badRequest('Challenge token and either code or recovery_code are required');
         }
 
         if (session_status() === PHP_SESSION_NONE) {
@@ -989,8 +990,24 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid challenge state');
         }
 
-        if (!$user->two_factor_secret || !$totpService->verifyCode($user->two_factor_secret, (string) $code)) {
-            return Response::unauthorized('Invalid authentication code');
+        $userRepo = new \App\Services\User\UserRepository($connection);
+        $recoveryCodesRemaining = null;
+
+        // Try TOTP code first, then recovery code
+        if ($code) {
+            if (!$user->two_factor_secret || !$totpService->verifyCode($user->two_factor_secret, (string) $code)) {
+                return Response::unauthorized('Invalid authentication code');
+            }
+        } elseif ($recoveryCode) {
+            $storedHashes = $userRepo->getRecoveryCodeHashes($user->id);
+            $matchedIndex = $totpService->verifyRecoveryCode((string) $recoveryCode, $storedHashes);
+
+            if ($matchedIndex === false) {
+                return Response::unauthorized('Invalid recovery code');
+            }
+
+            // Consume the recovery code so it cannot be reused
+            $recoveryCodesRemaining = $userRepo->consumeRecoveryCode($user->id, $matchedIndex);
         }
 
         unset($_SESSION['2fa_challenges'][$challengeToken]);
@@ -1019,14 +1036,24 @@ return function (Router $router, array $config, $connection) {
         // Also set CSRF token cookie for the new session
         $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
 
-        return Response::json([
+        $response = [
             'user' => $user->toArray(),
             'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
             'token_type' => 'Bearer',
             'message' => 'Login successful',
-        ]);
+        ];
+
+        // Warn if recovery codes are running low
+        if ($recoveryCodesRemaining !== null) {
+            $response['recovery_codes_remaining'] = $recoveryCodesRemaining;
+            if ($recoveryCodesRemaining <= 2) {
+                $response['warning'] = 'You have ' . $recoveryCodesRemaining . ' recovery codes remaining. Please regenerate your recovery codes.';
+            }
+        }
+
+        return Response::json($response);
     })->middleware(Middleware::throttleStrict(5, 60));
 
     $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService) {
@@ -1410,15 +1437,14 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Invalid verification code. Please try again.');
         }
 
-        // Generate recovery codes
-        $recoveryCodes = [];
-        for ($i = 0; $i < 8; $i++) {
-            $recoveryCodes[] = bin2hex(random_bytes(4)); // 8-character recovery codes
-        }
+        // Generate recovery codes with hashes for secure storage
+        $recoveryData = $totpService->generateRecoveryCodes(8, 8);
+        $plainCodes = $recoveryData['codes'];
+        $hashedCodes = $recoveryData['hashes'];
 
-        // Save to database using UserRepository
+        // Save hashed codes to database using UserRepository
         $userRepo = new App\Services\User\UserRepository($connection);
-        $updatedUser = $userRepo->completeTwoFactorSetup($user->id, $secret, $recoveryCodes);
+        $updatedUser = $userRepo->completeTwoFactorSetup($user->id, $secret, $hashedCodes);
 
         // Clear session data
         unset($_SESSION['2fa_setup_secret']);
@@ -1426,7 +1452,7 @@ return function (Router $router, array $config, $connection) {
 
         return Response::json([
             'message' => '2FA has been successfully enabled',
-            'recovery_codes' => $recoveryCodes,
+            'recovery_codes' => $plainCodes, // Only time user sees plain codes
             'user' => [
                 'id' => $updatedUser->id,
                 'name' => $updatedUser->name,
@@ -1435,6 +1461,66 @@ return function (Router $router, array $config, $connection) {
                 'two_factor_type' => $updatedUser->two_factor_type,
                 'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending
             ]
+        ]);
+    })->middleware(Middleware::auth());
+
+    // Regenerate 2FA recovery codes
+    $router->post('/api/auth/2fa/recovery-codes/regenerate', function (Request $request) use ($totpService, $connection) {
+        $user = $request->getAttribute('user');
+        $code = $request->input('code'); // Require current TOTP code to confirm identity
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (!$user->two_factor_enabled || !$user->two_factor_secret) {
+            return Response::badRequest('2FA is not enabled for this account');
+        }
+
+        if (!$code) {
+            return Response::badRequest('Current authentication code is required to regenerate recovery codes');
+        }
+
+        // Verify current TOTP code before allowing regeneration
+        if (!$totpService->verifyCode($user->two_factor_secret, (string) $code)) {
+            return Response::unauthorized('Invalid authentication code');
+        }
+
+        // Generate new recovery codes
+        $recoveryData = $totpService->generateRecoveryCodes(8, 8);
+        $plainCodes = $recoveryData['codes'];
+        $hashedCodes = $recoveryData['hashes'];
+
+        // Save new hashed codes
+        $userRepo = new App\Services\User\UserRepository($connection);
+        $userRepo->regenerateRecoveryCodes($user->id, $hashedCodes);
+
+        return Response::json([
+            'message' => 'Recovery codes have been regenerated',
+            'recovery_codes' => $plainCodes,
+            'warning' => 'Save these codes securely. Your old recovery codes are no longer valid.'
+        ]);
+    })->middleware(Middleware::auth());
+
+    // Get recovery codes count (without revealing the codes)
+    $router->get('/api/auth/2fa/recovery-codes/count', function (Request $request) use ($connection) {
+        $user = $request->getAttribute('user');
+
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (!$user->two_factor_enabled) {
+            return Response::json(['count' => 0, 'enabled' => false]);
+        }
+
+        $userRepo = new App\Services\User\UserRepository($connection);
+        $count = $userRepo->getRecoveryCodeCount($user->id);
+
+        return Response::json([
+            'count' => $count,
+            'enabled' => true,
+            'warning' => $count <= 2 ? 'You have few recovery codes remaining. Consider regenerating them.' : null
         ]);
     })->middleware(Middleware::auth());
 

@@ -341,7 +341,7 @@ if (isset($data['two_factor_enabled'])) {
     /**
      * Complete 2FA setup for a user
      *
-     * @param array<int, string> $recoveryCodes
+     * @param array<int, string> $recoveryCodes Hashed recovery codes
      */
     public function completeTwoFactorSetup(int $id, string $secret, array $recoveryCodes): User
     {
@@ -363,6 +363,82 @@ if (isset($data['two_factor_enabled'])) {
         ]);
 
         return $this->find($id);
+    }
+
+    /**
+     * Get recovery code hashes for a user.
+     *
+     * @return array<int, string> Array of hashed recovery codes
+     */
+    public function getRecoveryCodeHashes(int $id): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT two_factor_recovery_codes FROM users WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row || empty($row['two_factor_recovery_codes'])) {
+            return [];
+        }
+
+        $codes = json_decode($row['two_factor_recovery_codes'], true);
+        return is_array($codes) ? $codes : [];
+    }
+
+    /**
+     * Remove a used recovery code by its index.
+     *
+     * @param int $id User ID
+     * @param int $codeIndex Index of the code to remove
+     * @return int Number of remaining codes
+     */
+    public function consumeRecoveryCode(int $id, int $codeIndex): int
+    {
+        $codes = $this->getRecoveryCodeHashes($id);
+
+        if (!isset($codes[$codeIndex])) {
+            return count($codes);
+        }
+
+        // Remove the used code
+        array_splice($codes, $codeIndex, 1);
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users SET two_factor_recovery_codes = :codes, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $id,
+            'codes' => json_encode(array_values($codes))
+        ]);
+
+        return count($codes);
+    }
+
+    /**
+     * Regenerate recovery codes for a user.
+     *
+     * @param array<int, string> $newCodeHashes New hashed recovery codes
+     */
+    public function regenerateRecoveryCodes(int $id, array $newCodeHashes): User
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE users SET two_factor_recovery_codes = :codes, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $id,
+            'codes' => json_encode($newCodeHashes)
+        ]);
+
+        return $this->find($id);
+    }
+
+    /**
+     * Get count of remaining recovery codes.
+     */
+    public function getRecoveryCodeCount(int $id): int
+    {
+        return count($this->getRecoveryCodeHashes($id));
     }
 
     /**
