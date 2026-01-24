@@ -164,14 +164,13 @@ class WorkorderController
             $this->assertBranchAccess($user, $before->branch_id);
         }
         $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId, $location);
-
-        if ($status === Workorder::STATUS_GOA) {
-            $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
-        } else {
-            $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId);
-        }
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
+        }
+
+        // Handle GOA-specific logic (fee calculation, ledger entry) after status is updated
+        if ($status === Workorder::STATUS_GOA) {
+            $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
         }
 
         $this->messagingNotifications?->dispatch('workorder.status_changed', [
@@ -324,6 +323,13 @@ class WorkorderController
     {
         $this->assertManageAccess($user);
         $this->gate->assert($user, 'estimates.create');
+
+        // Validate branch access before allowing sub-estimate creation
+        $workorder = $this->repository->find($id);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found');
+        }
+        $this->assertBranchAccess($user, $workorder->branch_id);
 
         if (empty($payload['jobs']) || !is_array($payload['jobs'])) {
             throw new InvalidArgumentException('At least one job is required');

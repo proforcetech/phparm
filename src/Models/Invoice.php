@@ -11,6 +11,7 @@ class Invoice extends BaseModel
     public ?int $service_type_id = null;
     public ?int $vehicle_id = null;
     public ?int $estimate_id = null;
+    public ?int $workorder_id = null;
     public bool $is_mobile = false;
     public bool $is_credit_memo = false;
     public ?int $original_invoice_id = null;

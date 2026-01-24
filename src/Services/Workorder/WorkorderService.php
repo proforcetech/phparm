@@ -63,6 +63,14 @@ class WorkorderService
         }
 
         // Verify estimate is in a valid state for conversion
+        // Explicitly reject certain statuses that should never create workorders
+        $blockedStatuses = ['rejected', 'expired', 'converted'];
+        if (in_array($estimate->status, $blockedStatuses, true)) {
+            throw new InvalidArgumentException(
+                'Cannot create workorder from a ' . $estimate->status . ' estimate.'
+            );
+        }
+
         $allowedStatuses = ['approved', 'sent', 'partial'];
         if (!in_array($estimate->status, $allowedStatuses, true)) {
             throw new InvalidArgumentException(
@@ -465,6 +473,17 @@ class WorkorderService
                 'sub_estimate_id' => $subEstimateId,
                 'sub_estimate_number' => $subEstimateNumber,
                 'jobs_count' => count($payload['jobs']),
+            ]);
+
+            // Notify customer about additional work discovered
+            $this->messagingNotifications?->dispatch('workorder.sub_estimate_created', [
+                'workorder_id' => $workorderId,
+                'sub_estimate_id' => $subEstimateId,
+                'sub_estimate_number' => $subEstimateNumber,
+                'customer_id' => $workorder->customer_id,
+                'total' => $totals['grand_total'],
+                'jobs_count' => count($payload['jobs']),
+                'actor_id' => $actorId,
             ]);
 
             return $subEstimate;

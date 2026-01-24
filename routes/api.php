@@ -2009,7 +2009,8 @@ return Response::json([
         $branchController = new \App\Services\Branch\BranchController(
             new \App\Services\Branch\BranchRepository($connection)
         );
-        $inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
+        
+$inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
             $connection,
             $auditLogger
         );
@@ -3094,15 +3095,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
     // Inventory Pull Requests routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
-        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
-            $connection,
-            new \App\Services\Messaging\MessagingService($connection)
-        );
-        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
-            $connection,
-            $auditLogger,
-            $messagingNotifications
-        );
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger, $messagingNotifications);
         $pullRequestController = new \App\Services\Inventory\InventoryPullRequestController($pullRequestRepository, $gate);
 
         // List all pull requests with filters
@@ -3604,22 +3598,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $templateEngine = new \App\Support\Notifications\TemplateEngine();
             $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
             $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
-            $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
-                $connection,
-                new \App\Services\Messaging\MessagingService($connection)
-            );
+            $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
 
             $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
             $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
             $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
-            $shareService = new \App\Services\Estimate\EstimateShareService(
-                $connection,
-                $estimateRepository,
-                $linkService,
-                $notifications,
-                $messagingNotifications
-            );
+            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications, $messagingNotifications);
 
             $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
             $result = $shareService->shareViaEmail($id, $body['email'], $baseUrl, $user->id);
@@ -3641,22 +3626,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $templateEngine = new \App\Support\Notifications\TemplateEngine();
             $notificationLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
             $notifications = new \App\Support\Notifications\NotificationDispatcher($notificationConfig, $templateEngine, $notificationLogs);
-            $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
-                $connection,
-                new \App\Services\Messaging\MessagingService($connection)
-            );
+            $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
 
             $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
             $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
             $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
-            $shareService = new \App\Services\Estimate\EstimateShareService(
-                $connection,
-                $estimateRepository,
-                $linkService,
-                $notifications,
-                $messagingNotifications
-            );
+            $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications, $messagingNotifications);
 
             $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
             $result = $shareService->shareViaSms($id, $body['phone'], $baseUrl, $user->id);
@@ -3674,14 +3650,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $preferenceService = new \App\Services\Reminder\ReminderPreferenceService($connection);
         $campaignService = new \App\Services\Reminder\ReminderCampaignService($connection);
         $logService = new \App\Services\Reminder\ReminderLogService($connection);
-        $scheduler = new \App\Services\Reminder\ReminderScheduler(
-            $connection,
-            $campaignService,
-            $preferenceService,
-            $notifications,
-            $logService,
-            $templateEngine
-        );
+        $scheduler = new \App\Services\Reminder\ReminderScheduler($connection, $campaignService, $preferenceService, $notifications, $logService, $templateEngine);
         $controller = new \App\Services\Reminder\ReminderCampaignController($campaignService, $scheduler, $logService);
 
         $router->get('/api/reminders', function () use ($controller) {
@@ -4228,62 +4197,67 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
-    // Workorder routes
+ // Workorder routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
-        $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
-        $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-        $workorderMessagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
-        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
+        // 1. Core Dependencies & Messaging
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
 
+        // 2. Financial Services (Required for Stock Orders)
         $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger, $messagingNotifications);
 
-        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger, $messagingNotifications);
-        $InventoryPullRequestService = new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository);
+        // 3. Repositories
+        $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
+        $workorderCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
 
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository($connection, $auditLogger, $messagingNotifications);
         $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository($connection, $financialEntryService, $auditLogger);
+
+        // 4. Domain Services
+        $InventoryPullRequestService = new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository);
         $inventoryStockOrders = new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository);
-          
-        $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $workorderCoreReturnService, $InventoryPullRequestService, $inventoryStockOrders, $auditLogger, $messagingNotifications);
+
+        // 5. Workorder Service (Now has all dependencies available)
+        $workorderService = new \App\Services\Workorder\WorkorderService(
+            $connection,
+            $workorderRepository,
+            $workorderCoreReturnService,
+            $InventoryPullRequestService,
+            $inventoryStockOrders,
+            $auditLogger,
+            $messagingNotifications
+        );
+
+        // 6. Support Services
         $workorderEvidence = new \App\Services\Workorder\WorkorderJobEvidenceService($connection, $auditLogger);
+
+        // Note: Using the same messaging notifications instance created above
+        $workorderMessagingNotifications = $messagingNotifications;
         $trackingNotificationConfig = require __DIR__ . '/../config/notifications.php';
         $trackingTemplateEngine = new \App\Support\Notifications\TemplateEngine();
         $trackingLogs = new \App\Support\Notifications\NotificationLogRepository($connection);
-        $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher(
-            $trackingNotificationConfig,
-            $trackingTemplateEngine,
-            $trackingLogs,
-            $auditLogger
-        );
+        $trackingDispatcher = new \App\Support\Notifications\NotificationDispatcher($trackingNotificationConfig, $trackingTemplateEngine, $trackingLogs, $auditLogger);
+        
         $workorderTimeline = new \App\Services\Workorder\WorkorderTimelineService($connection);
         $dispatchAuditService = new \App\Services\Dispatch\DispatchAuditService($connection);
+        
         $workorderController = new \App\Services\Workorder\WorkorderController(
-            $workorderRepository,
-            $workorderService,
-            $workorderEvidence,
-            $workorderTimeline,
-            $gate,
-            $workorderMessagingNotifications,
-            $dispatchAuditService,
+            $workorderRepository, 
+            $workorderService, 
+            $workorderEvidence, 
+            $workorderTimeline, 
+            $gate, 
+            $workorderMessagingNotifications, 
+            $dispatchAuditService, 
             $pushNotifications
         );
 
         // Status-driven notification service
-        $notificationEventService = new \App\Services\Notification\NotificationEventService(
-            $connection,
-            $trackingDispatcher
-        );
-        $trackingService = new \App\Services\Tracking\TrackingService(
-            $connection,
-            $trackingDispatcher,
-            $workorderMessagingNotifications,
-            $dispatchAuditService,
-            $notificationEventService
-        );
-        $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService(
-            $connection,
-            $notificationEventService,
-            $auditLogger
-        );
+        $notificationEventService = new \App\Services\Notification\NotificationEventService($connection, $trackingDispatcher);
+        $trackingService = new \App\Services\Tracking\TrackingService($connection, $trackingDispatcher, $workorderMessagingNotifications, $dispatchAuditService, $notificationEventService);
+        $workorderStatusNotifications = new \App\Services\Workorder\WorkorderStatusNotificationService($connection, $notificationEventService, $auditLogger);
 
         $router->post('/api/tracking-links', function (Request $request) use ($trackingService) {
             $user = $request->getAttribute('user');
