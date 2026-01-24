@@ -8664,6 +8664,30 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::created($data);
         });
 
+        // Upload file with automatic variant generation
+        $router->post('/api/cms/media/upload', function (Request $request) use ($cmsMediaController) {
+            $user = $request->getAttribute('user');
+
+            if (empty($_FILES['file'])) {
+                return Response::badRequest('No file provided. Use multipart/form-data with "file" field.');
+            }
+
+            $metadata = [
+                'title' => $request->input('title'),
+                'alt_text' => $request->input('alt_text'),
+                'folder' => $request->input('folder'),
+                'tags' => $request->input('tags') ? json_decode($request->input('tags'), true) : [],
+                'status' => $request->input('status', 'draft'),
+            ];
+
+            try {
+                $data = $cmsMediaController->upload($user, $_FILES['file'], $metadata);
+                return Response::created($data);
+            } catch (\InvalidArgumentException $e) {
+                return Response::badRequest($e->getMessage());
+            }
+        });
+
         $router->put('/api/cms/media/{id}', function (Request $request) use ($cmsMediaController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');

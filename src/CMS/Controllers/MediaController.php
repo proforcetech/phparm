@@ -16,12 +16,51 @@ class MediaController
     private Connection $connection;
     private AccessGate $gate;
     private ?CMSCacheService $cache;
+    /** @var array<string, mixed> */
+    private array $config;
 
     public function __construct(Connection $connection, AccessGate $gate, ?CMSCacheService $cache = null)
     {
         $this->connection = $connection;
         $this->gate = $gate;
         $this->cache = $cache;
+        $this->config = $this->loadConfig();
+    }
+
+    /**
+     * Load media configuration with defaults.
+     *
+     * @return array<string, mixed>
+     */
+    private function loadConfig(): array
+    {
+        $configPath = dirname(__DIR__, 2) . '/../config/media.php';
+        if (file_exists($configPath)) {
+            return require $configPath;
+        }
+
+        // Fallback defaults if config file missing
+        return [
+            'responsive_widths' => [320, 640, 960, 1280, 1600],
+            'quality' => [
+                'jpeg' => 82,
+                'webp' => 82,
+                'png_compression' => 6,
+            ],
+            'webp_enabled' => true,
+            'max_upload_size' => 10485760,
+            'allowed_types' => [
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+                'image/gif',
+                'application/pdf',
+            ],
+            'storage_path' => 'storage/uploads/cms',
+            'url_prefix' => '/storage/uploads/cms',
+            'preserve_original' => true,
+            'auto_orient' => true,
+        ];
     }
 
     /**
@@ -115,6 +154,108 @@ class MediaController
         $this->invalidateCache($media['slug'] ?? '');
 
         return $media;
+    }
+
+    /**
+     * Upload a file and create a media record with variants.
+     *
+     * @param array<string, mixed> $file Uploaded file from $_FILES
+     * @param array<string, mixed> $data Additional metadata (title, alt_text, folder, tags, status)
+     * @return array<string, mixed>
+     * @throws InvalidArgumentException If file is invalid or upload fails
+     */
+    public function upload(User $user, array $file, array $data = []): array
+    {
+        $this->gate->assert($user, 'cms.media.create');
+
+        // Validate uploaded file
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new InvalidArgumentException('No valid file uploaded');
+        }
+
+        if (!empty($file['error']) && $file['error'] !== UPLOAD_ERR_OK) {
+            throw new InvalidArgumentException($this->getUploadErrorMessage($file['error']));
+        }
+
+        // Validate file type
+        $mimeType = $file['type'] ?? '';
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo) {
+            $detectedMime = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+            if ($detectedMime) {
+                $mimeType = $detectedMime;
+            }
+        }
+
+        $allowedTypes = $this->config['allowed_types'];
+        if (!in_array($mimeType, $allowedTypes, true)) {
+            throw new InvalidArgumentException('File type not allowed. Allowed: ' . implode(', ', $allowedTypes));
+        }
+
+        // Validate file size
+        $maxSize = $this->config['max_upload_size'];
+        if ($file['size'] > $maxSize) {
+            throw new InvalidArgumentException('File too large. Maximum size: ' . round($maxSize / 1048576, 1) . 'MB');
+        }
+
+        // Generate unique filename
+        $originalName = $file['name'] ?? 'unnamed';
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        $baseName = pathinfo($originalName, PATHINFO_FILENAME);
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $baseName);
+        $uniqueName = $safeName . '_' . bin2hex(random_bytes(4)) . '.' . $extension;
+
+        // Determine storage path from config
+        $basePath = dirname(__DIR__, 3);
+        $storagePath = $this->config['storage_path'];
+        $uploadDir = $basePath . '/' . ltrim($storagePath, '/') . '/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        $targetPath = $uploadDir . $uniqueName;
+
+        // Move uploaded file
+        if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+            throw new InvalidArgumentException('Failed to save uploaded file');
+        }
+
+        // Build URL using configured prefix
+        $urlPrefix = $this->config['url_prefix'];
+        $url = rtrim($urlPrefix, '/') . '/' . $uniqueName;
+
+        // Prepare data for store method
+        $storeData = [
+            'file_name' => $originalName,
+            'url' => $url,
+            'mime_type' => $mimeType,
+            'size_bytes' => $file['size'],
+            'title' => $data['title'] ?? $baseName,
+            'alt_text' => $data['alt_text'] ?? '',
+            'folder' => $data['folder'] ?? null,
+            'tags' => $data['tags'] ?? [],
+            'status' => $data['status'] ?? 'draft',
+        ];
+
+        return $this->store($user, $storeData);
+    }
+
+    /**
+     * Get human-readable upload error message.
+     */
+    private function getUploadErrorMessage(int $errorCode): string
+    {
+        return match ($errorCode) {
+            UPLOAD_ERR_INI_SIZE => 'File exceeds maximum upload size configured in PHP',
+            UPLOAD_ERR_FORM_SIZE => 'File exceeds maximum size specified in form',
+            UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+            UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+            UPLOAD_ERR_NO_TMP_DIR => 'Server missing temporary folder',
+            UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+            UPLOAD_ERR_EXTENSION => 'Upload blocked by PHP extension',
+            default => 'Unknown upload error',
+        };
     }
 
     /**
@@ -498,7 +639,7 @@ class MediaController
             'webp' => [],
         ];
 
-        $responsiveWidths = [320, 640, 960, 1280, 1600];
+        $responsiveWidths = $this->config['responsive_widths'];
         $responsiveWidths = array_values(array_filter($responsiveWidths, fn (int $target) => $target < $width));
         if (empty($responsiveWidths)) {
             return $variants;
@@ -533,10 +674,10 @@ class MediaController
                 ];
             }
 
-            if (function_exists('imagewebp')) {
+            if ($this->config['webp_enabled'] && function_exists('imagewebp')) {
                 $webpPath = sprintf('%s/%s-%dw.webp', $dir, $fileBase, $targetWidth);
                 $webpUrl = $this->buildVariantUrl($url, '-' . $targetWidth . 'w', 'webp');
-                if (imagewebp($resized, $webpPath, 82)) {
+                if (imagewebp($resized, $webpPath, $this->config['quality']['webp'])) {
                     $variants['webp'][] = [
                         'url' => $webpUrl,
                         'width' => $targetWidth,
@@ -678,10 +819,11 @@ class MediaController
 
     private function writeImage(\GdImage $image, string $path, string $mimeType): bool
     {
+        $quality = $this->config['quality'];
         return match ($mimeType) {
-            'image/jpeg' => imagejpeg($image, $path, 82),
-            'image/png' => imagepng($image, $path, 6),
-            'image/webp' => function_exists('imagewebp') ? imagewebp($image, $path, 82) : false,
+            'image/jpeg' => imagejpeg($image, $path, $quality['jpeg']),
+            'image/png' => imagepng($image, $path, $quality['png_compression']),
+            'image/webp' => function_exists('imagewebp') ? imagewebp($image, $path, $quality['webp']) : false,
             default => false,
         };
     }

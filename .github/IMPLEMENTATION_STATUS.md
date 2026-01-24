@@ -1,7 +1,7 @@
 # PHPArm Implementation Status & Feature Tracking
 
 **Date Created:** January 18, 2026
-**Last Updated:** January 23, 2026
+**Last Updated:** January 24, 2026
 **Project:** Automotive Repair Shop & Roadside Assistance ERP System
 **Technology Stack:** PHP 8.1 + React 19 + Vite + MySQL 8.0
 
@@ -159,7 +159,7 @@ The following items require verification that they are **fully integrated and te
 | Email-based user invitations | EmailVerificationToken exists | Verify: admin can send invites, users set own passwords, token expiration |
 | Password complexity validation | Not confirmed | Need: regex validation, history tracking (091), complexity enforcement |
 | User impersonation for admins | ✅ **Complete** | ImpersonationService with database sessions, IP validation, full audit trail |
-| Responsive images/WebP pipeline | Media variant tables exist | Verify: automatic srcset generation, WebP conversion on upload, performance impact |
+| Responsive images/WebP pipeline | ✅ **Complete** | Automatic srcset generation, WebP conversion on upload, config-driven quality settings |
 | CMS pre-caching strategy | Not confirmed | Check: stale-while-revalidate implementation, cache invalidation on edits |
 | Inventory stock order AP integration | Partially Implemented | Verify: stock order receipt auto-creates AP entry, GL posting correct |
 | Dispatch waterfall logic | Partially Implemented | Test: driver rotation, load balancing, escalation rules, decline handling |
@@ -198,9 +198,14 @@ The following items require verification that they are **fully integrated and te
    - Recovery: ✅ Hashed recovery codes with single-use enforcement
    - Login: ✅ Recovery code login fallback if authenticator lost
 
-2. **CMS Media Pipeline** (MEDIUM PRIORITY)
+2. **CMS Media Pipeline** ✅ COMPLETE (January 24, 2026)
    - Schema: ✅ Media variants table exists (migration 090_add_cms_media_variants.sql)
-   - Image Processing: ❓ Need to verify automatic WebP conversion and srcset generation
+   - Config: ✅ `config/media.php` - Responsive widths, quality settings, WebP toggle
+   - Backend: ✅ `MediaController::upload()` - File upload with validation and variant generation
+   - Backend: ✅ Automatic WebP conversion with configurable quality
+   - Backend: ✅ Responsive image variant generation (320w, 640w, 960w, 1280w, 1600w)
+   - API: ✅ `POST /api/cms/media/upload` - Multipart form upload endpoint
+   - Frontend: ✅ Upload UI in CMSMediaLibrary with drag-and-drop support
 
 3. **Test Coverage** (ONGOING)
    - Current tests: ~11 test files found

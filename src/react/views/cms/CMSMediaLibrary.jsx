@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowUpTrayIcon,
   FolderIcon,
   PhotoIcon,
   TagIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline'
 
 import Alert from '../../components/ui/Alert'
@@ -48,6 +50,17 @@ export default function CMSMediaLibrary() {
   const [clearFolder, setClearFolder] = useState(false)
   const [bulkSaving, setBulkSaving] = useState(false)
   const [folderEdits, setFolderEdits] = useState({})
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState([])
+  const [uploadProgress, setUploadProgress] = useState({})
+  const [uploadMetadata, setUploadMetadata] = useState({
+    folder: '',
+    tags: '',
+    status: 'draft',
+  })
+  const [uploading, setUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef(null)
 
   const resetBulkForm = () => {
     setBulkTags('')
@@ -212,6 +225,97 @@ export default function CMSMediaLibrary() {
     }
   }
 
+  const handleFilesSelected = (files) => {
+    const validFiles = Array.from(files).filter((file) => {
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+      if (!validTypes.includes(file.type)) {
+        toast.error(`${file.name}: Invalid file type`)
+        return false
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name}: File too large (max 10MB)`)
+        return false
+      }
+      return true
+    })
+    setUploadFiles((prev) => [...prev, ...validFiles])
+  }
+
+  const handleDragOver = (event) => {
+    event.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (event) => {
+    event.preventDefault()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (event) => {
+    event.preventDefault()
+    setIsDragging(false)
+    if (event.dataTransfer.files?.length) {
+      handleFilesSelected(event.dataTransfer.files)
+    }
+  }
+
+  const removeUploadFile = (index) => {
+    setUploadFiles((prev) => prev.filter((_, i) => i !== index))
+    setUploadProgress((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+  }
+
+  const handleUpload = async () => {
+    if (uploadFiles.length === 0) {
+      toast.error('Select at least one file to upload')
+      return
+    }
+
+    setUploading(true)
+    const tagList = parseTags(uploadMetadata.tags)
+    let successCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < uploadFiles.length; i++) {
+      const file = uploadFiles[i]
+      try {
+        await cmsService.uploadMedia(
+          file,
+          {
+            folder: uploadMetadata.folder || undefined,
+            tags: tagList.length > 0 ? tagList : undefined,
+            status: uploadMetadata.status,
+          },
+          (percent) => {
+            setUploadProgress((prev) => ({ ...prev, [i]: percent }))
+          }
+        )
+        successCount++
+      } catch (err) {
+        console.error(`Failed to upload ${file.name}:`, err)
+        failCount++
+      }
+    }
+
+    setUploading(false)
+
+    if (successCount > 0) {
+      toast.success(`Uploaded ${successCount} file${successCount > 1 ? 's' : ''}`)
+      await Promise.all([loadMedia(), loadMetadata()])
+    }
+    if (failCount > 0) {
+      toast.error(`Failed to upload ${failCount} file${failCount > 1 ? 's' : ''}`)
+    }
+
+    setShowUploadModal(false)
+    setUploadFiles([])
+    setUploadProgress({})
+    setUploadMetadata({ folder: '', tags: '', status: 'draft' })
+  }
+
   const groupedMedia = useMemo(() => {
     if (groupBy === 'none') {
       return { 'All Media': media }
@@ -339,8 +443,12 @@ export default function CMSMediaLibrary() {
           <Button variant="outline" onClick={() => setShowFolderModal(true)}>
             Manage Folders
           </Button>
-          <Button onClick={() => setShowBulkModal(true)} disabled={selectedIds.length === 0}>
+          <Button variant="outline" onClick={() => setShowBulkModal(true)} disabled={selectedIds.length === 0}>
             Bulk Edit ({selectedIds.length})
+          </Button>
+          <Button onClick={() => setShowUploadModal(true)}>
+            <ArrowUpTrayIcon className="h-4 w-4 mr-2" />
+            Upload
           </Button>
         </div>
       </div>
@@ -579,6 +687,182 @@ export default function CMSMediaLibrary() {
         <div className="mt-6 flex justify-end">
           <Button variant="outline" onClick={() => setShowFolderModal(false)}>
             Close
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showUploadModal}
+        onClose={() => {
+          if (!uploading) {
+            setShowUploadModal(false)
+            setUploadFiles([])
+            setUploadProgress({})
+          }
+        }}
+        title="Upload Media"
+        maxWidth="xl"
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+          className="hidden"
+          onChange={(event) => {
+            if (event.target.files?.length) {
+              handleFilesSelected(event.target.files)
+            }
+            event.target.value = ''
+          }}
+        />
+
+        <div
+          className={`mb-6 rounded-lg border-2 border-dashed p-8 text-center transition ${
+            isDragging
+              ? 'border-primary-400 bg-primary-50'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <ArrowUpTrayIcon className="mx-auto h-12 w-12 text-gray-400" />
+          <p className="mt-4 text-sm text-gray-600">
+            Drag and drop files here, or{' '}
+            <button
+              type="button"
+              className="text-primary-600 hover:text-primary-700 font-medium"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              browse
+            </button>
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            JPEG, PNG, WebP, GIF, PDF up to 10MB
+          </p>
+        </div>
+
+        {uploadFiles.length > 0 && (
+          <div className="mb-6 space-y-3">
+            <h4 className="text-sm font-medium text-gray-700">
+              Selected Files ({uploadFiles.length})
+            </h4>
+            <div className="max-h-48 overflow-y-auto space-y-2">
+              {uploadFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center justify-between rounded-lg border border-gray-200 p-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {file.type.startsWith('image/') ? (
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={file.name}
+                        className="h-10 w-10 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded bg-gray-100">
+                        <PhotoIcon className="h-5 w-5 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {uploadProgress[index] !== undefined && (
+                      <div className="w-20">
+                        <div className="h-2 rounded-full bg-gray-200">
+                          <div
+                            className="h-2 rounded-full bg-primary-500 transition-all"
+                            style={{ width: `${uploadProgress[index]}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {!uploading && (
+                      <button
+                        type="button"
+                        onClick={() => removeUploadFile(index)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Folder</label>
+            <Input
+              value={uploadMetadata.folder}
+              placeholder="e.g. Brand Assets"
+              list="upload-folder-list"
+              onUpdateModelValue={(value) =>
+                setUploadMetadata((prev) => ({ ...prev, folder: value }))
+              }
+            />
+            <datalist id="upload-folder-list">
+              {metadata.folders.map((folder) => (
+                <option key={folder.name} value={folder.name} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Tags (comma-separated)
+            </label>
+            <Input
+              value={uploadMetadata.tags}
+              placeholder="e.g. homepage, hero"
+              onUpdateModelValue={(value) =>
+                setUploadMetadata((prev) => ({ ...prev, tags: value }))
+              }
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Status</label>
+            <select
+              value={uploadMetadata.status}
+              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              onChange={(event) =>
+                setUploadMetadata((prev) => ({ ...prev, status: event.target.value }))
+              }
+            >
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowUploadModal(false)
+              setUploadFiles([])
+              setUploadProgress({})
+            }}
+            disabled={uploading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpload}
+            disabled={uploading || uploadFiles.length === 0}
+          >
+            {uploading ? 'Uploading...' : `Upload ${uploadFiles.length} File${uploadFiles.length !== 1 ? 's' : ''}`}
           </Button>
         </div>
       </Modal>

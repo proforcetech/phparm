@@ -371,6 +371,37 @@ export const cmsService = {
     return response.data
   },
 
+  /**
+   * Upload a media file
+   * @param {File} file - The file to upload
+   * @param {Object} metadata - Optional metadata (title, alt_text, folder, tags, status)
+   * @param {Function} onProgress - Optional progress callback
+   */
+  async uploadMedia(file, metadata = {}, onProgress = null) {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    if (metadata.title) formData.append('title', metadata.title)
+    if (metadata.alt_text) formData.append('alt_text', metadata.alt_text)
+    if (metadata.folder) formData.append('folder', metadata.folder)
+    if (metadata.tags?.length) formData.append('tags', JSON.stringify(metadata.tags))
+    if (metadata.status) formData.append('status', metadata.status)
+
+    const config = {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }
+
+    if (onProgress) {
+      config.onUploadProgress = (progressEvent) => {
+        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+        onProgress(percent)
+      }
+    }
+
+    const response = await api.post('/cms/media/upload', formData, config)
+    return response.data
+  },
+
   // ================================================
   // Settings
   // ================================================
