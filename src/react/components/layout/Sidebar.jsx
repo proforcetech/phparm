@@ -248,12 +248,12 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       return essMenuItems
     }
 
-    if (user?.role === 'technician') {
+    if (user?.role?.toLowerCase() === 'technician') {
       return technicianMenuItems
     }
 
     // Admin users see all menu items - no filtering needed
-    if (user?.role === 'admin') {
+    if (user?.role?.toLowerCase() === 'admin') {
       return adminMenuItems
     }
 

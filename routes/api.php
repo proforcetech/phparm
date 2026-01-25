@@ -1243,15 +1243,29 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Session revoked']);
     })->middleware(Middleware::auth());
 
-    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload) {
+    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload, $connection, $rolePermissions) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
             return Response::unauthorized('Not authenticated');
         }
 
+        $userData = $user->toArray();
+
+        // Include permissions for the user's role
+        try {
+            $userData['permissions'] = $rolePermissions->permissionsFor($user->role);
+        } catch (\Exception $e) {
+            $userData['permissions'] = [];
+        }
+
+        // Include accessible modules for sidebar filtering
+        $gate = new AccessGate($rolePermissions);
+        $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
+        $userData['accessible_modules'] = $moduleService->getAccessibleModulesForUser($user);
+
         return Response::json([
-            'user' => $user->toArray(),
+            'user' => $userData,
             'impersonation' => $buildImpersonationPayload(),
         ]);
     })->middleware(Middleware::auth());
