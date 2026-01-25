@@ -111,4 +111,15 @@ export default {
   verifyCertification(certId, verified) {
     return api.post(`/dispatch/certifications/${certId}/verify`, { verified })
   },
+
+  // Load Balancing Settings
+  getDispatchSettings() {
+    return api.get('/settings/dispatch')
+  },
+  saveDispatchSettings(settings) {
+    return api.put('/settings/dispatch', settings)
+  },
+  getLoadBalancingStats(windowHours = 24) {
+    return api.get('/dispatch/load-balancing/stats', { params: { window_hours: windowHours } })
+  },
 }

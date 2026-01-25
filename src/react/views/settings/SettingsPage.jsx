@@ -96,6 +96,11 @@ const settingsLinks = [
     description: 'Add and organize service categories used across estimates and bundles.',
     to: '/cp/settings/services',
   },
+  {
+    title: 'Dispatch',
+    description: 'Configure load balancing, driver selection strategy, and fair distribution.',
+    to: '/cp/settings/dispatch',
+  },
 ]
 
 export default function SettingsPage() {

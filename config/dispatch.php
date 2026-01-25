@@ -131,4 +131,91 @@ return [
         // Days of data to retain
         'retention_days' => 90,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Load Balancing Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure driver load balancing parameters for fair work distribution.
+    |
+    */
+    'load_balancing' => [
+        // Workload limits - prevent driver overload
+        'workload' => [
+            // Maximum concurrent jobs a driver can have
+            'max_concurrent_jobs' => (int) env('DISPATCH_MAX_CONCURRENT_JOBS', 3),
+
+            // Limit mode: 'hard' excludes drivers at limit, 'soft' penalizes their score
+            'limit_mode' => env('DISPATCH_WORKLOAD_LIMIT_MODE', 'soft'),
+
+            // Score penalty multiplier when in soft mode (0.0 to 1.0)
+            'soft_limit_penalty' => (float) env('DISPATCH_SOFT_LIMIT_PENALTY', 0.5),
+        ],
+
+        // Dispatch strategy: how to select drivers
+        // 'highest_score' - Traditional scoring (default)
+        // 'round_robin' - Rotate through available drivers
+        // 'balanced' - Hybrid approach balancing score and fairness
+        'strategy' => env('DISPATCH_STRATEGY', 'highest_score'),
+
+        // Weight for fairness scoring (0.0 to 1.0)
+        'fairness_weight' => (float) env('DISPATCH_FAIRNESS_WEIGHT', 0.20),
+
+        // Acceptance rate configuration
+        'acceptance_rate' => [
+            // Weight for acceptance rate in scoring
+            'weight' => (float) env('DISPATCH_ACCEPTANCE_RATE_WEIGHT', 0.05),
+
+            // Minimum acceptance rate threshold (null = no minimum)
+            'minimum_threshold' => env('DISPATCH_MIN_ACCEPTANCE_RATE') !== null
+                ? (float) env('DISPATCH_MIN_ACCEPTANCE_RATE')
+                : null,
+
+            // Days to look back for acceptance rate calculation
+            'lookback_days' => (int) env('DISPATCH_ACCEPTANCE_LOOKBACK_DAYS', 30),
+        ],
+
+        // Job priority levels configuration
+        'job_priority' => [
+            // Enable priority-based dispatch adjustments
+            'enabled' => (bool) env('DISPATCH_JOB_PRIORITY_ENABLED', true),
+
+            // Priority level definitions
+            'levels' => [
+                'normal' => [
+                    'timeout_multiplier' => 1.0,
+                    'queue_depth_multiplier' => 1.0,
+                ],
+                'high' => [
+                    'timeout_multiplier' => 0.75,
+                    'queue_depth_multiplier' => 1.5,
+                ],
+                'urgent' => [
+                    'timeout_multiplier' => 0.5,
+                    'queue_depth_multiplier' => 2.0,
+                ],
+                'vip' => [
+                    'timeout_multiplier' => 0.5,
+                    'queue_depth_multiplier' => 2.5,
+                    'skip_rotation' => true,
+                ],
+            ],
+        ],
+
+        // Fair distribution tracking
+        'fair_distribution' => [
+            // Enable fair distribution tracking
+            'enabled' => (bool) env('DISPATCH_FAIR_DISTRIBUTION_ENABLED', true),
+
+            // Hours to look back for offer tracking
+            'tracking_window_hours' => (int) env('DISPATCH_TRACKING_WINDOW_HOURS', 24),
+
+            // Minimum offers to guarantee per driver per window
+            'min_offers_guarantee' => (int) env('DISPATCH_MIN_OFFERS_GUARANTEE', 5),
+
+            // Score bonus for under-offered drivers (0.0 to 1.0)
+            'under_offered_bonus' => (float) env('DISPATCH_UNDER_OFFERED_BONUS', 0.15),
+        ],
+    ],
 ];

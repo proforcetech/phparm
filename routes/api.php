@@ -5453,6 +5453,107 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $data = $offerService->getOffersForJob($jobReference);
             return Response::json(['data' => $data]);
         });
+
+        // Dispatch Load Balancing Settings
+        $trackingService = new \App\Services\Dispatch\DriverOfferTrackingService($connection);
+
+        $router->get('/api/settings/dispatch', function (Request $request) use ($gate, $recommendationService) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.dispatch.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $config = $recommendationService->getLoadBalancingConfig();
+            return Response::json([
+                'success' => true,
+                'data' => $config,
+            ]);
+        });
+
+        $router->put('/api/settings/dispatch', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.dispatch.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $body = $request->body();
+            $settingsRepository = new \App\Support\SettingsRepository($connection);
+            $settingsToSave = [];
+
+            // Map incoming settings to settings repository format
+            if (isset($body['strategy'])) {
+                $settingsToSave['dispatch.load_balancing.strategy'] = $body['strategy'];
+            }
+            if (isset($body['fairness_weight'])) {
+                $settingsToSave['dispatch.load_balancing.fairness_weight'] = (float) $body['fairness_weight'];
+            }
+            if (isset($body['workload'])) {
+                if (isset($body['workload']['max_concurrent_jobs'])) {
+                    $settingsToSave['dispatch.load_balancing.workload.max_concurrent_jobs'] = (int) $body['workload']['max_concurrent_jobs'];
+                }
+                if (isset($body['workload']['limit_mode'])) {
+                    $settingsToSave['dispatch.load_balancing.workload.limit_mode'] = $body['workload']['limit_mode'];
+                }
+                if (isset($body['workload']['soft_limit_penalty'])) {
+                    $settingsToSave['dispatch.load_balancing.workload.soft_limit_penalty'] = (float) $body['workload']['soft_limit_penalty'];
+                }
+            }
+            if (isset($body['acceptance_rate'])) {
+                if (isset($body['acceptance_rate']['weight'])) {
+                    $settingsToSave['dispatch.load_balancing.acceptance_rate.weight'] = (float) $body['acceptance_rate']['weight'];
+                }
+                if (array_key_exists('minimum_threshold', $body['acceptance_rate'])) {
+                    $settingsToSave['dispatch.load_balancing.acceptance_rate.minimum_threshold'] = $body['acceptance_rate']['minimum_threshold'];
+                }
+                if (isset($body['acceptance_rate']['lookback_days'])) {
+                    $settingsToSave['dispatch.load_balancing.acceptance_rate.lookback_days'] = (int) $body['acceptance_rate']['lookback_days'];
+                }
+            }
+            if (isset($body['job_priority'])) {
+                if (isset($body['job_priority']['enabled'])) {
+                    $settingsToSave['dispatch.load_balancing.job_priority.enabled'] = (bool) $body['job_priority']['enabled'];
+                }
+            }
+            if (isset($body['fair_distribution'])) {
+                if (isset($body['fair_distribution']['enabled'])) {
+                    $settingsToSave['dispatch.load_balancing.fair_distribution.enabled'] = (bool) $body['fair_distribution']['enabled'];
+                }
+                if (isset($body['fair_distribution']['tracking_window_hours'])) {
+                    $settingsToSave['dispatch.load_balancing.fair_distribution.tracking_window_hours'] = (int) $body['fair_distribution']['tracking_window_hours'];
+                }
+                if (isset($body['fair_distribution']['min_offers_guarantee'])) {
+                    $settingsToSave['dispatch.load_balancing.fair_distribution.min_offers_guarantee'] = (int) $body['fair_distribution']['min_offers_guarantee'];
+                }
+                if (isset($body['fair_distribution']['under_offered_bonus'])) {
+                    $settingsToSave['dispatch.load_balancing.fair_distribution.under_offered_bonus'] = (float) $body['fair_distribution']['under_offered_bonus'];
+                }
+            }
+
+            foreach ($settingsToSave as $key => $value) {
+                $settingsRepository->set($key, $value);
+            }
+
+            return Response::json([
+                'success' => true,
+                'message' => 'Dispatch settings saved successfully',
+                'data' => $settingsToSave,
+            ]);
+        });
+
+        $router->get('/api/dispatch/load-balancing/stats', function (Request $request) use ($gate, $trackingService) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'dispatch.analytics.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $windowHours = (int) ($request->queryParam('window_hours') ?? 24);
+            $stats = $trackingService->getDistributionStats($windowHours);
+
+            return Response::json([
+                'success' => true,
+                'data' => $stats,
+            ]);
+        });
     });
 
     // Inspection routes

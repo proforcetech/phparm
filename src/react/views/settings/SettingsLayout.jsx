@@ -23,6 +23,7 @@ export default function SettingsLayout() {
           { label: 'Integrations', to: '/cp/settings/integrations' },
           { label: 'Services', to: '/cp/settings/services' },
           { label: 'Modules', to: '/cp/settings/modules' },
+          { label: 'Dispatch', to: '/cp/settings/dispatch' },
         ].map((link) => (
           <NavLink
             key={link.to}

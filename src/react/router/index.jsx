@@ -80,6 +80,7 @@ import SettingsNotifications from '../views/settings/SettingsNotifications'
 import SettingsPayments from '../views/settings/SettingsPayments'
 import SettingsIntegrations from '../views/settings/SettingsIntegrations'
 import ServiceTypes from '../views/settings/ServiceTypes'
+import SettingsDispatch from '../views/settings/SettingsDispatch'
 import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
 import UserGroups from '../views/users/UserGroups'
@@ -319,6 +320,7 @@ const settingsRoutes = [
   { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: <SettingsIntegrations /> },
   { path: '/cp/settings/services', name: 'ServiceTypes', element: <ServiceTypes /> },
   { path: '/cp/settings/modules', name: 'ModuleSettings', element: <ModuleSettings /> },
+  { path: '/cp/settings/dispatch', name: 'SettingsDispatch', element: <SettingsDispatch /> },
 ]
 
 const withAuthLoader = (route) => ({
@@ -362,6 +364,7 @@ adminChildren.push({
     { path: 'integrations', element: <SettingsIntegrations /> },
     { path: 'services', element: <ServiceTypes /> },
     { path: 'modules', element: <ModuleSettings /> },
+    { path: 'dispatch', element: <SettingsDispatch /> },
   ],
 })
 

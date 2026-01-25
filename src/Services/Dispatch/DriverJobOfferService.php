@@ -11,11 +11,16 @@ class DriverJobOfferService
 {
     private Connection $connection;
     private ?PushNotificationService $pushNotifications;
+    private ?DriverOfferTrackingService $trackingService;
 
-    public function __construct(Connection $connection, ?PushNotificationService $pushNotifications = null)
-    {
+    public function __construct(
+        Connection $connection,
+        ?PushNotificationService $pushNotifications = null,
+        ?DriverOfferTrackingService $trackingService = null
+    ) {
         $this->connection = $connection;
         $this->pushNotifications = $pushNotifications;
+        $this->trackingService = $trackingService;
     }
 
     /**
@@ -68,6 +73,7 @@ class DriverJobOfferService
 
         if ($offer !== []) {
             $this->pushNotifications?->sendJobOfferNotification($driverProfileId, $offer);
+            $this->trackingService?->recordOffer($driverProfileId);
         }
 
         return $offer;
@@ -116,6 +122,8 @@ class DriverJobOfferService
             throw new InvalidArgumentException('Job offer could not be accepted.');
         }
 
+        $this->trackingService?->recordAcceptance($driverProfileId);
+
         return $this->getOffer($offerId);
     }
 
@@ -147,7 +155,39 @@ class DriverJobOfferService
             throw new InvalidArgumentException('Job offer could not be declined.');
         }
 
+        $this->trackingService?->recordDecline($driverProfileId);
+
         return $this->getOffer($offerId);
+    }
+
+    /**
+     * Mark an offer as expired (called by background worker).
+     */
+    public function markOfferExpired(int $offerId): bool
+    {
+        $offer = $this->getOffer($offerId);
+        if ($offer === [] || $offer['status'] !== 'pending') {
+            return false;
+        }
+
+        $update = $this->connection->pdo()->prepare(
+            'UPDATE driver_job_offers
+             SET status = :status, updated_at = NOW()
+             WHERE id = :id AND status = :current_status'
+        );
+        $update->execute([
+            'status' => 'expired',
+            'id' => $offerId,
+            'current_status' => 'pending',
+        ]);
+
+        if ($update->rowCount() > 0) {
+            $driverProfileId = (int) $offer['driver_profile_id'];
+            $this->trackingService?->recordExpiration($driverProfileId);
+            return true;
+        }
+
+        return false;
     }
 
     /**

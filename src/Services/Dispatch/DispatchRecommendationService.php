@@ -24,26 +24,52 @@ class DispatchRecommendationService
 
     private Connection $connection;
     private ?TrafficAwareEtaService $etaService;
+    private ?DriverOfferTrackingService $trackingService;
     private bool $useRealTimeEta;
     private bool $enforceHardFilters;
+    private array $loadBalancingConfig;
 
     public function __construct(
         Connection $connection,
         ?TrafficAwareEtaService $etaService = null,
         bool $useRealTimeEta = true,
-        bool $enforceHardFilters = true
+        bool $enforceHardFilters = true,
+        ?DriverOfferTrackingService $trackingService = null
     ) {
         $this->connection = $connection;
         $this->etaService = $etaService;
         $this->useRealTimeEta = $useRealTimeEta;
         $this->enforceHardFilters = $enforceHardFilters;
+        $this->trackingService = $trackingService;
+        $this->loadBalancingConfig = $this->loadConfig();
+    }
+
+    /**
+     * Load dispatch configuration with load balancing settings.
+     */
+    private function loadConfig(): array
+    {
+        $configPath = __DIR__ . '/../../../config/dispatch.php';
+        if (file_exists($configPath)) {
+            $config = require $configPath;
+            return $config['load_balancing'] ?? [];
+        }
+        return [];
+    }
+
+    /**
+     * Get the current load balancing configuration.
+     */
+    public function getLoadBalancingConfig(): array
+    {
+        return $this->loadBalancingConfig;
     }
 
     /**
      * @param array<string, mixed> $criteria
      * @return array<string, mixed>
      */
-    public function suggest(array $criteria, int $limit = 5): array
+    public function suggest(array $criteria, int $limit = 5, string $jobPriority = 'normal'): array
     {
         $requirement = null;
         $requirementId = $criteria['dispatch_requirement_id'] ?? $criteria['requirement_id'] ?? null;
@@ -76,6 +102,16 @@ class DispatchRecommendationService
         $requiredEquipmentClasses = $this->resolveRequiredEquipmentClasses($requirement);
         $leaveByUserId = $this->fetchApprovedLeaveByUserIds(array_column($drivers, 'user_id'), $referenceTime);
 
+        // Load balancing data
+        $activeJobCounts = $this->trackingService ? $this->trackingService->getActiveJobCounts() : [];
+        $acceptanceRates = $this->fetchAcceptanceRatesFromTracking();
+        $offerCounts = $this->fetchOfferTrackingData();
+        $avgOffers = $this->calculateAverageOffers($offerCounts);
+        $workloadConfig = $this->loadBalancingConfig['workload'] ?? [];
+        $maxConcurrentJobs = (int) ($workloadConfig['max_concurrent_jobs'] ?? 3);
+        $workloadLimitMode = $workloadConfig['limit_mode'] ?? 'soft';
+        $softLimitPenalty = (float) ($workloadConfig['soft_limit_penalty'] ?? 0.5);
+
         $suggestions = [];
         $requiredCertifications = $requirement['required_certifications'] ?? [];
         $excludedDrivers = [];
@@ -100,6 +136,38 @@ class DispatchRecommendationService
                     continue;
                 }
                 $exclusionReasons[] = 'on_leave';
+            }
+
+            // Check workload limits
+            $driverActiveJobs = $activeJobCounts[$driverId] ?? 0;
+            if ($driverActiveJobs >= $maxConcurrentJobs && $workloadLimitMode === 'hard') {
+                $excludedDrivers[] = [
+                    'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
+                    'reason' => 'workload_limit_exceeded',
+                    'details' => [
+                        'active_jobs' => $driverActiveJobs,
+                        'max_concurrent_jobs' => $maxConcurrentJobs,
+                    ],
+                ];
+                continue;
+            }
+
+            // Check minimum acceptance rate threshold
+            $acceptanceRateConfig = $this->loadBalancingConfig['acceptance_rate'] ?? [];
+            $minAcceptanceRate = $acceptanceRateConfig['minimum_threshold'] ?? null;
+            $driverAcceptanceRate = $acceptanceRates[$driverId] ?? null;
+            if ($minAcceptanceRate !== null && $driverAcceptanceRate !== null && $driverAcceptanceRate < $minAcceptanceRate) {
+                $excludedDrivers[] = [
+                    'driver_profile_id' => $driverId,
+                    'driver_name' => $driver['name'],
+                    'reason' => 'low_acceptance_rate',
+                    'details' => [
+                        'acceptance_rate' => $driverAcceptanceRate,
+                        'minimum_required' => $minAcceptanceRate,
+                    ],
+                ];
+                continue;
             }
 
             // Check certifications (from both profile and certification table)
@@ -202,7 +270,7 @@ class DispatchRecommendationService
                 );
             }
 
-            // Calculate overall weighted score
+            // Calculate base weighted score
             $overall = $this->weightedScore(
                 $distanceScore,
                 $equipmentResult['score'],
@@ -212,6 +280,33 @@ class DispatchRecommendationService
                 $deadheadScore,
                 $workloadScore
             );
+
+            // Apply load balancing adjustments
+            $fairnessScore = 0.0;
+            $acceptanceRateScore = 0.0;
+            $workloadPenaltyApplied = false;
+
+            // Apply soft workload penalty if driver is at or above limit
+            if ($driverActiveJobs >= $maxConcurrentJobs && $workloadLimitMode === 'soft') {
+                $overall = $overall * $softLimitPenalty;
+                $workloadPenaltyApplied = true;
+            }
+
+            // Add acceptance rate scoring
+            $acceptanceRateWeight = (float) ($acceptanceRateConfig['weight'] ?? 0.05);
+            if ($driverAcceptanceRate !== null && $acceptanceRateWeight > 0) {
+                $acceptanceRateScore = $this->scoreAcceptanceRate($driverAcceptanceRate);
+                $overall = $overall + ($acceptanceRateScore * $acceptanceRateWeight);
+            }
+
+            // Add fairness scoring for under-offered drivers
+            $fairDistConfig = $this->loadBalancingConfig['fair_distribution'] ?? [];
+            if (($fairDistConfig['enabled'] ?? true) && $avgOffers > 0) {
+                $driverOfferCount = $offerCounts[$driverId] ?? 0;
+                $fairnessScore = $this->scoreFairness($driverOfferCount, $avgOffers, $fairDistConfig);
+                $fairnessWeight = (float) ($this->loadBalancingConfig['fairness_weight'] ?? 0.20);
+                $overall = $overall + ($fairnessScore * $fairnessWeight);
+            }
 
             // Build recommendation justification
             $justification = $this->buildJustification(
@@ -258,6 +353,13 @@ class DispatchRecommendationService
                     'item_count' => $workload['item_count'],
                     'job_total' => $workload['job_total'],
                 ] : null,
+                'load_balancing' => [
+                    'active_jobs' => $driverActiveJobs,
+                    'max_concurrent_jobs' => $maxConcurrentJobs,
+                    'offers_today' => $offerCounts[$driverId] ?? 0,
+                    'acceptance_rate' => $driverAcceptanceRate,
+                    'workload_penalty_applied' => $workloadPenaltyApplied,
+                ],
                 'scores' => [
                     'distance' => $distanceScore,
                     'equipment' => $equipmentResult['score'],
@@ -267,7 +369,9 @@ class DispatchRecommendationService
                     'deadhead' => $deadheadScore,
                     'workload' => $workloadScore,
                     'heading' => $headingScore,
-                    'overall' => $overall,
+                    'fairness' => round($fairnessScore, 4),
+                    'acceptance_rate' => round($acceptanceRateScore, 4),
+                    'overall' => round($overall, 4),
                 ],
                 'justification' => $justification,
                 'certification_match' => empty($missingCertifications),
@@ -276,16 +380,17 @@ class DispatchRecommendationService
             ];
         }
 
-        usort(
-            $suggestions,
-            fn (array $left, array $right) => $right['scores']['overall'] <=> $left['scores']['overall']
-        );
+        // Apply sorting strategy
+        $strategy = $this->loadBalancingConfig['strategy'] ?? 'highest_score';
+        $suggestions = $this->applySortingStrategy($suggestions, $strategy, $jobPriority);
 
         return [
             'requirement' => $requirement,
             'data' => array_slice($suggestions, 0, max(1, $limit)),
             'excluded_drivers' => $excludedDrivers,
             'total_available' => count($suggestions),
+            'job_priority' => $jobPriority,
+            'strategy' => $strategy,
             'scoring_weights' => [
                 'distance' => self::DISTANCE_WEIGHT,
                 'equipment' => self::EQUIPMENT_WEIGHT,
@@ -294,6 +399,15 @@ class DispatchRecommendationService
                 'performance' => self::PERFORMANCE_WEIGHT,
                 'deadhead' => self::DEADHEAD_WEIGHT,
                 'workload' => self::WORKLOAD_WEIGHT,
+                'fairness' => (float) ($this->loadBalancingConfig['fairness_weight'] ?? 0.20),
+                'acceptance_rate' => (float) ($acceptanceRateConfig['weight'] ?? 0.05),
+            ],
+            'load_balancing' => [
+                'enabled' => !empty($this->loadBalancingConfig),
+                'strategy' => $strategy,
+                'workload_limit_mode' => $workloadLimitMode,
+                'max_concurrent_jobs' => $maxConcurrentJobs,
+                'average_offers_today' => round($avgOffers, 2),
             ],
         ];
     }
@@ -1139,5 +1253,214 @@ class DispatchRecommendationService
             + ($workloadScore * self::WORKLOAD_WEIGHT),
             4
         );
+    }
+
+    /**
+     * Score acceptance rate (higher is better).
+     */
+    private function scoreAcceptanceRate(float $rate): float
+    {
+        // Linear scoring: 100% = 1.0, 50% = 0.5, 0% = 0
+        return min(1.0, max(0.0, $rate));
+    }
+
+    /**
+     * Score fairness based on offer distribution.
+     */
+    private function scoreFairness(int $driverOffers, float $avgOffers, array $config): float
+    {
+        if ($avgOffers <= 0) {
+            return 0.0;
+        }
+
+        $minGuarantee = (int) ($config['min_offers_guarantee'] ?? 5);
+        $underOfferedBonus = (float) ($config['under_offered_bonus'] ?? 0.15);
+
+        // If driver has received fewer offers than the minimum guarantee, give bonus
+        if ($driverOffers < $minGuarantee) {
+            return $underOfferedBonus;
+        }
+
+        // Calculate ratio compared to average
+        $ratio = $driverOffers / $avgOffers;
+
+        // Under-offered drivers get a bonus, over-offered get a penalty
+        if ($ratio < 0.8) {
+            return $underOfferedBonus * (1 - $ratio);
+        } elseif ($ratio > 1.2) {
+            return -($underOfferedBonus * ($ratio - 1));
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Apply sorting strategy to suggestions.
+     */
+    private function applySortingStrategy(array $suggestions, string $strategy, string $jobPriority): array
+    {
+        $priorityConfig = $this->loadBalancingConfig['job_priority'] ?? [];
+        $skipRotation = ($priorityConfig['levels'][$jobPriority]['skip_rotation'] ?? false);
+
+        switch ($strategy) {
+            case 'round_robin':
+                if ($skipRotation) {
+                    // VIP jobs skip rotation and use highest score
+                    usort($suggestions, fn($a, $b) => $b['scores']['overall'] <=> $a['scores']['overall']);
+                } else {
+                    $suggestions = $this->applyRoundRobinSort($suggestions);
+                }
+                break;
+
+            case 'balanced':
+                // Hybrid: Use weighted combination of score and position
+                $suggestions = $this->applyBalancedSort($suggestions);
+                break;
+
+            case 'highest_score':
+            default:
+                usort($suggestions, fn($a, $b) => $b['scores']['overall'] <=> $a['scores']['overall']);
+                break;
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * Apply round-robin sorting based on last offer position.
+     */
+    private function applyRoundRobinSort(array $suggestions): array
+    {
+        $rotationState = $this->trackingService?->getRotationState('default');
+        $lastDriverId = $rotationState['last_driver_profile_id'] ?? null;
+
+        if ($lastDriverId === null) {
+            // No rotation state, use offers today as tiebreaker (fewer offers first)
+            usort($suggestions, function ($a, $b) {
+                $offersA = $a['load_balancing']['offers_today'] ?? 0;
+                $offersB = $b['load_balancing']['offers_today'] ?? 0;
+                if ($offersA !== $offersB) {
+                    return $offersA <=> $offersB;
+                }
+                return $b['scores']['overall'] <=> $a['scores']['overall'];
+            });
+            return $suggestions;
+        }
+
+        // Sort by position relative to last driver, with fewest offers as tiebreaker
+        usort($suggestions, function ($a, $b) use ($lastDriverId) {
+            // Prioritize drivers who haven't been offered recently
+            $offersA = $a['load_balancing']['offers_today'] ?? 0;
+            $offersB = $b['load_balancing']['offers_today'] ?? 0;
+            if ($offersA !== $offersB) {
+                return $offersA <=> $offersB;
+            }
+
+            // Use overall score as final tiebreaker
+            return $b['scores']['overall'] <=> $a['scores']['overall'];
+        });
+
+        return $suggestions;
+    }
+
+    /**
+     * Apply balanced sorting (hybrid of score and fairness).
+     */
+    private function applyBalancedSort(array $suggestions): array
+    {
+        // Calculate a balanced score combining overall and fairness
+        foreach ($suggestions as &$suggestion) {
+            $overallScore = $suggestion['scores']['overall'] ?? 0;
+            $fairnessScore = $suggestion['scores']['fairness'] ?? 0;
+            $balancedWeight = 0.7; // 70% overall score, 30% fairness
+
+            $suggestion['balanced_score'] = ($overallScore * $balancedWeight) + ($fairnessScore * (1 - $balancedWeight));
+        }
+        unset($suggestion);
+
+        usort($suggestions, fn($a, $b) => $b['balanced_score'] <=> $a['balanced_score']);
+
+        // Remove the temporary balanced_score key
+        foreach ($suggestions as &$suggestion) {
+            unset($suggestion['balanced_score']);
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * Fetch acceptance rates from tracking service or database.
+     *
+     * @return array<int, float|null>
+     */
+    private function fetchAcceptanceRatesFromTracking(): array
+    {
+        if ($this->trackingService !== null) {
+            $lookbackDays = (int) ($this->loadBalancingConfig['acceptance_rate']['lookback_days'] ?? 30);
+            return $this->trackingService->getAllAcceptanceRates($lookbackDays);
+        }
+
+        // Fallback to performance metrics table
+        $stmt = $this->connection->pdo()->query(
+            'SELECT driver_profile_id,
+                    SUM(jobs_accepted) as accepted,
+                    SUM(jobs_accepted + jobs_declined) as total
+             FROM driver_performance_metrics
+             WHERE metric_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+             GROUP BY driver_profile_id'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $rates = [];
+        foreach ($rows as $row) {
+            $total = (int) $row['total'];
+            $rates[(int) $row['driver_profile_id']] = $total > 0
+                ? (float) $row['accepted'] / $total
+                : null;
+        }
+
+        return $rates;
+    }
+
+    /**
+     * Fetch offer tracking data for today.
+     *
+     * @return array<int, int>
+     */
+    private function fetchOfferTrackingData(): array
+    {
+        if ($this->trackingService !== null) {
+            $windowHours = (int) ($this->loadBalancingConfig['fair_distribution']['tracking_window_hours'] ?? 24);
+            $counts = $this->trackingService->getOfferCountsForWindow($windowHours);
+            return array_map(fn($c) => $c['offers_received'], $counts);
+        }
+
+        // Fallback: count offers from driver_job_offers table
+        $stmt = $this->connection->pdo()->query(
+            'SELECT driver_profile_id, COUNT(*) as offer_count
+             FROM driver_job_offers
+             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+             GROUP BY driver_profile_id'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $counts[(int) $row['driver_profile_id']] = (int) $row['offer_count'];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Calculate average offers from tracking data.
+     */
+    private function calculateAverageOffers(array $offerCounts): float
+    {
+        if (empty($offerCounts)) {
+            return 0.0;
+        }
+
+        return array_sum($offerCounts) / count($offerCounts);
     }
 }

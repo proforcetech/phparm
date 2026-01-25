@@ -11,10 +11,12 @@ class WaterfallDispatchService
 {
     private const DEFAULT_OFFER_TIMEOUT_SECONDS = 60;
     private const DEFAULT_MAX_OFFERS = 10;
+    private const VALID_PRIORITIES = ['normal', 'high', 'urgent', 'vip'];
 
     private Connection $connection;
     private DispatchRecommendationService $recommendationService;
     private DriverJobOfferService $offerService;
+    private array $loadBalancingConfig;
 
     public function __construct(
         Connection $connection,
@@ -24,6 +26,20 @@ class WaterfallDispatchService
         $this->connection = $connection;
         $this->recommendationService = $recommendationService;
         $this->offerService = $offerService;
+        $this->loadBalancingConfig = $this->loadConfig();
+    }
+
+    /**
+     * Load dispatch configuration with load balancing settings.
+     */
+    private function loadConfig(): array
+    {
+        $configPath = __DIR__ . '/../../../config/dispatch.php';
+        if (file_exists($configPath)) {
+            $config = require $configPath;
+            return $config['load_balancing'] ?? [];
+        }
+        return [];
     }
 
     /**
@@ -39,6 +55,7 @@ class WaterfallDispatchService
         $dispatchRequirementId = $payload['dispatch_requirement_id'] ?? null;
         $offerTimeoutSeconds = (int) ($payload['offer_timeout_seconds'] ?? self::DEFAULT_OFFER_TIMEOUT_SECONDS);
         $maxOffers = (int) ($payload['max_offers'] ?? self::DEFAULT_MAX_OFFERS);
+        $jobPriority = $this->validatePriority($payload['priority'] ?? 'normal');
 
         if ($jobReference === '') {
             throw new InvalidArgumentException('job_reference is required');
@@ -50,12 +67,23 @@ class WaterfallDispatchService
             throw new InvalidArgumentException('An active waterfall sequence already exists for this job');
         }
 
-        // Get ranked driver suggestions
+        // Calculate effective timeout and max offers based on priority
+        $priorityConfig = $this->loadBalancingConfig['job_priority'] ?? [];
+        $priorityLevels = $priorityConfig['levels'] ?? [];
+        $priorityLevel = $priorityLevels[$jobPriority] ?? $priorityLevels['normal'] ?? [];
+
+        $timeoutMultiplier = (float) ($priorityLevel['timeout_multiplier'] ?? 1.0);
+        $queueDepthMultiplier = (float) ($priorityLevel['queue_depth_multiplier'] ?? 1.0);
+
+        $effectiveTimeout = (int) round($offerTimeoutSeconds * $timeoutMultiplier);
+        $effectiveMaxOffers = (int) round($maxOffers * $queueDepthMultiplier);
+
+        // Get ranked driver suggestions with priority
         $criteria = $dispatchRequirementId !== null
             ? ['dispatch_requirement_id' => $dispatchRequirementId]
             : $payload;
 
-        $suggestions = $this->recommendationService->suggest($criteria, $maxOffers);
+        $suggestions = $this->recommendationService->suggest($criteria, $effectiveMaxOffers, $jobPriority);
         $driverQueue = array_map(fn(array $driver) => [
             'driver_profile_id' => $driver['driver_profile_id'],
             'driver_user_id' => $driver['driver_user_id'],
@@ -63,6 +91,7 @@ class WaterfallDispatchService
             'scores' => $driver['scores'],
             'distance_km' => $driver['distance_km'],
             'equipment' => $driver['equipment'],
+            'load_balancing' => $driver['load_balancing'] ?? null,
         ], $suggestions['data'] ?? []);
 
         if (empty($driverQueue)) {
@@ -74,10 +103,12 @@ class WaterfallDispatchService
         $insert = $this->connection->pdo()->prepare(
             'INSERT INTO waterfall_dispatch_sequences
                 (sequence_reference, dispatch_requirement_id, job_reference, job_type, status,
-                 offer_timeout_seconds, max_offers, current_position, driver_queue, initiated_by, created_at)
+                 offer_timeout_seconds, max_offers, current_position, driver_queue, initiated_by,
+                 job_priority, effective_timeout_seconds, effective_max_offers, created_at)
              VALUES
                 (:sequence_reference, :dispatch_requirement_id, :job_reference, :job_type, :status,
-                 :offer_timeout_seconds, :max_offers, :current_position, :driver_queue, :initiated_by, NOW())'
+                 :offer_timeout_seconds, :max_offers, :current_position, :driver_queue, :initiated_by,
+                 :job_priority, :effective_timeout_seconds, :effective_max_offers, NOW())'
         );
 
         $insert->execute([
@@ -91,6 +122,9 @@ class WaterfallDispatchService
             'current_position' => 0,
             'driver_queue' => json_encode($driverQueue, JSON_THROW_ON_ERROR),
             'initiated_by' => $actorId,
+            'job_priority' => $jobPriority,
+            'effective_timeout_seconds' => $effectiveTimeout,
+            'effective_max_offers' => $effectiveMaxOffers,
         ]);
 
         $sequenceId = (int) $this->connection->pdo()->lastInsertId();
@@ -99,6 +133,15 @@ class WaterfallDispatchService
         $this->sendNextOffer($sequenceId);
 
         return $this->getSequence($sequenceId);
+    }
+
+    /**
+     * Validate and normalize priority value.
+     */
+    private function validatePriority(string $priority): string
+    {
+        $priority = strtolower(trim($priority));
+        return in_array($priority, self::VALID_PRIORITIES, true) ? $priority : 'normal';
     }
 
     /**
@@ -115,14 +158,19 @@ class WaterfallDispatchService
         $driverQueue = json_decode($sequence['driver_queue'], true) ?? [];
         $currentPosition = (int) $sequence['current_position'];
 
-        if ($currentPosition >= count($driverQueue)) {
+        // Check against effective max offers if set
+        $effectiveMaxOffers = $sequence['effective_max_offers'] ?? count($driverQueue);
+        if ($currentPosition >= min(count($driverQueue), (int) $effectiveMaxOffers)) {
             $this->completeSequence($sequenceId, 'exhausted', 'All drivers in queue have been offered');
             return null;
         }
 
         $driver = $driverQueue[$currentPosition];
+
+        // Use effective timeout if set, otherwise fall back to base timeout
+        $timeoutSeconds = $sequence['effective_timeout_seconds'] ?? $sequence['offer_timeout_seconds'];
         $expiresAt = (new DateTimeImmutable())
-            ->modify('+' . (int) $sequence['offer_timeout_seconds'] . ' seconds')
+            ->modify('+' . (int) $timeoutSeconds . ' seconds')
             ->format('Y-m-d H:i:s');
 
         $offer = $this->offerService->createOffer([
