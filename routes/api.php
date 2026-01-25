@@ -5578,13 +5578,23 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // VIN Decoder Settings routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $settingsRepository, $partsTechService) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $settingsRepository, $auditLogger) {
 
         $vinDecoderConfig = require __DIR__ . '/../config/vin_decoder.php';
+
+        // Create PartsTechService if needed for VIN decoder factory
+        $partsTechServiceLocal = null;
+        if ($vinDecoderConfig['partstech']['enabled'] ?? false) {
+            $partsTechServiceLocal = new \App\Services\Integrations\PartsTechService(
+                $settingsRepository,
+                $auditLogger
+            );
+        }
+
         $vinDecoderFactory = new \App\Services\Vehicle\VinDecoderFactory(
             $connection,
             $vinDecoderConfig,
-            $partsTechService ?? null
+            $partsTechServiceLocal
         );
 
         $router->get('/api/settings/vin-decoder', function (Request $request) use ($gate, $vinDecoderConfig, $vinDecoderFactory) {
