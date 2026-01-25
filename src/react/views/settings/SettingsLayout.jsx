@@ -24,6 +24,7 @@ export default function SettingsLayout() {
           { label: 'Services', to: '/cp/settings/services' },
           { label: 'Modules', to: '/cp/settings/modules' },
           { label: 'Dispatch', to: '/cp/settings/dispatch' },
+          { label: 'VIN Decoder', to: '/cp/settings/vin-decoder' },
         ].map((link) => (
           <NavLink
             key={link.to}

@@ -27,3 +27,24 @@ export function decodeVin(vin) {
 export function validateVin(vin) {
   return api.post('/vehicles/validate-vin', { vin }).then((r) => r.data)
 }
+
+// VIN Decoder Settings
+export function getVinDecoderSettings() {
+  return api.get('/settings/vin-decoder')
+}
+
+export function saveVinDecoderSettings(settings) {
+  return api.put('/settings/vin-decoder', settings)
+}
+
+export function getVinDecoderStats(days = 30) {
+  return api.get('/vin-decoder/stats', { params: { days } })
+}
+
+export function clearVinDecoderCache(expiredOnly = false) {
+  return api.post('/vin-decoder/cache/clear', { expired_only: expiredOnly })
+}
+
+export function getVinDecoderLogs(params = {}) {
+  return api.get('/vin-decoder/logs', { params })
+}

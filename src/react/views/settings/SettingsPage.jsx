@@ -101,6 +101,11 @@ const settingsLinks = [
     description: 'Configure load balancing, driver selection strategy, and fair distribution.',
     to: '/cp/settings/dispatch',
   },
+  {
+    title: 'VIN Decoder',
+    description: 'Configure VIN decoding services, caching, rate limits, and fallback strategies.',
+    to: '/cp/settings/vin-decoder',
+  },
 ]
 
 export default function SettingsPage() {

@@ -2440,10 +2440,17 @@ $inventoryPullRequestRepository = new \App\Services\Inventory\InventoryPullReque
 
         $vehicleRepository = new \App\Services\Vehicle\VehicleMasterRepository($connection);
 
-        // VIN decoder setup
-        $vinDecoder = new \App\Services\Vehicle\NhtsaVinDecoder();
+        // VIN decoder setup - using factory with caching, rate limiting, and fallback
+        $vinDecoderConfig = require __DIR__ . '/../config/vin_decoder.php';
+        $vinDecoderFactory = new \App\Services\Vehicle\VinDecoderFactory(
+            $connection,
+            $vinDecoderConfig,
+            $partsTechService ?? null
+        );
+        $vinDecoder = $vinDecoderFactory->create();
         $vinDecoderService = new \App\Services\Vehicle\VinDecoderService($vinDecoder);
-        $normalizationJob = new \App\Services\Vehicle\VehicleNormalizationJob($connection, $vehicleRepository, $vinDecoder);
+        $baseDecoder = new \App\Services\Vehicle\NhtsaVinDecoder(); // For normalization job
+        $normalizationJob = new \App\Services\Vehicle\VehicleNormalizationJob($connection, $vehicleRepository, $baseDecoder);
 
         $vehicleController = new \App\Services\Vehicle\VehicleMasterController(
             $vehicleRepository,
@@ -5552,6 +5559,289 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json([
                 'success' => true,
                 'data' => $stats,
+            ]);
+        });
+    });
+
+    // VIN Decoder Settings routes
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $settingsRepository, $partsTechService) {
+
+        $vinDecoderConfig = require __DIR__ . '/../config/vin_decoder.php';
+        $vinDecoderFactory = new \App\Services\Vehicle\VinDecoderFactory(
+            $connection,
+            $vinDecoderConfig,
+            $partsTechService ?? null
+        );
+
+        $router->get('/api/settings/vin-decoder', function (Request $request) use ($gate, $vinDecoderConfig, $vinDecoderFactory) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.vehicle.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            return Response::json([
+                'success' => true,
+                'data' => [
+                    'primary_decoder' => $vinDecoderConfig['primary_decoder'] ?? 'nhtsa',
+                    'fallback_enabled' => $vinDecoderConfig['fallback_enabled'] ?? true,
+                    'decoder_priority' => $vinDecoderConfig['decoder_priority'] ?? ['nhtsa'],
+                    'nhtsa' => [
+                        'enabled' => $vinDecoderConfig['nhtsa']['enabled'] ?? true,
+                        'timeout' => $vinDecoderConfig['nhtsa']['timeout'] ?? 10,
+                    ],
+                    'partstech' => [
+                        'enabled' => $vinDecoderConfig['partstech']['enabled'] ?? false,
+                        'timeout' => $vinDecoderConfig['partstech']['timeout'] ?? 10,
+                    ],
+                    'cache' => [
+                        'enabled' => $vinDecoderConfig['cache']['enabled'] ?? true,
+                        'ttl_seconds' => $vinDecoderConfig['cache']['ttl_seconds'] ?? 2592000,
+                        'memory_cache' => $vinDecoderConfig['cache']['memory_cache'] ?? true,
+                    ],
+                    'rate_limit' => [
+                        'enabled' => $vinDecoderConfig['rate_limit']['enabled'] ?? true,
+                        'per_user_per_minute' => $vinDecoderConfig['rate_limit']['per_user_per_minute'] ?? 30,
+                        'global_per_minute' => $vinDecoderConfig['rate_limit']['global_per_minute'] ?? 100,
+                        'burst_allowance' => $vinDecoderConfig['rate_limit']['burst_allowance'] ?? 5,
+                    ],
+                    'retry' => [
+                        'enabled' => $vinDecoderConfig['retry']['enabled'] ?? true,
+                        'max_attempts' => $vinDecoderConfig['retry']['max_attempts'] ?? 2,
+                        'initial_delay_ms' => $vinDecoderConfig['retry']['initial_delay_ms'] ?? 500,
+                    ],
+                    'logging' => [
+                        'log_decodes' => $vinDecoderConfig['logging']['log_decodes'] ?? true,
+                        'log_cache' => $vinDecoderConfig['logging']['log_cache'] ?? false,
+                        'log_errors' => $vinDecoderConfig['logging']['log_errors'] ?? true,
+                    ],
+                    'available_decoders' => $vinDecoderFactory->getAvailableDecoders(),
+                ],
+            ]);
+        });
+
+        $router->put('/api/settings/vin-decoder', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.vehicle.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $body = $request->body();
+            $settingsRepository = new \App\Support\SettingsRepository($connection);
+            $settingsToSave = [];
+
+            // Map incoming settings to settings repository format
+            if (isset($body['primary_decoder'])) {
+                $settingsToSave['vin_decoder.primary_decoder'] = $body['primary_decoder'];
+            }
+            if (isset($body['fallback_enabled'])) {
+                $settingsToSave['vin_decoder.fallback_enabled'] = (bool) $body['fallback_enabled'];
+            }
+            if (isset($body['nhtsa'])) {
+                if (isset($body['nhtsa']['enabled'])) {
+                    $settingsToSave['vin_decoder.nhtsa.enabled'] = (bool) $body['nhtsa']['enabled'];
+                }
+                if (isset($body['nhtsa']['timeout'])) {
+                    $settingsToSave['vin_decoder.nhtsa.timeout'] = (int) $body['nhtsa']['timeout'];
+                }
+            }
+            if (isset($body['partstech'])) {
+                if (isset($body['partstech']['enabled'])) {
+                    $settingsToSave['vin_decoder.partstech.enabled'] = (bool) $body['partstech']['enabled'];
+                }
+                if (isset($body['partstech']['timeout'])) {
+                    $settingsToSave['vin_decoder.partstech.timeout'] = (int) $body['partstech']['timeout'];
+                }
+            }
+            if (isset($body['cache'])) {
+                if (isset($body['cache']['enabled'])) {
+                    $settingsToSave['vin_decoder.cache.enabled'] = (bool) $body['cache']['enabled'];
+                }
+                if (isset($body['cache']['ttl_seconds'])) {
+                    $settingsToSave['vin_decoder.cache.ttl_seconds'] = (int) $body['cache']['ttl_seconds'];
+                }
+                if (isset($body['cache']['memory_cache'])) {
+                    $settingsToSave['vin_decoder.cache.memory_cache'] = (bool) $body['cache']['memory_cache'];
+                }
+            }
+            if (isset($body['rate_limit'])) {
+                if (isset($body['rate_limit']['enabled'])) {
+                    $settingsToSave['vin_decoder.rate_limit.enabled'] = (bool) $body['rate_limit']['enabled'];
+                }
+                if (isset($body['rate_limit']['per_user_per_minute'])) {
+                    $settingsToSave['vin_decoder.rate_limit.per_user_per_minute'] = (int) $body['rate_limit']['per_user_per_minute'];
+                }
+                if (isset($body['rate_limit']['global_per_minute'])) {
+                    $settingsToSave['vin_decoder.rate_limit.global_per_minute'] = (int) $body['rate_limit']['global_per_minute'];
+                }
+                if (isset($body['rate_limit']['burst_allowance'])) {
+                    $settingsToSave['vin_decoder.rate_limit.burst_allowance'] = (int) $body['rate_limit']['burst_allowance'];
+                }
+            }
+            if (isset($body['retry'])) {
+                if (isset($body['retry']['enabled'])) {
+                    $settingsToSave['vin_decoder.retry.enabled'] = (bool) $body['retry']['enabled'];
+                }
+                if (isset($body['retry']['max_attempts'])) {
+                    $settingsToSave['vin_decoder.retry.max_attempts'] = (int) $body['retry']['max_attempts'];
+                }
+            }
+            if (isset($body['logging'])) {
+                if (isset($body['logging']['log_decodes'])) {
+                    $settingsToSave['vin_decoder.logging.log_decodes'] = (bool) $body['logging']['log_decodes'];
+                }
+                if (isset($body['logging']['log_cache'])) {
+                    $settingsToSave['vin_decoder.logging.log_cache'] = (bool) $body['logging']['log_cache'];
+                }
+                if (isset($body['logging']['log_errors'])) {
+                    $settingsToSave['vin_decoder.logging.log_errors'] = (bool) $body['logging']['log_errors'];
+                }
+            }
+
+            foreach ($settingsToSave as $key => $value) {
+                $settingsRepository->set($key, $value);
+            }
+
+            return Response::json([
+                'success' => true,
+                'message' => 'VIN decoder settings saved successfully',
+                'data' => $settingsToSave,
+            ]);
+        });
+
+        $router->get('/api/vin-decoder/stats', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.vehicle.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $days = (int) ($request->queryParam('days') ?? 30);
+
+            // Get cache stats
+            $cacheStmt = $connection->pdo()->prepare(
+                'SELECT
+                    decoder_source,
+                    COUNT(*) as total_cached,
+                    SUM(CASE WHEN expires_at > NOW() THEN 1 ELSE 0 END) as valid_cached,
+                    SUM(CASE WHEN expires_at <= NOW() THEN 1 ELSE 0 END) as expired_cached
+                 FROM vin_decode_cache
+                 GROUP BY decoder_source'
+            );
+            $cacheStmt->execute();
+            $cacheStats = $cacheStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            // Get decode stats
+            $statsStmt = $connection->pdo()->prepare(
+                'SELECT
+                    decoder_source,
+                    SUM(total_requests) as total_requests,
+                    SUM(cache_hits) as cache_hits,
+                    SUM(successful_decodes) as successful_decodes,
+                    SUM(failed_decodes) as failed_decodes,
+                    AVG(avg_response_time_ms) as avg_response_time_ms
+                 FROM vin_decode_stats
+                 WHERE stat_date >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                 GROUP BY decoder_source'
+            );
+            $statsStmt->execute(['days' => $days]);
+            $decodeStats = $statsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            // Get rate limit status
+            $windowStart = (new \DateTimeImmutable())->format('Y-m-d H:i:00');
+            $rateLimitStmt = $connection->pdo()->prepare(
+                'SELECT rate_key, request_count
+                 FROM vin_decode_rate_limits
+                 WHERE window_start = :window_start'
+            );
+            $rateLimitStmt->execute(['window_start' => $windowStart]);
+            $rateLimits = $rateLimitStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return Response::json([
+                'success' => true,
+                'data' => [
+                    'cache' => $cacheStats,
+                    'decodes' => $decodeStats,
+                    'rate_limits' => $rateLimits,
+                    'period_days' => $days,
+                ],
+            ]);
+        });
+
+        $router->post('/api/vin-decoder/cache/clear', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.vehicle.manage')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $body = $request->body();
+            $clearExpiredOnly = $body['expired_only'] ?? false;
+
+            if ($clearExpiredOnly) {
+                $stmt = $connection->pdo()->prepare(
+                    'DELETE FROM vin_decode_cache WHERE expires_at <= NOW()'
+                );
+            } else {
+                $stmt = $connection->pdo()->prepare('DELETE FROM vin_decode_cache');
+            }
+            $stmt->execute();
+            $deletedCount = $stmt->rowCount();
+
+            return Response::json([
+                'success' => true,
+                'message' => "Cleared {$deletedCount} cache entries",
+                'data' => ['deleted_count' => $deletedCount],
+            ]);
+        });
+
+        $router->get('/api/vin-decoder/logs', function (Request $request) use ($connection, $gate) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'settings.vehicle.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $limit = min((int) ($request->queryParam('limit') ?? 100), 500);
+            $offset = (int) ($request->queryParam('offset') ?? 0);
+            $successOnly = $request->queryParam('success_only') === 'true';
+            $failedOnly = $request->queryParam('failed_only') === 'true';
+
+            $conditions = [];
+            $params = ['limit' => $limit, 'offset' => $offset];
+
+            if ($successOnly) {
+                $conditions[] = 'decode_success = 1';
+            } elseif ($failedOnly) {
+                $conditions[] = 'decode_success = 0';
+            }
+
+            $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+            $stmt = $connection->pdo()->prepare(
+                "SELECT id, vin, user_id, decoder_source, cache_hit, decode_success,
+                        error_message, response_time_ms, ip_address, created_at
+                 FROM vin_decode_log
+                 {$whereClause}
+                 ORDER BY created_at DESC
+                 LIMIT :limit OFFSET :offset"
+            );
+            $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue('offset', $offset, \PDO::PARAM_INT);
+            $stmt->execute();
+            $logs = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            // Get total count
+            $countStmt = $connection->pdo()->prepare(
+                "SELECT COUNT(*) as total FROM vin_decode_log {$whereClause}"
+            );
+            $countStmt->execute();
+            $total = (int) $countStmt->fetchColumn();
+
+            return Response::json([
+                'success' => true,
+                'data' => [
+                    'logs' => $logs,
+                    'total' => $total,
+                    'limit' => $limit,
+                    'offset' => $offset,
+                ],
             ]);
         });
     });
