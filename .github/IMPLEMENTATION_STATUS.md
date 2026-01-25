@@ -1,7 +1,7 @@
 # PHPArm Implementation Status & Feature Tracking
 
 **Date Created:** January 18, 2026
-**Last Updated:** January 24, 2026
+**Last Updated:** January 25, 2026
 **Project:** Automotive Repair Shop & Roadside Assistance ERP System
 **Technology Stack:** PHP 8.1 + React 19 + Vite + MySQL 8.0
 
@@ -162,8 +162,8 @@ The following items require verification that they are **fully integrated and te
 | Responsive images/WebP pipeline | ✅ **Complete** | Automatic srcset generation, WebP conversion on upload, config-driven quality settings |
 | CMS pre-caching strategy | Not confirmed | Check: stale-while-revalidate implementation, cache invalidation on edits |
 | Inventory stock order AP integration | Partially Implemented | Verify: stock order receipt auto-creates AP entry, GL posting correct |
-| Dispatch waterfall logic | Partially Implemented | Test: driver rotation, load balancing, escalation rules, decline handling |
-| VIN decoder integration | Tables exist | Verify: automatic make/model/year population from VIN, OEM parts catalog integration |
+| Dispatch waterfall logic | ✅ **Complete** | Load balancing with strategies (highest_score, round_robin, balanced), workload limits, fair distribution |
+| VIN decoder integration | ✅ **Complete** | Caching, rate limiting, fallback chain (NHTSA/PartsTech), logging, settings UI |
 | Partner dispatch sync | Schema exists | Test: real-time sync with external providers, data consistency, error handling |
 
 ---
@@ -188,6 +188,26 @@ The following items require verification that they are **fully integrated and te
    - ✅ Refresh token rotation with reuse detection
    - ✅ User impersonation with database-backed sessions and IP validation
    - ✅ Secure session management with timeout and regeneration
+
+4. **Dispatch Load Balancing Parameters** ✅ COMPLETE (January 25, 2026)
+   - Database: ✅ Migration 095 - driver_offer_tracking, dispatch_rotation_state tables
+   - Backend: ✅ DriverOfferTrackingService for fair distribution tracking
+   - Backend: ✅ DispatchRecommendationService with configurable load balancing
+   - Backend: ✅ Strategies: highest_score, round_robin, balanced
+   - Backend: ✅ Workload limits (hard/soft modes), acceptance rate scoring
+   - Backend: ✅ Job priority levels (normal, high, urgent, vip)
+   - Frontend: ✅ SettingsDispatch.jsx with full configuration UI
+   - API: ✅ GET/PUT /api/settings/dispatch, GET /api/dispatch/load-balancing/stats
+
+5. **VIN Decoder External API Setup** ✅ COMPLETE (January 25, 2026)
+   - Database: ✅ Migration 096 - vin_decode_cache, vin_decode_log, vin_decode_rate_limits, vin_decode_stats
+   - Config: ✅ config/vin_decoder.php - Primary decoder, fallback, cache TTL, rate limits, retry settings
+   - Backend: ✅ Decorator pattern: CachingVinDecoder, RateLimitedVinDecoder, LoggingVinDecoder
+   - Backend: ✅ FallbackVinDecoder with chain-of-responsibility and retry logic
+   - Backend: ✅ VinDecoderFactory assembles complete decoder stack
+   - Backend: ✅ PartsTechVinDecoderAdapter for premium VIN decoding
+   - Frontend: ✅ SettingsVinDecoder.jsx with decoder config, cache management, statistics
+   - API: ✅ GET/PUT /api/settings/vin-decoder, GET /api/vin-decoder/stats, POST /api/vin-decoder/cache/clear
 
 ### ⚠️ NEEDS ATTENTION
 
@@ -520,10 +540,10 @@ Friday: Sprint summary, plan next week
 
 ### Known Blockers
 1. ~~**Sub-Estimate Frontend UI**~~ ✅ RESOLVED - Backend complete with notifications and validation
-2. **2FA Enforcement Configuration** - How to specify which roles require mandatory 2FA
-3. **CMS Media Pipeline** - Auto-generation of responsive images not confirmed
-4. **Dispatch Load Balancing** - Waterfall logic parameters not clearly defined
-5. **VIN Decoder Integration** - External API connectivity not verified
+2. ~~**2FA Enforcement Configuration**~~ ✅ RESOLVED - Role-based mandatory 2FA via settings UI
+3. ~~**CMS Media Pipeline**~~ ✅ RESOLVED - Responsive images with WebP conversion on upload
+4. ~~**Dispatch Load Balancing**~~ ✅ RESOLVED - Full load balancing with strategies, workload limits, fair distribution
+5. ~~**VIN Decoder Integration**~~ ✅ RESOLVED - Caching, rate limiting, fallback chain, settings UI
 
 ### Risk Register
 
@@ -531,9 +551,10 @@ Friday: Sprint summary, plan next week
 |------|--------|-------------|-----------|
 | ~~Sub-estimate workflow gaps~~ | ~~HIGH~~ | ~~MEDIUM~~ | ✅ MITIGATED - Code review complete, gaps fixed |
 | ~~API security vulnerabilities~~ | ~~HIGH~~ | ~~MEDIUM~~ | ✅ MITIGATED - Security audit complete, CSRF/JWT/impersonation implemented |
+| ~~Dispatch driver availability~~ | ~~MEDIUM~~ | ~~MEDIUM~~ | ✅ MITIGATED - Load balancing with fallback strategies, fair distribution |
+| ~~VIN decoder reliability~~ | ~~MEDIUM~~ | ~~MEDIUM~~ | ✅ MITIGATED - Fallback chain, caching, rate limiting implemented |
 | Incomplete migration to React | HIGH | LOW | Verify all Vue → React, test cutover |
 | Data consistency in financial entries | HIGH | LOW | Add constraints, audit reconciliation |
-| Dispatch driver availability | MEDIUM | MEDIUM | Waterfall fallback strategies |
 | CMS performance with large media | MEDIUM | LOW | Implement caching, CDN strategy |
 
 ---
@@ -580,6 +601,8 @@ Friday: Sprint summary, plan next week
 - `database/migrations/044_add_approval_audit_log.sql` - Audit trail
 - `database/migrations/083_goa_workorder_fields.sql` - GOA support
 - `database/migrations/090_*.sql` - Recent CMS, payroll, reconciliation
+- `database/migrations/095_dispatch_load_balancing.sql` - Driver offer tracking, rotation state
+- `database/migrations/096_vin_decoder_cache.sql` - VIN decode cache, logs, rate limits, stats
 
 ### Documentation
 - [WORKFLOW_IMPLEMENTATION_PLAN.md](WORKFLOW_IMPLEMENTATION_PLAN.md) - Detailed technical plan
@@ -588,11 +611,12 @@ Friday: Sprint summary, plan next week
 
 ---
 
-**Status Last Updated:** January 23, 2026
+**Status Last Updated:** January 25, 2026
 **Assigned Coordinator:** Claude Code
 **Recent Updates:**
+- Dispatch load balancing complete (strategies, workload limits, fair distribution, settings UI)
+- VIN decoder external API setup complete (caching, rate limiting, fallback chain, settings UI)
 - Security hardening complete (CSRF, JWT cookies, refresh token rotation, impersonation)
 - Workorder workflow gaps addressed (rejected estimate validation, double status update fix)
 - Sub-estimate customer notification added
-- WORKFLOW_IMPLEMENTATION_PLAN.md updated to reflect completed status
-**Next Review Date:** January 30, 2026
+**Next Review Date:** February 1, 2026
