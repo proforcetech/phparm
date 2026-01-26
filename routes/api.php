@@ -739,7 +739,8 @@ return function (Router $router, array $config, $connection) {
         $loginLimiter,
         $rateLimitResponse,
         $sessionManager,
-        $enforceMandatoryTwoFactorSetup
+        $enforceMandatoryTwoFactorSetup,
+        $csrfTokenService
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -855,7 +856,8 @@ return function (Router $router, array $config, $connection) {
         $loginLimiter,
         $rateLimitResponse,
         $sessionManager,
-        $enforceMandatoryTwoFactorSetup
+        $enforceMandatoryTwoFactorSetup,
+        $csrfTokenService
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
