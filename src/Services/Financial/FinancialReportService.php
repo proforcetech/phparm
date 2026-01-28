@@ -175,19 +175,23 @@ class FinancialReportService
         ]);
         $paidMinutes = (float) ($paidStmt->fetchColumn() ?: 0);
 
+        // Calculate PTO hours from approved leave requests
+        // Each day of leave is assumed to be 8 hours
         $ptoStmt = $pdo->prepare(
-            'SELECT SUM(COALESCE(lr.paid_hours, lr.approved_hours, lr.requested_hours, 0)) '
+            'SELECT SUM(DATEDIFF(LEAST(lr.end_date, :end_date), GREATEST(lr.start_date, :start_date)) + 1) * 8 '
             . 'FROM leave_requests lr '
             . 'WHERE lr.status = :status '
-            . 'AND lr.leave_type = :leave_type '
-            . 'AND lr.start_at <= :end '
-            . 'AND lr.end_at >= :start'
+            . 'AND lr.type = :leave_type '
+            . 'AND lr.start_date <= :end '
+            . 'AND lr.end_date >= :start'
         );
         $ptoStmt->execute([
             'status' => 'approved',
             'leave_type' => 'pto',
-            'start' => $startRange->format('Y-m-d H:i:s'),
-            'end' => $endRange->format('Y-m-d H:i:s'),
+            'start' => $startRange->format('Y-m-d'),
+            'end' => $endRange->format('Y-m-d'),
+            'start_date' => $startRange->format('Y-m-d'),
+            'end_date' => $endRange->format('Y-m-d'),
         ]);
         $ptoHours = (float) ($ptoStmt->fetchColumn() ?: 0);
 

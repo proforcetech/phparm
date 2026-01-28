@@ -7,6 +7,9 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true, // Enable sending cookies for session-based auth and httpOnly JWT cookies
+  // Axios built-in XSRF handling - reads cookie and sets header automatically
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-CSRF-Token',
 })
 
 // Promise-based singleton to handle session expiration
@@ -21,7 +24,7 @@ let csrfTokenFetchPromise = null
  * Get CSRF token from multiple sources with fallback chain:
  * 1. Cached token (if available)
  * 2. Meta tag in document head
- * 3. XSRF-TOKEN cookie
+ * 3. XSRF-TOKEN cookie (may not work through dev proxy)
  * 4. Fetch from /api/csrf-token endpoint
  */
 async function getCsrfToken() {
@@ -37,19 +40,23 @@ async function getCsrfToken() {
     return metaToken
   }
 
-  // Try cookie
-  const cookieToken = decodeURIComponent(
-    document.cookie
-      .split('; ')
-      .find(row => row.startsWith('XSRF-TOKEN='))
-      ?.split('=')[1] || ''
-  )
-  if (cookieToken) {
-    cachedCsrfToken = cookieToken
-    return cookieToken
+  // Try cookie (note: may not work when using Vite dev proxy due to cross-port cookie issues)
+  try {
+    const cookieToken = decodeURIComponent(
+      document.cookie
+        .split('; ')
+        .find(row => row.startsWith('XSRF-TOKEN='))
+        ?.split('=')[1] || ''
+    )
+    if (cookieToken) {
+      cachedCsrfToken = cookieToken
+      return cookieToken
+    }
+  } catch (e) {
+    // Cookie parsing failed, continue to API fetch
   }
 
-  // Fetch from endpoint if not available (with deduplication)
+  // Fetch from endpoint - this is the most reliable method when using a dev proxy
   if (!csrfTokenFetchPromise) {
     csrfTokenFetchPromise = axios.get(`${env.API_BASE_URL}/api/csrf-token`, {
       withCredentials: true
@@ -59,7 +66,8 @@ async function getCsrfToken() {
         csrfTokenFetchPromise = null
         return cachedCsrfToken
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('[CSRF] Failed to fetch token:', err)
         csrfTokenFetchPromise = null
         return null
       })
@@ -80,6 +88,17 @@ export function clearCsrfToken() {
  */
 export async function refreshCsrfToken() {
   clearCsrfToken()
+  return getCsrfToken()
+}
+
+/**
+ * Initialize CSRF token - call this on app load to ensure token is ready
+ * before any state-changing requests are made
+ */
+export async function initCsrfToken() {
+  if (cachedCsrfToken) {
+    return cachedCsrfToken
+  }
   return getCsrfToken()
 }
 

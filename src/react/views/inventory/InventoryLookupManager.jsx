@@ -9,6 +9,7 @@ import Modal from '../../components/ui/Modal'
 import Table from '../../components/ui/Table'
 import inventoryMetaService from '../../../services/inventory-meta.service'
 import { useToast } from '../../stores/toast.jsx'
+import { useAuthStore } from '../../stores/auth'
 
 const labels = {
   categories: {
@@ -38,6 +39,7 @@ export default function InventoryLookupManager() {
   const navigate = useNavigate()
   const location = useLocation()
   const { success, error } = useToast()
+  const { user } = useAuthStore()
 
   const type = useMemo(() => {
     if (location.pathname.includes('/cp/inventory/vendors')) return 'vendors'
@@ -99,10 +101,13 @@ export default function InventoryLookupManager() {
   }, [copy.plural, error, handleSearch, search, type])
 
   useEffect(() => {
-    resetForm()
-    setSearch('')
-    loadItems()
-  }, [loadItems, type])
+    // Wait for user to be authenticated before making API calls
+    if (user) {
+      resetForm()
+      setSearch('')
+      loadItems()
+    }
+  }, [loadItems, type, user])
 
   const startCreate = () => {
     setEditingItem(null)

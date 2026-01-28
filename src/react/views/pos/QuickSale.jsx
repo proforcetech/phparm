@@ -11,6 +11,7 @@ import customerService from '../../../services/customer.service'
 import inventoryService from '../../../services/inventory.service'
 import invoiceService from '../../../services/invoice.service'
 import { useToast } from '../../stores/toast.jsx'
+import { useAuthStore } from '../../stores/auth'
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('en-US', {
@@ -32,6 +33,7 @@ const createQuickSaleNumber = () => {
 export default function QuickSale() {
   const navigate = useNavigate()
   const { success, error } = useToast()
+  const { user } = useAuthStore()
 
   const [walkInCustomer, setWalkInCustomer] = useState(null)
   const [loadingCustomer, setLoadingCustomer] = useState(true)
@@ -80,8 +82,11 @@ export default function QuickSale() {
   }, [customerMode, error])
 
   useEffect(() => {
-    loadWalkInCustomer()
-  }, [loadWalkInCustomer])
+    // Wait for user to be authenticated before making API calls
+    if (user) {
+      loadWalkInCustomer()
+    }
+  }, [loadWalkInCustomer, user])
 
   useEffect(() => {
     if (customerMode === 'walk_in' && walkInCustomer) {

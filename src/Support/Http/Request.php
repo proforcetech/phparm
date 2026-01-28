@@ -168,7 +168,8 @@ class Request
 
     public function header(string $name, ?string $default = null): ?string
     {
-        $normalized = strtoupper(str_replace('-', '_', $name));
+        // Headers are stored with dashes (e.g., X-CSRF-TOKEN), so normalize to match
+        $normalized = strtoupper(str_replace('_', '-', $name));
         return $this->headers[$normalized] ?? $default;
     }
 

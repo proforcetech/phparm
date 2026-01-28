@@ -62,10 +62,13 @@ class SecureSessionService
     private function configureSecureSettings(): void
     {
         $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1', 'localhost:8000', 'localhost:3000'], true)
+            || str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
 
         ini_set('session.cookie_httponly', '1');
         ini_set('session.cookie_secure', $isSecure ? '1' : '0');
-        ini_set('session.cookie_samesite', 'Strict');
+        // Use Lax on localhost for dev proxy compatibility, Strict in production
+        ini_set('session.cookie_samesite', $isLocalhost ? 'Lax' : 'Strict');
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
         ini_set('session.gc_maxlifetime', (string) $this->absoluteTimeout);
@@ -77,7 +80,7 @@ class SecureSessionService
             'domain' => '',
             'secure' => $isSecure,
             'httponly' => true,
-            'samesite' => 'Strict',
+            'samesite' => $isLocalhost ? 'Lax' : 'Strict',
         ]);
     }
 

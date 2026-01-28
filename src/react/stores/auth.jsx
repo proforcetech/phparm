@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 
 import { authService } from '../../services/auth.service'
 import { portalService } from '../../services/portal.service'
+import { initCsrfToken } from '../../services/api'
 
 const AuthContext = createContext(null)
 
@@ -18,9 +19,9 @@ export function AuthProvider({ children }) {
   const [pendingChallenge, setPendingChallenge] = useState(null)
 
   const isAuthenticated = useMemo(() => !!token, [token])
-  const isCustomer = useMemo(() => user?.role === 'customer', [user])
-  const isStaff = useMemo(() => user && user.role !== 'customer', [user])
-  const isAdmin = useMemo(() => user?.role === 'admin', [user])
+  const isCustomer = useMemo(() => user?.role?.toLowerCase() === 'customer', [user])
+  const isStaff = useMemo(() => user && user.role?.toLowerCase() !== 'customer', [user])
+  const isAdmin = useMemo(() => user?.role?.toLowerCase() === 'admin', [user])
   const portalReady = useMemo(() => isCustomer && !!portalConfig.nonce, [isCustomer, portalConfig])
 
   const checkAuth = useCallback(async () => {
@@ -29,8 +30,12 @@ export function AuthProvider({ children }) {
     const storedImpersonation = localStorage.getItem('impersonation')
     const storedNonce = localStorage.getItem('portal_nonce')
 
+    // Load cached data immediately for faster initial render
     if (storedToken && storedUser) {
       setToken(storedToken)
+      setUser(JSON.parse(storedUser))
+    } else if (storedUser) {
+      // Even without token in localStorage, load cached user (JWT may be in httpOnly cookie)
       setUser(JSON.parse(storedUser))
     }
 
@@ -42,11 +47,18 @@ export function AuthProvider({ children }) {
       setPortalConfig((prev) => ({ ...prev, nonce: storedNonce }))
     }
 
-    if (storedToken) {
+    // Always try to fetch fresh user data from API
+    // JWT tokens are now in httpOnly cookies, so we can't check localStorage for auth status
+    try {
       const data = await authService.me()
       if (data.user) {
         setUser(data.user)
+        setToken('authenticated') // Set a placeholder to indicate authenticated state
         localStorage.setItem('user', JSON.stringify(data.user))
+
+        // Initialize CSRF token now that we're authenticated
+        // This ensures the token is ready before any state-changing requests
+        await initCsrfToken()
       }
 
       if (data.impersonation !== undefined) {
@@ -56,6 +68,14 @@ export function AuthProvider({ children }) {
         } else {
           localStorage.removeItem('impersonation')
         }
+      }
+    } catch (error) {
+      // If API call fails (401), user is not authenticated - clear any stale data
+      if (error.response?.status === 401) {
+        setUser(null)
+        setToken(null)
+        localStorage.removeItem('user')
+        localStorage.removeItem('auth_token')
       }
     }
   }, [])
@@ -105,7 +125,7 @@ export function AuthProvider({ children }) {
         setPortalConfig((prev) => ({ ...prev, apiBase: data.api_base }))
       }
 
-      if (data.user.role === 'customer' && data.nonce) {
+      if (data.user.role?.toLowerCase() === 'customer' && data.nonce) {
         setPortalConfig((prev) => ({ ...prev, nonce: data.nonce }))
         localStorage.setItem('portal_nonce', data.nonce)
       } else {
@@ -113,7 +133,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('portal_nonce')
       }
 
-      if (data.user.role === 'customer') {
+      if (data.user.role?.toLowerCase() === 'customer') {
         window.location.assign('/portal')
       } else {
         window.location.assign('/cp/dashboard')

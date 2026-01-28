@@ -87,13 +87,18 @@ class CsrfTokenService
      */
     public function setCookie(string $token, bool $secure = true): void
     {
+        // Check if running on localhost for dev proxy compatibility
+        $isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1', 'localhost:8000', 'localhost:3000'], true)
+            || str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+
         // Note: domain key is intentionally omitted to restrict cookie to exact current domain
         $options = [
             'expires' => 0, // Session cookie
             'path' => '/',
             'secure' => $secure,
             'httponly' => false, // JavaScript needs to read this
-            'samesite' => 'Strict',
+            // Use Lax on localhost for dev proxy compatibility, Strict in production
+            'samesite' => $isLocalhost ? 'Lax' : 'Strict',
         ];
 
         setcookie(self::COOKIE_NAME, $token, $options);
