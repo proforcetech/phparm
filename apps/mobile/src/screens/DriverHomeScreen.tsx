@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,8 +12,10 @@ import {
 } from 'react-native'
 
 import dispatchService from '../services/dispatch.service'
+import damageReportService from '../services/damageReport.service'
 import { useAuthStore } from '../stores/authStore'
 import workorderService from '../services/workorder.service'
+import { DamageReportScreen } from './DamageReportScreen'
 
 type DispatchOffer = {
   id: number
@@ -31,11 +34,18 @@ type DispatchJob = DispatchOffer & {
     workorder_id?: number | null
     workorder_number?: string | null
   }
+  hasDamageReport?: boolean
 }
 
 type DriverHomeScreenProps = {
   offlineAccess: boolean
 }
+
+type DamageReportContext = {
+  workorderId: number
+  jobId: number
+  jobTitle: string
+} | null
 
 export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
   const user = useAuthStore((state) => state.user)
@@ -43,8 +53,10 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
   const [offers, setOffers] = useState<DispatchOffer[]>([])
   const [jobs, setJobs] = useState<DispatchJob[]>([])
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [statusUpdates, setStatusUpdates] = useState<Record<string, boolean>>({})
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [damageReportContext, setDamageReportContext] = useState<DamageReportContext>(null)
 
   const statusSteps = useMemo(
     () => [
@@ -69,8 +81,27 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
         dispatchService.getJobOffers({ status: 'pending' }),
         dispatchService.getJobs({ status: 'accepted' }),
       ])
+
+      // Check for existing damage reports on each job
+      const jobsWithReports = await Promise.all(
+        (jobsResponse.data ?? []).map(async (job: DispatchJob) => {
+          if (job.job?.workorder_id && job.job?.job_id) {
+            try {
+              const hasDamageReport = await damageReportService.hasDamageReport(
+                job.job.workorder_id,
+                job.job.job_id
+              )
+              return { ...job, hasDamageReport }
+            } catch {
+              return { ...job, hasDamageReport: false }
+            }
+          }
+          return { ...job, hasDamageReport: false }
+        })
+      )
+
       setOffers(offersResponse.data ?? [])
-      setJobs(jobsResponse.data ?? [])
+      setJobs(jobsWithReports)
     } catch (error) {
       console.warn('Failed to load dispatch data', error)
       setErrorMessage('Unable to load dispatch jobs. Pull to refresh or try again shortly.')
@@ -81,6 +112,15 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
 
   useEffect(() => {
     loadDispatchData()
+  }, [loadDispatchData])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await loadDispatchData()
+    } finally {
+      setRefreshing(false)
+    }
   }, [loadDispatchData])
 
   const handleAccept = async (offerId: number) => {
@@ -148,16 +188,60 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
     }
   }
 
+  const handleOpenDamageReport = useCallback((job: DispatchJob) => {
+    if (!job.job?.workorder_id || !job.job?.job_id) {
+      setErrorMessage('Job details are missing. Cannot open damage report.')
+      return
+    }
+    setDamageReportContext({
+      workorderId: job.job.workorder_id,
+      jobId: job.job.job_id,
+      jobTitle: job.job?.job_title ?? `Job ${job.job_reference ?? job.id}`,
+    })
+  }, [])
+
+  const handleDamageReportBack = useCallback(() => {
+    setDamageReportContext(null)
+  }, [])
+
+  const handleDamageReportComplete = useCallback(() => {
+    setDamageReportContext(null)
+    loadDispatchData()
+  }, [loadDispatchData])
+
+  // Show Damage Report Screen if context is set
+  if (damageReportContext) {
+    return (
+      <DamageReportScreen
+        workorderId={damageReportContext.workorderId}
+        jobId={damageReportContext.jobId}
+        jobTitle={damageReportContext.jobTitle}
+        onBack={handleDamageReportBack}
+        onComplete={handleDamageReportComplete}
+      />
+    )
+  }
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#38bdf8"
+            colors={['#38bdf8']}
+          />
+        }
+      >
         {offlineAccess ? (
           <View style={styles.offlineBanner}>
-            <Text style={styles.offlineText}>Offline mode enabled — cached token accepted.</Text>
+            <Text style={styles.offlineText}>Offline mode enabled - changes will sync when online</Text>
           </View>
         ) : null}
         <Text style={styles.title}>Driver Interface</Text>
-        <Text style={styles.subtitle}>Welcome{user?.name ? `, ${user.name}` : ''}.</Text>
+        <Text style={styles.subtitle}>Welcome{user?.name ? `, ${user.name}` : ''}</Text>
         <Text style={styles.helper}>Manage dispatch jobs and driver workflows.</Text>
 
         <View style={styles.actionsRow}>
@@ -169,7 +253,7 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
           </TouchableOpacity>
         </View>
 
-        {loading ? (
+        {loading && !refreshing ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator color="#38bdf8" />
             <Text style={styles.loadingText}>Syncing dispatch jobs...</Text>
@@ -186,7 +270,7 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
               <View key={offer.id} style={styles.card}>
                 <Text style={styles.cardTitle}>Offer #{offer.id}</Text>
                 <Text style={styles.cardSubtitle}>
-                  Job: {offer.job_reference ?? 'N/A'} · {offer.job_type ?? 'workorder'}
+                  Job: {offer.job_reference ?? 'N/A'} - {offer.job_type ?? 'workorder'}
                 </Text>
                 <View style={styles.cardActions}>
                   <TouchableOpacity
@@ -219,9 +303,16 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
               const isUpdating = statusUpdates[key] ?? false
               return (
                 <View key={key} style={styles.card}>
-                  <Text style={styles.cardTitle}>
-                    {job.job?.job_title ?? `Job ${job.job_reference ?? job.id}`}
-                  </Text>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.cardTitle}>
+                      {job.job?.job_title ?? `Job ${job.job_reference ?? job.id}`}
+                    </Text>
+                    {job.hasDamageReport && (
+                      <View style={styles.damageReportBadge}>
+                        <Text style={styles.damageReportBadgeText}>Report Filed</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.cardSubtitle}>
                     Workorder {job.job?.workorder_number ?? job.job?.workorder_id ?? 'N/A'}
                   </Text>
@@ -253,6 +344,17 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
                     >
                       <Text style={styles.secondaryButtonLabel}>Navigate</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.damageReportButton,
+                        job.hasDamageReport && styles.damageReportButtonFiled,
+                      ]}
+                      onPress={() => handleOpenDamageReport(job)}
+                    >
+                      <Text style={styles.damageReportButtonLabel}>
+                        {job.hasDamageReport ? 'View Report' : 'Damage Report'}
+                      </Text>
+                    </TouchableOpacity>
                     {isUpdating ? (
                       <View style={styles.loadingRow}>
                         <ActivityIndicator color="#38bdf8" size="small" />
@@ -273,10 +375,10 @@ export function DriverHomeScreen({ offlineAccess }: DriverHomeScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
     backgroundColor: '#0f172a',
   },
   scrollContent: {
+    padding: 24,
     paddingBottom: 32,
   },
   title: {
@@ -354,10 +456,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1f2937',
   },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   cardTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#f8fafc',
+    flex: 1,
   },
   cardSubtitle: {
     fontSize: 13,
@@ -372,7 +481,8 @@ const styles = StyleSheet.create({
   cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 10,
     marginTop: 12,
   },
   acceptButton: {
@@ -394,6 +504,31 @@ const styles = StyleSheet.create({
   declineButtonLabel: {
     color: '#fff',
     fontWeight: '700',
+  },
+  damageReportButton: {
+    backgroundColor: '#854d0e',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  damageReportButtonFiled: {
+    backgroundColor: '#166534',
+  },
+  damageReportButtonLabel: {
+    color: '#fef3c7',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  damageReportBadge: {
+    backgroundColor: '#166534',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  damageReportBadgeText: {
+    color: '#bbf7d0',
+    fontSize: 10,
+    fontWeight: '600',
   },
   statusRow: {
     flexDirection: 'row',
