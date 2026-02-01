@@ -11,12 +11,25 @@ import {
 
 import { useAuthStore } from '../stores/authStore'
 import { useTimeTrackingStore } from '../stores/timeTrackingStore'
+import { WorkOrdersListScreen } from './WorkOrdersListScreen'
+import { WorkOrderDetailScreen } from './WorkOrderDetailScreen'
+import { InspectionsListScreen } from './InspectionsListScreen'
+import { InspectionFormScreen } from './InspectionFormScreen'
+import type { Workorder } from '../stores/workordersStore'
+import type { Inspection } from '../services/inspection.service'
 
 type TechnicianHomeScreenProps = {
   offlineAccess: boolean
 }
 
 type TabKey = 'clock' | 'jobs' | 'inspections'
+
+type NavigationScreen =
+  | { type: 'home' }
+  | { type: 'workorders' }
+  | { type: 'workorder_detail'; workorderId: number | string }
+  | { type: 'inspections'; workorderId?: number | string }
+  | { type: 'inspection_form'; inspectionId: number | string }
 
 export function TechnicianHomeScreen({ offlineAccess }: TechnicianHomeScreenProps) {
   const user = useAuthStore((state) => state.user)
@@ -38,6 +51,7 @@ export function TechnicianHomeScreen({ offlineAccess }: TechnicianHomeScreenProp
   const [activeTab, setActiveTab] = useState<TabKey>('clock')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [navigation, setNavigation] = useState<NavigationScreen>({ type: 'home' })
 
   const isClockedIn = useMemo(
     () => currentEntry !== null && currentEntry.ended_at === null,
@@ -111,6 +125,83 @@ export function TechnicianHomeScreen({ offlineAccess }: TechnicianHomeScreenProp
       setRefreshing(false)
     }
   }, [loadPortalData])
+
+  // Navigation handlers
+  const handleSelectWorkorder = useCallback((workorder: Workorder) => {
+    setNavigation({ type: 'workorder_detail', workorderId: workorder.id })
+  }, [])
+
+  const handleSelectInspection = useCallback((inspection: Inspection) => {
+    setNavigation({ type: 'inspection_form', inspectionId: inspection.id })
+  }, [])
+
+  const handleStartInspection = useCallback((workorderId: number | string) => {
+    setNavigation({ type: 'inspections', workorderId })
+  }, [])
+
+  const handleBack = useCallback(() => {
+    setNavigation({ type: 'home' })
+  }, [])
+
+  const handleBackFromDetail = useCallback(() => {
+    setNavigation({ type: 'workorders' })
+  }, [])
+
+  const handleBackFromInspectionForm = useCallback(() => {
+    setNavigation({ type: 'inspections' })
+  }, [])
+
+  // Handle tab change - navigate to full screen views for jobs and inspections
+  const handleTabChange = useCallback((tab: TabKey) => {
+    setActiveTab(tab)
+    if (tab === 'jobs') {
+      setNavigation({ type: 'workorders' })
+    } else if (tab === 'inspections') {
+      setNavigation({ type: 'inspections' })
+    } else {
+      setNavigation({ type: 'home' })
+    }
+  }, [])
+
+  // Render screens based on navigation state
+  if (navigation.type === 'workorders') {
+    return (
+      <WorkOrdersListScreen
+        onSelectWorkorder={handleSelectWorkorder}
+        onBack={handleBack}
+      />
+    )
+  }
+
+  if (navigation.type === 'workorder_detail') {
+    return (
+      <WorkOrderDetailScreen
+        workorderId={navigation.workorderId}
+        onBack={handleBackFromDetail}
+        onStartInspection={handleStartInspection}
+      />
+    )
+  }
+
+  if (navigation.type === 'inspections') {
+    return (
+      <InspectionsListScreen
+        onSelectInspection={handleSelectInspection}
+        onBack={handleBack}
+        workorderId={navigation.workorderId}
+      />
+    )
+  }
+
+  if (navigation.type === 'inspection_form') {
+    return (
+      <InspectionFormScreen
+        inspectionId={navigation.inspectionId}
+        onBack={handleBackFromInspectionForm}
+        onComplete={handleBackFromInspectionForm}
+      />
+    )
+  }
 
   const renderClockTab = () => (
     <View style={styles.tabContent}>
@@ -187,43 +278,27 @@ export function TechnicianHomeScreen({ offlineAccess }: TechnicianHomeScreenProp
           ))}
         </View>
       )}
-    </View>
-  )
 
-  const renderJobsTab = () => (
-    <View style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>Assigned Jobs</Text>
-      {assignedJobs.length === 0 ? (
-        <Text style={styles.emptyText}>No jobs assigned.</Text>
-      ) : (
-        assignedJobs.map((job) => (
-          <View key={job.id} style={styles.jobCard}>
-            <View style={styles.jobCardContent}>
-              <Text style={styles.jobTitle}>{job.title || `Job #${job.id}`}</Text>
-              <Text style={styles.jobSubtitle}>
-                {job.estimate_number} {job.customer_name ? `- ${job.customer_name}` : ''}
-              </Text>
-              {job.vehicle_vin && (
-                <Text style={styles.jobMeta}>VIN: {job.vehicle_vin}</Text>
-              )}
-              {job.customer_status && (
-                <View style={[styles.statusBadge, getStatusStyle(job.customer_status)]}>
-                  <Text style={styles.statusBadgeText}>{job.customer_status}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        ))
-      )}
-    </View>
-  )
-
-  const renderInspectionsTab = () => (
-    <View style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>Inspections</Text>
-      <Text style={styles.emptyText}>
-        Inspections feature coming soon.
-      </Text>
+      {/* Quick Actions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.quickActionsRow}>
+          <TouchableOpacity
+            style={styles.quickActionCard}
+            onPress={() => handleTabChange('jobs')}
+          >
+            <Text style={styles.quickActionTitle}>Work Orders</Text>
+            <Text style={styles.quickActionSubtitle}>View assigned jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickActionCard}
+            onPress={() => handleTabChange('inspections')}
+          >
+            <Text style={styles.quickActionTitle}>Inspections</Text>
+            <Text style={styles.quickActionSubtitle}>Digital vehicle inspections</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   )
 
@@ -261,7 +336,7 @@ export function TechnicianHomeScreen({ offlineAccess }: TechnicianHomeScreenProp
           <TouchableOpacity
             key={tab}
             style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
+            onPress={() => handleTabChange(tab)}
           >
             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
               {tab === 'clock' ? 'Time Clock' : tab === 'jobs' ? 'Jobs' : 'Inspections'}
@@ -290,25 +365,9 @@ export function TechnicianHomeScreen({ offlineAccess }: TechnicianHomeScreenProp
         )}
 
         {activeTab === 'clock' && renderClockTab()}
-        {activeTab === 'jobs' && renderJobsTab()}
-        {activeTab === 'inspections' && renderInspectionsTab()}
       </ScrollView>
     </View>
   )
-}
-
-const getStatusStyle = (status: string) => {
-  const statusLower = status.toLowerCase()
-  if (statusLower.includes('approved') || statusLower.includes('complete')) {
-    return styles.statusBadgeGreen
-  }
-  if (statusLower.includes('pending') || statusLower.includes('waiting')) {
-    return styles.statusBadgeYellow
-  }
-  if (statusLower.includes('declined') || statusLower.includes('cancelled')) {
-    return styles.statusBadgeRed
-  }
-  return styles.statusBadgeGray
 }
 
 const styles = StyleSheet.create({
@@ -491,12 +550,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 12,
   },
-  emptyText: {
-    color: '#64748b',
-    fontSize: 14,
-    textAlign: 'center',
-    padding: 20,
-  },
   jobCard: {
     backgroundColor: '#1e293b',
     borderRadius: 12,
@@ -520,11 +573,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
-  jobMeta: {
-    color: '#64748b',
-    fontSize: 12,
-    marginTop: 4,
-  },
   jobClockButton: {
     backgroundColor: '#22c55e',
     paddingVertical: 10,
@@ -536,28 +584,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    marginTop: 8,
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  statusBadgeGreen: {
-    backgroundColor: '#14532d',
+  quickActionCard: {
+    flex: 1,
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
-  statusBadgeYellow: {
-    backgroundColor: '#713f12',
+  quickActionTitle: {
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
   },
-  statusBadgeRed: {
-    backgroundColor: '#7f1d1d',
-  },
-  statusBadgeGray: {
-    backgroundColor: '#374151',
-  },
-  statusBadgeText: {
-    color: '#e2e8f0',
-    fontSize: 11,
-    fontWeight: '600',
+  quickActionSubtitle: {
+    color: '#64748b',
+    fontSize: 12,
   },
 })
