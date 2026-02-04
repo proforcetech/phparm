@@ -1,7 +1,12 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config'
+import * as fs from 'fs'
 
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://example.com/api'
 const buildVariant = process.env.EXPO_PUBLIC_BUILD_VARIANT ?? 'development'
+
+// Check if google-services.json exists for Firebase
+const googleServicesPath = './google-services.json'
+const hasGoogleServices = fs.existsSync(googleServicesPath)
 
 // Version management
 const APP_VERSION = '1.0.0'
@@ -32,12 +37,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     apiBaseUrl,
     buildVariant,
     eas: {
-      projectId: process.env.EAS_PROJECT_ID,
+      projectId: '4c83b1ac-6df7-4f4d-b959-191131273967',
     },
   },
 
   // Owner for EAS
-  owner: process.env.EXPO_OWNER,
+  owner: 'fixitforus-automotive',
 
   // iOS Configuration
   ios: {
@@ -79,7 +84,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.RECEIVE_BOOT_COMPLETED',
       'android.permission.VIBRATE',
     ],
-    googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? './google-services.json',
+    ...(hasGoogleServices && { googleServicesFile: googleServicesPath }),
   },
 
   // Web Configuration (for Expo web if needed)
@@ -105,19 +110,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       {
         icon: './assets/notification-icon.png',
         color: '#38bdf8',
-        sounds: ['./assets/notification-sound.wav'],
+        sounds: ['./assets/notification_sound.wav'],
       },
     ],
     [
       'expo-location',
       {
         locationAlwaysAndWhenInUsePermission: 'PHPArm uses your location for job assignments and dispatch optimization.',
-      },
-    ],
-    [
-      'expo-sqlite',
-      {
-        enableFTS: true,
       },
     ],
     [
@@ -130,7 +129,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           minSdkVersion: 24,
         },
         ios: {
-          deploymentTarget: '14.0',
+          deploymentTarget: '15.1',
         },
       },
     ],
@@ -140,7 +139,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   updates: {
     enabled: true,
     fallbackToCacheTimeout: 30000,
-    url: `https://u.expo.dev/${process.env.EAS_PROJECT_ID}`,
+    url: 'https://u.expo.dev/4c83b1ac-6df7-4f4d-b959-191131273967',
   },
 
   // Runtime version for OTA updates
