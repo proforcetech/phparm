@@ -124,8 +124,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       {
         android: {
           usesCleartextTraffic: buildVariant !== 'production',
-          compileSdkVersion: 34,
-          targetSdkVersion: 34,
+          compileSdkVersion: 35,
+          targetSdkVersion: 35,
           minSdkVersion: 24,
         },
         ios: {
@@ -143,9 +143,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   // Runtime version for OTA updates
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
+  runtimeVersion: APP_VERSION,
 
   // Experiments
   experiments: {
