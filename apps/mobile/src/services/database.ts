@@ -1,7 +1,7 @@
 /**
  * SQLite Database Service for Offline Data Caching
  *
- * Provides persistent structured data storage using expo-sqlite.
+ * Provides persistent structured data storage using expo-sqlite v16+.
  * Handles schema migrations, CRUD operations, and sync status tracking.
  */
 
@@ -9,7 +9,6 @@ import * as SQLite from 'expo-sqlite'
 
 // Database configuration
 const DATABASE_NAME = 'phparm_offline.db'
-const SCHEMA_VERSION = 1
 
 // Cache TTL defaults (in milliseconds)
 export const DEFAULT_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
@@ -57,240 +56,140 @@ export type SyncMetadata = {
   errorCount: number
 }
 
-type Statement = {
-  sql: string
-  params?: (string | number | null)[]
-}
-
 // Database instance
-let database: SQLite.WebSQLDatabase | null = null
+let database: SQLite.SQLiteDatabase | null = null
 let initPromise: Promise<void> | null = null
 
 /**
  * Opens or returns the existing database connection
  */
-const getDatabase = (): SQLite.WebSQLDatabase => {
+const getDatabase = (): SQLite.SQLiteDatabase => {
   if (!database) {
-    database = SQLite.openDatabase(DATABASE_NAME)
+    database = SQLite.openDatabaseSync(DATABASE_NAME)
   }
   return database
 }
 
 /**
- * Executes a batch of SQL statements within a transaction
- */
-const runBatch = (statements: Statement[]): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const db = getDatabase()
-    db.transaction(
-      (tx) => {
-        statements.forEach(({ sql, params = [] }) => {
-          tx.executeSql(sql, params)
-        })
-      },
-      (error) => {
-        console.error('Database batch error:', error)
-        reject(error)
-      },
-      () => resolve()
-    )
-  })
-
-/**
- * Executes a single SQL query and returns results
- */
-const runQuery = <T = SQLite.SQLResultSet>(
-  sql: string,
-  params: (string | number | null)[] = []
-): Promise<T> =>
-  new Promise((resolve, reject) => {
-    const db = getDatabase()
-    db.transaction(
-      (tx) => {
-        tx.executeSql(
-          sql,
-          params,
-          (_, result) => resolve(result as T),
-          (_, error) => {
-            console.error('Database query error:', error)
-            reject(error)
-            return false
-          }
-        )
-      },
-      (error) => {
-        console.error('Database transaction error:', error)
-        reject(error)
-      }
-    )
-  })
-
-/**
  * Schema migrations array - add new migrations here
  */
-const migrations: { version: number; statements: Statement[] }[] = [
-  {
-    version: 1,
-    statements: [
-      // Work orders cache table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS work_orders (
-          id TEXT PRIMARY KEY NOT NULL,
-          data TEXT NOT NULL,
-          synced_at TEXT,
-          updated_at TEXT NOT NULL,
-          expires_at TEXT
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_work_orders_synced ON work_orders (synced_at)`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_work_orders_expires ON work_orders (expires_at)`,
-      },
+const migrationStatements: string[] = [
+  // Work orders cache table
+  `CREATE TABLE IF NOT EXISTS work_orders (
+    id TEXT PRIMARY KEY NOT NULL,
+    data TEXT NOT NULL,
+    synced_at TEXT,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_work_orders_synced ON work_orders (synced_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_work_orders_expires ON work_orders (expires_at)`,
 
-      // Time entries cache table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS time_entries (
-          id TEXT PRIMARY KEY NOT NULL,
-          data TEXT NOT NULL,
-          synced_at TEXT,
-          updated_at TEXT NOT NULL,
-          expires_at TEXT
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_time_entries_synced ON time_entries (synced_at)`,
-      },
+  // Time entries cache table
+  `CREATE TABLE IF NOT EXISTS time_entries (
+    id TEXT PRIMARY KEY NOT NULL,
+    data TEXT NOT NULL,
+    synced_at TEXT,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_time_entries_synced ON time_entries (synced_at)`,
 
-      // Inspections cache table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS inspections (
-          id TEXT PRIMARY KEY NOT NULL,
-          data TEXT NOT NULL,
-          synced_at TEXT,
-          updated_at TEXT NOT NULL,
-          expires_at TEXT
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_inspections_synced ON inspections (synced_at)`,
-      },
+  // Inspections cache table
+  `CREATE TABLE IF NOT EXISTS inspections (
+    id TEXT PRIMARY KEY NOT NULL,
+    data TEXT NOT NULL,
+    synced_at TEXT,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_inspections_synced ON inspections (synced_at)`,
 
-      // Customers cache table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS customers (
-          id TEXT PRIMARY KEY NOT NULL,
-          data TEXT NOT NULL,
-          synced_at TEXT,
-          updated_at TEXT NOT NULL,
-          expires_at TEXT
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_customers_synced ON customers (synced_at)`,
-      },
+  // Customers cache table
+  `CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY NOT NULL,
+    data TEXT NOT NULL,
+    synced_at TEXT,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_customers_synced ON customers (synced_at)`,
 
-      // Vehicles cache table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS vehicles (
-          id TEXT PRIMARY KEY NOT NULL,
-          data TEXT NOT NULL,
-          synced_at TEXT,
-          updated_at TEXT NOT NULL,
-          expires_at TEXT
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_vehicles_synced ON vehicles (synced_at)`,
-      },
+  // Vehicles cache table
+  `CREATE TABLE IF NOT EXISTS vehicles (
+    id TEXT PRIMARY KEY NOT NULL,
+    data TEXT NOT NULL,
+    synced_at TEXT,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_vehicles_synced ON vehicles (synced_at)`,
 
-      // Offline queue table (replaces AsyncStorage-based queue)
-      {
-        sql: `CREATE TABLE IF NOT EXISTS offline_queue (
-          id TEXT PRIMARY KEY NOT NULL,
-          action TEXT NOT NULL,
-          endpoint TEXT NOT NULL,
-          method TEXT NOT NULL DEFAULT 'POST',
-          payload TEXT NOT NULL,
-          headers TEXT,
-          created_at TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          attempts INTEGER NOT NULL DEFAULT 0,
-          last_attempt_at TEXT,
-          last_error TEXT,
-          priority INTEGER NOT NULL DEFAULT 0
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_offline_queue_status ON offline_queue (status)`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_offline_queue_priority ON offline_queue (priority DESC, created_at ASC)`,
-      },
+  // Offline queue table
+  `CREATE TABLE IF NOT EXISTS offline_queue (
+    id TEXT PRIMARY KEY NOT NULL,
+    action TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'POST',
+    payload TEXT NOT NULL,
+    headers TEXT,
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    last_error TEXT,
+    priority INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_offline_queue_status ON offline_queue (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_offline_queue_priority ON offline_queue (priority DESC, created_at ASC)`,
 
-      // Sync metadata table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS sync_metadata (
-          entity_type TEXT PRIMARY KEY NOT NULL,
-          last_sync_at TEXT,
-          last_sync_success INTEGER NOT NULL DEFAULT 0,
-          sync_count INTEGER NOT NULL DEFAULT 0,
-          error_count INTEGER NOT NULL DEFAULT 0
-        )`,
-      },
+  // Sync metadata table
+  `CREATE TABLE IF NOT EXISTS sync_metadata (
+    entity_type TEXT PRIMARY KEY NOT NULL,
+    last_sync_at TEXT,
+    last_sync_success INTEGER NOT NULL DEFAULT 0,
+    sync_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0
+  )`,
 
-      // Schema version table
-      {
-        sql: `CREATE TABLE IF NOT EXISTS schema_version (
-          id INTEGER PRIMARY KEY CHECK (id = 1),
-          version INTEGER NOT NULL,
-          updated_at TEXT NOT NULL
-        )`,
-      },
-    ],
-  },
+  // Schema version table
+  `CREATE TABLE IF NOT EXISTS schema_version (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
 ]
-
-/**
- * Gets the current schema version from the database
- */
-const getCurrentSchemaVersion = async (): Promise<number> => {
-  try {
-    const result = await runQuery<SQLite.SQLResultSet>(
-      'SELECT version FROM schema_version WHERE id = 1'
-    )
-    if (result.rows.length > 0) {
-      return result.rows.item(0).version
-    }
-  } catch {
-    // Table might not exist yet
-  }
-  return 0
-}
-
-/**
- * Sets the schema version in the database
- */
-const setSchemaVersion = async (version: number): Promise<void> => {
-  await runQuery(
-    `INSERT OR REPLACE INTO schema_version (id, version, updated_at) VALUES (1, ?, ?)`,
-    [version, new Date().toISOString()]
-  )
-}
 
 /**
  * Runs pending database migrations
  */
 const runMigrations = async (): Promise<void> => {
-  const currentVersion = await getCurrentSchemaVersion()
+  const db = getDatabase()
 
-  for (const migration of migrations) {
-    if (migration.version > currentVersion) {
-      console.log(`Running database migration v${migration.version}`)
-      await runBatch(migration.statements)
-      await setSchemaVersion(migration.version)
+  // Check current schema version
+  let currentVersion = 0
+  try {
+    const row = db.getFirstSync<{ version: number }>(
+      'SELECT version FROM schema_version WHERE id = 1'
+    )
+    if (row) {
+      currentVersion = row.version
     }
+  } catch {
+    // Table doesn't exist yet
+  }
+
+  if (currentVersion < 1) {
+    console.log('Running database migration v1')
+    await db.withTransactionAsync(async () => {
+      for (const sql of migrationStatements) {
+        db.runSync(sql)
+      }
+    })
+    db.runSync(
+      'INSERT OR REPLACE INTO schema_version (id, version, updated_at) VALUES (1, 1, ?)',
+      new Date().toISOString()
+    )
   }
 }
 
@@ -330,9 +229,6 @@ const ensureInitialized = async (): Promise<void> => {
 // Entity Cache Operations
 // ============================================================================
 
-/**
- * Normalizes an ID to a string
- */
 const normalizeId = (id: unknown): string | null => {
   if (id === null || id === undefined) return null
   if (typeof id === 'string') return id
@@ -340,9 +236,6 @@ const normalizeId = (id: unknown): string | null => {
   return null
 }
 
-/**
- * Calculates expiration timestamp based on TTL
- */
 const calculateExpiry = (ttl?: number): string | null => {
   if (!ttl) return null
   return new Date(Date.now() + ttl).toISOString()
@@ -357,6 +250,7 @@ export const upsertEntity = async <T extends { id: unknown }>(
   options: { ttl?: number; markSynced?: boolean } = {}
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const id = normalizeId(entity.id)
   if (!id) {
@@ -368,10 +262,10 @@ export const upsertEntity = async <T extends { id: unknown }>(
   const expiresAt = calculateExpiry(options.ttl)
   const syncedAt = options.markSynced ? now : null
 
-  await runQuery(
+  db.runSync(
     `INSERT OR REPLACE INTO ${entityType} (id, data, synced_at, updated_at, expires_at)
      VALUES (?, ?, COALESCE(?, (SELECT synced_at FROM ${entityType} WHERE id = ?)), ?, ?)`,
-    [id, JSON.stringify(entity), syncedAt, id, now, expiresAt]
+    id, JSON.stringify(entity), syncedAt, id, now, expiresAt
   )
 }
 
@@ -384,6 +278,7 @@ export const upsertEntities = async <T extends { id: unknown }>(
   options: { ttl?: number; markSynced?: boolean } = {}
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   if (entities.length === 0) return
 
@@ -391,22 +286,18 @@ export const upsertEntities = async <T extends { id: unknown }>(
   const expiresAt = calculateExpiry(options.ttl)
   const syncedAt = options.markSynced ? now : null
 
-  const statements: Statement[] = entities
-    .map((entity) => {
+  await db.withTransactionAsync(async () => {
+    for (const entity of entities) {
       const id = normalizeId(entity.id)
-      if (!id) return null
+      if (!id) continue
 
-      return {
-        sql: `INSERT OR REPLACE INTO ${entityType} (id, data, synced_at, updated_at, expires_at)
-              VALUES (?, ?, COALESCE(?, (SELECT synced_at FROM ${entityType} WHERE id = ?)), ?, ?)`,
-        params: [id, JSON.stringify(entity), syncedAt, id, now, expiresAt],
-      }
-    })
-    .filter((s): s is Statement => s !== null)
-
-  if (statements.length > 0) {
-    await runBatch(statements)
-  }
+      db.runSync(
+        `INSERT OR REPLACE INTO ${entityType} (id, data, synced_at, updated_at, expires_at)
+         VALUES (?, ?, COALESCE(?, (SELECT synced_at FROM ${entityType} WHERE id = ?)), ?, ?)`,
+        id, JSON.stringify(entity), syncedAt, id, now, expiresAt
+      )
+    }
+  })
 }
 
 /**
@@ -418,27 +309,24 @@ export const replaceAllEntities = async <T extends { id: unknown }>(
   options: { ttl?: number } = {}
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const now = new Date().toISOString()
   const expiresAt = calculateExpiry(options.ttl)
 
-  const statements: Statement[] = [
-    { sql: `DELETE FROM ${entityType}` },
-    ...entities
-      .map((entity) => {
-        const id = normalizeId(entity.id)
-        if (!id) return null
+  await db.withTransactionAsync(async () => {
+    db.runSync(`DELETE FROM ${entityType}`)
+    for (const entity of entities) {
+      const id = normalizeId(entity.id)
+      if (!id) continue
 
-        return {
-          sql: `INSERT INTO ${entityType} (id, data, synced_at, updated_at, expires_at)
-                VALUES (?, ?, ?, ?, ?)`,
-          params: [id, JSON.stringify(entity), now, now, expiresAt],
-        }
-      })
-      .filter((s): s is Statement => s !== null),
-  ]
-
-  await runBatch(statements)
+      db.runSync(
+        `INSERT INTO ${entityType} (id, data, synced_at, updated_at, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        id, JSON.stringify(entity), now, now, expiresAt
+      )
+    }
+  })
   await updateSyncMetadata(entityType, true)
 }
 
@@ -450,18 +338,24 @@ export const getEntity = async <T = Record<string, unknown>>(
   id: string | number
 ): Promise<CachedEntity<T> | null> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const normalizedId = normalizeId(id)
   if (!normalizedId) return null
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const row = db.getFirstSync<{
+    id: string
+    data: string
+    synced_at: string | null
+    updated_at: string
+    expires_at: string | null
+  }>(
     `SELECT id, data, synced_at, updated_at, expires_at FROM ${entityType} WHERE id = ?`,
-    [normalizedId]
+    normalizedId
   )
 
-  if (result.rows.length === 0) return null
+  if (!row) return null
 
-  const row = result.rows.item(0)
   try {
     return {
       id: row.id,
@@ -483,22 +377,31 @@ export const getAllEntities = async <T = Record<string, unknown>>(
   options: { includeExpired?: boolean } = {}
 ): Promise<CachedEntity<T>[]> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const now = new Date().toISOString()
-  const sql = options.includeExpired
-    ? `SELECT id, data, synced_at, updated_at, expires_at FROM ${entityType} ORDER BY updated_at DESC`
-    : `SELECT id, data, synced_at, updated_at, expires_at FROM ${entityType}
-       WHERE expires_at IS NULL OR expires_at > ?
-       ORDER BY updated_at DESC`
 
-  const result = await runQuery<SQLite.SQLResultSet>(
-    sql,
-    options.includeExpired ? [] : [now]
-  )
+  type Row = {
+    id: string
+    data: string
+    synced_at: string | null
+    updated_at: string
+    expires_at: string | null
+  }
+
+  const rows = options.includeExpired
+    ? db.getAllSync<Row>(
+        `SELECT id, data, synced_at, updated_at, expires_at FROM ${entityType} ORDER BY updated_at DESC`
+      )
+    : db.getAllSync<Row>(
+        `SELECT id, data, synced_at, updated_at, expires_at FROM ${entityType}
+         WHERE expires_at IS NULL OR expires_at > ?
+         ORDER BY updated_at DESC`,
+        now
+      )
 
   const entities: CachedEntity<T>[] = []
-  for (let i = 0; i < result.rows.length; i++) {
-    const row = result.rows.item(i)
+  for (const row of rows) {
     try {
       entities.push({
         id: row.id,
@@ -522,16 +425,24 @@ export const getUnsyncedEntities = async <T = Record<string, unknown>>(
   entityType: EntityType
 ): Promise<CachedEntity<T>[]> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  type Row = {
+    id: string
+    data: string
+    synced_at: string | null
+    updated_at: string
+    expires_at: string | null
+  }
+
+  const rows = db.getAllSync<Row>(
     `SELECT id, data, synced_at, updated_at, expires_at FROM ${entityType}
      WHERE synced_at IS NULL
      ORDER BY updated_at ASC`
   )
 
   const entities: CachedEntity<T>[] = []
-  for (let i = 0; i < result.rows.length; i++) {
-    const row = result.rows.item(i)
+  for (const row of rows) {
     try {
       entities.push({
         id: row.id,
@@ -556,13 +467,14 @@ export const markEntitySynced = async (
   id: string | number
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const normalizedId = normalizeId(id)
   if (!normalizedId) return
 
-  await runQuery(
+  db.runSync(
     `UPDATE ${entityType} SET synced_at = ? WHERE id = ?`,
-    [new Date().toISOString(), normalizedId]
+    new Date().toISOString(), normalizedId
   )
 }
 
@@ -574,11 +486,12 @@ export const deleteEntity = async (
   id: string | number
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const normalizedId = normalizeId(id)
   if (!normalizedId) return
 
-  await runQuery(`DELETE FROM ${entityType} WHERE id = ?`, [normalizedId])
+  db.runSync(`DELETE FROM ${entityType} WHERE id = ?`, normalizedId)
 }
 
 /**
@@ -586,7 +499,8 @@ export const deleteEntity = async (
  */
 export const clearEntities = async (entityType: EntityType): Promise<void> => {
   await ensureInitialized()
-  await runQuery(`DELETE FROM ${entityType}`)
+  const db = getDatabase()
+  db.runSync(`DELETE FROM ${entityType}`)
 }
 
 /**
@@ -594,6 +508,7 @@ export const clearEntities = async (entityType: EntityType): Promise<void> => {
  */
 export const clearExpiredEntities = async (): Promise<number> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const now = new Date().toISOString()
   const entityTypes: EntityType[] = [
@@ -606,11 +521,11 @@ export const clearExpiredEntities = async (): Promise<number> => {
 
   let totalDeleted = 0
   for (const entityType of entityTypes) {
-    const result = await runQuery<SQLite.SQLResultSet>(
+    const result = db.runSync(
       `DELETE FROM ${entityType} WHERE expires_at IS NOT NULL AND expires_at < ?`,
-      [now]
+      now
     )
-    totalDeleted += result.rowsAffected
+    totalDeleted += result.changes
   }
 
   return totalDeleted
@@ -620,9 +535,6 @@ export const clearExpiredEntities = async (): Promise<number> => {
 // Offline Queue Operations
 // ============================================================================
 
-/**
- * Generates a unique ID for queue items
- */
 const generateQueueId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
 }
@@ -641,6 +553,7 @@ export const enqueueOfflineAction = async (
   } = {}
 ): Promise<OfflineQueueItem> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const item: OfflineQueueItem = {
     id: generateQueueId(),
@@ -657,39 +570,68 @@ export const enqueueOfflineAction = async (
     priority: options.priority || 0,
   }
 
-  await runQuery(
+  db.runSync(
     `INSERT INTO offline_queue (id, action, endpoint, method, payload, headers, created_at, status, attempts, priority)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      item.id,
-      item.action,
-      item.endpoint,
-      item.method,
-      JSON.stringify(item.payload),
-      item.headers ? JSON.stringify(item.headers) : null,
-      item.createdAt,
-      item.status,
-      item.attempts,
-      item.priority,
-    ]
+    item.id,
+    item.action,
+    item.endpoint,
+    item.method,
+    JSON.stringify(item.payload),
+    item.headers ? JSON.stringify(item.headers) : null,
+    item.createdAt,
+    item.status,
+    item.attempts,
+    item.priority
   )
 
   return item
 }
+
+type QueueRow = {
+  id: string
+  action: string
+  endpoint: string
+  method: string
+  payload: string
+  headers: string | null
+  created_at: string
+  status: string
+  attempts: number
+  last_attempt_at: string | null
+  last_error: string | null
+  priority: number
+}
+
+const parseQueueRow = (row: QueueRow): OfflineQueueItem => ({
+  id: row.id,
+  action: row.action,
+  endpoint: row.endpoint,
+  method: row.method as OfflineQueueItem['method'],
+  payload: JSON.parse(row.payload),
+  headers: row.headers ? JSON.parse(row.headers) : undefined,
+  createdAt: row.created_at,
+  status: row.status as QueueItemStatus,
+  attempts: row.attempts,
+  lastAttemptAt: row.last_attempt_at,
+  lastError: row.last_error,
+  priority: row.priority,
+})
 
 /**
  * Gets all pending queue items ordered by priority
  */
 export const getPendingQueueItems = async (): Promise<OfflineQueueItem[]> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const rows = db.getAllSync<QueueRow>(
     `SELECT * FROM offline_queue
      WHERE status IN ('pending', 'failed')
      ORDER BY priority DESC, created_at ASC`
   )
 
-  return parseQueueItems(result)
+  return rows.map(parseQueueRow)
 }
 
 /**
@@ -699,13 +641,14 @@ export const getQueueItemsByStatus = async (
   status: QueueItemStatus
 ): Promise<OfflineQueueItem[]> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const rows = db.getAllSync<QueueRow>(
     `SELECT * FROM offline_queue WHERE status = ? ORDER BY priority DESC, created_at ASC`,
-    [status]
+    status
   )
 
-  return parseQueueItems(result)
+  return rows.map(parseQueueRow)
 }
 
 /**
@@ -715,43 +658,14 @@ export const getQueueItem = async (
   id: string
 ): Promise<OfflineQueueItem | null> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const row = db.getFirstSync<QueueRow>(
     `SELECT * FROM offline_queue WHERE id = ?`,
-    [id]
+    id
   )
 
-  const items = parseQueueItems(result)
-  return items[0] || null
-}
-
-/**
- * Parses queue items from SQL result
- */
-const parseQueueItems = (result: SQLite.SQLResultSet): OfflineQueueItem[] => {
-  const items: OfflineQueueItem[] = []
-  for (let i = 0; i < result.rows.length; i++) {
-    const row = result.rows.item(i)
-    try {
-      items.push({
-        id: row.id,
-        action: row.action,
-        endpoint: row.endpoint,
-        method: row.method,
-        payload: JSON.parse(row.payload),
-        headers: row.headers ? JSON.parse(row.headers) : undefined,
-        createdAt: row.created_at,
-        status: row.status,
-        attempts: row.attempts,
-        lastAttemptAt: row.last_attempt_at,
-        lastError: row.last_error,
-        priority: row.priority,
-      })
-    } catch {
-      // Skip malformed entries
-    }
-  }
-  return items
+  return row ? parseQueueRow(row) : null
 }
 
 /**
@@ -759,10 +673,11 @@ const parseQueueItems = (result: SQLite.SQLResultSet): OfflineQueueItem[] => {
  */
 export const markQueueItemProcessing = async (id: string): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  await runQuery(
+  db.runSync(
     `UPDATE offline_queue SET status = 'processing', last_attempt_at = ? WHERE id = ?`,
-    [new Date().toISOString(), id]
+    new Date().toISOString(), id
   )
 }
 
@@ -774,12 +689,13 @@ export const markQueueItemFailed = async (
   error: string
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  await runQuery(
+  db.runSync(
     `UPDATE offline_queue
      SET status = 'failed', attempts = attempts + 1, last_error = ?, last_attempt_at = ?
      WHERE id = ?`,
-    [error, new Date().toISOString(), id]
+    error, new Date().toISOString(), id
   )
 }
 
@@ -788,7 +704,8 @@ export const markQueueItemFailed = async (
  */
 export const removeQueueItem = async (id: string): Promise<void> => {
   await ensureInitialized()
-  await runQuery(`DELETE FROM offline_queue WHERE id = ?`, [id])
+  const db = getDatabase()
+  db.runSync(`DELETE FROM offline_queue WHERE id = ?`, id)
 }
 
 /**
@@ -798,13 +715,14 @@ export const resetFailedQueueItems = async (
   maxAttempts: number = 5
 ): Promise<number> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const result = db.runSync(
     `UPDATE offline_queue SET status = 'pending' WHERE status = 'failed' AND attempts < ?`,
-    [maxAttempts]
+    maxAttempts
   )
 
-  return result.rowsAffected
+  return result.changes
 }
 
 /**
@@ -818,8 +736,9 @@ export const getQueueStats = async (): Promise<{
   byAction: Record<string, number>
 }> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const countResult = await runQuery<SQLite.SQLResultSet>(
+  const countRows = db.getAllSync<{ status: string; count: number }>(
     `SELECT status, COUNT(*) as count FROM offline_queue GROUP BY status`
   )
 
@@ -831,21 +750,18 @@ export const getQueueStats = async (): Promise<{
     byAction: {} as Record<string, number>,
   }
 
-  for (let i = 0; i < countResult.rows.length; i++) {
-    const row = countResult.rows.item(i)
-    const count = row.count as number
-    stats.total += count
-    if (row.status === 'pending') stats.pending = count
-    if (row.status === 'processing') stats.processing = count
-    if (row.status === 'failed') stats.failed = count
+  for (const row of countRows) {
+    stats.total += row.count
+    if (row.status === 'pending') stats.pending = row.count
+    if (row.status === 'processing') stats.processing = row.count
+    if (row.status === 'failed') stats.failed = row.count
   }
 
-  const actionResult = await runQuery<SQLite.SQLResultSet>(
+  const actionRows = db.getAllSync<{ action: string; count: number }>(
     `SELECT action, COUNT(*) as count FROM offline_queue GROUP BY action`
   )
 
-  for (let i = 0; i < actionResult.rows.length; i++) {
-    const row = actionResult.rows.item(i)
+  for (const row of actionRows) {
     stats.byAction[row.action] = row.count
   }
 
@@ -859,14 +775,15 @@ export const cleanupQueue = async (
   maxAge: number = 7 * 24 * 60 * 60 * 1000 // 7 days
 ): Promise<number> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const cutoff = new Date(Date.now() - maxAge).toISOString()
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const result = db.runSync(
     `DELETE FROM offline_queue WHERE status = 'failed' AND created_at < ?`,
-    [cutoff]
+    cutoff
   )
 
-  return result.rowsAffected
+  return result.changes
 }
 
 // ============================================================================
@@ -881,9 +798,10 @@ export const updateSyncMetadata = async (
   success: boolean
 ): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const now = new Date().toISOString()
-  await runQuery(
+  db.runSync(
     `INSERT INTO sync_metadata (entity_type, last_sync_at, last_sync_success, sync_count, error_count)
      VALUES (?, ?, ?, 1, ?)
      ON CONFLICT(entity_type) DO UPDATE SET
@@ -891,15 +809,13 @@ export const updateSyncMetadata = async (
        last_sync_success = ?,
        sync_count = sync_count + 1,
        error_count = error_count + ?`,
-    [
-      entityType,
-      now,
-      success ? 1 : 0,
-      success ? 0 : 1,
-      now,
-      success ? 1 : 0,
-      success ? 0 : 1,
-    ]
+    entityType,
+    now,
+    success ? 1 : 0,
+    success ? 0 : 1,
+    now,
+    success ? 1 : 0,
+    success ? 0 : 1
   )
 }
 
@@ -910,17 +826,23 @@ export const getSyncMetadata = async (
   entityType: EntityType
 ): Promise<SyncMetadata | null> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const row = db.getFirstSync<{
+    entity_type: string
+    last_sync_at: string | null
+    last_sync_success: number
+    sync_count: number
+    error_count: number
+  }>(
     `SELECT * FROM sync_metadata WHERE entity_type = ?`,
-    [entityType]
+    entityType
   )
 
-  if (result.rows.length === 0) return null
+  if (!row) return null
 
-  const row = result.rows.item(0)
   return {
-    entityType: row.entity_type,
+    entityType: row.entity_type as EntityType,
     lastSyncAt: row.last_sync_at,
     lastSyncSuccess: Boolean(row.last_sync_success),
     syncCount: row.sync_count,
@@ -933,24 +855,25 @@ export const getSyncMetadata = async (
  */
 export const getAllSyncMetadata = async (): Promise<SyncMetadata[]> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const rows = db.getAllSync<{
+    entity_type: string
+    last_sync_at: string | null
+    last_sync_success: number
+    sync_count: number
+    error_count: number
+  }>(
     `SELECT * FROM sync_metadata ORDER BY entity_type`
   )
 
-  const metadata: SyncMetadata[] = []
-  for (let i = 0; i < result.rows.length; i++) {
-    const row = result.rows.item(i)
-    metadata.push({
-      entityType: row.entity_type,
-      lastSyncAt: row.last_sync_at,
-      lastSyncSuccess: Boolean(row.last_sync_success),
-      syncCount: row.sync_count,
-      errorCount: row.error_count,
-    })
-  }
-
-  return metadata
+  return rows.map((row) => ({
+    entityType: row.entity_type as EntityType,
+    lastSyncAt: row.last_sync_at,
+    lastSyncSuccess: Boolean(row.last_sync_success),
+    syncCount: row.sync_count,
+    errorCount: row.error_count,
+  }))
 }
 
 /**
@@ -981,6 +904,7 @@ export const getDatabaseStats = async (): Promise<{
   cacheSize: number
 }> => {
   await ensureInitialized()
+  const db = getDatabase()
 
   const entityTypes: EntityType[] = [
     'work_orders',
@@ -993,10 +917,10 @@ export const getDatabaseStats = async (): Promise<{
   const entityCounts: Record<EntityType, number> = {} as Record<EntityType, number>
 
   for (const entityType of entityTypes) {
-    const result = await runQuery<SQLite.SQLResultSet>(
+    const row = db.getFirstSync<{ count: number }>(
       `SELECT COUNT(*) as count FROM ${entityType}`
     )
-    entityCounts[entityType] = result.rows.item(0).count
+    entityCounts[entityType] = row?.count ?? 0
   }
 
   const queueStats = await getQueueStats()
@@ -1004,10 +928,10 @@ export const getDatabaseStats = async (): Promise<{
   // Approximate cache size by summing data lengths
   let cacheSize = 0
   for (const entityType of entityTypes) {
-    const result = await runQuery<SQLite.SQLResultSet>(
+    const row = db.getFirstSync<{ size: number | null }>(
       `SELECT SUM(LENGTH(data)) as size FROM ${entityType}`
     )
-    cacheSize += result.rows.item(0).size || 0
+    cacheSize += row?.size ?? 0
   }
 
   return {
@@ -1026,15 +950,16 @@ export const getDatabaseStats = async (): Promise<{
  */
 export const clearAllCache = async (): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  await runBatch([
-    { sql: 'DELETE FROM work_orders' },
-    { sql: 'DELETE FROM time_entries' },
-    { sql: 'DELETE FROM inspections' },
-    { sql: 'DELETE FROM customers' },
-    { sql: 'DELETE FROM vehicles' },
-    { sql: 'DELETE FROM sync_metadata' },
-  ])
+  await db.withTransactionAsync(async () => {
+    db.runSync('DELETE FROM work_orders')
+    db.runSync('DELETE FROM time_entries')
+    db.runSync('DELETE FROM inspections')
+    db.runSync('DELETE FROM customers')
+    db.runSync('DELETE FROM vehicles')
+    db.runSync('DELETE FROM sync_metadata')
+  })
 }
 
 /**
@@ -1042,17 +967,18 @@ export const clearAllCache = async (): Promise<void> => {
  */
 export const resetDatabase = async (): Promise<void> => {
   await ensureInitialized()
+  const db = getDatabase()
 
-  await runBatch([
-    { sql: 'DELETE FROM work_orders' },
-    { sql: 'DELETE FROM time_entries' },
-    { sql: 'DELETE FROM inspections' },
-    { sql: 'DELETE FROM customers' },
-    { sql: 'DELETE FROM vehicles' },
-    { sql: 'DELETE FROM offline_queue' },
-    { sql: 'DELETE FROM sync_metadata' },
-    { sql: 'DELETE FROM schema_version' },
-  ])
+  await db.withTransactionAsync(async () => {
+    db.runSync('DELETE FROM work_orders')
+    db.runSync('DELETE FROM time_entries')
+    db.runSync('DELETE FROM inspections')
+    db.runSync('DELETE FROM customers')
+    db.runSync('DELETE FROM vehicles')
+    db.runSync('DELETE FROM offline_queue')
+    db.runSync('DELETE FROM sync_metadata')
+    db.runSync('DELETE FROM schema_version')
+  })
 
   // Reset init promise to force re-initialization
   initPromise = null
@@ -1063,7 +989,8 @@ export const resetDatabase = async (): Promise<void> => {
  */
 export const vacuumDatabase = async (): Promise<void> => {
   await ensureInitialized()
-  await runQuery('VACUUM')
+  const db = getDatabase()
+  db.execSync('VACUUM')
 }
 
 // Export database for advanced usage
