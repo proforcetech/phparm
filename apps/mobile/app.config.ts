@@ -95,7 +95,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   // Expo plugins for native functionality
   plugins: [
-    'expo-router',
     'expo-secure-store',
     'expo-local-authentication',
     [
@@ -145,8 +144,4 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // Runtime version for OTA updates
   runtimeVersion: APP_VERSION,
 
-  // Experiments
-  experiments: {
-    typedRoutes: true,
-  },
 })

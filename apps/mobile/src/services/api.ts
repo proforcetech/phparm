@@ -3,7 +3,11 @@ import axios from 'axios'
 import { getEnv } from '../config/env'
 import { getAuthToken, removeAuthToken } from '../utils/secureStorage'
 
-const { apiBaseUrl } = getEnv()
+const { apiBaseUrl, buildVariant } = getEnv()
+
+if (buildVariant === 'production' && apiBaseUrl.startsWith('http://')) {
+  throw new Error('Production API must use HTTPS')
+}
 
 export const api = axios.create({
   baseURL: apiBaseUrl,

@@ -2,66 +2,38 @@ import * as SQLite from 'expo-sqlite'
 
 type CacheEntity = Record<string, any>
 
-type Statement = {
-  sql: string
-  params?: (string | number | null)[]
-}
-
 const DATABASE_NAME = 'phparm-offline-cache.db'
 const TABLE_NAME = 'cached_entities'
 
-const database = SQLite.openDatabase(DATABASE_NAME)
+let database: SQLite.SQLiteDatabase | null = null
 let cacheReady: Promise<void> | null = null
 
-const runBatch = (statements: Statement[]) =>
-  new Promise<void>((resolve, reject) => {
-    database.transaction(
-      (transaction) => {
-        statements.forEach(({ sql, params = [] }) => {
-          transaction.executeSql(sql, params)
-        })
-      },
-      (error) => {
-        reject(error)
-      },
-      () => resolve()
-    )
-  })
-
-const runQuery = <T = SQLite.SQLResultSet>(sql: string, params: (string | number)[] = []) =>
-  new Promise<T>((resolve, reject) => {
-    database.transaction(
-      (transaction) => {
-        transaction.executeSql(
-          sql,
-          params,
-          (_, result) => resolve(result as T),
-          (_, error) => {
-            reject(error)
-            return false
-          }
-        )
-      },
-      (error) => reject(error)
-    )
-  })
+const getDatabase = (): SQLite.SQLiteDatabase => {
+  if (!database) {
+    database = SQLite.openDatabaseSync(DATABASE_NAME)
+  }
+  return database
+}
 
 export const initOfflineCache = () => {
   if (!cacheReady) {
-    cacheReady = runBatch([
-      {
-        sql: `CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
-          entity_type TEXT NOT NULL,
-          entity_id TEXT NOT NULL,
-          payload TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (entity_type, entity_id)
-        )`,
-      },
-      {
-        sql: `CREATE INDEX IF NOT EXISTS idx_${TABLE_NAME}_type ON ${TABLE_NAME} (entity_type)`,
-      },
-    ])
+    cacheReady = (async () => {
+      const db = getDatabase()
+      await db.withTransactionAsync(async () => {
+        db.runSync(
+          `CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (entity_type, entity_id)
+          )`
+        )
+        db.runSync(
+          `CREATE INDEX IF NOT EXISTS idx_${TABLE_NAME}_type ON ${TABLE_NAME} (entity_type)`
+        )
+      })
+    })()
   }
 
   return cacheReady
@@ -100,37 +72,38 @@ const extractEntities = (entities: CacheEntity[]) =>
 
 export const replaceCachedEntities = async (type: string, entities: CacheEntity[]) => {
   await ensureReady()
+  const db = getDatabase()
   const normalized = extractEntities(entities)
-  const statements: Statement[] = [
-    {
-      sql: `DELETE FROM ${TABLE_NAME} WHERE entity_type = ?`,
-      params: [type],
-    },
-  ]
 
-  normalized.forEach(({ entityId, payload, updatedAt }) => {
-    statements.push({
-      sql: `INSERT OR REPLACE INTO ${TABLE_NAME} (entity_type, entity_id, payload, updated_at) VALUES (?, ?, ?, ?)`,
-      params: [type, entityId, payload, updatedAt],
-    })
+  await db.withTransactionAsync(async () => {
+    db.runSync(`DELETE FROM ${TABLE_NAME} WHERE entity_type = ?`, type)
+
+    for (const { entityId, payload, updatedAt } of normalized) {
+      db.runSync(
+        `INSERT OR REPLACE INTO ${TABLE_NAME} (entity_type, entity_id, payload, updated_at) VALUES (?, ?, ?, ?)`,
+        type, entityId, payload, updatedAt
+      )
+    }
   })
-
-  await runBatch(statements)
 }
 
 export const upsertCachedEntities = async (type: string, entities: CacheEntity[]) => {
   await ensureReady()
+  const db = getDatabase()
   const normalized = extractEntities(entities)
-  const statements: Statement[] = normalized.map(({ entityId, payload, updatedAt }) => ({
-    sql: `INSERT OR REPLACE INTO ${TABLE_NAME} (entity_type, entity_id, payload, updated_at) VALUES (?, ?, ?, ?)`,
-    params: [type, entityId, payload, updatedAt],
-  }))
 
-  if (statements.length === 0) {
+  if (normalized.length === 0) {
     return
   }
 
-  await runBatch(statements)
+  await db.withTransactionAsync(async () => {
+    for (const { entityId, payload, updatedAt } of normalized) {
+      db.runSync(
+        `INSERT OR REPLACE INTO ${TABLE_NAME} (entity_type, entity_id, payload, updated_at) VALUES (?, ?, ?, ?)`,
+        type, entityId, payload, updatedAt
+      )
+    }
+  })
 }
 
 export const upsertCachedEntity = async (type: string, entity: CacheEntity) => {
@@ -143,21 +116,23 @@ export const removeCachedEntity = async (type: string, id: string | number) => {
   if (!entityId) {
     return
   }
-  await runQuery(
+  const db = getDatabase()
+  db.runSync(
     `DELETE FROM ${TABLE_NAME} WHERE entity_type = ? AND entity_id = ?`,
-    [type, entityId]
+    type, entityId
   )
 }
 
 export const getCachedEntities = async (type: string) => {
   await ensureReady()
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const db = getDatabase()
+
+  const rows = db.getAllSync<{ payload: string }>(
     `SELECT payload FROM ${TABLE_NAME} WHERE entity_type = ? ORDER BY updated_at DESC`,
-    [type]
+    type
   )
 
-  return result.rows
-    ._array
+  return rows
     .map((row) => {
       try {
         return JSON.parse(row.payload)
@@ -175,12 +150,12 @@ export const getCachedEntity = async (type: string, id: string | number) => {
     return null
   }
 
-  const result = await runQuery<SQLite.SQLResultSet>(
+  const db = getDatabase()
+  const row = db.getFirstSync<{ payload: string }>(
     `SELECT payload FROM ${TABLE_NAME} WHERE entity_type = ? AND entity_id = ? LIMIT 1`,
-    [type, entityId]
+    type, entityId
   )
 
-  const row = result.rows._array[0]
   if (!row?.payload) {
     return null
   }

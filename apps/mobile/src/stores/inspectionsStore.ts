@@ -450,12 +450,12 @@ export const useInspectionsStore = create<InspectionsState>((set, get) => ({
 }))
 
 // Auto-save draft periodically
-let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
+let autoSaveInterval: ReturnType<typeof setInterval> | null = null
 
 export const startAutoSave = () => {
-  if (autoSaveTimeout) clearInterval(autoSaveTimeout)
+  if (autoSaveInterval) clearInterval(autoSaveInterval)
 
-  autoSaveTimeout = setInterval(() => {
+  autoSaveInterval = setInterval(() => {
     const { draft, saveDraft } = useInspectionsStore.getState()
     if (draft) {
       saveDraft()
@@ -464,8 +464,8 @@ export const startAutoSave = () => {
 }
 
 export const stopAutoSave = () => {
-  if (autoSaveTimeout) {
-    clearInterval(autoSaveTimeout)
-    autoSaveTimeout = null
+  if (autoSaveInterval) {
+    clearInterval(autoSaveInterval)
+    autoSaveInterval = null
   }
 }
