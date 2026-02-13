@@ -87,12 +87,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(hasGoogleServices && { googleServicesFile: googleServicesPath }),
   },
 
-  // Web Configuration (for Expo web if needed)
-  web: {
-    bundler: 'metro',
-    favicon: './assets/favicon.png',
-  },
-
   // Expo plugins for native functionality
   plugins: [
     'expo-secure-store',
