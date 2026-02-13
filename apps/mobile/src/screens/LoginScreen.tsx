@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   StyleSheet,
@@ -8,7 +9,11 @@ import {
   View,
 } from 'react-native'
 
+import { getEnv } from '../config/env'
+import { getApiBaseUrl, setApiBaseUrl } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+
+const SERVER_URL_KEY = 'server_url'
 
 export function LoginScreen() {
   const login = useAuthStore((state) => state.login)
@@ -20,8 +25,29 @@ export function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
+  const [serverUrl, setServerUrl] = useState(getApiBaseUrl())
+  const [serverExpanded, setServerExpanded] = useState(false)
+
+  useEffect(() => {
+    AsyncStorage.getItem(SERVER_URL_KEY).then((saved) => {
+      if (saved) {
+        setServerUrl(saved)
+        setApiBaseUrl(saved)
+      }
+    })
+  }, [])
 
   const handleLogin = async () => {
+    const url = serverUrl.trim()
+    if (url) {
+      setApiBaseUrl(url)
+      await AsyncStorage.setItem(SERVER_URL_KEY, url)
+    } else {
+      const defaultUrl = getEnv().apiBaseUrl
+      setApiBaseUrl(defaultUrl)
+      await AsyncStorage.removeItem(SERVER_URL_KEY)
+      setServerUrl(defaultUrl)
+    }
     try {
       await login(email.trim(), password)
     } catch (err) {
@@ -44,6 +70,25 @@ export function LoginScreen() {
 
       {!pendingChallenge ? (
         <>
+          {serverExpanded ? (
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              placeholder="https://yourserver.com/api"
+              placeholderTextColor="#94a3b8"
+              style={styles.input}
+              value={serverUrl}
+              onChangeText={setServerUrl}
+              onBlur={() => setServerExpanded(false)}
+            />
+          ) : (
+            <TouchableOpacity onPress={() => setServerExpanded(true)}>
+              <Text style={styles.serverLabel} numberOfLines={1}>
+                Server: {serverUrl}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
@@ -122,7 +167,12 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#cbd5f5',
-    marginBottom: 24,
+    marginBottom: 12,
+  },
+  serverLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 12,
   },
   input: {
     borderWidth: 1,

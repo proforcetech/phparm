@@ -13,6 +13,14 @@ export const api = axios.create({
   baseURL: apiBaseUrl,
 })
 
+export function setApiBaseUrl(url: string): void {
+  api.defaults.baseURL = url
+}
+
+export function getApiBaseUrl(): string {
+  return (api.defaults.baseURL as string) ?? apiBaseUrl
+}
+
 api.interceptors.request.use(async (config) => {
   const token = await getAuthToken()
   if (token) {
