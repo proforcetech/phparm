@@ -279,19 +279,19 @@ class Middleware
             $secureSession = self::getSecureSessionService();
             $secureSession->start();
 
-            // Validate session is not expired
-            if (!$secureSession->validate()) {
-                throw new UnauthorizedException('Session expired');
-            }
+            // Validate session - but don't reject yet; JWT/Bearer auth may still succeed
+            $sessionValid = $secureSession->validate();
 
             // Clean up expired 2FA challenges
-            $secureSession->cleanExpiredTwoFactorChallenges();
+            if ($sessionValid) {
+                $secureSession->cleanExpiredTwoFactorChallenges();
+            }
 
             $user = null;
             $isImpersonating = false;
 
-            // Try session-based auth
-            if (isset($_SESSION['user_id'])) {
+            // Try session-based auth (only if session is valid)
+            if ($sessionValid && isset($_SESSION['user_id'])) {
                 $sessionManager = self::getSessionManager();
                 $sessionId = session_id();
                 $ipAddress = $request->getClientIp();

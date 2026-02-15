@@ -818,6 +818,8 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $_SESSION['session_created'] = time();
+        $_SESSION['last_activity'] = time();
         $authService->recordLastActivity($user->id);
 
         $sessionManager->recordSession(
@@ -935,6 +937,8 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $_SESSION['session_created'] = time();
+        $_SESSION['last_activity'] = time();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
         $authService->recordLastActivity($user->id);
 
@@ -1019,6 +1023,8 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $_SESSION['session_created'] = time();
+        $_SESSION['last_activity'] = time();
         $authService->recordLastActivity($user->id);
 
         $sessionManager->recordSession(
@@ -1092,6 +1098,8 @@ return function (Router $router, array $config, $connection) {
 
         $_SESSION['user_id'] = $user->id;
         $_SESSION['user'] = $user->toArray();
+        $_SESSION['session_created'] = time();
+        $_SESSION['last_activity'] = time();
         $_SESSION['portal_nonce'] = $_SESSION['portal_nonce'] ?? bin2hex(random_bytes(16));
         $authService->recordLastActivity($user->id);
 
@@ -1305,6 +1313,8 @@ return function (Router $router, array $config, $connection) {
 
         // Regenerate session ID to prevent session fixation attacks
         session_regenerate_id(true);
+        $_SESSION['session_created'] = time();
+        $_SESSION['last_activity'] = time();
 
         // Generate unique session token for database tracking
         $sessionToken = bin2hex(random_bytes(32));
