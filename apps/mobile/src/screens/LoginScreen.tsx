@@ -39,14 +39,19 @@ export function LoginScreen() {
 
   const handleLogin = async () => {
     const url = serverUrl.trim()
-    if (url) {
-      setApiBaseUrl(url)
-      await AsyncStorage.setItem(SERVER_URL_KEY, url)
-    } else {
-      const defaultUrl = getEnv().apiBaseUrl
-      setApiBaseUrl(defaultUrl)
-      await AsyncStorage.removeItem(SERVER_URL_KEY)
-      setServerUrl(defaultUrl)
+    try {
+      if (url) {
+        setApiBaseUrl(url)
+        await AsyncStorage.setItem(SERVER_URL_KEY, url)
+      } else {
+        const defaultUrl = getEnv().apiBaseUrl
+        setApiBaseUrl(defaultUrl)
+        await AsyncStorage.removeItem(SERVER_URL_KEY)
+        setServerUrl(defaultUrl)
+      }
+    } catch (err) {
+      console.warn('Failed to persist server URL', err)
+      // Still proceed with login — URL was set synchronously via setApiBaseUrl
     }
     try {
       await login(email.trim(), password)

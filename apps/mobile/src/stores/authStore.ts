@@ -185,7 +185,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ offlineAccess: false })
       return data
     } catch (err: any) {
-      set({ error: err.response?.data?.message || 'Login failed' })
+      const serverMessage = err.response?.data?.message
+      const detail = serverMessage || err.message || 'Login failed'
+      set({ error: detail })
       throw err
     } finally {
       set({ loading: false })

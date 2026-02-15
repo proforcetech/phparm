@@ -11,6 +11,7 @@ if (buildVariant === 'production' && apiBaseUrl.startsWith('http://')) {
 
 export const api = axios.create({
   baseURL: apiBaseUrl,
+  timeout: 30000,
 })
 
 export function setApiBaseUrl(url: string): void {
@@ -22,12 +23,14 @@ export function getApiBaseUrl(): string {
 }
 
 api.interceptors.request.use(async (config) => {
-  const token = await getAuthToken()
-  if (token) {
-    config.headers = {
-      ...config.headers,
-      Authorization: `Bearer ${token}`,
+  try {
+    const token = await getAuthToken()
+    if (token) {
+      config.headers.set('Authorization', `Bearer ${token}`)
     }
+  } catch (err) {
+    // SecureStore may be unavailable (e.g. web environment) — proceed without token
+    console.warn('Failed to read auth token', err)
   }
   return config
 })
@@ -36,7 +39,11 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error?.response?.status === 401) {
-      await removeAuthToken()
+      try {
+        await removeAuthToken()
+      } catch (err) {
+        console.warn('Failed to remove auth token', err)
+      }
     }
     return Promise.reject(error)
   }
