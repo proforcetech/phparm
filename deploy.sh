@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Ensure Bash is used even if invoked via `sh deploy.sh`.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec /usr/bin/env bash "$0" "$@"
+fi
+
 #===============================================================================
 # PHPArm Full Server Deployment Script
 #===============================================================================
@@ -96,7 +101,17 @@ generate_password() {
 }
 
 generate_secret() {
-    openssl rand -hex 32
+    local length=${1:-64}
+    local secret=""
+
+    # JWT service enforces entropy heuristics beyond simple length checks.
+    # Use a mixed alphanumeric charset and enough characters to avoid false
+    # negatives from character-diversity checks.
+    while [[ ${#secret} -lt $length ]]; do
+        secret+=$(openssl rand -base64 96 | tr -dc 'A-Za-z0-9')
+    done
+
+    printf '%s' "${secret:0:$length}"
 }
 
 check_root() {
