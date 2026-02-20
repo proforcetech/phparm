@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Ensure Bash is used even if invoked via `sh deploy.sh`.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec /usr/bin/env bash "$0" "$@"
+fi
+
 #===============================================================================
 # PHPArm Full Server Deployment Script
 #===============================================================================
