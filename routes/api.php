@@ -712,7 +712,7 @@ return function (Router $router, array $config, $connection) {
     });
 
     // API info (public)
-    $router->get('/', function () {
+    $router->get('/api', function () {
         return Response::json([
             'name' => 'Automotive Repair Shop Management API',
             'version' => '1.0.0',

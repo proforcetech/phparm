@@ -303,6 +303,9 @@ install_php() {
         php${PHP_VERSION}-readline \
         libapache2-mod-php${PHP_VERSION}
 
+    # Ensure PHP is enabled in Apache
+    a2enmod php${PHP_VERSION}
+
     # Configure PHP
     PHP_INI="/etc/php/${PHP_VERSION}/apache2/php.ini"
 
@@ -624,6 +627,12 @@ configure_apache() {
         AllowOverride All
         Require all granted
     </Directory>
+
+    DirectoryIndex index.php index.html
+
+    <FilesMatch \.php$>
+        SetHandler application/x-httpd-php
+    </FilesMatch>
 
     # Logging
     ErrorLog \${APACHE_LOG_DIR}/phparm_error.log
