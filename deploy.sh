@@ -8,8 +8,8 @@
 # Designed for Ubuntu 22.04/24.04 LTS on Linode, DigitalOcean, or similar VPS.
 #
 # Features:
-#   - Installs all dependencies (Apache, PHP 8.2+, MariaDB, Node.js, Composer)
-#   - Configures Apache virtual host with security headers
+#   - Installs all dependencies (Apache/NGINX, PHP 8.4, MariaDB, Node.js, Composer)
+#   - Configures web server virtual host with security headers
 #   - Sets up MariaDB with secure installation
 #   - Configures UFW firewall
 #   - Optional SSL via Let's Encrypt
@@ -48,18 +48,19 @@ NC='\033[0m' # No Color
 INSTALL_DIR="/var/www/phparm"
 WEB_USER="www-data"
 WEB_GROUP="www-data"
-PHP_VERSION="8.2"
+PHP_VERSION="8.4"
 NODE_VERSION="20"
 DOMAIN=""
 ADMIN_EMAIL=""
+WEB_SERVER="apache"
 SKIP_SSL=false
 SKIP_FIREWALL=false
 GIT_BRANCH="main"
 GIT_REPO=""
 
 # Generated values
-DB_NAME="phparm"
-DB_USER="phparm_user"
+DB_NAME=""
+DB_USER=""
 DB_PASS=""
 ADMIN_PASSWORD=""
 JWT_SECRET=""
@@ -107,6 +108,20 @@ generate_secret() {
     done
 
     printf '%s' "${secret:0:$length}"
+}
+
+generate_db_identifier() {
+    local prefix="$1"
+    local words=(
+        aurora brisk cedar crimson delta ember falcon forest glacier harbor
+        indigo juniper lunar matrix nebula orbit prairie quartz river summit
+        tide umbra vector willow zephyr
+    )
+    local index=$((RANDOM % ${#words[@]}))
+    local number
+    number=$(printf '%03d' $((RANDOM % 1000)))
+
+    printf '%s_%s%s' "$prefix" "${words[$index]}" "$number"
 }
 
 check_root() {
@@ -163,11 +178,19 @@ parse_arguments() {
                 show_help
                 exit 0
                 ;;
+            --web-server=*)
+                WEB_SERVER="${arg#*=}"
+                ;;
             *)
                 print_warning "Unknown argument: $arg"
                 ;;
         esac
     done
+
+    if [[ "$WEB_SERVER" != "apache" && "$WEB_SERVER" != "nginx" ]]; then
+        print_error "Invalid --web-server value: ${WEB_SERVER}. Use apache or nginx."
+        exit 1
+    fi
 }
 
 show_help() {
@@ -180,6 +203,7 @@ show_help() {
     echo "  --email=EMAIL          Admin email for SSL certificates"
     echo "  --skip-ssl             Skip Let's Encrypt SSL installation"
     echo "  --skip-firewall        Skip UFW firewall configuration"
+    echo "  --web-server=TYPE      Web server to use: apache or nginx (default: apache)"
     echo "  --branch=BRANCH        Git branch to deploy (default: main)"
     echo "  --repo=URL             Git repository URL to clone"
     echo "  --help                 Show this help message"
@@ -208,6 +232,21 @@ interactive_setup() {
         if [[ "$ssl_choice" =~ ^[Nn]$ ]]; then
             SKIP_SSL=true
         fi
+    fi
+
+    # Web server
+    if [[ -z "$WEB_SERVER" ]]; then
+        WEB_SERVER="apache"
+    fi
+
+    read -p "Select web server [apache/nginx] (default: ${WEB_SERVER}): " web_server_choice
+    if [[ -n "$web_server_choice" ]]; then
+        WEB_SERVER="$web_server_choice"
+    fi
+
+    if [[ "$WEB_SERVER" != "apache" && "$WEB_SERVER" != "nginx" ]]; then
+        print_error "Invalid web server selection: ${WEB_SERVER}."
+        exit 1
     fi
 
     # Git repo
@@ -272,6 +311,21 @@ EOF
     print_status "Apache installed and configured"
 }
 
+install_nginx() {
+    print_header "Installing NGINX Web Server"
+
+    apt-get install -y nginx
+
+    # Disable default site
+    rm -f /etc/nginx/sites-enabled/default
+    rm -f /etc/nginx/sites-available/default
+
+    systemctl enable nginx
+    systemctl start nginx
+
+    print_status "NGINX installed and configured"
+}
+
 # ============================================
 # Install PHP
 # ============================================
@@ -300,11 +354,19 @@ install_php() {
         php${PHP_VERSION}-bcmath \
         php${PHP_VERSION}-intl \
         php${PHP_VERSION}-opcache \
-        php${PHP_VERSION}-readline \
-        libapache2-mod-php${PHP_VERSION}
+        php${PHP_VERSION}-readline
 
-    # Configure PHP
-    PHP_INI="/etc/php/${PHP_VERSION}/apache2/php.ini"
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        apt-get install -y libapache2-mod-php${PHP_VERSION}
+        a2enmod php${PHP_VERSION}
+        PHP_INI="/etc/php/${PHP_VERSION}/apache2/php.ini"
+    else
+        PHP_INI="/etc/php/${PHP_VERSION}/fpm/php.ini"
+        systemctl enable php${PHP_VERSION}-fpm
+        systemctl start php${PHP_VERSION}-fpm
+    fi
+
+    remove_old_php_sources
 
     sed -i 's/upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_INI"
     sed -i 's/post_max_size = .*/post_max_size = 64M/' "$PHP_INI"
@@ -323,9 +385,28 @@ opcache.revalidate_freq=2
 opcache.save_comments=1
 EOF
 
-    systemctl restart apache2
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        systemctl restart apache2
+    else
+        systemctl restart php${PHP_VERSION}-fpm
+    fi
 
     print_status "PHP ${PHP_VERSION} installed and configured"
+}
+
+remove_old_php_sources() {
+    print_info "Removing older PHP versions (keeping ${PHP_VERSION})"
+
+    local old_versions=(8.0 8.1 8.2 8.3)
+    for version in "${old_versions[@]}"; do
+        if [[ "$version" == "$PHP_VERSION" ]]; then
+            continue
+        fi
+
+        apt-get purge -y "php${version}*" 2>/dev/null || true
+    done
+
+    apt-get autoremove -y
 }
 
 # ============================================
@@ -340,7 +421,9 @@ install_mariadb() {
     systemctl enable mariadb
     systemctl start mariadb
 
-    # Generate database password
+    # Generate database credentials
+    DB_NAME=$(generate_db_identifier "app")
+    DB_USER=$(generate_db_identifier "usr")
     DB_PASS=$(generate_password 24)
 
     # Secure MariaDB installation
@@ -625,6 +708,12 @@ configure_apache() {
         Require all granted
     </Directory>
 
+    DirectoryIndex index.php index.html
+
+    <FilesMatch \.php$>
+        SetHandler application/x-httpd-php
+    </FilesMatch>
+
     # Logging
     ErrorLog \${APACHE_LOG_DIR}/phparm_error.log
     CustomLog \${APACHE_LOG_DIR}/phparm_access.log combined
@@ -657,6 +746,43 @@ EOF
     systemctl reload apache2
 
     print_status "Apache virtual host configured"
+}
+
+configure_nginx() {
+    print_header "Configuring NGINX Server Block"
+
+    SERVER_NAME="${DOMAIN:-$(hostname -I | awk '{print $1}')}"
+
+    cat > /etc/nginx/sites-available/phparm << EOF
+server {
+    listen 80;
+    server_name ${SERVER_NAME};
+    root ${INSTALL_DIR}/public;
+    index index.php index.html;
+
+    access_log /var/log/nginx/phparm_access.log;
+    error_log /var/log/nginx/phparm_error.log;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}
+EOF
+
+    ln -sf /etc/nginx/sites-available/phparm /etc/nginx/sites-enabled/phparm
+    nginx -t
+    systemctl reload nginx
+
+    print_status "NGINX server block configured"
 }
 
 # ============================================
@@ -726,7 +852,11 @@ configure_firewall() {
     ufw allow ssh
 
     # Allow HTTP and HTTPS
-    ufw allow 'Apache Full'
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        ufw allow 'Apache Full'
+    else
+        ufw allow 'Nginx Full'
+    fi
 
     # Enable UFW
     echo "y" | ufw enable
@@ -748,15 +878,28 @@ install_ssl() {
     print_header "Installing SSL Certificate"
 
     # Install Certbot
-    apt-get install -y certbot python3-certbot-apache
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        apt-get install -y certbot python3-certbot-apache
+    else
+        apt-get install -y certbot python3-certbot-nginx
+    fi
 
     # Obtain certificate
-    certbot --apache \
-        --non-interactive \
-        --agree-tos \
-        --email "${ADMIN_EMAIL:-admin@${DOMAIN}}" \
-        -d "$DOMAIN" \
-        --redirect
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        certbot --apache \
+            --non-interactive \
+            --agree-tos \
+            --email "${ADMIN_EMAIL:-admin@${DOMAIN}}" \
+            -d "$DOMAIN" \
+            --redirect
+    else
+        certbot --nginx \
+            --non-interactive \
+            --agree-tos \
+            --email "${ADMIN_EMAIL:-admin@${DOMAIN}}" \
+            -d "$DOMAIN" \
+            --redirect
+    fi
 
     # Setup auto-renewal
     systemctl enable certbot.timer
@@ -854,7 +997,11 @@ print_summary() {
     echo -e "  Installation:  ${INSTALL_DIR}"
     echo -e "  Credentials:   /var/www/.user"
     echo -e "  Environment:   ${INSTALL_DIR}/.env"
-    echo -e "  Apache Config: /etc/apache2/sites-available/phparm.conf"
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        echo -e "  Apache Config: /etc/apache2/sites-available/phparm.conf"
+    else
+        echo -e "  NGINX Config:  /etc/nginx/sites-available/phparm"
+    fi
     echo ""
     echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
     echo -e "${YELLOW}║  IMPORTANT: Save the credentials above in a secure place! ║${NC}"
@@ -870,7 +1017,12 @@ print_summary() {
     echo -e "${BOLD}Maintenance Commands:${NC}"
     echo "  Upgrade database:  cd ${INSTALL_DIR} && php upgrade.php"
     echo "  View logs:         tail -f ${INSTALL_DIR}/storage/logs/*.log"
-    echo "  Restart Apache:    systemctl restart apache2"
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        echo "  Restart Apache:    systemctl restart apache2"
+    else
+        echo "  Restart NGINX:     systemctl restart nginx"
+        echo "  Restart PHP-FPM:   systemctl restart php${PHP_VERSION}-fpm"
+    fi
     echo ""
 }
 
@@ -899,7 +1051,11 @@ main() {
 
     # Installation steps
     update_system
-    install_apache
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        install_apache
+    else
+        install_nginx
+    fi
     install_php
     install_mariadb
     install_nodejs
@@ -909,7 +1065,11 @@ main() {
     configure_environment
     install_database
     create_admin_user
-    configure_apache
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        configure_apache
+    else
+        configure_nginx
+    fi
     set_permissions
     configure_firewall
     install_ssl
@@ -917,7 +1077,12 @@ main() {
     setup_cron
 
     # Final restart
-    systemctl restart apache2
+    if [[ "$WEB_SERVER" == "apache" ]]; then
+        systemctl restart apache2
+    else
+        systemctl restart php${PHP_VERSION}-fpm
+        systemctl restart nginx
+    fi
 
     # Show summary
     print_summary
