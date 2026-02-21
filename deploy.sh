@@ -13,8 +13,8 @@ fi
 # Designed for Ubuntu 22.04/24.04 LTS on Linode, DigitalOcean, or similar VPS.
 #
 # Features:
-#   - Installs all dependencies (Apache, PHP 8.2+, MariaDB, Node.js, Composer)
-#   - Configures Apache virtual host with security headers
+#   - Installs all dependencies (Apache OR Nginx, PHP 8.4, MariaDB, Node.js, Composer)
+#   - Configures chosen web server with security headers
 #   - Sets up MariaDB with secure installation
 #   - Configures UFW firewall
 #   - Optional SSL via Let's Encrypt
@@ -26,12 +26,13 @@ fi
 #   sudo ./deploy.sh
 #
 # Options:
-#   --domain=example.com     Set the domain name
-#   --email=admin@example.com Set admin email for SSL certificates
-#   --skip-ssl               Skip SSL certificate installation
-#   --skip-firewall          Skip firewall configuration
-#   --branch=main            Git branch to deploy (default: main)
-#   --repo=URL               Git repository URL
+#   --webserver=apache|nginx  Choose webserver (default: apache)
+#   --domain=example.com      Set the domain name
+#   --email=admin@example.com Admin email for SSL certificates
+#   --skip-ssl                Skip SSL certificate installation
+#   --skip-firewall           Skip firewall configuration
+#   --branch=main             Git branch to deploy (default: main)
+#   --repo=URL                Git repository URL
 #
 #===============================================================================
 
@@ -53,7 +54,6 @@ NC='\033[0m' # No Color
 INSTALL_DIR="/var/www/phparm"
 WEB_USER="www-data"
 WEB_GROUP="www-data"
-PHP_VERSION="8.2"
 NODE_VERSION="20"
 DOMAIN=""
 ADMIN_EMAIL=""
@@ -61,10 +61,11 @@ SKIP_SSL=false
 SKIP_FIREWALL=false
 GIT_BRANCH="main"
 GIT_REPO=""
+WEBSERVER="apache"   # apache|nginx
 
-# Generated values
-DB_NAME="phparm"
-DB_USER="phparm_user"
+# Generated values (runtime)
+DB_NAME=""
+DB_USER=""
 DB_PASS=""
 ADMIN_PASSWORD=""
 JWT_SECRET=""
@@ -79,21 +80,10 @@ print_header() {
     echo -e "${BOLD}${CYAN}════════════════════════════════════════════${NC}\n"
 }
 
-print_status() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}✗${NC} $1"
-}
-
-print_info() {
-    echo -e "${CYAN}→${NC} $1"
-}
+print_status() { echo -e "${GREEN}✓${NC} $1"; }
+print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${CYAN}→${NC} $1"; }
 
 generate_password() {
     local length=${1:-16}
@@ -103,15 +93,36 @@ generate_password() {
 generate_secret() {
     local length=${1:-64}
     local secret=""
-
-    # JWT service enforces entropy heuristics beyond simple length checks.
-    # Use a mixed alphanumeric charset and enough characters to avoid false
-    # negatives from character-diversity checks.
     while [[ ${#secret} -lt $length ]]; do
         secret+=$(openssl rand -base64 96 | tr -dc 'A-Za-z0-9')
     done
-
     printf '%s' "${secret:0:$length}"
+}
+
+# Generate safe MariaDB identifiers (db name <=64 chars, user <=32 chars)
+generate_db_identifiers() {
+    local suffix
+    suffix="$(openssl rand -hex 3)" # 6 chars
+    DB_NAME="phparm_${suffix}"
+    DB_USER="phparm_u_${suffix}"
+    DB_NAME="${DB_NAME:0:64}"
+    DB_USER="${DB_USER:0:32}"
+}
+
+restart_webserver() {
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        systemctl restart nginx
+    else
+        systemctl restart apache2
+    fi
+}
+
+reload_webserver() {
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        systemctl reload nginx
+    else
+        systemctl reload apache2
+    fi
 }
 
 check_root() {
@@ -139,6 +150,13 @@ check_os() {
     fi
 }
 
+validate_webserver_choice() {
+    if [[ "$WEBSERVER" != "apache" && "$WEBSERVER" != "nginx" ]]; then
+        print_error "Invalid --webserver value: ${WEBSERVER}. Use apache or nginx."
+        exit 1
+    fi
+}
+
 # ============================================
 # Parse Command Line Arguments
 # ============================================
@@ -146,6 +164,9 @@ check_os() {
 parse_arguments() {
     for arg in "$@"; do
         case $arg in
+            --webserver=*)
+                WEBSERVER="${arg#*=}"
+                ;;
             --domain=*)
                 DOMAIN="${arg#*=}"
                 ;;
@@ -181,13 +202,14 @@ show_help() {
     echo "Usage: sudo ./deploy.sh [options]"
     echo ""
     echo "Options:"
-    echo "  --domain=DOMAIN        Set the domain name (e.g., phparm.example.com)"
-    echo "  --email=EMAIL          Admin email for SSL certificates"
-    echo "  --skip-ssl             Skip Let's Encrypt SSL installation"
-    echo "  --skip-firewall        Skip UFW firewall configuration"
-    echo "  --branch=BRANCH        Git branch to deploy (default: main)"
-    echo "  --repo=URL             Git repository URL to clone"
-    echo "  --help                 Show this help message"
+    echo "  --webserver=apache|nginx Choose webserver (default: apache)"
+    echo "  --domain=DOMAIN          Set the domain name (e.g., phparm.example.com)"
+    echo "  --email=EMAIL            Admin email for SSL certificates"
+    echo "  --skip-ssl               Skip Let's Encrypt SSL installation"
+    echo "  --skip-firewall          Skip UFW firewall configuration"
+    echo "  --branch=BRANCH          Git branch to deploy (default: main)"
+    echo "  --repo=URL               Git repository URL to clone"
+    echo "  --help                   Show this help message"
 }
 
 # ============================================
@@ -197,17 +219,18 @@ show_help() {
 interactive_setup() {
     print_header "Interactive Setup"
 
-    # Domain
+    if [[ -z "$WEBSERVER" ]]; then
+        WEBSERVER="apache"
+    fi
+
     if [[ -z "$DOMAIN" ]]; then
         read -p "Enter domain name (or press Enter for IP-based access): " DOMAIN
     fi
 
-    # Admin email
     if [[ -z "$ADMIN_EMAIL" ]]; then
         read -p "Enter admin email address: " ADMIN_EMAIL
     fi
 
-    # SSL
     if [[ -n "$DOMAIN" && "$SKIP_SSL" == false ]]; then
         read -p "Install SSL certificate via Let's Encrypt? [Y/n]: " ssl_choice
         if [[ "$ssl_choice" =~ ^[Nn]$ ]]; then
@@ -215,7 +238,6 @@ interactive_setup() {
         fi
     fi
 
-    # Git repo
     if [[ -z "$GIT_REPO" ]]; then
         read -p "Git repository URL (or press Enter to skip git clone): " GIT_REPO
     fi
@@ -236,7 +258,92 @@ update_system() {
 }
 
 # ============================================
-# Install Apache
+# Install PHP 8.4 (and webserver-specific PHP integration)
+# ============================================
+
+install_php() {
+    print_header "Installing PHP 8.4"
+
+    add-apt-repository -y ppa:ondrej/php
+    apt-get update -y
+
+    # Remove any older PHP packages if present (best-effort)
+    apt-get purge -y 'php7.*' 'php8.0*' 'php8.1*' 'php8.2*' 'php8.3*' 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        # Nginx uses PHP-FPM
+        apt-get install -y \
+            php8.4 \
+            php8.4-fpm \
+            php8.4-cli \
+            php8.4-common \
+            php8.4-mysql \
+            php8.4-pdo \
+            php8.4-mbstring \
+            php8.4-xml \
+            php8.4-curl \
+            php8.4-zip \
+            php8.4-gd \
+            php8.4-bcmath \
+            php8.4-intl \
+            php8.4-opcache \
+            php8.4-readline
+
+        systemctl enable php8.4-fpm
+        systemctl start php8.4-fpm
+
+        PHP_INI="/etc/php/8.4/fpm/php.ini"
+    else
+        # Apache uses mod_php here (keeps your existing behavior)
+        apt-get install -y \
+            php8.4 \
+            php8.4-cli \
+            php8.4-common \
+            php8.4-mysql \
+            php8.4-pdo \
+            php8.4-mbstring \
+            php8.4-xml \
+            php8.4-curl \
+            php8.4-zip \
+            php8.4-gd \
+            php8.4-bcmath \
+            php8.4-intl \
+            php8.4-opcache \
+            php8.4-readline \
+            libapache2-mod-php8.4
+
+        a2enmod php8.4 || true
+        PHP_INI="/etc/php/8.4/apache2/php.ini"
+    fi
+
+    # Configure PHP INI
+    sed -i 's/upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_INI"
+    sed -i 's/post_max_size = .*/post_max_size = 64M/' "$PHP_INI"
+    sed -i 's/memory_limit = .*/memory_limit = 256M/' "$PHP_INI"
+    sed -i 's/max_execution_time = .*/max_execution_time = 300/' "$PHP_INI"
+    sed -i 's/;date.timezone =.*/date.timezone = UTC/' "$PHP_INI"
+    sed -i 's/expose_php = .*/expose_php = Off/' "$PHP_INI"
+
+    cat > /etc/php/8.4/mods-available/opcache-custom.ini << 'EOF'
+opcache.enable=1
+opcache.memory_consumption=128
+opcache.interned_strings_buffer=8
+opcache.max_accelerated_files=10000
+opcache.revalidate_freq=2
+opcache.save_comments=1
+EOF
+
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        systemctl restart php8.4-fpm
+    fi
+
+    php -v | head -n 1
+    print_status "PHP 8.4 installed and configured"
+}
+
+# ============================================
+# Install Apache (optional)
 # ============================================
 
 install_apache() {
@@ -244,17 +351,14 @@ install_apache() {
 
     apt-get install -y apache2
 
-    # Enable required modules
     a2enmod rewrite
     a2enmod headers
     a2enmod ssl
     a2enmod expires
     a2enmod deflate
 
-    # Disable default site
     a2dissite 000-default.conf 2>/dev/null || true
 
-    # Security hardening
     cat > /etc/apache2/conf-available/security-hardening.conf << 'EOF'
 # Security Headers
 ServerTokens Prod
@@ -278,345 +382,33 @@ EOF
 }
 
 # ============================================
-# Install PHP
+# Install Nginx (optional)
 # ============================================
 
-install_php() {
-    print_header "Installing PHP ${PHP_VERSION}"
+install_nginx() {
+    print_header "Installing Nginx Web Server"
 
-    # Add PHP repository
-    add-apt-repository -y ppa:ondrej/php
+    apt-get install -y nginx
 
-    apt-get update -y
-
-    # Install PHP and extensions
-    apt-get install -y \
-        php${PHP_VERSION} \
-        php${PHP_VERSION}-fpm \
-        php${PHP_VERSION}-cli \
-        php${PHP_VERSION}-common \
-        php${PHP_VERSION}-mysql \
-        php${PHP_VERSION}-pdo \
-        php${PHP_VERSION}-mbstring \
-        php${PHP_VERSION}-xml \
-        php${PHP_VERSION}-curl \
-        php${PHP_VERSION}-zip \
-        php${PHP_VERSION}-gd \
-        php${PHP_VERSION}-bcmath \
-        php${PHP_VERSION}-intl \
-        php${PHP_VERSION}-opcache \
-        php${PHP_VERSION}-readline \
-        libapache2-mod-php${PHP_VERSION}
-
-    # Ensure PHP is enabled in Apache
-    a2enmod php${PHP_VERSION}
-
-    # Configure PHP
-    PHP_INI="/etc/php/${PHP_VERSION}/apache2/php.ini"
-
-    sed -i 's/upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_INI"
-    sed -i 's/post_max_size = .*/post_max_size = 64M/' "$PHP_INI"
-    sed -i 's/memory_limit = .*/memory_limit = 256M/' "$PHP_INI"
-    sed -i 's/max_execution_time = .*/max_execution_time = 300/' "$PHP_INI"
-    sed -i 's/;date.timezone =.*/date.timezone = UTC/' "$PHP_INI"
-    sed -i 's/expose_php = .*/expose_php = Off/' "$PHP_INI"
-
-    # Enable OPcache
-    cat > /etc/php/${PHP_VERSION}/mods-available/opcache-custom.ini << 'EOF'
-opcache.enable=1
-opcache.memory_consumption=128
-opcache.interned_strings_buffer=8
-opcache.max_accelerated_files=10000
-opcache.revalidate_freq=2
-opcache.save_comments=1
+    # Basic hardening defaults
+    cat > /etc/nginx/snippets/phparm-security.conf << 'EOF'
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-XSS-Protection "1; mode=block" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 EOF
 
-    systemctl restart apache2
+    systemctl enable nginx
+    systemctl start nginx
 
-    print_status "PHP ${PHP_VERSION} installed and configured"
-}
-
-# ============================================
-# Install MariaDB
-# ============================================
-
-install_mariadb() {
-    print_header "Installing MariaDB"
-
-    apt-get install -y mariadb-server mariadb-client
-
-    systemctl enable mariadb
-    systemctl start mariadb
-
-    # Generate database password
-    DB_PASS=$(generate_password 24)
-
-    # Secure MariaDB installation
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-    mysql -u root -p"${DB_PASS}" << EOF
-DELETE FROM mysql.user WHERE User='';
-DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
-DROP DATABASE IF EXISTS test;
-DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
-FLUSH PRIVILEGES;
-EOF
-
-    # Create application database and user
-    mysql -u root -p"${DB_PASS}" << EOF
-CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-EOF
-
-    print_status "MariaDB installed and configured"
-    print_info "Database: ${DB_NAME}"
-    print_info "Username: ${DB_USER}"
-}
-
-# ============================================
-# Install Node.js
-# ============================================
-
-install_nodejs() {
-    print_header "Installing Node.js ${NODE_VERSION}"
-
-    # Install Node.js from NodeSource
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
-    apt-get install -y nodejs
-
-    # Verify installation
-    node_version=$(node -v)
-    npm_version=$(npm -v)
-
-    print_status "Node.js ${node_version} installed"
-    print_status "npm ${npm_version} installed"
-}
-
-# ============================================
-# Install Composer
-# ============================================
-
-install_composer() {
-    print_header "Installing Composer"
-
-    EXPECTED_CHECKSUM="$(php -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
-    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-    ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
-
-    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
-        print_error "Composer installer signature mismatch"
-        rm composer-setup.php
-        exit 1
-    fi
-
-    php composer-setup.php --install-dir=/usr/local/bin --filename=composer
-    rm composer-setup.php
-
-    # Verify installation
-    composer_version=$(composer --version)
-    print_status "Composer installed: ${composer_version}"
-}
-
-# ============================================
-# Install Additional Tools
-# ============================================
-
-install_tools() {
-    print_header "Installing Additional Tools"
-
-    apt-get install -y \
-        git \
-        unzip \
-        acl \
-        supervisor \
-        cron
-
-    print_status "Additional tools installed"
-}
-
-# ============================================
-# Deploy Application
-# ============================================
-
-deploy_application() {
-    print_header "Deploying PHPArm Application"
-
-    # Create installation directory
-    mkdir -p "$INSTALL_DIR"
-
-    if [[ -n "$GIT_REPO" ]]; then
-        # Clone from repository
-        print_info "Cloning from ${GIT_REPO}..."
-        git clone --branch "$GIT_BRANCH" "$GIT_REPO" "$INSTALL_DIR"
-    else
-        # Check if files exist in current directory
-        if [[ -f "./composer.json" ]]; then
-            print_info "Copying files from current directory..."
-            cp -r ./* "$INSTALL_DIR/"
-            cp -r ./.env.example "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r ./.gitignore "$INSTALL_DIR/" 2>/dev/null || true
-        else
-            print_warning "No git repo specified and no local files found."
-            print_info "Please manually copy your application files to ${INSTALL_DIR}"
-        fi
-    fi
-
-    cd "$INSTALL_DIR"
-
-    # Install PHP dependencies
-    if [[ -f "composer.json" ]]; then
-        print_info "Installing PHP dependencies..."
-        composer install --no-dev --optimize-autoloader --no-interaction
-        print_status "PHP dependencies installed"
-    fi
-
-    # Install Node dependencies and build
-    if [[ -f "package.json" ]]; then
-        print_info "Installing Node.js dependencies..."
-        npm ci --production=false
-        print_status "Node.js dependencies installed"
-
-        print_info "Building frontend assets..."
-        npm run build
-        print_status "Frontend assets built"
-    fi
-
-    print_status "Application deployed to ${INSTALL_DIR}"
-}
-
-# ============================================
-# Configure Environment
-# ============================================
-
-configure_environment() {
-    print_header "Configuring Environment"
-
-    cd "$INSTALL_DIR"
-
-    # Generate secrets
-    JWT_SECRET=$(generate_secret)
-    ADMIN_PASSWORD=$(generate_password 16)
-
-    # Create .env from template
-    if [[ -f ".env.example" ]]; then
-        cp .env.example .env
-
-        # Update .env values
-        sed -i "s|APP_ENV=.*|APP_ENV=production|" .env
-        sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|" .env
-        sed -i "s|APP_URL=.*|APP_URL=https://${DOMAIN:-localhost}|" .env
-
-        sed -i "s|DB_HOST=.*|DB_HOST=localhost|" .env
-        sed -i "s|DB_PORT=.*|DB_PORT=3306|" .env
-        sed -i "s|DB_DATABASE=.*|DB_DATABASE=${DB_NAME}|" .env
-        sed -i "s|DB_USERNAME=.*|DB_USERNAME=${DB_USER}|" .env
-        sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" .env
-
-        sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env
-
-        # Set file permissions
-        chmod 600 .env
-
-        print_status ".env file configured"
-    else
-        print_error ".env.example not found!"
-    fi
-}
-
-# ============================================
-# Install Database Schema
-# ============================================
-
-install_database() {
-    print_header "Installing Database Schema"
-
-    cd "$INSTALL_DIR"
-
-    if [[ -f "database/install/install.sql" ]]; then
-        print_info "Running database installation..."
-
-        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < database/install/install.sql 2>/dev/null || true
-
-        # Create migrations tracking table
-        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOF'
-CREATE TABLE IF NOT EXISTS migrations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    migration VARCHAR(255) NOT NULL UNIQUE,
-    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-EOF
-
-        # Mark all migrations as executed
-        for file in database/migrations/*.sql; do
-            if [[ -f "$file" ]]; then
-                migration_name=$(basename "$file")
-                mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e \
-                    "INSERT IGNORE INTO migrations (migration) VALUES ('${migration_name}');" 2>/dev/null || true
-            fi
-        done
-
-        print_status "Database schema installed"
-    elif [[ -f "install_db.php" ]]; then
-        print_info "Running install_db.php..."
-        php install_db.php --force
-        print_status "Database installed via install_db.php"
-    else
-        print_warning "No install.sql found. Database must be installed manually."
-    fi
-}
-
-# ============================================
-# Create Admin User
-# ============================================
-
-create_admin_user() {
-    print_header "Creating Admin User"
-
-    cd "$INSTALL_DIR"
-
-    # Hash password using PHP
-    HASHED_PASSWORD=$(php -r "echo password_hash('${ADMIN_PASSWORD}', PASSWORD_BCRYPT, ['cost' => 12]);")
-
-    # Insert admin user
-    mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << EOF
-INSERT INTO users (name, email, password, role, active, email_verified, created_at, updated_at)
-VALUES ('Administrator', '${ADMIN_EMAIL:-admin@localhost}', '${HASHED_PASSWORD}', 'admin', 1, 1, NOW(), NOW())
-ON DUPLICATE KEY UPDATE
-    password = '${HASHED_PASSWORD}',
-    role = 'admin',
-    active = 1,
-    updated_at = NOW();
-EOF
-
-    print_status "Admin user created"
-
-    # Save credentials to file
-    cat > /var/www/.user << EOF
-PHPArm Admin Credentials
-========================
-Generated: $(date)
-
-URL: https://${DOMAIN:-localhost}
-Email: ${ADMIN_EMAIL:-admin@localhost}
-Password: ${ADMIN_PASSWORD}
-
-Database:
-  Host: localhost
-  Name: ${DB_NAME}
-  User: ${DB_USER}
-  Password: ${DB_PASS}
-EOF
-
-    chmod 600 /var/www/.user
-    print_status "Credentials saved to /var/www/.user"
+    print_status "Nginx installed and configured"
 }
 
 # ============================================
 # Configure Apache Virtual Host
 # ============================================
 
-configure_apache() {
+configure_apache_vhost() {
     print_header "Configuring Apache Virtual Host"
 
     SERVER_NAME="${DOMAIN:-$(hostname -I | awk '{print $1}')}"
@@ -674,6 +466,322 @@ EOF
 }
 
 # ============================================
+# Configure Nginx Site
+# ============================================
+
+configure_nginx_site() {
+    print_header "Configuring Nginx Site"
+
+    SERVER_NAME="${DOMAIN:-_}" # nginx "_" wildcard if no domain provided
+
+    # Remove default site
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+
+    cat > /etc/nginx/sites-available/phparm << EOF
+server {
+    listen 80;
+    server_name ${SERVER_NAME};
+
+    root ${INSTALL_DIR}/public;
+    index index.php index.html;
+
+    include /etc/nginx/snippets/phparm-security.conf;
+
+    access_log /var/log/nginx/phparm_access.log;
+    error_log  /var/log/nginx/phparm_error.log;
+
+    # Serve static files directly
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    # PHP via PHP-FPM (8.4)
+    location ~ \.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    # Deny access to hidden files (except .well-known for certbot)
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+
+    # Cache common static assets
+    location ~* \.(?:css|js|jpg|jpeg|png|gif|svg|ico|woff2?)\$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000";
+        try_files \$uri =404;
+    }
+}
+EOF
+
+    ln -sf /etc/nginx/sites-available/phparm /etc/nginx/sites-enabled/phparm
+
+    nginx -t
+    systemctl reload nginx
+
+    print_status "Nginx site configured"
+}
+
+# ============================================
+# Install MariaDB
+# ============================================
+
+install_mariadb() {
+    print_header "Installing MariaDB"
+
+    apt-get install -y mariadb-server mariadb-client
+
+    systemctl enable mariadb
+    systemctl start mariadb
+
+    DB_PASS=$(generate_password 24)
+
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+    mysql -u root -p"${DB_PASS}" << EOF
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+FLUSH PRIVILEGES;
+EOF
+
+    mysql -u root -p"${DB_PASS}" << EOF
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+
+    print_status "MariaDB installed and configured"
+    print_info "Database: ${DB_NAME}"
+    print_info "Username: ${DB_USER}"
+}
+
+# ============================================
+# Install Node.js
+# ============================================
+
+install_nodejs() {
+    print_header "Installing Node.js ${NODE_VERSION}"
+
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
+    apt-get install -y nodejs
+
+    node_version=$(node -v)
+    npm_version=$(npm -v)
+
+    print_status "Node.js ${node_version} installed"
+    print_status "npm ${npm_version} installed"
+}
+
+# ============================================
+# Install Composer
+# ============================================
+
+install_composer() {
+    print_header "Installing Composer"
+
+    EXPECTED_CHECKSUM="$(php -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+
+    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+        print_error "Composer installer signature mismatch"
+        rm composer-setup.php
+        exit 1
+    fi
+
+    php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+    rm composer-setup.php
+
+    composer_version=$(composer --version)
+    print_status "Composer installed: ${composer_version}"
+}
+
+# ============================================
+# Install Additional Tools
+# ============================================
+
+install_tools() {
+    print_header "Installing Additional Tools"
+
+    apt-get install -y \
+        git \
+        unzip \
+        acl \
+        supervisor \
+        cron
+
+    print_status "Additional tools installed"
+}
+
+# ============================================
+# Deploy Application
+# ============================================
+
+deploy_application() {
+    print_header "Deploying PHPArm Application"
+
+    mkdir -p "$INSTALL_DIR"
+
+    if [[ -n "$GIT_REPO" ]]; then
+        print_info "Cloning from ${GIT_REPO}..."
+        git clone --branch "$GIT_BRANCH" "$GIT_REPO" "$INSTALL_DIR"
+    else
+        if [[ -f "./composer.json" ]]; then
+            print_info "Copying files from current directory..."
+            cp -r ./* "$INSTALL_DIR/"
+            cp -r ./.env.example "$INSTALL_DIR/" 2>/dev/null || true
+            cp -r ./.gitignore "$INSTALL_DIR/" 2>/dev/null || true
+        else
+            print_warning "No git repo specified and no local files found."
+            print_info "Please manually copy your application files to ${INSTALL_DIR}"
+        fi
+    fi
+
+    cd "$INSTALL_DIR"
+
+    if [[ -f "composer.json" ]]; then
+        print_info "Installing PHP dependencies..."
+        composer install --no-dev --optimize-autoloader --no-interaction
+        print_status "PHP dependencies installed"
+    fi
+
+    if [[ -f "package.json" ]]; then
+        print_info "Installing Node.js dependencies..."
+        npm ci --production=false
+        print_status "Node.js dependencies installed"
+
+        print_info "Building frontend assets..."
+        npm run build
+        print_status "Frontend assets built"
+    fi
+
+    print_status "Application deployed to ${INSTALL_DIR}"
+}
+
+# ============================================
+# Configure Environment
+# ============================================
+
+configure_environment() {
+    print_header "Configuring Environment"
+
+    cd "$INSTALL_DIR"
+
+    JWT_SECRET=$(generate_secret)
+    ADMIN_PASSWORD=$(generate_password 16)
+
+    if [[ -f ".env.example" ]]; then
+        cp .env.example .env
+
+        sed -i "s|APP_ENV=.*|APP_ENV=production|" .env
+        sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|" .env
+        sed -i "s|APP_URL=.*|APP_URL=https://${DOMAIN:-localhost}|" .env
+
+        sed -i "s|DB_HOST=.*|DB_HOST=localhost|" .env
+        sed -i "s|DB_PORT=.*|DB_PORT=3306|" .env
+        sed -i "s|DB_DATABASE=.*|DB_DATABASE=${DB_NAME}|" .env
+        sed -i "s|DB_USERNAME=.*|DB_USERNAME=${DB_USER}|" .env
+        sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" .env
+
+        sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env
+
+        chmod 600 .env
+        print_status ".env file configured"
+    else
+        print_error ".env.example not found!"
+    fi
+}
+
+# ============================================
+# Install Database Schema
+# ============================================
+
+install_database() {
+    print_header "Installing Database Schema"
+
+    cd "$INSTALL_DIR"
+
+    if [[ -f "database/install/install.sql" ]]; then
+        print_info "Running database installation..."
+        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < database/install/install.sql 2>/dev/null || true
+
+        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOF'
+CREATE TABLE IF NOT EXISTS migrations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    migration VARCHAR(255) NOT NULL UNIQUE,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+EOF
+
+        for file in database/migrations/*.sql; do
+            if [[ -f "$file" ]]; then
+                migration_name=$(basename "$file")
+                mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e \
+                    "INSERT IGNORE INTO migrations (migration) VALUES ('${migration_name}');" 2>/dev/null || true
+            fi
+        done
+
+        print_status "Database schema installed"
+    elif [[ -f "install_db.php" ]]; then
+        print_info "Running install_db.php..."
+        php install_db.php --force
+        print_status "Database installed via install_db.php"
+    else
+        print_warning "No install.sql found. Database must be installed manually."
+    fi
+}
+
+# ============================================
+# Create Admin User
+# ============================================
+
+create_admin_user() {
+    print_header "Creating Admin User"
+
+    cd "$INSTALL_DIR"
+
+    HASHED_PASSWORD=$(php -r "echo password_hash('${ADMIN_PASSWORD}', PASSWORD_BCRYPT, ['cost' => 12]);")
+
+    mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << EOF
+INSERT INTO users (name, email, password, role, active, email_verified, created_at, updated_at)
+VALUES ('Administrator', '${ADMIN_EMAIL:-admin@localhost}', '${HASHED_PASSWORD}', 'admin', 1, 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+    password = '${HASHED_PASSWORD}',
+    role = 'admin',
+    active = 1,
+    updated_at = NOW();
+EOF
+
+    print_status "Admin user created"
+
+    cat > /var/www/.user << EOF
+PHPArm Admin Credentials
+========================
+Generated: $(date)
+
+URL: https://${DOMAIN:-localhost}
+Email: ${ADMIN_EMAIL:-admin@localhost}
+Password: ${ADMIN_PASSWORD}
+
+Webserver: ${WEBSERVER}
+
+Database:
+  Host: localhost
+  Name: ${DB_NAME}
+  User: ${DB_USER}
+  Password: ${DB_PASS}
+EOF
+
+    chmod 600 /var/www/.user
+    print_status "Credentials saved to /var/www/.user"
+}
+
+# ============================================
 # Set File Permissions
 # ============================================
 
@@ -682,32 +790,19 @@ set_permissions() {
 
     cd "$INSTALL_DIR"
 
-    # Set ownership
     chown -R "$WEB_USER:$WEB_GROUP" "$INSTALL_DIR"
-
-    # Set directory permissions
     find "$INSTALL_DIR" -type d -exec chmod 755 {} \;
-
-    # Set file permissions
     find "$INSTALL_DIR" -type f -exec chmod 644 {} \;
 
-    # Make scripts executable
     chmod +x "$INSTALL_DIR"/*.php 2>/dev/null || true
     chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null || true
 
-    # Secure sensitive files
     chmod 600 "$INSTALL_DIR/.env" 2>/dev/null || true
 
-    # Writable directories
-    mkdir -p "$INSTALL_DIR/storage"
-    mkdir -p "$INSTALL_DIR/storage/logs"
-    mkdir -p "$INSTALL_DIR/storage/uploads"
-    mkdir -p "$INSTALL_DIR/storage/cache"
-
+    mkdir -p "$INSTALL_DIR/storage/logs" "$INSTALL_DIR/storage/uploads" "$INSTALL_DIR/storage/cache"
     chmod -R 775 "$INSTALL_DIR/storage"
     chown -R "$WEB_USER:$WEB_GROUP" "$INSTALL_DIR/storage"
 
-    # Set ACL for storage directory
     setfacl -R -m u:${WEB_USER}:rwX "$INSTALL_DIR/storage" 2>/dev/null || true
     setfacl -R -d -m u:${WEB_USER}:rwX "$INSTALL_DIR/storage" 2>/dev/null || true
 
@@ -726,23 +821,14 @@ configure_firewall() {
 
     print_header "Configuring UFW Firewall"
 
-    # Install UFW if not present
     apt-get install -y ufw
-
-    # Reset UFW
     ufw --force reset
-
-    # Default policies
     ufw default deny incoming
     ufw default allow outgoing
-
-    # Allow SSH
     ufw allow ssh
+    ufw allow 80/tcp
+    ufw allow 443/tcp
 
-    # Allow HTTP and HTTPS
-    ufw allow 'Apache Full'
-
-    # Enable UFW
     echo "y" | ufw enable
 
     print_status "Firewall configured"
@@ -750,7 +836,7 @@ configure_firewall() {
 }
 
 # ============================================
-# Install SSL Certificate
+# Install SSL Certificate (Apache or Nginx)
 # ============================================
 
 install_ssl() {
@@ -761,18 +847,28 @@ install_ssl() {
 
     print_header "Installing SSL Certificate"
 
-    # Install Certbot
-    apt-get install -y certbot python3-certbot-apache
+    apt-get install -y certbot
 
-    # Obtain certificate
-    certbot --apache \
-        --non-interactive \
-        --agree-tos \
-        --email "${ADMIN_EMAIL:-admin@${DOMAIN}}" \
-        -d "$DOMAIN" \
-        --redirect
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        apt-get install -y python3-certbot-nginx
 
-    # Setup auto-renewal
+        certbot --nginx \
+            --non-interactive \
+            --agree-tos \
+            --email "${ADMIN_EMAIL:-admin@${DOMAIN}}" \
+            -d "$DOMAIN" \
+            --redirect
+    else
+        apt-get install -y python3-certbot-apache
+
+        certbot --apache \
+            --non-interactive \
+            --agree-tos \
+            --email "${ADMIN_EMAIL:-admin@${DOMAIN}}" \
+            -d "$DOMAIN" \
+            --redirect
+    fi
+
     systemctl enable certbot.timer
     systemctl start certbot.timer
 
@@ -809,23 +905,47 @@ EOF
 setup_cron() {
     print_header "Setting Up Scheduled Tasks"
 
-    # Create cron job for application scheduler (if exists)
     if [[ -f "${INSTALL_DIR}/cron.php" ]]; then
         (crontab -l 2>/dev/null; echo "* * * * * cd ${INSTALL_DIR} && php cron.php >> /dev/null 2>&1") | crontab -
         print_status "Cron job added for application scheduler"
     fi
 
-    # Backup cron (daily at 2 AM)
     cat > /etc/cron.d/phparm-backup << EOF
 0 2 * * * root mysqldump -u ${DB_USER} -p'${DB_PASS}' ${DB_NAME} | gzip > /var/backups/phparm_\$(date +\%Y\%m\%d).sql.gz
 EOF
 
     chmod 644 /etc/cron.d/phparm-backup
-
-    # Create backup directory
     mkdir -p /var/backups
 
     print_status "Scheduled tasks configured"
+}
+
+# ============================================
+# Webserver Install/Config Switch
+# ============================================
+
+install_webserver() {
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        # If apache is present, disable it to avoid port conflicts (best-effort)
+        systemctl stop apache2 2>/dev/null || true
+        systemctl disable apache2 2>/dev/null || true
+
+        install_nginx
+    else
+        # If nginx is present, disable it to avoid port conflicts (best-effort)
+        systemctl stop nginx 2>/dev/null || true
+        systemctl disable nginx 2>/dev/null || true
+
+        install_apache
+    fi
+}
+
+configure_webserver() {
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        configure_nginx_site
+    else
+        configure_apache_vhost
+    fi
 }
 
 # ============================================
@@ -853,6 +973,7 @@ print_summary() {
         echo -e "  URL:           ${CYAN}http://${DOMAIN:-$(hostname -I | awk '{print $1}')}${NC}"
     fi
 
+    echo -e "  Webserver:     ${CYAN}${WEBSERVER}${NC}"
     echo -e "  Admin Email:   ${CYAN}${ADMIN_EMAIL:-admin@localhost}${NC}"
     echo -e "  Admin Password: ${YELLOW}${ADMIN_PASSWORD}${NC}"
     echo ""
@@ -868,23 +989,25 @@ print_summary() {
     echo -e "  Installation:  ${INSTALL_DIR}"
     echo -e "  Credentials:   /var/www/.user"
     echo -e "  Environment:   ${INSTALL_DIR}/.env"
-    echo -e "  Apache Config: /etc/apache2/sites-available/phparm.conf"
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        echo -e "  Nginx Config:  /etc/nginx/sites-available/phparm"
+    else
+        echo -e "  Apache Config: /etc/apache2/sites-available/phparm.conf"
+    fi
     echo ""
     echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
     echo -e "${YELLOW}║  IMPORTANT: Save the credentials above in a secure place! ║${NC}"
     echo -e "${YELLOW}║  They are also saved in /var/www/.user                    ║${NC}"
     echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${BOLD}Next Steps:${NC}"
-    echo "  1. Login at the URL above with admin credentials"
-    echo "  2. Update business settings in the admin panel"
-    echo "  3. Configure email settings if needed"
-    echo "  4. Add additional users as needed"
-    echo ""
     echo -e "${BOLD}Maintenance Commands:${NC}"
-    echo "  Upgrade database:  cd ${INSTALL_DIR} && php upgrade.php"
     echo "  View logs:         tail -f ${INSTALL_DIR}/storage/logs/*.log"
-    echo "  Restart Apache:    systemctl restart apache2"
+    if [[ "$WEBSERVER" == "nginx" ]]; then
+        echo "  Restart Nginx:     systemctl restart nginx"
+        echo "  Restart PHP-FPM:   systemctl restart php8.4-fpm"
+    else
+        echo "  Restart Apache:    systemctl restart apache2"
+    fi
     echo ""
 }
 
@@ -901,41 +1024,44 @@ main() {
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 
-    # Pre-flight checks
     check_root
     check_os
 
-    # Parse command line arguments
     parse_arguments "$@"
-
-    # Interactive setup if needed
+    validate_webserver_choice
     interactive_setup
 
-    # Installation steps
+    generate_db_identifiers
+    print_info "Generated database identifiers:"
+    print_info "  DB_NAME=${DB_NAME}"
+    print_info "  DB_USER=${DB_USER}"
+
     update_system
-    install_apache
+
+    # Install webserver first (so ports/modules are sane), then PHP
+    install_webserver
     install_php
+
     install_mariadb
     install_nodejs
     install_composer
     install_tools
+
     deploy_application
     configure_environment
     install_database
     create_admin_user
-    configure_apache
+
+    configure_webserver
     set_permissions
     configure_firewall
     install_ssl
     configure_logrotate
     setup_cron
 
-    # Final restart
-    systemctl restart apache2
+    restart_webserver
 
-    # Show summary
     print_summary
 }
 
-# Run main function
 main "$@"
