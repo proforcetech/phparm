@@ -129,7 +129,7 @@ return function (Router $router, array $config, $connection) {
             return $response;
         }
 
-        $indexPath = __DIR__ . '/../index.html';
+        $indexPath = __DIR__ . '/../dist/index.html';
         if (file_exists($indexPath)) {
             return Response::html(file_get_contents($indexPath));
         }
@@ -515,7 +515,7 @@ $router->get('/{path:.+}', function (Request $request) use ($isReservedPath, $pa
     }
 
     // Serve the SPA entry point
-    $indexPath = __DIR__ . '/../index.html'; // Adjust path if necessary to point to your public index.html
+    $indexPath = __DIR__ . '/../dist/index.html';
     if (file_exists($indexPath)) {
         return Response::html(file_get_contents($indexPath));
     }
