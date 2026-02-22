@@ -20,8 +20,10 @@ $isHealthCheck = $normalizedPath === '/health';
 if (!$isApiRequest && !$isHealthCheck) {
     $publicRoot = realpath(__DIR__);
     $assetPath = $publicRoot ? realpath($publicRoot . $requestUri) : false;
+    $extension = $assetPath ? pathinfo($assetPath, PATHINFO_EXTENSION) : '';
 
-    if ($publicRoot && $assetPath && str_starts_with($assetPath, $publicRoot) && is_file($assetPath)) {
+    // Do not allow the script to serve .php files as static assets
+    if ($publicRoot && $assetPath && str_starts_with($assetPath, $publicRoot) && is_file($assetPath) && $extension !== 'php') {
         $mimeType = mime_content_type($assetPath) ?: 'application/octet-stream';
         header('Content-Type: ' . $mimeType);
         readfile($assetPath);
