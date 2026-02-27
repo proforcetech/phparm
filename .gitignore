@@ -19,6 +19,8 @@ Thumbs.db
 # Logs
 *.log
 /storage/logs/
+/apps/mobile/.logs/
+/apps/mobile/.logs
 
 # Temporary files
 /tmp/
@@ -47,3 +49,6 @@ node_modules/
 
 # Frontend build output
 dist/
+/public/assets/
+/public/index.html
+/public/.vite/

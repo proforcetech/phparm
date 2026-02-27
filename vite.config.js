@@ -8,6 +8,7 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  publicDir: false,
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -37,13 +38,12 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
-    emptyOutDir: true,
+    outDir: 'public',
+    emptyOutDir: false,
     manifest: true,
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
-        react: path.resolve(__dirname, 'src/react/main.jsx'),
       },
     },
   },

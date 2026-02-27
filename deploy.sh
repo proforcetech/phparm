@@ -656,6 +656,7 @@ deploy_application() {
         print_status "Node.js dependencies installed"
 
         print_info "Building frontend assets..."
+        rm -rf "${INSTALL_DIR}/public/assets" "${INSTALL_DIR}/public/index.html" "${INSTALL_DIR}/public/.vite"
         npm run build
         print_status "Frontend assets built"
     fi

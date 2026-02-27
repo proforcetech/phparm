@@ -15,10 +15,5 @@ if ($uri !== '/' && file_exists(__DIR__.'/public'.$uri)) {
     return false;
 }
 
-// If the file exists in dist/ (built Vite assets), serve it directly.
-if ($uri !== '/' && file_exists(__DIR__.'/dist'.$uri)) {
-    return false;
-}
-
 // Otherwise, route through index.php
 require_once __DIR__.'/public/index.php';

@@ -19,23 +19,11 @@ $isHealthCheck = $normalizedPath === '/health';
 // Serve public assets directly if requested
 if (!$isApiRequest && !$isHealthCheck) {
     $publicRoot = realpath(__DIR__);
-    $distRoot = realpath(__DIR__ . '/../dist');
-
-    // Check public/ first, then dist/ for built Vite assets
-    $assetPath = false;
-    $assetRoot = false;
-
-    foreach (array_filter([$publicRoot, $distRoot]) as $root) {
-        $candidate = realpath($root . $requestUri);
-        if ($candidate && str_starts_with($candidate, $root) && is_file($candidate)) {
-            $assetPath = $candidate;
-            $assetRoot = $root;
-            break;
-        }
-    }
+    $assetPath = $publicRoot ? realpath($publicRoot . $requestUri) : false;
+    $extension = $assetPath ? pathinfo($assetPath, PATHINFO_EXTENSION) : '';
 
     // Do not allow the script to serve .php files as static assets
-    if ($assetPath && pathinfo($assetPath, PATHINFO_EXTENSION) !== 'php') {
+    if ($publicRoot && $assetPath && str_starts_with($assetPath, $publicRoot) && is_file($assetPath) && $extension !== 'php') {
         $mimeType = mime_content_type($assetPath) ?: 'application/octet-stream';
         header('Content-Type: ' . $mimeType);
         readfile($assetPath);
