@@ -707,33 +707,12 @@ install_database() {
 
     cd "$INSTALL_DIR"
 
-    if [[ -f "database/install/install.sql" ]]; then
-        print_info "Running database installation..."
-        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < database/install/install.sql 2>/dev/null || true
-
-        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOF'
-CREATE TABLE IF NOT EXISTS migrations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    migration VARCHAR(255) NOT NULL UNIQUE,
-    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-EOF
-
-        for file in database/migrations/*.sql; do
-            if [[ -f "$file" ]]; then
-                migration_name=$(basename "$file")
-                mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e \
-                    "INSERT IGNORE INTO migrations (migration) VALUES ('${migration_name}');" 2>/dev/null || true
-            fi
-        done
-
-        print_status "Database schema installed"
-    elif [[ -f "install_db.php" ]]; then
-        print_info "Running install_db.php..."
+    if [[ -f "install_db.php" ]]; then
+        print_info "Running database installation via install_db.php..."
         php install_db.php --force
-        print_status "Database installed via install_db.php"
+        print_status "Database schema installed"
     else
-        print_warning "No install.sql found. Database must be installed manually."
+        print_warning "install_db.php not found. Database must be installed manually."
     fi
 }
 
