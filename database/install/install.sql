@@ -268,11 +268,11 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 CREATE TABLE IF NOT EXISTS payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
-    gateway VARCHAR(40) NOT NULL,
+    gateway VARCHAR(40) NULL,
     method VARCHAR(40) NULL,
     transaction_id VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
-    reference VARCHAR(40) NULL,
+    reference VARCHAR(255) NULL,
     status VARCHAR(40) NOT NULL,
     metadata JSON NULL,
     paid_at DATETIME NOT NULL,
@@ -867,6 +867,33 @@ CREATE TABLE IF NOT EXISTS refunds (
     CONSTRAINT fk_refund_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS payment_webhook_events (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    provider VARCHAR(40) NOT NULL,
+    provider_event_id VARCHAR(191) NULL,
+    dedupe_key VARCHAR(191) NOT NULL,
+    event_type VARCHAR(120) NOT NULL,
+    invoice_id INT UNSIGNED NULL,
+    transaction_id VARCHAR(191) NULL,
+    refund_id VARCHAR(191) NULL,
+    payment_id VARCHAR(191) NULL,
+    session_id VARCHAR(191) NULL,
+    order_id VARCHAR(191) NULL,
+    status VARCHAR(40) NOT NULL DEFAULT 'unmatched',
+    payload JSON NOT NULL,
+    attempts INT UNSIGNED NOT NULL DEFAULT 1,
+    matched_at TIMESTAMP NULL,
+    processed_at TIMESTAMP NULL,
+    recovered_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_payment_webhook_events_dedupe (dedupe_key),
+    INDEX idx_payment_webhook_events_provider_status (provider, status),
+    INDEX idx_payment_webhook_events_invoice (invoice_id),
+    INDEX idx_payment_webhook_events_provider_event (provider, provider_event_id),
+    CONSTRAINT fk_payment_webhook_events_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- CMS content core tables
 
 CREATE TABLE IF NOT EXISTS cms_menus (
@@ -1332,6 +1359,7 @@ CREATE TABLE IF NOT EXISTS workorder_status_history (
     client_event_id VARCHAR(64) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_workorder_status_history_workorder (workorder_id),
+    INDEX idx_workorder_status_history_workorder_status_created (workorder_id, to_status, created_at),
     UNIQUE INDEX idx_workorder_status_event (workorder_id, client_event_id),
     CONSTRAINT fk_workorder_status_history_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE CASCADE,
     CONSTRAINT fk_workorder_status_history_user FOREIGN KEY (changed_by) REFERENCES users (id)
@@ -3593,3 +3621,20 @@ WHERE te.ended_at IS NOT NULL
     AND te.flat_rate_minutes IS NOT NULL
     AND te.flat_rate_minutes > 0
 GROUP BY te.technician_id, u.name, DATE(te.started_at);
+
+-- Default published "home" CMS page so a fresh install renders something at /
+-- instead of returning 404. Operators can edit or replace this from /cp/cms/pages.
+INSERT INTO cms_pages (
+    title, slug, status, meta_title, meta_description, summary, content,
+    published_at, created_at, updated_at
+) VALUES (
+    'Welcome to PHPArm',
+    'home',
+    'published',
+    'Welcome to PHPArm',
+    'PHPArm is installed and ready. Sign in to configure your shop and customize this page.',
+    'PHPArm has been installed successfully.',
+    '<section style="max-width:720px;margin:6rem auto;padding:2.5rem;border-radius:14px;background:#11151b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;box-shadow:0 8px 30px rgba(0,0,0,0.35);"><h1 style="margin:0 0 0.5rem;font-size:2rem;letter-spacing:-0.01em;">Welcome to PHPArm</h1><p style="margin:0 0 1.5rem;color:#a4adba;">Your installation is up and running.</p><p>This is the default home page for your shop. To customize what visitors see here, <a href="/login" style="color:#60a5fa;text-decoration:none;font-weight:600;">log in</a> and edit it under <strong>Control Panel &rarr; CMS &rarr; Pages</strong>.</p><p style="color:#a4adba;font-size:0.9rem;margin-top:2rem;">You can also delete this page or change its slug to free up the <code style="background:#1d242d;padding:0.1rem 0.4rem;border-radius:4px;">/</code> route for a different home page.</p></section>',
+    NOW(), NOW(), NOW()
+)
+ON DUPLICATE KEY UPDATE id = id;
