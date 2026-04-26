@@ -195,8 +195,17 @@ class JwtService
 
     /**
      * Generate an access token for a user.
+     *
+     * Phase 6.1 of docs/expansion-plan.md — $extraClaims lets the isolated
+     * customer-portal flow stamp `scope='portal'` + `portal_account_id` +
+     * `company_id` into the JWT so the portal middleware can reject tokens
+     * that were issued for a different bounded context (and so the main
+     * auth middleware can reject portal tokens). Passing [] yields the
+     * original staff-only token shape for backwards-compat.
+     *
+     * @param array<string, mixed> $extraClaims
      */
-    public function generateToken(User $user): string
+    public function generateToken(User $user, array $extraClaims = []): string
     {
         $now = time();
         $payload = [
@@ -207,6 +216,12 @@ class JwtService
             'type' => 'access',
             'role' => $user->role,
         ];
+        foreach ($extraClaims as $key => $value) {
+            if (in_array($key, ['iss', 'sub', 'iat', 'exp', 'type'], true)) {
+                continue;
+            }
+            $payload[$key] = $value;
+        }
 
         return $this->encode($payload);
     }
@@ -326,6 +341,37 @@ class JwtService
         }
 
         return $this->findUserById((int) $userId);
+    }
+
+    /**
+     * Validate an access token and return BOTH the user and the decoded
+     * payload. Used by Phase 6.1 portal middleware to inspect scope
+     * claims (scope='portal', company_id, portal_account_id) after the
+     * token has already passed signature + type + expiration checks.
+     *
+     * @return array{user: User, payload: array<string, mixed>}|null
+     */
+    public function validateTokenWithPayload(string $token): ?array
+    {
+        $payload = $this->decode($token);
+        if ($payload === null) {
+            return null;
+        }
+        if (($payload['type'] ?? '') !== 'access') {
+            return null;
+        }
+        if (($payload['exp'] ?? 0) < time()) {
+            return null;
+        }
+        $userId = $payload['sub'] ?? null;
+        if ($userId === null) {
+            return null;
+        }
+        $user = $this->findUserById((int) $userId);
+        if ($user === null) {
+            return null;
+        }
+        return ['user' => $user, 'payload' => $payload];
     }
 
     /**

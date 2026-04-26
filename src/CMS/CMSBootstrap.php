@@ -67,6 +67,9 @@ class CMSBootstrap
         if (!defined('CMS_ASSETS')) {
             define('CMS_ASSETS', $this->config['paths']['assets']);
         }
+        if (!defined('CMS_ADMIN_PREFIX')) {
+            define('CMS_ADMIN_PREFIX', $this->config['routes']['admin_prefix'] ?? '/cp/cms');
+        }
     }
 
     /**
@@ -103,7 +106,6 @@ class CMSBootstrap
     private function initSession(): void
     {
         if (session_status() === PHP_SESSION_NONE) {
-            session_name($this->config['session']['name']);
             session_start();
         }
     }
@@ -130,7 +132,7 @@ class CMSBootstrap
              */
             function cms_admin_url(string $path = ''): string {
                 $baseUrl = rtrim(env('APP_URL', ''), '/');
-                return $baseUrl . '/cms/admin/' . ltrim($path, '/');
+                return $baseUrl . rtrim(CMS_ADMIN_PREFIX, '/') . '/' . ltrim($path, '/');
             }
         }
 

@@ -203,7 +203,7 @@ phparm/
 
 PHPArm ships with an integrated CMS for managing marketing pages and templates. Routes are mounted under `/cms`.
 
-- Admin portal: `http://localhost:8000/cms/admin`
+- Admin portal: `http://localhost:8000/cp/cms`
 - Public pages: `http://localhost:8000/cms/{slug}`
 
 For more details, see [docs/CMS_INTEGRATION.md](docs/CMS_INTEGRATION.md).

@@ -26,13 +26,14 @@ return [
 
     // URL routing configuration
     'routes' => [
-        'admin_prefix' => '/cms/admin',    // Admin panel URL prefix
+        'admin_prefix' => '/cp/cms',       // SPA admin URL prefix
         'public_prefix' => '/cms',         // Public CMS pages URL prefix
     ],
 
     // Session configuration
+    // CMS now shares the main app session namespace instead of forcing a
+    // separate legacy CMS session cookie.
     'session' => [
-        'name' => 'fixitforus_cms',
         'timeout' => 3600, // 1 hour
     ],
 

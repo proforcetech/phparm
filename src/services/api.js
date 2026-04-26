@@ -20,6 +20,41 @@ let sessionExpirationPromise = null
 let cachedCsrfToken = null
 let csrfTokenFetchPromise = null
 
+function normalizeRequestPath(url = '') {
+  if (!url) return ''
+
+  try {
+    const parsed = new URL(url, window.location.origin)
+    return parsed.pathname
+  } catch (e) {
+    return url.startsWith('/') ? url : `/${url}`
+  }
+}
+
+function shouldHandleSessionExpiration(error) {
+  const status = error.response?.status
+  const responseData = error.response?.data
+
+  if ((status !== 401 && status !== 403) || responseData?.error === 'csrf_token_invalid') {
+    return false
+  }
+
+  const path = normalizeRequestPath(error.config?.url || '')
+  const authFlowPaths = new Set([
+    '/auth/login',
+    '/auth/customer-login',
+    '/auth/verify-2fa',
+    '/auth/customer-verify-2fa',
+    '/auth/register',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+    '/auth/accept-invite',
+    '/auth/refresh',
+  ])
+
+  return !authFlowPaths.has(path)
+}
+
 /**
  * Get CSRF token from multiple sources with fallback chain:
  * 1. Cached token (if available)
@@ -192,7 +227,7 @@ api.interceptors.response.use(
 
     // Handle session expiration (401 Unauthorized or 403 Forbidden)
     // Skip CSRF errors as they're handled above
-    if ((status === 401 || status === 403) && responseData?.error !== 'csrf_token_invalid') {
+    if (shouldHandleSessionExpiration(error)) {
       // If already handling session expiration, wait for that to complete
       if (sessionExpirationPromise) {
         return sessionExpirationPromise.then(() => Promise.reject(error))

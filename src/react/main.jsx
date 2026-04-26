@@ -7,6 +7,7 @@ import { AuthProvider } from './stores/auth.jsx'
 import { ToastProvider } from './stores/toast.jsx'
 import { UIProvider } from './stores/ui.jsx'
 import offlineSync from './services/offlineSync'
+import { registerServiceWorker } from './utils/registerSW'
 
 const container = document.getElementById('app')
 
@@ -25,3 +26,4 @@ createRoot(container).render(
 )
 
 offlineSync.start()
+registerServiceWorker()

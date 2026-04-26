@@ -87,14 +87,16 @@ This creates:
 
 ### Admin CMS Routes
 
-- `http://localhost:8000/cms/admin` - Admin dashboard
-- `http://localhost:8000/cms/admin/login` - Login page
-- `http://localhost:8000/cms/admin/pages` - Manage pages
-- `http://localhost:8000/cms/admin/components` - Manage components
-- `http://localhost:8000/cms/admin/templates` - Manage templates
-- `http://localhost:8000/cms/admin/users` - Manage users
-- `http://localhost:8000/cms/admin/settings` - System settings
-- `http://localhost:8000/cms/admin/cache` - Cache management
+The legacy HTML CMS admin path is retired.
+
+- `http://localhost:8000/cp/login` - Staff login
+- `http://localhost:8000/cp/cms` - CMS dashboard
+- `http://localhost:8000/cp/cms/pages` - Manage pages
+- `http://localhost:8000/cp/cms/components` - Manage components
+- `http://localhost:8000/cp/cms/templates` - Manage templates
+- `http://localhost:8000/cp/cms/media` - Manage media
+
+The SPA admin uses authenticated `/api/cms/*` endpoints for CMS management.
 
 ## Configuration
 
@@ -103,7 +105,7 @@ The CMS is configured in `/config/cms.php`:
 ```php
 return [
     'routes' => [
-        'admin_prefix' => '/cms/admin',    // Admin panel URL prefix
+        'admin_prefix' => '/cp/cms',       // SPA admin URL prefix
         'public_prefix' => '/cms',         // Public pages URL prefix
     ],
     'cache' => [
@@ -156,7 +158,7 @@ When editors publish or update pages, the system can proactively pre-render the 
 
 ### Creating a New Page
 
-1. Go to `http://localhost:8000/cms/admin/pages`
+1. Go to `http://localhost:8000/cp/cms/pages`
 2. Click "New Page"
 3. Fill in:
    - **Title**: Page title
@@ -174,7 +176,7 @@ The page will be accessible at: `http://localhost:8000/cms/about-us`
 
 Components are reusable pieces of content (like headers, footers, call-to-action banners, etc.).
 
-1. Go to `http://localhost:8000/cms/admin/components`
+1. Go to `http://localhost:8000/cp/cms/components`
 2. Click "New Component"
 3. Fill in:
    - **Name**: Component name
@@ -193,7 +195,7 @@ To use a component in a page, add:
 
 Templates define the overall page structure.
 
-1. Go to `http://localhost:8000/cms/admin/templates`
+1. Go to `http://localhost:8000/cp/cms/templates`
 2. Click "New Template"
 3. Define the HTML structure using placeholders:
 
@@ -238,7 +240,8 @@ The CMS implements two-tier caching:
 
 Cache is automatically cleared when content is updated. To manually clear cache:
 
-1. Go to `http://localhost:8000/cms/admin/cache`
+1. Go to `http://localhost:8000/cp/cms`
+2. Use the CMS dashboard cache action
 2. Click "Clear All Cache"
 
 Or programmatically:
@@ -259,9 +262,9 @@ The CMS includes:
 - **Password Hashing**: Passwords are hashed using bcrypt
 - **SQL Injection Prevention**: All queries use prepared statements
 - **XSS Protection**: Output is escaped
-- **Session Security**: Session name isolation from main app
+- **Session Security**: CMS admin uses the main app's authenticated session model
 
-The CMS uses separate session keys (prefixed with `cms_`) to avoid conflicts with the main application's authentication system.
+The CMS still uses `cms_*` keys inside the shared app session for helper state, but it no longer depends on a separate legacy CMS session cookie.
 
 ## Helper Functions
 
@@ -307,11 +310,11 @@ e($string);                     // Escape HTML
 
 ## Integration with Main Application
 
-The CMS is designed to be independent from the main PHPArm application:
+The CMS is integrated into the main PHPArm application:
 
 - Uses separate database tables (all prefixed with `cms_`)
-- Uses separate session keys (all prefixed with `cms_`)
-- Can be accessed alongside the main application's API routes
+- Uses shared app authentication for admin access
+- Exposes public page routes alongside the main application's API routes
 
 To link to CMS pages from the main application:
 

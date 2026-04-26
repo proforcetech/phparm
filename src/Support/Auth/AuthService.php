@@ -104,7 +104,15 @@ class AuthService
     public function staffLogin(string $email, string $password): ?User
     {
         $user = $this->findByEmail($email);
-        if (!$user || $user->role === 'customer' || !$this->roles->hasRole($user->role)) {
+        // Phase 6.1 of docs/expansion-plan.md: portal_user is a distinct
+        // isolated auth flow (PortalAuthService::login) and must not be
+        // allowed through the staff login path even though it is a valid
+        // role — the scope boundary stops cross-context auth.
+        if (!$user
+            || $user->role === 'customer'
+            || $user->role === 'portal_user'
+            || !$this->roles->hasRole($user->role)
+        ) {
             return null;
         }
 

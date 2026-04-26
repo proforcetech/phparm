@@ -345,6 +345,18 @@ class Middleware
                 $token = $request->bearerToken();
                 if ($token !== null) {
                     $user = self::validateToken($token);
+                    // Phase 6.1 of docs/expansion-plan.md: staff auth must
+                    // reject tokens minted for the isolated portal scope.
+                    // We decode the already-validated token so signature
+                    // verification is not repeated.
+                    if ($user !== null) {
+                        $payload = self::getJwtService()->decodeWithoutValidation($token);
+                        if (is_array($payload) && ($payload['scope'] ?? null) === 'portal') {
+                            throw new UnauthorizedException(
+                                'portal-scoped token cannot access staff routes'
+                            );
+                        }
+                    }
                 }
             }
 
@@ -367,6 +379,44 @@ class Middleware
             if ($userModel instanceof User) {
                 self::recordUserActivity($userModel->id);
             }
+
+            return $next($request);
+        };
+    }
+
+    /**
+     * Phase 6.1 of docs/expansion-plan.md: isolated portal authentication.
+     *
+     * Requires a bearer token with scope='portal' and an active
+     * portal_accounts row that matches the token's company_id claim. On
+     * success, attaches `user`, `portal_account`, and `portal_scope`
+     * attributes to the request so downstream handlers can enforce site
+     * scoping without re-parsing the JWT.
+     *
+     * This middleware deliberately does NOT fall back to session cookies
+     * or staff-style auth — the portal is a separate security context and
+     * mixing fallbacks would undermine the isolation.
+     */
+    public static function portalAuth(\App\Services\Portal\PortalAuthService $authService): callable
+    {
+        return function (Request $request, callable $next) use ($authService) {
+            $token = $request->bearerToken();
+            if ($token === null) {
+                throw new UnauthorizedException('portal authentication required');
+            }
+            $jwtService = self::getJwtService();
+            $result = $jwtService->validateTokenWithPayload($token);
+            if ($result === null) {
+                throw new UnauthorizedException('invalid or expired portal token');
+            }
+            $account = $authService->assertValidSession($result['user'], $result['payload']);
+
+            $request->setAttribute('user', $result['user']);
+            $request->setAttribute('portal_account', $account);
+            $request->setAttribute('portal_scope', [
+                'company_id' => $account->company_id,
+                'site_ids' => $account->allowed_site_ids,
+            ]);
 
             return $next($request);
         };
@@ -714,19 +764,7 @@ class Middleware
      */
     private static function getClientIp(Request $request): string
     {
-        // Check for forwarded IP (when behind proxy/load balancer)
-        $forwardedFor = $request->header('X-Forwarded-For');
-        if ($forwardedFor !== null) {
-            $ips = array_map('trim', explode(',', $forwardedFor));
-            return $ips[0];
-        }
-
-        $realIp = $request->header('X-Real-IP');
-        if ($realIp !== null) {
-            return $realIp;
-        }
-
-        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        return $request->getClientIp() ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
     }
 
     /**

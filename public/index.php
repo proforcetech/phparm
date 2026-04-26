@@ -52,9 +52,11 @@ $router->setNotFoundLogRepository($notFoundLogRepository);
 $routeLoader = require __DIR__ . '/../routes/api.php';
 $routeLoader($router, $config, $connection);
 
-// Load CMS routes
-$cmsRouteLoader = require __DIR__ . '/../routes/cms.php';
-$cmsRouteLoader($router, $config, $connection);
+// Load CMS routes only for non-API requests to avoid route/bootstrap overhead on API traffic.
+if (!$isApiRequest && !$isHealthCheck) {
+    $cmsRouteLoader = require __DIR__ . '/../routes/cms.php';
+    $cmsRouteLoader($router, $config, $connection);
+}
 
 // Capture incoming request
 $request = Request::capture();

@@ -21,7 +21,73 @@ return function (Router $router, array $config, $connection) {
 
     // Initialize AccessGate for PageController
     $authConfig = $config['auth'] ?? [];
-    $gate = new AccessGate(RolePermissions::fromDatabase($connection, $authConfig['roles'] ?? []));
+    $resolvedRolePermissions = null;
+    $rolePermissionsResolver = function () use ($connection, $authConfig, &$resolvedRolePermissions): RolePermissions {
+        if ($resolvedRolePermissions instanceof RolePermissions) {
+            return $resolvedRolePermissions;
+        }
+
+        $resolvedRolePermissions = RolePermissions::fromDatabase($connection, $authConfig['roles'] ?? []);
+
+        return $resolvedRolePermissions;
+    };
+    $gate = new AccessGate(new class($rolePermissionsResolver, $authConfig['roles'] ?? []) extends RolePermissions {
+        /** @var callable */
+        private $resolver;
+        private ?RolePermissions $resolved = null;
+
+        /**
+         * @param callable(): RolePermissions $resolver
+         * @param array<string, array{label: string, description: string, permissions: string[], requires_2fa?: bool}> $defaultRoles
+         */
+        public function __construct(callable $resolver, array $defaultRoles)
+        {
+            parent::__construct($defaultRoles);
+            $this->resolver = $resolver;
+        }
+
+        private function resolved(): RolePermissions
+        {
+            if ($this->resolved instanceof RolePermissions) {
+                return $this->resolved;
+            }
+
+            $resolver = $this->resolver;
+            $this->resolved = $resolver();
+
+            return $this->resolved;
+        }
+
+        public function hasRole(string $role): bool
+        {
+            return $this->resolved()->hasRole($role);
+        }
+
+        public function roleDefinitions(): array
+        {
+            return $this->resolved()->roleDefinitions();
+        }
+
+        public function validateRole(string $role): void
+        {
+            $this->resolved()->validateRole($role);
+        }
+
+        public function permissionsFor(string $role): array
+        {
+            return $this->resolved()->permissionsFor($role);
+        }
+
+        public function hasPermission(string $role, string $permission): bool
+        {
+            return $this->resolved()->hasPermission($role, $permission);
+        }
+
+        public function availablePermissions(): array
+        {
+            return $this->resolved()->availablePermissions();
+        }
+    });
 
     $reservedPrefixes = [
         'api',
@@ -142,310 +208,44 @@ return function (Router $router, array $config, $connection) {
         return Response::make('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>', 200, ['Content-Type' => 'application/xml']);
     });
 
-    // Admin CMS Routes
-    // These routes handle the admin panel
+    // Legacy CMS HTML admin routes are retired.
+    // Redirect safe legacy GET entry points to the authenticated SPA-admin surface
+    // and reject legacy state-changing form posts instead of proxying them.
+    $legacyCmsAdminRedirect = static function (string $target): Response {
+        return Response::redirect($target, 302);
+    };
 
-    // Dashboard
-    $router->get('/cms/admin', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->dashboard();
-        $content = ob_get_clean();
-        return Response::html($content);
+    $legacyCmsAdminRetired = static function (): Response {
+        return Response::json([
+            'error' => 'Legacy CMS HTML admin path has been retired',
+            'message' => 'Use the authenticated CMS admin at /cp/cms and the /api/cms endpoints instead.',
+        ], 410);
+    };
+
+    $router->get('/cms/admin', static function (Request $request) use ($legacyCmsAdminRedirect) {
+        return $legacyCmsAdminRedirect('/cp/cms');
     });
 
-    $router->get('/cms/admin/dashboard', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->dashboard();
-        $content = ob_get_clean();
-        return Response::html($content);
+    $router->get('/cms/admin/{path:.+}', static function (Request $request) use ($legacyCmsAdminRedirect) {
+        $path = trim((string) $request->getAttribute('path', ''), '/');
+
+        if ($path === 'login') {
+            return $legacyCmsAdminRedirect('/cp/login');
+        }
+
+        if ($path === 'logout') {
+            return $legacyCmsAdminRedirect('/cp/login');
+        }
+
+        return $legacyCmsAdminRedirect('/cp/cms');
     });
 
-    // Authentication
-    $router->get('/cms/admin/login', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->loginForm();
-        $content = ob_get_clean();
-        return Response::html($content);
+    $router->post('/cms/admin', static function (Request $request) use ($legacyCmsAdminRetired) {
+        return $legacyCmsAdminRetired();
     });
 
-    $router->post('/cms/admin/login', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->login();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/logout', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->logout();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    // Pages Management
-    $router->get('/cms/admin/pages', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->pagesList();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/pages/new', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->pageNew();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-// In routes/cms.php
-// $router->get('{slug}', function(Request $request, Response $response, $slug) {
-//    // Prevent CMS from trying to handle admin control panel routes
-//    if (str_starts_with($slug, 'cp/')) {
- //       return null; // Let the main router/React handle it
-//    }
-    
-    // ... existing CMS page rendering logic ...
-// });
-
-    $router->get('/cms/admin/pages/edit/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->pageEdit($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/pages/create', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->pageCreate();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/pages/update/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->pageUpdate($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/pages/delete/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->pageDelete($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    // Components Management
-    $router->get('/cms/admin/components', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->componentsList();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/components/new', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->componentNew();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/components/edit/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->componentEdit($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/components/create', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->componentCreate();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/components/update/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->componentUpdate($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/components/delete/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->componentDelete($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/components/duplicate/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->componentDuplicate($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    // Templates Management
-    $router->get('/cms/admin/templates', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->templatesList();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/templates/new', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->templateNew();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/templates/edit/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->templateEdit($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/templates/create', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->templateCreate();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/templates/update/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->templateUpdate($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/templates/delete/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->templateDelete($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    // Cache Management
-    $router->get('/cms/admin/cache', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->cachePage();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/cache/clear', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->cacheClear();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    // Settings
-    $router->get('/cms/admin/settings', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->settingsPage();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/settings/update', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->settingsUpdate();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    // Users Management
-    $router->get('/cms/admin/users', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->usersList();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/users/new', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->userNew();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->get('/cms/admin/users/edit/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->userEdit($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/users/create', function (Request $request) {
-        $controller = new AdminController();
-        ob_start();
-        $controller->userCreate();
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/users/update/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->userUpdate($id);
-        $content = ob_get_clean();
-        return Response::html($content);
-    });
-
-    $router->post('/cms/admin/users/delete/{id}', function (Request $request) {
-        $controller = new AdminController();
-        $id = (int) $request->getAttribute('id');
-        ob_start();
-        $controller->userDelete($id);
-        $content = ob_get_clean();
-        return Response::html($content);
+    $router->post('/cms/admin/{path:.+}', static function (Request $request) use ($legacyCmsAdminRetired) {
+        return $legacyCmsAdminRetired();
     });
 
     // Static assets (CSS, JS, images)

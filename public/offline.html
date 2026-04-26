@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <title>PHPArm — Offline</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 1.5rem;
+        line-height: 1.5;
+      }
+      main { max-width: 480px; }
+      h1 {
+        font-size: 1.75rem;
+        font-weight: 600;
+        margin: 1rem 0 0.5rem;
+        color: #f8fafc;
+      }
+      p { margin: 0.5rem 0; color: #94a3b8; font-size: 1rem; }
+      .icon {
+        width: 96px;
+        height: 96px;
+        border-radius: 24px;
+        background: #1e293b;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .icon svg { width: 56px; height: 56px; stroke: #64748b; fill: none; stroke-width: 1.5; }
+      button {
+        margin-top: 1.5rem;
+        padding: 0.75rem 1.5rem;
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 0.5rem;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover { background: #1d4ed8; }
+      button:active { background: #1e40af; }
+      .meta { margin-top: 2rem; font-size: 0.75rem; color: #475569; }
+      .queue {
+        margin-top: 1.5rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #1e293b;
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        color: #cbd5e1;
+        background: #1e293b;
+      }
+      .queue strong { color: #f8fafc; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.5a16 16 0 0 1 18 0M5.5 12a12 12 0 0 1 13 0M8 15.5a8 8 0 0 1 8 0M12 19h.01"/>
+          <line x1="3" y1="3" x2="21" y2="21" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h1>You're offline</h1>
+      <p>PHPArm can't reach the network right now. Once you're back online the app will reload and any pending work in your offline queue will sync automatically.</p>
+      <div class="queue" id="queue-status" hidden>
+        <strong>Queue status:</strong>
+        <span id="queue-summary">Loading…</span>
+      </div>
+      <button type="button" id="retry">Try again</button>
+      <p class="meta">PHPArm Auto Repair</p>
+    </main>
+    <script>
+      (function () {
+        var retry = document.getElementById('retry');
+        retry.addEventListener('click', function () { window.location.reload(); });
+
+        window.addEventListener('online', function () { window.location.reload(); });
+
+        // Best-effort: read pending count from IndexedDB if available.
+        try {
+          if (!('indexedDB' in window)) return;
+          var req = indexedDB.open('phparm-offline-queue');
+          req.onsuccess = function () {
+            var db = req.result;
+            if (!db.objectStoreNames.contains('queue')) { db.close(); return; }
+            var tx = db.transaction('queue', 'readonly');
+            var store = tx.objectStore('queue');
+            var all = store.getAll();
+            all.onsuccess = function () {
+              var items = all.result || [];
+              var pending = items.filter(function (i) {
+                return i.status === 'pending' || i.status === 'failed';
+              }).length;
+              if (pending > 0) {
+                document.getElementById('queue-status').hidden = false;
+                document.getElementById('queue-summary').textContent =
+                  pending + ' item' + (pending === 1 ? '' : 's') + ' waiting to sync.';
+              }
+              db.close();
+            };
+            all.onerror = function () { db.close(); };
+          };
+          req.onerror = function () {};
+        } catch (e) { /* swallow */ }
+      })();
+    </script>
+  </body>
+</html>

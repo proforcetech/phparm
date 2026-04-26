@@ -1992,8 +1992,17 @@ return Response::json([
         return Response::json($result, 200);
     });
 
-    // Initialize AccessGate for protected routes
-    $gate = new AccessGate($rolePermissions);
+    // Initialize AccessGate for protected routes. The PolicyRegistry is
+    // attached so that modules migrated to routes/modules/ can register
+    // contextual policies (docs/expansion-plan.md Phase 0.3).
+    $policyRegistry = new \App\Support\Auth\PolicyRegistry();
+
+    // Phase 1.3: portal permissions honor per-contact scope for portal_user
+    // role only. Staff and legacy customer roles are untouched.
+    $portalScopeResolver = new \App\Services\Crm\ContactScopeResolver($connection);
+    $policyRegistry->register('portal.*', new \App\Services\Crm\PortalScopePolicy($portalScopeResolver));
+
+    $gate = new AccessGate($rolePermissions, $policyRegistry);
 
     $cmsCacheService = new CMSCacheService($config['cms'] ?? []);
     // CMS controllers reuse the same gate and connection
@@ -5906,15 +5915,151 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Inspection routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $settingsRepository) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $settingsRepository, $auditLogger) {
+
+        // Phase 8.2 — auto-generation policy layer. The bridge service is
+        // constructed here (ahead of its later use by the bridge
+        // controller routes) so the auto service can delegate to it,
+        // and both share one instance within the request.
+        $inspectionBridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService(
+            $connection,
+            $auditLogger,
+            $settingsRepository
+        );
+        $autoPolicyRepo = new \App\Services\Inspection\InspectionAutoGenerationPolicyRepository($connection);
+        $autoService = new \App\Services\Inspection\InspectionDeficiencyAutoService(
+            $connection,
+            $autoPolicyRepo,
+            $inspectionBridgeService,
+            $gate,
+            $auditLogger
+        );
+        $autoController = new \App\Services\Inspection\InspectionDeficiencyAutoController($autoService);
+
+        // Phase 8.3 of docs/expansion-plan.md — human-in-loop failure
+        // escalation. Built-in dispatcher so the service can best-
+        // effort send emails on rules that opt into notify_via=email;
+        // internal/role-queue rules don't need it.
+        $inspectionEscalationRepo = new \App\Services\Inspection\InspectionEscalationRepository($connection);
+        $inspectionEscalationNotifications = null;
+        try {
+            $inspectionEscalationNotificationConfig = require __DIR__ . '/../config/notifications.php';
+            $inspectionEscalationNotifications = new \App\Support\Notifications\NotificationDispatcher(
+                $inspectionEscalationNotificationConfig,
+                new \App\Support\Notifications\TemplateEngine(),
+                new \App\Support\Notifications\NotificationLogRepository($connection),
+                $auditLogger
+            );
+        } catch (\Throwable $e) {
+            // Notification config missing — service will record
+            // notification_status='skipped' with a clear reason.
+        }
+        $escalationService = new \App\Services\Inspection\InspectionEscalationService(
+            $connection,
+            $inspectionEscalationRepo,
+            $inspectionBridgeService,
+            $gate,
+            $auditLogger,
+            $inspectionEscalationNotifications
+        );
+        $escalationController = new \App\Services\Inspection\InspectionEscalationController($escalationService);
+
+        // Phase 8.4 of docs/expansion-plan.md — risk scoring + trend
+        // analysis. Shares the same bridge service instance so severity
+        // evaluation stays consistent across 8.2/8.3/8.4.
+        $riskScoreRepo = new \App\Services\Inspection\InspectionRiskScoreRepository($connection);
+        $riskScoringService = new \App\Services\Inspection\InspectionRiskScoringService(
+            $connection,
+            $riskScoreRepo,
+            $inspectionBridgeService,
+            $gate,
+            $auditLogger
+        );
+        $riskScoringController = new \App\Services\Inspection\InspectionRiskScoringController($riskScoringService);
+
+        $inspectionCompletionService = new \App\Services\Inspection\InspectionCompletionService(
+            $connection,
+            $auditLogger,
+            $autoService,
+            $escalationService,
+            $riskScoringService
+        );
 
         $inspectionController = new \App\Services\Inspection\InspectionController(
-            new \App\Services\Inspection\InspectionTemplateService($connection),
-            new \App\Services\Inspection\InspectionCompletionService($connection),
+            new \App\Services\Inspection\InspectionTemplateService($connection, $auditLogger),
+            $inspectionCompletionService,
             new \App\Services\Inspection\InspectionPortalService($connection),
             $gate,
             new \App\Support\Pdf\InspectionPdfGenerator($connection)
         );
+
+        // Phase 8.1 of docs/expansion-plan.md — compliance-tagged
+        // templates per-division. Tag vocabulary + template <-> tag
+        // bindings + division/compliance template filter.
+        $complianceTagRepo = new \App\Services\Inspection\InspectionComplianceTagRepository($connection);
+        $complianceService = new \App\Services\Inspection\InspectionComplianceService(
+            $connection,
+            $complianceTagRepo,
+            $gate,
+            $auditLogger
+        );
+        $complianceController = new \App\Services\Inspection\InspectionComplianceController($complianceService);
+
+        $router->get('/api/inspections/compliance-tags', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $divisionId = $request->queryParam('division_id');
+            $divisionId = ($divisionId !== null && $divisionId !== '') ? (int) $divisionId : null;
+            $activeOnly = (bool) $request->queryParam('active_only');
+            $data = $complianceController->listTags($user, $divisionId, $activeOnly);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inspections/compliance-tags', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $data = $complianceController->createTag($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/inspections/compliance-tags/{id}', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $complianceController->updateTag($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/inspections/compliance-tags/{id}', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $complianceController->deleteTag($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inspections/templates/{id}/compliance-tags', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $complianceController->listTemplateTags($user, $id);
+            return Response::json($data);
+        });
+
+        $router->put('/api/inspections/templates/{id}/compliance-tags', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $complianceController->setTemplateTags($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->get('/api/inspections/templates/by-compliance', function (Request $request) use ($complianceController) {
+            $user = $request->getAttribute('user');
+            $divisionId = $request->queryParam('division_id');
+            $divisionId = ($divisionId !== null && $divisionId !== '') ? (int) $divisionId : null;
+            $activeOnly = (bool) $request->queryParam('active_only');
+            $rawCodes = (string) ($request->queryParam('tag_codes') ?? '');
+            $tagCodes = $rawCodes === ''
+                ? []
+                : array_values(array_filter(array_map('trim', explode(',', $rawCodes))));
+            $data = $complianceController->listTemplatesByCompliance($user, $divisionId, $tagCodes, $activeOnly);
+            return Response::json($data);
+        });
 
         $router->get('/api/inspections/templates', function (Request $request) use ($inspectionController) {
             $user = $request->getAttribute('user');
@@ -6011,9 +6156,217 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             exit;
         });
 
-        // Inspection-to-Estimate Bridge routes
-        $bridgeService = new \App\Services\Inspection\InspectionEstimateBridgeService($connection, null, $settingsRepository);
-        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($bridgeService, $gate, $settingsRepository);
+        // Phase 8.2 of docs/expansion-plan.md — auto-generation
+        // policy CRUD + manual report evaluation + run listing.
+        $router->get('/api/inspections/auto-policies', function (Request $request) use ($autoController) {
+            $user = $request->getAttribute('user');
+            $divisionId = $request->queryParam('division_id');
+            $divisionId = ($divisionId !== null && $divisionId !== '') ? (int) $divisionId : null;
+            $activeOnly = (bool) $request->queryParam('active_only');
+            $data = $autoController->listPolicies($user, $divisionId, $activeOnly);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inspections/auto-policies', function (Request $request) use ($autoController) {
+            $user = $request->getAttribute('user');
+            $data = $autoController->createPolicy($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->put('/api/inspections/auto-policies/{id}', function (Request $request) use ($autoController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $autoController->updatePolicy($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->delete('/api/inspections/auto-policies/{id}', function (Request $request) use ($autoController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $autoController->deletePolicy($user, $id);
+            return Response::json($data);
+        });
+
+        $router->post('/api/inspections/{id}/auto-generate', function (Request $request) use ($autoController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $autoController->evaluateReport($user, $id);
+            return Response::json($data);
+        });
+
+        $router->get('/api/inspections/{id}/auto-runs', function (Request $request) use ($autoController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $autoController->listRuns($user, $id);
+            return Response::json($data);
+        });
+
+        // Phase 8.3 of docs/expansion-plan.md — escalation rule CRUD +
+        // per-report evaluation + lifecycle (acknowledge / resolve) +
+        // user/role queue listing.
+        $router->get('/api/inspections/escalation-rules', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $divisionId = $request->queryParam('division_id');
+            $divisionId = ($divisionId !== null && $divisionId !== '') ? (int) $divisionId : null;
+            $activeOnly = (bool) $request->queryParam('active_only');
+            return Response::json($escalationController->listRules($user, $divisionId, $activeOnly));
+        });
+
+        $router->post('/api/inspections/escalation-rules', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            return Response::created($escalationController->createRule($user, $request->body()));
+        });
+
+        $router->put('/api/inspections/escalation-rules/{id}', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($escalationController->updateRule($user, $id, $request->body()));
+        });
+
+        $router->delete('/api/inspections/escalation-rules/{id}', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($escalationController->deleteRule($user, $id));
+        });
+
+        $router->post('/api/inspections/{id}/escalate', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($escalationController->evaluateReport($user, $id));
+        });
+
+        $router->get('/api/inspections/{id}/escalations', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($escalationController->listForReport($user, $id));
+        });
+
+        $router->get('/api/inspections/escalations/mine', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            return Response::json($escalationController->listMyOpen($user));
+        });
+
+        $router->get('/api/inspections/escalations/role/{role}', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $role = (string) $request->getAttribute('role');
+            return Response::json($escalationController->listOpenForRole($user, $role));
+        });
+
+        $router->post('/api/inspections/escalations/{id}/acknowledge', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($escalationController->acknowledge($user, $id));
+        });
+
+        $router->post('/api/inspections/escalations/{id}/resolve', function (Request $request) use ($escalationController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($escalationController->resolve($user, $id, $request->body()));
+        });
+
+        // Phase 8.4 of docs/expansion-plan.md — risk scoring + trend
+        // analysis endpoints.
+        $router->get('/api/inspections/{id}/risk-score', function (Request $request) use ($riskScoringController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($riskScoringController->getReportScore($user, $id));
+        });
+
+        $router->post('/api/inspections/{id}/risk-score/rescore', function (Request $request) use ($riskScoringController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($riskScoringController->scoreReport($user, $id));
+        });
+
+        $router->get('/api/inspections/risk-trends/vehicle/{id}', function (Request $request) use ($riskScoringController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $from = $request->queryParam('from');
+            $to = $request->queryParam('to');
+            $from = ($from !== null && $from !== '') ? (string) $from : null;
+            $to = ($to !== null && $to !== '') ? (string) $to : null;
+            $limit = (int) ($request->queryParam('limit') ?? 100);
+            return Response::json($riskScoringController->vehicleTrend($user, $id, $from, $to, $limit));
+        });
+
+        $router->get('/api/inspections/risk-trends/division/{id}', function (Request $request) use ($riskScoringController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $from = $request->queryParam('from');
+            $to = $request->queryParam('to');
+            if ($from === null || $from === '' || $to === null || $to === '') {
+                return Response::badRequest('from and to query params are required (YYYY-MM-DD)');
+            }
+            $limit = (int) ($request->queryParam('limit') ?? 500);
+            return Response::json($riskScoringController->divisionTrend($user, $id, (string) $from, (string) $to, $limit));
+        });
+
+        // Phase 8.5 — QR launch at asset level. A scanned asset
+        // sticker resolves to a preview (asset summary + division-
+        // filtered template list), then a launch call starts the
+        // draft inspection with site_asset_id propagated.
+        $qrLaunchRepo = new \App\Services\Inspection\InspectionQrLaunchRepository($connection);
+        $qrLaunchAssetRepo = new \App\Services\Assets\SiteAssetRepository($connection);
+        $qrLaunchService = new \App\Services\Inspection\InspectionQrLaunchService(
+            $connection,
+            $qrLaunchRepo,
+            $qrLaunchAssetRepo,
+            $inspectionCompletionService,
+            $gate,
+            $auditLogger
+        );
+        $qrLaunchController = new \App\Services\Inspection\InspectionQrLaunchController($qrLaunchService);
+
+        $router->post('/api/inspections/qr/preview', function (Request $request) use ($qrLaunchController) {
+            $user = $request->getAttribute('user');
+            $body = $request->json() ?? [];
+            $token = trim((string) ($body['token'] ?? ''));
+            if ($token === '') {
+                return Response::badRequest('token is required');
+            }
+            $clientMeta = is_array($body['client_meta'] ?? null) ? $body['client_meta'] : null;
+            return Response::json($qrLaunchController->preview($user, $token, $clientMeta));
+        });
+
+        $router->post('/api/inspections/qr/launch', function (Request $request) use ($qrLaunchController) {
+            $user = $request->getAttribute('user');
+            $body = $request->json() ?? [];
+            $token = trim((string) ($body['token'] ?? ''));
+            $templateId = (int) ($body['template_id'] ?? 0);
+            if ($token === '') {
+                return Response::badRequest('token is required');
+            }
+            if ($templateId <= 0) {
+                return Response::badRequest('template_id is required');
+            }
+            $clientMeta = is_array($body['client_meta'] ?? null) ? $body['client_meta'] : null;
+            $payload = [
+                'customer_id' => isset($body['customer_id']) ? (int) $body['customer_id'] : null,
+                'vehicle_id' => isset($body['vehicle_id']) ? (int) $body['vehicle_id'] : null,
+                'estimate_id' => isset($body['estimate_id']) ? (int) $body['estimate_id'] : null,
+                'appointment_id' => isset($body['appointment_id']) ? (int) $body['appointment_id'] : null,
+                'summary' => $body['summary'] ?? null,
+            ];
+            return Response::json($qrLaunchController->launch($user, $token, $templateId, $payload, $clientMeta));
+        });
+
+        $router->get('/api/inspections/qr/launches/asset/{id}', function (Request $request) use ($qrLaunchController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $limit = (int) ($request->queryParam('limit') ?? 50);
+            return Response::json($qrLaunchController->listForAsset($user, $id, $limit));
+        });
+
+        $router->get('/api/inspections/qr/launches/report/{id}', function (Request $request) use ($qrLaunchController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            return Response::json($qrLaunchController->findForReport($user, $id));
+        });
+
+        // Inspection-to-Estimate Bridge routes — reuses the bridge
+        // service constructed above so Phase 8.2 auto-generation and
+        // manual button both share one instance.
+        $bridgeController = new \App\Services\Inspection\InspectionEstimateBridgeController($inspectionBridgeService, $gate, $settingsRepository);
 
         $router->get('/api/inspections/{id}/failed-items', function (Request $request) use ($bridgeController) {
             $id = (int) $request->getAttribute('id');
@@ -6944,53 +7297,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
-    // Customer retention report routes
-    $customerRetentionWebhookConfig = $config['customer_retention']['webhooks'] ?? [];
-    $customerRetentionWebhooks = new WebhookDispatcher(
-        !empty($customerRetentionWebhookConfig['enabled']) ? ($customerRetentionWebhookConfig['endpoints'] ?? []) : [],
-        (string) ($customerRetentionWebhookConfig['secret'] ?? ''),
-        (int) ($customerRetentionWebhookConfig['timeout'] ?? 5),
-        $auditLogger
-    );
-
-    $customerRetentionController = new \App\Services\Customer\CustomerRetentionReportController(
-        new \App\Services\Customer\CustomerRetentionReportService(
-            new \App\Services\Customer\CustomerRepository($connection),
-            $customerRetentionWebhooks
-        ),
-        $gate
-    );
-
-    $router->group([Middleware::auth()], function (Router $router) use ($customerRetentionController) {
-        $router->get('/api/reports/customer-retention', function (Request $request) use ($customerRetentionController) {
-            $user = $request->getAttribute('user');
-            $params = [
-                'months' => $request->queryParam('months', 6),
-                'limit' => $request->queryParam('limit', 50),
-                'offset' => $request->queryParam('offset', 0),
-                'query' => $request->queryParam('query'),
-            ];
-            $data = $customerRetentionController->index($user, $params);
-            return Response::json($data);
-        });
-
-        $router->get('/api/reports/customer-retention/export', function (Request $request) use ($customerRetentionController) {
-            $user = $request->getAttribute('user');
-            $params = [
-                'months' => $request->queryParam('months', 6),
-                'format' => $request->queryParam('format', 'csv'),
-                'query' => $request->queryParam('query'),
-            ];
-            $data = $customerRetentionController->export($user, $params);
-            return Response::json($data);
-        });
-
-        $router->post('/api/reports/customer-retention/hooks', function (Request $request) use ($customerRetentionController) {
-            $user = $request->getAttribute('user');
-            $data = $customerRetentionController->dispatchCampaign($user, $request->body());
-            return Response::json($data);
-        });
-    });
+    // Customer retention report routes — migrated to routes/modules/customer_retention.php
 
     // Time Tracking routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
@@ -8781,21 +9088,26 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/audit', function (Request $request) use ($auditController) {
             $user = $request->getAttribute('user');
+            // Phase 1.4 of docs/expansion-plan.md: entity_id/event/limit/offset
+            // let UIs pull per-record and paginated timelines across the new
+            // CRM entities (companies, sites, site_contacts, billing_contacts,
+            // site_blackout_windows).
             $filters = [
                 'entity_type' => $request->queryParam('entity_type'),
+                'entity_id' => $request->queryParam('entity_id'),
+                'event' => $request->queryParam('event'),
                 'actor_id' => $request->queryParam('actor_id'),
+                'from' => $request->queryParam('from'),
+                'to' => $request->queryParam('to'),
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
             ];
             $data = $auditController->index($user, $filters);
             return Response::json($data);
         });
 
-        $router->get('/api/audit/{id}', function (Request $request) use ($auditController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            $data = $auditController->show($user, $id);
-            return Response::json($data);
-        });
-
+        // Register /api/audit/export BEFORE the {id} catchall so the literal
+        // path wins (router matches in registration order).
         $router->get('/api/audit/export', function (Request $request) use ($auditController) {
             $user = $request->getAttribute('user');
             $params = [
@@ -8806,6 +9118,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'format' => $request->queryParam('format', 'csv'),
             ];
             $data = $auditController->export($user, $params);
+            return Response::json($data);
+        });
+
+        $router->get('/api/audit/{id}', function (Request $request) use ($auditController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $auditController->show($user, $id);
             return Response::json($data);
         });
     });
@@ -9732,133 +10051,25 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
     });
 
     // =========================================================================
-    // Module Settings & User Groups Routes
+    // Per-module route files (Phase 0.1 of docs/expansion-plan.md)
+    //
+    // Each entry maps to routes/modules/<name>.php, which returns
+    //   function (Router $router, RouteContext $ctx): void
+    // Add new modules here as route groups are extracted from this monolith.
     // =========================================================================
+    $routeContext = new \App\Support\Http\RouteContext(
+        connection: $connection,
+        config: $config,
+        gate: $gate,
+        rolePermissions: $rolePermissions,
+        auditLogger: $auditLogger,
+        pushNotifications: $pushNotifications,
+        settingsRepository: $settingsRepository,
+        policies: $policyRegistry,
+    );
 
-    // Accessible modules endpoint (for any authenticated user) - MUST be before {key} route
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
-        $router->get('/api/modules/accessible', function (Request $request) use ($connection, $gate, $auditLogger) {
-            $user = $request->getAttribute('user');
-            $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
-            $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
-            return Response::json($moduleController->accessible($user));
-        });
-    });
-
-    // Admin-only module management routes
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $auditLogger) {
-        $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
-        $moduleController = new \App\Services\Settings\ModuleSettingsController($moduleService, $gate);
-        $userGroupService = new \App\Services\UserGroup\UserGroupService($connection);
-        $userGroupController = new \App\Services\UserGroup\UserGroupController($userGroupService, $gate);
-
-        // Module Settings
-        $router->get('/api/modules', function (Request $request) use ($moduleController) {
-            $user = $request->getAttribute('user');
-            return Response::json($moduleController->index($user));
-        });
-
-        $router->get('/api/modules/{key}', function (Request $request) use ($moduleController) {
-            $user = $request->getAttribute('user');
-            $key = $request->getAttribute('key');
-            return Response::json($moduleController->show($user, (string) $key));
-        });
-
-        $router->put('/api/modules/{key}', function (Request $request) use ($moduleController) {
-            $user = $request->getAttribute('user');
-            $key = $request->getAttribute('key');
-            return Response::json($moduleController->update($user, (string) $key, $request->body()));
-        });
-
-        $router->put('/api/modules', function (Request $request) use ($moduleController) {
-            $user = $request->getAttribute('user');
-            return Response::json($moduleController->bulkUpdate($user, $request->body()));
-        });
-
-        // User Groups
-        $router->get('/api/user-groups', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            return Response::json(['data' => $userGroupController->index($user)]);
-        });
-
-        $router->post('/api/user-groups', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            return Response::created($userGroupController->store($user, $request->body()));
-        });
-
-        $router->get('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            return Response::json($userGroupController->show($user, $id));
-        });
-
-        $router->put('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            return Response::json($userGroupController->update($user, $id, $request->body()));
-        });
-
-        $router->delete('/api/user-groups/{id}', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            $userGroupController->destroy($user, $id);
-            return Response::noContent();
-        });
-
-        // User Group Members
-        $router->get('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            return Response::json(['data' => $userGroupController->members($user, $id)]);
-        });
-
-        $router->post('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            $body = $request->body();
-            $userId = (int) ($body['user_id'] ?? 0);
-            $userGroupController->addMember($user, $id, $userId);
-            return Response::json(['success' => true]);
-        });
-
-        $router->delete('/api/user-groups/{groupId}/members/{userId}', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $groupId = (int) $request->getAttribute('groupId');
-            $userId = (int) $request->getAttribute('userId');
-            $userGroupController->removeMember($user, $groupId, $userId);
-            return Response::noContent();
-        });
-
-        $router->put('/api/user-groups/{id}/members', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            $body = $request->body();
-            $userIds = $body['user_ids'] ?? [];
-            $userGroupController->setMembers($user, $id, $userIds);
-            return Response::json(['success' => true]);
-        });
-
-        $router->get('/api/user-groups/{id}/non-members', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            $search = $request->queryParam('search');
-            return Response::json(['data' => $userGroupController->nonMembers($user, $id, $search)]);
-        });
-
-        // User's groups
-        $router->get('/api/users/{id}/groups', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            return Response::json(['data' => $userGroupController->userGroups($user, $id)]);
-        });
-
-        $router->put('/api/users/{id}/groups', function (Request $request) use ($userGroupController) {
-            $user = $request->getAttribute('user');
-            $id = (int) $request->getAttribute('id');
-            $body = $request->body();
-            $groupIds = $body['group_ids'] ?? [];
-            $userGroupController->setUserGroups($user, $id, $groupIds);
-            return Response::json(['success' => true]);
-        });
-    });
+    foreach (['customer_retention', 'modules_and_user_groups', 'divisions', 'service_lines', 'custom_fields', 'branch_dashboards', 'crm', 'assets', 'tickets', 'contracts', 'pm', 'portal', 'eta', 'fleet', 'capital_plan', 'subcontractors', 'workorder_change_orders', 'workorder_tech_requests', 'workorder_reassignments', 'ticket_triage', 'routing', 'voice_notes', 'workorder_kit_installs', 'retention', 'security_events', 'sso', 'trusted_devices', 'reporting', 'integrations'] as $routeModule) {
+        $moduleLoader = require __DIR__ . '/modules/' . $routeModule . '.php';
+        $moduleLoader($router, $routeContext);
+    }
 };
