@@ -61,6 +61,12 @@ $jobs = [
         'schedule' => '0 2 * * *', // Daily at 2 AM
         'description' => 'Cleans up expired and temporary data',
     ],
+    'retention-runner' => [
+        'name' => 'Data Retention Runner',
+        'script' => __DIR__ . '/retention-runner.php',
+        'schedule' => '0 3 * * *', // Daily at 3 AM (after cleanup)
+        'description' => 'Applies configured retention policies (delete/archive)',
+    ],
     'waterfall-dispatch' => [
         'name' => 'Waterfall Dispatch Processor',
         'script' => __DIR__ . '/waterfall-dispatch.php',
@@ -84,6 +90,48 @@ $jobs = [
         'script' => __DIR__ . '/cms-search-reindex.php',
         'schedule' => '0 3 * * 0', // Weekly on Sunday at 3 AM
         'description' => 'Rebuilds the CMS search index for pages and components',
+    ],
+    'ticket-sla-breach' => [
+        'name' => 'Ticket SLA Breach Detector',
+        'script' => __DIR__ . '/ticket-sla-breach.php',
+        'schedule' => '* * * * *', // Every minute
+        'description' => 'Stamps breached_at on running ticket SLA clocks past target',
+    ],
+    'ticket-escalation' => [
+        'name' => 'Ticket Escalation',
+        'script' => __DIR__ . '/ticket-escalation.php',
+        'schedule' => '*/5 * * * *', // Every 5 minutes
+        'description' => 'Applies escalation rules (stale/SLA breach) against open tickets',
+    ],
+    'contracts-renewal' => [
+        'name' => 'Contract Auto-Renewal + Expiry',
+        'script' => __DIR__ . '/contracts-renewal.php',
+        'schedule' => '0 1 * * *', // Daily at 1 AM
+        'description' => 'Auto-renews contracts within notice window and expires non-renewing ones',
+    ],
+    'pm-generator' => [
+        'name' => 'PM Schedule → Ticket Generator',
+        'script' => __DIR__ . '/pm-generator.php',
+        'schedule' => '0 2 * * *', // Daily at 2 AM
+        'description' => 'Generates tickets from due PM schedules and advances cadence',
+    ],
+    'auth-sweep' => [
+        'name' => 'SSO + Trusted-Device Sweep',
+        'script' => __DIR__ . '/auth-sweep.php',
+        'schedule' => '30 3 * * *', // Daily at 3:30 AM (after retention)
+        'description' => 'Expires stale SSO login attempts and purges expired trust tokens',
+    ],
+    'scheduled-reports' => [
+        'name' => 'Scheduled Reports Runner',
+        'script' => __DIR__ . '/scheduled-reports.php',
+        'schedule' => '*/15 * * * *', // Every 15 minutes
+        'description' => 'Runs due saved-report schedules and emails CSV/JSON output to recipients',
+    ],
+    'integration-sync' => [
+        'name' => 'Third-Party Integration Sync',
+        'script' => __DIR__ . '/integration-sync.php',
+        'schedule' => '*/5 * * * *', // Every 5 minutes
+        'description' => 'Pulls data from connected third-party integrations on their cadence',
     ],
 ];
 
