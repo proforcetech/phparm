@@ -5,6 +5,8 @@ import Navbar from './Navbar'
 import Sidebar from './Sidebar'
 import MobileHeader from './MobileHeader'
 import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
+import PasswordRotationOverlay from '../auth/PasswordRotationOverlay'
+import PasswordExpirationBanner from '../auth/PasswordExpirationBanner'
 import ErrorBoundary from '../ErrorBoundary'
 import { CmsPageProvider } from '../../stores/cmsPages'
 import { CmsMenuProvider } from '../../stores/cmsMenus'
@@ -62,6 +64,7 @@ export default function AdminLayout({ children }) {
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebarCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
       />
+      <PasswordExpirationBanner />
 
       <div className="flex">
         <Sidebar ref={sidebarRef} type="admin" isCollapsed={isSidebarCollapsed} />
@@ -84,6 +87,7 @@ export default function AdminLayout({ children }) {
         </div>
       </div>
       {user?.two_factor_setup_pending && !user?.two_factor_enabled ? <TwoFactorSetupWizard /> : null}
+      {user?.password_must_change ? <PasswordRotationOverlay /> : null}
     </div>
   )
 }

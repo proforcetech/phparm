@@ -40,6 +40,18 @@ export function require2FA(id, required) {
   return api.post(`/users/${id}/require-2fa`, { required }).then((r) => r.data)
 }
 
+export function forceReenroll2FA(id) {
+  return api.post(`/users/${id}/2fa/force-reenroll`).then((r) => r.data)
+}
+
+export function adminRegenerateRecoveryCodes(id) {
+  return api.post(`/users/${id}/2fa/regenerate-recovery-codes`).then((r) => r.data)
+}
+
+export function adminRequirePasswordChange(id, required = true) {
+  return api.post(`/users/${id}/require-password-change`, { required }).then((r) => r.data)
+}
+
 export function bulkDeactivateUsers(userIds) {
   return api.post('/users/bulk-deactivate', { user_ids: userIds }).then((r) => r.data)
 }
@@ -59,6 +71,9 @@ const userService = {
   deleteUser,
   reset2FA,
   require2FA,
+  forceReenroll2FA,
+  adminRegenerateRecoveryCodes,
+  adminRequirePasswordChange,
   bulkDeactivateUsers,
   bulkUpdateRole
 }

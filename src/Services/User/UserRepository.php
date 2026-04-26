@@ -207,14 +207,15 @@ class UserRepository
     public function create(array $data): User
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, email_verified, active, branch_id, two_factor_enabled, two_factor_type, created_at, updated_at)
-             VALUES (:name, :email, :password, :role, :email_verified, :active, :branch_id, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, password_changed_at, must_change_password, role, email_verified, active, branch_id, two_factor_enabled, two_factor_type, created_at, updated_at)
+             VALUES (:name, :email, :password, NOW(), :must_change_password, :role, :email_verified, :active, :branch_id, :two_factor_enabled, :two_factor_type, NOW(), NOW())'
         );
 
         $stmt->execute([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => $data['password'], // Should be hashed before calling
+            'must_change_password' => !empty($data['must_change_password']) ? 1 : 0,
             'role' => $data['role'] ?? 'customer',
             'email_verified' => $data['email_verified'] ?? false,
             'active' => $data['active'] ?? true,
@@ -250,6 +251,18 @@ class UserRepository
         if (isset($data['password'])) {
             $fields[] = 'password = :password';
             $bindings['password'] = $data['password']; // Should be hashed before calling
+            $fields[] = 'password_changed_at = NOW()';
+            // Clear forced-rotation flag on a real password change unless caller
+            // explicitly asks us to leave it set (admins flipping the bit handle
+            // must_change_password directly via the dedicated key below).
+            if (!array_key_exists('must_change_password', $data)) {
+                $fields[] = 'must_change_password = 0';
+            }
+        }
+
+        if (array_key_exists('must_change_password', $data)) {
+            $fields[] = 'must_change_password = :must_change_password';
+            $bindings['must_change_password'] = $data['must_change_password'] ? 1 : 0;
         }
 
         if (isset($data['role'])) {

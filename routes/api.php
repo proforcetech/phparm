@@ -216,6 +216,7 @@ return function (Router $router, array $config, $connection) {
         $authConfig
     );
     $sessionManager = new \App\Support\Auth\UserSessionManager($connection);
+    $passwordExpirationPolicy = \App\Support\Auth\PasswordExpirationPolicy::fromConfig($authConfig);
 
     // Initialize JWT service for token generation
     $jwtConfig = $authConfig['jwt'] ?? [];
@@ -740,7 +741,8 @@ return function (Router $router, array $config, $connection) {
         $rateLimitResponse,
         $sessionManager,
         $enforceMandatoryTwoFactorSetup,
-        $csrfTokenService
+        $csrfTokenService,
+        $passwordExpirationPolicy
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -840,8 +842,10 @@ return function (Router $router, array $config, $connection) {
         // Also set CSRF token cookie for the new session
         $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
 
+        $userPayload = array_merge($user->toArray(), $passwordExpirationPolicy->describe($user));
+
         return Response::json([
-            'user' => $user->toArray(),
+            'user' => $userPayload,
             'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
@@ -859,7 +863,8 @@ return function (Router $router, array $config, $connection) {
         $rateLimitResponse,
         $sessionManager,
         $enforceMandatoryTwoFactorSetup,
-        $csrfTokenService
+        $csrfTokenService,
+        $passwordExpirationPolicy
     ) {
         $email = $request->input('email');
         $password = $request->input('password');
@@ -960,8 +965,10 @@ return function (Router $router, array $config, $connection) {
         // Also set CSRF token cookie for the new session
         $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
 
+        $userPayload = array_merge($user->toArray(), $passwordExpirationPolicy->describe($user));
+
         return Response::json([
-            'user' => $user->toArray(),
+            'user' => $userPayload,
             'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
@@ -972,7 +979,7 @@ return function (Router $router, array $config, $connection) {
         ]);
     });
 
-    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService, $connection) {
+    $router->post('/api/auth/verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService, $connection, $passwordExpirationPolicy) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
         $recoveryCode = $request->input('recovery_code');
@@ -1045,7 +1052,7 @@ return function (Router $router, array $config, $connection) {
         $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
 
         $response = [
-            'user' => $user->toArray(),
+            'user' => array_merge($user->toArray(), $passwordExpirationPolicy->describe($user)),
             'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
@@ -1064,7 +1071,7 @@ return function (Router $router, array $config, $connection) {
         return Response::json($response);
     })->middleware(Middleware::throttleStrict(5, 60));
 
-    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService) {
+    $router->post('/api/auth/customer-verify-2fa', function (Request $request) use ($authService, $jwtService, $totpService, $sessionManager, $csrfTokenService, $passwordExpirationPolicy) {
         $challengeToken = $request->input('challenge_token');
         $code = $request->input('code');
 
@@ -1121,7 +1128,7 @@ return function (Router $router, array $config, $connection) {
         $csrfTokenService->setCookie($csrfTokenService->regenerateToken(), $isSecure);
 
         return Response::json([
-            'user' => $user->toArray(),
+            'user' => array_merge($user->toArray(), $passwordExpirationPolicy->describe($user)),
             'token' => $accessToken, // Still return token for backwards compatibility
             'refresh_token' => $refreshToken,
             'expires_in' => $jwtService->getTokenTtl(),
@@ -1253,7 +1260,7 @@ return function (Router $router, array $config, $connection) {
         return Response::json(['message' => 'Session revoked']);
     })->middleware(Middleware::auth());
 
-    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload, $connection, $rolePermissions) {
+    $router->get('/api/auth/me', function (Request $request) use ($buildImpersonationPayload, $connection, $rolePermissions, $passwordExpirationPolicy) {
         $user = $request->getAttribute('user');
 
         if (!$user) {
@@ -1261,6 +1268,7 @@ return function (Router $router, array $config, $connection) {
         }
 
         $userData = $user->toArray();
+        $userData = array_merge($userData, $passwordExpirationPolicy->describe($user));
 
         // Include permissions for the user's role
         try {
@@ -4996,19 +5004,105 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::noContent();
         });
 
-        $router->post('/api/users/{id}/reset-2fa', function (Request $request) use ($userController) {
+        $securityEventLogger = new \App\Services\Security\SecurityEventLogger(
+            new \App\Services\Security\SecurityEventRepository($connection)
+        );
+
+        $router->post('/api/users/{id}/reset-2fa', function (Request $request) use ($userController, $securityEventLogger) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $data = $userController->reset2FA($user, $id);
+            $securityEventLogger->log(
+                \App\Models\SecurityEvent::EVENT_TWO_FACTOR_DISABLED,
+                \App\Models\SecurityEvent::SEVERITY_WARNING,
+                [
+                    'actor' => $user,
+                    'target_user_id' => $id,
+                    'request' => $request,
+                    'context' => ['action' => 'admin_reset_2fa'],
+                ]
+            );
             return Response::json($data);
         });
 
-        $router->post('/api/users/{id}/require-2fa', function (Request $request) use ($userController) {
+        $router->post('/api/users/{id}/require-2fa', function (Request $request) use ($userController, $securityEventLogger) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $body = $request->body();
             $required = $body['required'] ?? false;
             $data = $userController->require2FA($user, $id, $required);
+            $securityEventLogger->log(
+                \App\Models\SecurityEvent::EVENT_ADMIN_ACTION,
+                \App\Models\SecurityEvent::SEVERITY_INFO,
+                [
+                    'actor' => $user,
+                    'target_user_id' => $id,
+                    'request' => $request,
+                    'context' => ['action' => 'admin_require_2fa', 'required' => (bool) $required],
+                ]
+            );
+            return Response::json($data);
+        });
+
+        // Force-reenroll: clear 2FA AND mark the target user as needing setup
+        // on next login. Use case: user lost their authenticator and admin
+        // wants the wizard to fire automatically without a manual require step.
+        $router->post('/api/users/{id}/2fa/force-reenroll', function (Request $request) use ($userController, $securityEventLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $userController->forceReenroll2FA($user, $id);
+            $securityEventLogger->log(
+                \App\Models\SecurityEvent::EVENT_TWO_FACTOR_DISABLED,
+                \App\Models\SecurityEvent::SEVERITY_WARNING,
+                [
+                    'actor' => $user,
+                    'target_user_id' => $id,
+                    'request' => $request,
+                    'context' => ['action' => 'admin_force_reenroll_2fa'],
+                ]
+            );
+            return Response::json($data);
+        });
+
+        // Admin flips must_change_password on a user. Use case: stale/leaked
+        // credential rumour, post-onboarding handoff, compliance refresh.
+        // Posting {required: true} forces rotation on next request; false
+        // clears the flag without otherwise changing the password.
+        $router->post('/api/users/{id}/require-password-change', function (Request $request) use ($userController, $securityEventLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $body = $request->body();
+            $required = (bool) ($body['required'] ?? true);
+            $data = $userController->requirePasswordChange($user, $id, $required);
+            $securityEventLogger->log(
+                \App\Models\SecurityEvent::EVENT_ADMIN_ACTION,
+                \App\Models\SecurityEvent::SEVERITY_WARNING,
+                [
+                    'actor' => $user,
+                    'target_user_id' => $id,
+                    'request' => $request,
+                    'context' => ['action' => 'admin_require_password_change', 'required' => $required],
+                ]
+            );
+            return Response::json($data);
+        });
+
+        // Admin regenerates recovery codes for a target user (e.g., user
+        // exhausted theirs). Plain codes returned ONCE for out-of-band handoff.
+        $router->post('/api/users/{id}/2fa/regenerate-recovery-codes', function (Request $request) use ($userController, $securityEventLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $userController->adminRegenerateRecoveryCodes($user, $id);
+            $securityEventLogger->log(
+                \App\Models\SecurityEvent::EVENT_ADMIN_ACTION,
+                \App\Models\SecurityEvent::SEVERITY_WARNING,
+                [
+                    'actor' => $user,
+                    'target_user_id' => $id,
+                    'request' => $request,
+                    'context' => ['action' => 'admin_regenerate_recovery_codes', 'count' => $data['count']],
+                ]
+            );
             return Response::json($data);
         });
 

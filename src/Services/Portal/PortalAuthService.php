@@ -345,8 +345,8 @@ class PortalAuthService
     {
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, active, email_verified, created_at, updated_at)
-             VALUES (:name, :email, :password, :role, 1, 1, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, password_changed_at, must_change_password, role, active, email_verified, created_at, updated_at)
+             VALUES (:name, :email, :password, NOW(), 0, :role, 1, 1, NOW(), NOW())'
         );
         $stmt->execute([
             'name' => $name,

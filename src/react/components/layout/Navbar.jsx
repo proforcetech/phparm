@@ -154,6 +154,16 @@ export default function Navbar({
                         Settings
                       </Link>
                     ) : null}
+                    {!isCustomer ? (
+                      <Link
+                        to="/cp/security"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        Security
+                      </Link>
+                    ) : null}
                     <button
                       type="button"
                       onClick={async () => {

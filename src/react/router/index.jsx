@@ -86,6 +86,7 @@ import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
 import UserGroups from '../views/users/UserGroups'
 import RoleManagement from '../views/users/RoleManagement'
+import Security from '../views/auth/Security'
 import ModuleSettings from '../views/settings/ModuleSettings'
 import InspectionTemplates from '../views/inspections/TemplateManager'
 import TechnicianInspections from '../views/inspections/TechnicianInspections'
@@ -270,6 +271,7 @@ const protectedRoutes = [
   { path: '/cp/reports/customer-retention', name: 'CustomerRetentionReport', auth: 'requiresAuth', element: <CustomerRetentionReport /> },
   { path: '/cp/reports/overview', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
   { path: '/cp/audit', name: 'AuditLogs', auth: 'requiresAuth', element: <AuditLogs /> },
+  { path: '/cp/security', name: 'Security', auth: 'requiresAuth', element: <Security /> },
   { path: '/cp/users', name: 'UsersList', auth: 'requiresAuth', element: <UsersList /> },
   { path: '/cp/users/create', name: 'UserCreate', auth: 'requiresAuth', element: <UserForm /> },
   { path: '/cp/users/groups', name: 'UserGroups', auth: 'requiresAuth', element: <UserGroups /> },

@@ -8,6 +8,10 @@ return [
         'min_entropy' => 50,
         'min_categories' => 3,
         'history_limit' => 5,
+        // Maximum password age in days before forced rotation. 0 disables.
+        'max_age_days' => (int) env('PASSWORD_MAX_AGE_DAYS', 90),
+        // How many days before expiry to start warning the user via banner.
+        'warn_before_days' => (int) env('PASSWORD_WARN_BEFORE_DAYS', 14),
     ],
     'verification' => [
         'require_staff_verification' => false,

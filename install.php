@@ -202,9 +202,10 @@ function write_env_file($filepath, $env) {
 /**
  * Create admin user in database
  */
-function create_admin_user($pdo, $name, $email, $password, $twoFactorSecret = null, $twoFactorEnabled = false, $twoFactorPending = false) {
+function create_admin_user($pdo, $name, $email, $password, $twoFactorSecret = null, $twoFactorEnabled = false, $twoFactorPending = false, $recoveryCodeHashes = null) {
     // Hash the password
     $hashedPassword = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+    $recoveryCodesJson = $recoveryCodeHashes !== null ? json_encode(array_values($recoveryCodeHashes)) : null;
 
     // Check if user already exists
     $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
@@ -214,15 +215,38 @@ function create_admin_user($pdo, $name, $email, $password, $twoFactorSecret = nu
 
     if ($existing) {
         // Update existing user
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, password = ?, role = 'admin', active = 1, email_verified = 1, two_factor_secret = ?, two_factor_enabled = ?, two_factor_setup_pending = ?, updated_at = NOW() WHERE email = ?");
-        $stmt->execute([$name, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $email]);
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, password = ?, password_changed_at = NOW(), must_change_password = 0, role = 'admin', active = 1, email_verified = 1, two_factor_secret = ?, two_factor_enabled = ?, two_factor_setup_pending = ?, two_factor_recovery_codes = ?, updated_at = NOW() WHERE email = ?");
+        $stmt->execute([$name, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $recoveryCodesJson, $email]);
         return ['action' => 'updated', 'id' => $existing['id'] ?? null];
     } else {
         // Insert new user
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, active, email_verified, two_factor_secret, two_factor_enabled, two_factor_setup_pending, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, ?, ?, ?, NOW(), NOW())");
-        $stmt->execute([$name, $email, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0]);
+        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, password_changed_at, must_change_password, role, active, email_verified, two_factor_secret, two_factor_enabled, two_factor_setup_pending, two_factor_recovery_codes, created_at, updated_at) VALUES (?, ?, ?, NOW(), 0, 'admin', 1, 1, ?, ?, ?, ?, NOW(), NOW())");
+        $stmt->execute([$name, $email, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $recoveryCodesJson]);
         return ['action' => 'created', 'id' => $pdo->lastInsertId()];
     }
+}
+
+/**
+ * Generate 2FA recovery codes (alphabet/length matches TotpService::generateRecoveryCodes).
+ * Returns plain codes for one-time display and SHA256 hashes (normalized to uppercase,
+ * matching TotpService::hashRecoveryCode) for persistence.
+ *
+ * @return array{codes: array<int, string>, hashes: array<int, string>}
+ */
+function generate_recovery_codes($count = 8, $length = 8) {
+    // Exclude visually-confusing chars (0/O, 1/I) — same alphabet as TotpService.
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    $codes = [];
+    $hashes = [];
+    for ($i = 0; $i < $count; $i++) {
+        $code = '';
+        for ($j = 0; $j < $length; $j++) {
+            $code .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        }
+        $codes[] = $code;
+        $hashes[] = hash('sha256', strtoupper(preg_replace('/[\s\-]/', '', $code)));
+    }
+    return ['codes' => $codes, 'hashes' => $hashes];
 }
 
 /**
@@ -953,6 +977,7 @@ $twoFactorChoice = menu("How would you like to handle 2FA?", [
 $twoFactorSecret = null;
 $twoFactorEnabled = false;
 $twoFactorPending = false;
+$twoFactorRecoveryHashes = null;
 
 switch ($twoFactorChoice) {
     case '1':
@@ -983,6 +1008,24 @@ switch ($twoFactorChoice) {
                 $verified = true;
                 $twoFactorEnabled = true;
                 output("  ✓ 2FA verified and enabled!\n", COLOR_GREEN);
+
+                // Generate recovery codes and display them ONCE — these are the
+                // user's only safety net if they lose their authenticator.
+                $recovery = generate_recovery_codes(8, 8);
+                $twoFactorRecoveryHashes = $recovery['hashes'];
+
+                output("\n  ┌─────────────────────────────────────────────────────────────┐\n", COLOR_YELLOW);
+                output("  │  ⚠  RECOVERY CODES — SAVE THESE NOW                         │\n", COLOR_YELLOW);
+                output("  │  Each code can be used once if you lose your authenticator. │\n", COLOR_YELLOW);
+                output("  │  These codes will NOT be shown again.                       │\n", COLOR_YELLOW);
+                output("  └─────────────────────────────────────────────────────────────┘\n", COLOR_YELLOW);
+                output("\n");
+                foreach ($recovery['codes'] as $idx => $code) {
+                    $line = sprintf('  %2d. %s', $idx + 1, $code);
+                    output($line . "\n", COLOR_GREEN);
+                }
+                output("\n  Store these in a password manager or print them.\n", COLOR_YELLOW);
+                prompt("  Press Enter once you've saved the codes");
             } else {
                 $attempts++;
                 if ($attempts < $maxAttempts) {
@@ -1050,13 +1093,17 @@ if ($stmt->rowCount() === 0) {
     $stmt->execute([$adminEmail]);
     $existing = $stmt->fetch();
 
+    $recoveryCodesJson = $twoFactorRecoveryHashes !== null
+        ? json_encode(array_values($twoFactorRecoveryHashes))
+        : null;
+
     if ($existing) {
-        $stmt = $pdo->prepare("UPDATE `{$usersTable}` SET name = ?, password = ?, role = 'admin', active = 1, email_verified = 1, two_factor_secret = ?, two_factor_enabled = ?, two_factor_setup_pending = ?, updated_at = NOW() WHERE email = ?");
-        $stmt->execute([$adminName, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $adminEmail]);
+        $stmt = $pdo->prepare("UPDATE `{$usersTable}` SET name = ?, password = ?, role = 'admin', active = 1, email_verified = 1, two_factor_secret = ?, two_factor_enabled = ?, two_factor_setup_pending = ?, two_factor_recovery_codes = ?, updated_at = NOW() WHERE email = ?");
+        $stmt->execute([$adminName, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $recoveryCodesJson, $adminEmail]);
         output("  ✓ Admin user updated successfully\n", COLOR_GREEN);
     } else {
-        $stmt = $pdo->prepare("INSERT INTO `{$usersTable}` (name, email, password, role, active, email_verified, two_factor_secret, two_factor_enabled, two_factor_setup_pending, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, ?, ?, ?, NOW(), NOW())");
-        $stmt->execute([$adminName, $adminEmail, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0]);
+        $stmt = $pdo->prepare("INSERT INTO `{$usersTable}` (name, email, password, role, active, email_verified, two_factor_secret, two_factor_enabled, two_factor_setup_pending, two_factor_recovery_codes, created_at, updated_at) VALUES (?, ?, ?, 'admin', 1, 1, ?, ?, ?, ?, NOW(), NOW())");
+        $stmt->execute([$adminName, $adminEmail, $hashedPassword, $twoFactorSecret, $twoFactorEnabled ? 1 : 0, $twoFactorPending ? 1 : 0, $recoveryCodesJson]);
         output("  ✓ Admin user created successfully\n", COLOR_GREEN);
     }
 }

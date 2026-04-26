@@ -144,4 +144,38 @@ export const authService = {
     const response = await api.post('/auth/impersonate/stop')
     return response.data
   },
+
+  /**
+   * Self-service: get remaining 2FA recovery code count.
+   */
+  async getRecoveryCodeCount() {
+    const response = await api.get('/auth/2fa/recovery-codes/count')
+    return response.data
+  },
+
+  /**
+   * Self-service: regenerate own recovery codes (TOTP code required).
+   * Returns plain codes ONCE.
+   */
+  async regenerateRecoveryCodes(code) {
+    const response = await api.post('/auth/2fa/recovery-codes/regenerate', { code })
+    return response.data
+  },
+
+  /**
+   * Admin: force a user to re-enroll in 2FA on next login.
+   */
+  async adminForceReenroll2FA(userId) {
+    const response = await api.post(`/users/${userId}/2fa/force-reenroll`)
+    return response.data
+  },
+
+  /**
+   * Admin: regenerate recovery codes for a target user.
+   * Returns plain codes ONCE — deliver out-of-band.
+   */
+  async adminRegenerateRecoveryCodes(userId) {
+    const response = await api.post(`/users/${userId}/2fa/regenerate-recovery-codes`)
+    return response.data
+  },
 }

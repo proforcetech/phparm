@@ -59,7 +59,7 @@ class AuthService
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, created_at, updated_at) VALUES (:name, :email, :password, :role, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, password_changed_at, must_change_password, role, created_at, updated_at) VALUES (:name, :email, :password, NOW(), 0, :role, NOW(), NOW())'
         );
         $stmt->execute([
             'name' => $name,
@@ -154,7 +154,7 @@ class AuthService
         $this->assertPasswordNotReused($user, $newPassword);
         $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE users SET password = :password, updated_at = NOW() WHERE email = :email'
+            'UPDATE users SET password = :password, password_changed_at = NOW(), must_change_password = 0, updated_at = NOW() WHERE email = :email'
         );
         $stmt->execute([
             'password' => $passwordHash,
@@ -202,7 +202,7 @@ class AuthService
         $this->assertPasswordNotReused($user, $password);
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE users SET password = :password, email_verified = 1, updated_at = NOW() WHERE id = :id'
+            'UPDATE users SET password = :password, password_changed_at = NOW(), must_change_password = 0, email_verified = 1, updated_at = NOW() WHERE id = :id'
         );
         $stmt->execute([
             'password' => $passwordHash,
@@ -231,7 +231,7 @@ class AuthService
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO users (name, email, password, role, customer_id, created_at, updated_at) VALUES (:name, :email, :password, :role, :customer_id, NOW(), NOW())'
+            'INSERT INTO users (name, email, password, password_changed_at, must_change_password, role, customer_id, created_at, updated_at) VALUES (:name, :email, :password, NOW(), 0, :role, :customer_id, NOW(), NOW())'
         );
         $stmt->execute([
             'name' => $name ?? $email,
@@ -260,7 +260,7 @@ class AuthService
         if (isset($attributes['password'])) {
             $this->passwordPolicy->assertPasswordStrength((string) $attributes['password']);
             $this->assertPasswordNotReused($user, (string) $attributes['password']);
-            $sql = 'UPDATE users SET name = :name, password = :password, updated_at = NOW() WHERE id = :id';
+            $sql = 'UPDATE users SET name = :name, password = :password, password_changed_at = NOW(), must_change_password = 0, updated_at = NOW() WHERE id = :id';
             $passwordHash = password_hash((string) $attributes['password'], PASSWORD_BCRYPT);
             $params['password'] = $passwordHash;
         }

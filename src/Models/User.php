@@ -8,6 +8,8 @@ class User extends BaseModel
     public string $name = '';
     public string $email = '';
     public string $password = '';
+    public ?string $password_changed_at = null;
+    public bool $must_change_password = false;
     public string $role = '';
     public bool $email_verified = false;
     public ?int $customer_id = null;

@@ -547,6 +547,104 @@ class UserController
     }
 
     /**
+     * Reset a target user's 2FA AND immediately mark them as needing re-enrollment.
+     * Single-step path for "user lost their authenticator" — the user's next login
+     * goes straight into the setup wizard.
+     *
+     * @return array<string, mixed>
+     */
+    public function forceReenroll2FA(User $user, int $id): array
+    {
+        if (!$this->gate->can($user, 'users.update')) {
+            throw new UnauthorizedException('Cannot reset 2FA');
+        }
+
+        $targetUser = $this->repository->find($id);
+        if (!$targetUser) {
+            throw new InvalidArgumentException('User not found');
+        }
+
+        $this->repository->reset2FA($id);
+        $updatedUser = $this->repository->requireTwoFactorSetup($id);
+
+        return [
+            'id' => $updatedUser->id,
+            'name' => $updatedUser->name,
+            'email' => $updatedUser->email,
+            'role' => $updatedUser->role,
+            'two_factor_enabled' => $updatedUser->two_factor_enabled,
+            'two_factor_setup_pending' => $updatedUser->two_factor_setup_pending,
+            'updated_at' => $updatedUser->updated_at,
+        ];
+    }
+
+    /**
+     * Generate a new set of recovery codes for a target user without consuming
+     * their existing TOTP credentials. Returns plain codes ONCE — caller must
+     * deliver them to the user out-of-band (e.g., printed handoff).
+     *
+     * @return array<string, mixed>
+     */
+    public function adminRegenerateRecoveryCodes(User $user, int $id): array
+    {
+        if (!$this->gate->can($user, 'users.update')) {
+            throw new UnauthorizedException('Cannot regenerate recovery codes');
+        }
+
+        $targetUser = $this->repository->find($id);
+        if (!$targetUser) {
+            throw new InvalidArgumentException('User not found');
+        }
+
+        if (!$targetUser->two_factor_enabled || !$targetUser->two_factor_secret) {
+            throw new InvalidArgumentException('Target user does not have 2FA enabled');
+        }
+
+        $generated = $this->totpService->generateRecoveryCodes(8, 8);
+        $this->repository->regenerateRecoveryCodes($id, $generated['hashes']);
+
+        return [
+            'id' => $targetUser->id,
+            'recovery_codes' => $generated['codes'],
+            'count' => count($generated['codes']),
+        ];
+    }
+
+    /**
+     * Force a user to change their password on next request. Setting
+     * $required=false clears the flag without otherwise touching the
+     * password. Stamping a future password rotation goes through the
+     * normal password-change flow.
+     *
+     * @return array<string, mixed>
+     */
+    public function requirePasswordChange(User $user, int $id, bool $required): array
+    {
+        if (!$this->gate->can($user, 'users.update')) {
+            throw new UnauthorizedException('Cannot manage password rotation requirements');
+        }
+
+        $targetUser = $this->repository->find($id);
+        if (!$targetUser) {
+            throw new InvalidArgumentException('User not found');
+        }
+
+        $updatedUser = $this->repository->update($id, [
+            'must_change_password' => $required,
+        ]);
+
+        return [
+            'id' => $updatedUser->id,
+            'name' => $updatedUser->name,
+            'email' => $updatedUser->email,
+            'role' => $updatedUser->role,
+            'must_change_password' => $updatedUser->must_change_password,
+            'password_changed_at' => $updatedUser->password_changed_at,
+            'updated_at' => $updatedUser->updated_at,
+        ];
+    }
+
+    /**
      * Require 2FA for a user
      *
      * @return array<string, mixed>

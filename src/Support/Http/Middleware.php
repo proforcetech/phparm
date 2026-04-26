@@ -9,6 +9,7 @@ use App\Support\Auth\CsrfTokenService;
 use App\Support\Auth\ImpersonationService;
 use App\Support\Auth\JwtService;
 use App\Support\Auth\ModuleAccessService;
+use App\Support\Auth\PasswordExpirationPolicy;
 use App\Support\Auth\RolePermissions;
 use App\Support\Auth\SecureSessionService;
 use App\Support\Auth\UnauthorizedException;
@@ -24,6 +25,21 @@ class Middleware
     private static ?ImpersonationService $impersonationService = null;
     private static ?SecureSessionService $secureSessionService = null;
     private static ?CsrfTokenService $csrfTokenService = null;
+    private static ?PasswordExpirationPolicy $passwordExpirationPolicy = null;
+
+    /**
+     * Endpoints that remain reachable while a user is in a forced-rotation
+     * state. They're the minimum surface needed to: read who you are, log
+     * out, refresh the JWT, get a CSRF token, and actually change the
+     * password. Everything else returns 403 password_change_required.
+     */
+    private const PASSWORD_ROTATION_ALLOWLIST = [
+        '/api/auth/me',
+        '/api/auth/logout',
+        '/api/auth/refresh',
+        '/api/auth/csrf-token',
+        '/api/users/me',
+    ];
 
     /**
      * Get or create the default rate limiter instance.
@@ -190,6 +206,26 @@ class Middleware
             self::$csrfTokenService = new CsrfTokenService();
         }
         return self::$csrfTokenService;
+    }
+
+    /**
+     * Lazy-load the password expiration policy from config/auth.php so the
+     * auth middleware can short-circuit requests for users with an expired
+     * or admin-flagged password.
+     */
+    private static function getPasswordExpirationPolicy(): PasswordExpirationPolicy
+    {
+        if (self::$passwordExpirationPolicy === null) {
+            $configPath = dirname(__DIR__, 3) . '/config/auth.php';
+            $config = file_exists($configPath) ? require $configPath : [];
+            self::$passwordExpirationPolicy = PasswordExpirationPolicy::fromConfig($config);
+        }
+        return self::$passwordExpirationPolicy;
+    }
+
+    public static function setPasswordExpirationPolicy(PasswordExpirationPolicy $policy): void
+    {
+        self::$passwordExpirationPolicy = $policy;
     }
 
     /**
@@ -378,6 +414,25 @@ class Middleware
 
             if ($userModel instanceof User) {
                 self::recordUserActivity($userModel->id);
+
+                // Force-rotation gate: block all API calls outside the
+                // allowlist when this user must rotate their password,
+                // either because aging tipped them over or an admin flipped
+                // must_change_password. Customers and impersonated sessions
+                // are exempt — customers don't manage their own password
+                // through this surface, and impersonators shouldn't be able
+                // to silently accept rotation on someone else's behalf.
+                if (!$isImpersonating
+                    && $userModel->role !== 'customer'
+                    && self::getPasswordExpirationPolicy()->isRotationRequired($userModel)
+                    && !in_array($request->path(), self::PASSWORD_ROTATION_ALLOWLIST, true)
+                ) {
+                    return Response::json([
+                        'success' => false,
+                        'error' => 'password_change_required',
+                        'message' => 'Your password has expired. Please change it before continuing.',
+                    ], 403);
+                }
             }
 
             return $next($request);

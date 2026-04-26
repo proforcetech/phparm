@@ -85,11 +85,21 @@ export default function UsersList() {
   const [impersonating, setImpersonating] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReset2FAModal, setShowReset2FAModal] = useState(false)
+  const [showForceReenrollModal, setShowForceReenrollModal] = useState(false)
+  const [showAdminCodesModal, setShowAdminCodesModal] = useState(false)
+  const [showRequirePwModal, setShowRequirePwModal] = useState(false)
+  const [userToRequirePw, setUserToRequirePw] = useState(null)
+  const [requiringPw, setRequiringPw] = useState(false)
   const [showBulkDeactivateModal, setShowBulkDeactivateModal] = useState(false)
   const [showBulkRoleModal, setShowBulkRoleModal] = useState(false)
   const [showImpersonateModal, setShowImpersonateModal] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [userToReset2FA, setUserToReset2FA] = useState(null)
+  const [userToForceReenroll, setUserToForceReenroll] = useState(null)
+  const [userToRegenCodes, setUserToRegenCodes] = useState(null)
+  const [forcingReenroll, setForcingReenroll] = useState(false)
+  const [regenCodesSubmitting, setRegenCodesSubmitting] = useState(false)
+  const [adminGeneratedCodes, setAdminGeneratedCodes] = useState([])
   const [userToImpersonate, setUserToImpersonate] = useState(null)
   const [roleOptions, setRoleOptions] = useState(defaultRoleOptions)
   const [roleLabels, setRoleLabels] = useState({})
@@ -278,6 +288,74 @@ export default function UsersList() {
       toast.error(error.response?.data?.message || 'Failed to reset 2FA')
     } finally {
       setResetting2FA(false)
+    }
+  }
+
+  const confirmForceReenroll = (user) => {
+    setUserToForceReenroll(user)
+    setShowForceReenrollModal(true)
+  }
+
+  const handleForceReenroll = async () => {
+    if (!userToForceReenroll) return
+    setForcingReenroll(true)
+    try {
+      await userService.forceReenroll2FA(userToForceReenroll.id)
+      toast.success('User will be required to re-enroll 2FA on next login')
+      setShowForceReenrollModal(false)
+      setUserToForceReenroll(null)
+      loadUsers()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to force 2FA re-enrollment')
+    } finally {
+      setForcingReenroll(false)
+    }
+  }
+
+  const confirmAdminRegenCodes = (user) => {
+    setUserToRegenCodes(user)
+    setAdminGeneratedCodes([])
+    setShowAdminCodesModal(true)
+  }
+
+  const handleAdminRegenCodes = async () => {
+    if (!userToRegenCodes) return
+    setRegenCodesSubmitting(true)
+    try {
+      const data = await userService.adminRegenerateRecoveryCodes(userToRegenCodes.id)
+      setAdminGeneratedCodes(data.recovery_codes || [])
+      toast.success('New recovery codes generated')
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to regenerate recovery codes')
+    } finally {
+      setRegenCodesSubmitting(false)
+    }
+  }
+
+  const closeAdminCodesModal = () => {
+    setShowAdminCodesModal(false)
+    setUserToRegenCodes(null)
+    setAdminGeneratedCodes([])
+  }
+
+  const confirmRequirePasswordChange = (user) => {
+    setUserToRequirePw(user)
+    setShowRequirePwModal(true)
+  }
+
+  const handleRequirePasswordChange = async () => {
+    if (!userToRequirePw) return
+    setRequiringPw(true)
+    try {
+      await userService.adminRequirePasswordChange(userToRequirePw.id, true)
+      toast.success(`${userToRequirePw.name} will be required to change their password`)
+      setShowRequirePwModal(false)
+      setUserToRequirePw(null)
+      loadUsers()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to require password change')
+    } finally {
+      setRequiringPw(false)
     }
   }
 
@@ -589,6 +667,42 @@ export default function UsersList() {
                               </svg>
                             </Button>
                           ) : null}
+                          {isAdmin && user.two_factor_enabled ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => confirmAdminRegenCodes(user)}
+                              title="Regenerate recovery codes"
+                            >
+                              <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </Button>
+                          ) : null}
+                          {isAdmin ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => confirmForceReenroll(user)}
+                              title="Force 2FA re-enrollment"
+                            >
+                              <svg className="h-4 w-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                              </svg>
+                            </Button>
+                          ) : null}
+                          {isAdmin && user.role !== 'customer' && currentUser?.id !== user.id ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => confirmRequirePasswordChange(user)}
+                              title="Require password change"
+                            >
+                              <svg className="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                            </Button>
+                          ) : null}
                           {isAdmin && currentUser?.id !== user.id ? (
                             <Button
                               variant="ghost"
@@ -647,6 +761,99 @@ export default function UsersList() {
         <p className="text-sm text-gray-600">
           Are you sure you want to reset 2FA for <strong>{userToReset2FA?.name}</strong>? They will need to set it up again.
         </p>
+      </Modal>
+
+      <Modal
+        open={showForceReenrollModal}
+        title="Force 2FA Re-enrollment"
+        onClose={() => setShowForceReenrollModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowForceReenrollModal(false)}>Cancel</Button>
+            <Button variant="warning" onClick={handleForceReenroll} loading={forcingReenroll}>
+              Force Re-enrollment
+            </Button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          This will clear <strong>{userToForceReenroll?.name}</strong>'s 2FA secret and recovery codes,
+          and require them to re-enroll on their next login.
+        </p>
+      </Modal>
+
+      <Modal
+        open={showRequirePwModal}
+        title="Require Password Change"
+        onClose={() => setShowRequirePwModal(false)}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowRequirePwModal(false)}>Cancel</Button>
+            <Button variant="warning" onClick={handleRequirePasswordChange} loading={requiringPw}>
+              Require Password Change
+            </Button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          <strong>{userToRequirePw?.name}</strong> will be forced to change their password before
+          accessing the application again. Existing sessions will continue to load profile data,
+          but the password rotation overlay will block all other actions until a new password is set.
+        </p>
+      </Modal>
+
+      <Modal
+        open={showAdminCodesModal}
+        title={adminGeneratedCodes.length ? 'New Recovery Codes Generated' : 'Regenerate Recovery Codes'}
+        onClose={closeAdminCodesModal}
+        footer={(
+          <div className="flex justify-end gap-2">
+            {adminGeneratedCodes.length === 0 ? (
+              <>
+                <Button variant="outline" onClick={closeAdminCodesModal}>Cancel</Button>
+                <Button onClick={handleAdminRegenCodes} loading={regenCodesSubmitting}>
+                  Generate New Codes
+                </Button>
+              </>
+            ) : (
+              <Button onClick={closeAdminCodesModal}>Done</Button>
+            )}
+          </div>
+        )}
+      >
+        {adminGeneratedCodes.length === 0 ? (
+          <p className="text-sm text-gray-600">
+            Generate a new set of recovery codes for <strong>{userToRegenCodes?.name}</strong>?
+            Their existing codes will be invalidated. The new codes will be shown once — you must
+            deliver them to the user out-of-band.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-yellow-800">
+              ⚠ Save these codes now and deliver to {userToRegenCodes?.name}. They will not be shown again.
+            </p>
+            <div className="rounded border border-yellow-300 bg-yellow-50 p-4">
+              <div className="grid grid-cols-2 gap-2 font-mono text-sm">
+                {adminGeneratedCodes.map((code, idx) => (
+                  <div key={`${code}-${idx}`} className="text-gray-900">
+                    {idx + 1}. {code}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const text = adminGeneratedCodes.map((c, i) => `${i + 1}. ${c}`).join('\n')
+                await navigator.clipboard.writeText(text)
+                toast.success('Codes copied to clipboard')
+              }}
+              className="w-full"
+            >
+              Copy All Codes
+            </Button>
+          </div>
+        )}
       </Modal>
 
       <Modal
