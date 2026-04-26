@@ -511,6 +511,33 @@ class WorkorderService
         );
     }
 
+    /**
+     * @param array<int, int> $workorderIds
+     * @return array<int, array<int, Estimate>>
+     */
+    public function getSubEstimatesForWorkorders(array $workorderIds): array
+    {
+        $workorderIds = array_values(array_unique(array_map('intval', $workorderIds)));
+        if ($workorderIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($workorderIds), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT * FROM estimates
+             WHERE workorder_id IN ({$placeholders}) AND estimate_type = 'sub_estimate'
+             ORDER BY workorder_id ASC, created_at ASC"
+        );
+        $stmt->execute($workorderIds);
+
+        $grouped = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $grouped[(int) $row['workorder_id']][] = new Estimate($row);
+        }
+
+        return $grouped;
+    }
+
     private function fetchEstimate(int $id): ?Estimate
     {
         $stmt = $this->connection->pdo()->prepare('SELECT * FROM estimates WHERE id = :id');

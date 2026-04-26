@@ -59,9 +59,18 @@ class WorkorderRepository
     {
         $clauses = [];
         $bindings = [];
-        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((SELECT MAX(created_at) FROM workorder_status_history wsh '
-            . 'WHERE wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status), '
-            . 'workorders.updated_at, workorders.created_at), NOW())';
+        $historyJoin = '';
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE(workorders.updated_at, workorders.created_at), NOW())';
+        $hasStatusAgeFilter = (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '')
+            || (array_key_exists('status_age_max_days', $filters) && $filters['status_age_max_days'] !== null && $filters['status_age_max_days'] !== '');
+        if ($hasStatusAgeFilter) {
+            $historyJoin = ' LEFT JOIN (
+                SELECT workorder_id, to_status, MAX(created_at) AS last_status_at
+                FROM workorder_status_history
+                GROUP BY workorder_id, to_status
+            ) wsh ON wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status';
+            $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE(wsh.last_status_at, workorders.updated_at, workorders.created_at), NOW())';
+        }
 
         if (!empty($filters['status'])) {
             if (is_array($filters['status'])) {
@@ -129,7 +138,7 @@ class WorkorderRepository
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-        $sql = 'SELECT * FROM workorders ' . $where . ' ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset';
+        $sql = 'SELECT workorders.* FROM workorders' . $historyJoin . ' ' . $where . ' ORDER BY workorders.created_at DESC, workorders.id DESC LIMIT :limit OFFSET :offset';
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare($sql);
 
@@ -153,9 +162,18 @@ class WorkorderRepository
     {
         $clauses = [];
         $bindings = [];
-        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((SELECT MAX(created_at) FROM workorder_status_history wsh '
-            . 'WHERE wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status), '
-            . 'workorders.updated_at, workorders.created_at), NOW())';
+        $historyJoin = '';
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE(workorders.updated_at, workorders.created_at), NOW())';
+        $hasStatusAgeFilter = (array_key_exists('status_age_min_days', $filters) && $filters['status_age_min_days'] !== null && $filters['status_age_min_days'] !== '')
+            || (array_key_exists('status_age_max_days', $filters) && $filters['status_age_max_days'] !== null && $filters['status_age_max_days'] !== '');
+        if ($hasStatusAgeFilter) {
+            $historyJoin = ' LEFT JOIN (
+                SELECT workorder_id, to_status, MAX(created_at) AS last_status_at
+                FROM workorder_status_history
+                GROUP BY workorder_id, to_status
+            ) wsh ON wsh.workorder_id = workorders.id AND wsh.to_status = workorders.status';
+            $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE(wsh.last_status_at, workorders.updated_at, workorders.created_at), NOW())';
+        }
 
         if (!empty($filters['status'])) {
             if (is_array($filters['status'])) {
@@ -193,7 +211,7 @@ class WorkorderRepository
         }
 
         $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-        $sql = 'SELECT COUNT(*) FROM workorders ' . $where;
+        $sql = 'SELECT COUNT(*) FROM workorders' . $historyJoin . ' ' . $where;
         $stmt = $this->connection->pdo()->prepare($sql);
 
         foreach ($bindings as $key => $value) {
@@ -203,6 +221,53 @@ class WorkorderRepository
         $stmt->execute();
 
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @param array<int, string> $statuses
+     * @return array<string, int>
+     */
+    public function countByStatuses(array $filters, array $statuses): array
+    {
+        $statuses = array_values(array_unique(array_filter($statuses, static fn ($status) => $status !== '')));
+        if ($statuses === []) {
+            return [];
+        }
+
+        $clauses = [];
+        $bindings = [];
+        $placeholders = [];
+        foreach ($statuses as $i => $status) {
+            $key = 'status_' . $i;
+            $placeholders[] = ':' . $key;
+            $bindings[$key] = $status;
+        }
+        $clauses[] = 'status IN (' . implode(',', $placeholders) . ')';
+
+        if (!empty($filters['technician_id'])) {
+            $clauses[] = 'assigned_technician_id = :technician_id';
+            $bindings['technician_id'] = (int) $filters['technician_id'];
+        }
+
+        if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
+            $clauses[] = 'branch_id = :branch_id';
+            $bindings['branch_id'] = (int) $filters['branch_id'];
+        }
+
+        $sql = 'SELECT status, COUNT(*) AS total FROM workorders WHERE ' . implode(' AND ', $clauses) . ' GROUP BY status';
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($bindings as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->execute();
+
+        $counts = array_fill_keys($statuses, 0);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $counts[(string) $row['status']] = (int) $row['total'];
+        }
+
+        return $counts;
     }
 
     public function updateStatus(
@@ -237,6 +302,7 @@ class WorkorderRepository
 
         $fromStatus = $workorder->status;
         $pdo = $this->connection->pdo();
+        $now = date('Y-m-d H:i:s');
 
         $updateFields = ['status = :status', 'updated_at = NOW()'];
         $params = ['status' => $status, 'id' => $id];
@@ -257,8 +323,6 @@ class WorkorderRepository
 
         // Record status history
         $this->recordStatusHistory($id, $fromStatus, $status, $actorId, $notes, $clientEventId);
-
-        $workorder = $this->find($id);
         $context = [
             'from_status' => $fromStatus,
             'to_status' => $status,
@@ -270,7 +334,17 @@ class WorkorderRepository
 
         $this->log('workorder.status_changed', $id, $actorId, $context);
 
-        return $workorder;
+        $payload = $workorder->toArray();
+        $payload['status'] = $status;
+        $payload['updated_at'] = $now;
+        if ($status === Workorder::STATUS_IN_PROGRESS && $workorder->started_at === null) {
+            $payload['started_at'] = $now;
+        }
+        if (in_array($status, [Workorder::STATUS_COMPLETED, Workorder::STATUS_GOA], true)) {
+            $payload['completed_at'] = $now;
+        }
+
+        return new Workorder($payload);
     }
 
     public function updateGoaDetails(int $id, float $goaFee, ?string $billingParty): void
@@ -314,7 +388,11 @@ class WorkorderRepository
             'recommended_driver' => $recommendedDriver,
         ]);
 
-        return $this->find($id);
+        $payload = $workorder->toArray();
+        $payload['assigned_technician_id'] = $technicianId;
+        $payload['updated_at'] = date('Y-m-d H:i:s');
+
+        return new Workorder($payload);
     }
 
     public function updatePriority(int $id, string $priority, ?int $actorId = null): ?Workorder
@@ -340,7 +418,11 @@ class WorkorderRepository
             'new_priority' => $priority,
         ]);
 
-        return $this->find($id);
+        $payload = $workorder->toArray();
+        $payload['priority'] = $priority;
+        $payload['updated_at'] = date('Y-m-d H:i:s');
+
+        return new Workorder($payload);
     }
 
     /**
@@ -381,12 +463,27 @@ class WorkorderRepository
     public function getJobsWithItems(int $workorderId): array
     {
         $jobs = $this->getJobs($workorderId);
+        if ($jobs === []) {
+            return [];
+        }
+
+        $jobIds = array_map(static fn (WorkorderJob $job) => $job->id, $jobs);
+        $placeholders = implode(',', array_fill(0, count($jobIds), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT * FROM workorder_items WHERE workorder_job_id IN ({$placeholders}) ORDER BY workorder_job_id ASC, position ASC"
+        );
+        $stmt->execute($jobIds);
+        $itemsByJob = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $itemsByJob[(int) $row['workorder_job_id']][] = new WorkorderItem($row);
+        }
+
         $result = [];
 
         foreach ($jobs as $job) {
             $result[] = [
                 'job' => $job,
-                'items' => $this->getJobItems($job->id),
+                'items' => $itemsByJob[$job->id] ?? [],
             ];
         }
 
@@ -405,9 +502,16 @@ class WorkorderRepository
         }
 
         $this->assertCheckpointEvidence($jobId, $status);
+        $currentStmt = $this->connection->pdo()->prepare('SELECT * FROM workorder_jobs WHERE id = :id');
+        $currentStmt->execute(['id' => $jobId]);
+        $currentRow = $currentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($currentRow === false) {
+            return null;
+        }
 
         $updateFields = ['status = :status', 'updated_at = NOW()'];
         $params = ['status' => $status, 'id' => $jobId];
+        $now = date('Y-m-d H:i:s');
 
         if ($status === WorkorderJob::STATUS_IN_PROGRESS) {
             $updateFields[] = 'started_at = COALESCE(started_at, NOW())';
@@ -424,24 +528,25 @@ class WorkorderRepository
             'UPDATE workorder_jobs SET ' . implode(', ', $updateFields) . ' WHERE id = :id'
         );
         $stmt->execute($params);
+        $context = [
+            'job_id' => $jobId,
+            'status' => $status,
+        ];
+        if ($location !== null) {
+            $context['location'] = $location;
+        }
+        $this->log('workorder_job.status_changed', (int) $currentRow['workorder_id'], $actorId, $context);
 
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM workorder_jobs WHERE id = :id');
-        $stmt->execute(['id' => $jobId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($row) {
-            $context = [
-                'job_id' => $jobId,
-                'status' => $status,
-            ];
-            if ($location !== null) {
-                $context['location'] = $location;
-            }
-
-            $this->log('workorder_job.status_changed', $row['workorder_id'], $actorId, $context);
+        $currentRow['status'] = $status;
+        $currentRow['updated_at'] = $now;
+        if ($status === WorkorderJob::STATUS_IN_PROGRESS && empty($currentRow['started_at'])) {
+            $currentRow['started_at'] = $now;
+        }
+        if (in_array($status, [WorkorderJob::STATUS_COMPLETED, WorkorderJob::STATUS_GOA], true)) {
+            $currentRow['completed_at'] = $now;
         }
 
-        return $row ? new WorkorderJob($row) : null;
+        return new WorkorderJob($currentRow);
     }
 
     private function assertCheckpointEvidence(int $jobId, string $status): void

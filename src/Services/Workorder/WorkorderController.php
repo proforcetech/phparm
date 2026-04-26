@@ -56,13 +56,19 @@ class WorkorderController
         $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
 
         $workorders = $this->repository->list($filters, $limit, $offset);
-        $total = $this->repository->count($filters);
+        $workorderCount = count($workorders);
+        $total = $workorderCount < $limit
+            ? $offset + $workorderCount
+            : $this->repository->count($filters);
+        $subEstimatesByWorkorder = $this->service->getSubEstimatesForWorkorders(
+            array_map(static fn (Workorder $workorder) => $workorder->id, $workorders)
+        );
 
-        $data = array_map(function ($workorder) {
+        $data = array_map(function ($workorder) use ($subEstimatesByWorkorder) {
             $data = $this->enrichWorkorder($workorder);
             $data['sub_estimates'] = array_map(
                 static fn($estimate) => $estimate->toArray(),
-                $this->service->getSubEstimates($workorder->id)
+                $subEstimatesByWorkorder[$workorder->id] ?? []
             );
 
             return $data;
@@ -639,15 +645,21 @@ class WorkorderController
         }
 
         $baseFilters = $technicianId ? ['technician_id' => (int) $technicianId] : [];
+        $counts = $this->repository->countByStatuses($baseFilters, [
+            Workorder::STATUS_PENDING,
+            Workorder::STATUS_IN_PROGRESS,
+            Workorder::STATUS_ON_HOLD,
+            Workorder::STATUS_COMPLETED,
+        ]);
 
         return [
-            'pending' => $this->repository->count(array_merge($baseFilters, ['status' => Workorder::STATUS_PENDING])),
-            'in_progress' => $this->repository->count(array_merge($baseFilters, ['status' => Workorder::STATUS_IN_PROGRESS])),
-            'on_hold' => $this->repository->count(array_merge($baseFilters, ['status' => Workorder::STATUS_ON_HOLD])),
-            'completed' => $this->repository->count(array_merge($baseFilters, ['status' => Workorder::STATUS_COMPLETED])),
-            'total_active' => $this->repository->count(array_merge($baseFilters, [
-                'status' => [Workorder::STATUS_PENDING, Workorder::STATUS_IN_PROGRESS, Workorder::STATUS_ON_HOLD],
-            ])),
+            'pending' => $counts[Workorder::STATUS_PENDING] ?? 0,
+            'in_progress' => $counts[Workorder::STATUS_IN_PROGRESS] ?? 0,
+            'on_hold' => $counts[Workorder::STATUS_ON_HOLD] ?? 0,
+            'completed' => $counts[Workorder::STATUS_COMPLETED] ?? 0,
+            'total_active' => ($counts[Workorder::STATUS_PENDING] ?? 0)
+                + ($counts[Workorder::STATUS_IN_PROGRESS] ?? 0)
+                + ($counts[Workorder::STATUS_ON_HOLD] ?? 0),
         ];
     }
 
