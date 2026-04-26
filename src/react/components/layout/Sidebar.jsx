@@ -1,12 +1,24 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ArchiveBoxIcon, Bars3Icon, CalendarIcon, ChartBarIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CreditCardIcon, CubeIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FolderIcon, GlobeAltIcon, HomeIcon, PhotoIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, Squares2X2Icon, TruckIcon, UserGroupIcon, UsersIcon } from '@heroicons/react/24/outline'
+import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 import ServiceLineSwitcher from './ServiceLineSwitcher'
 
+// Section dividers render as non-clickable headings between groups. Empty
+// sections are pruned in renderMenu (so module-key filtering doesn't leave a
+// header floating above nothing).
+const sec = (label) => ({ divider: true, label })
+
 const adminMenuItems = [
+  sec('Service Delivery'),
   { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon, moduleKey: 'core' },
+  { path: '/cp/tickets', label: 'Tickets', icon: TicketIcon, moduleKey: 'tickets',
+    children: [
+      { path: '/cp/tickets/triage', label: 'Triage Suggestions', icon: CpuChipIcon },
+      { path: '/cp/tickets/queues', label: 'Queues', icon: RectangleStackIcon },
+    ],
+  },
   { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon, moduleKey: 'appointments' },
   { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
   { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
@@ -14,9 +26,19 @@ const adminMenuItems = [
   { path: '/cp/quick-sale', label: 'Quick Sale', icon: CreditCardIcon, moduleKey: 'invoicing' },
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
   { path: '/cp/leave-requests', label: 'Leave Requests', icon: ClipboardDocumentCheckIcon, moduleKey: 'time_tracking' },
+  { path: '/cp/eta/promises', label: 'ETA Promises', icon: BellAlertIcon, moduleKey: 'tickets' },
+
+  sec('Customers & Sites'),
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
+  { path: '/cp/crm/companies', label: 'Companies', icon: BuildingOffice2Icon, moduleKey: 'crm' },
+  { path: '/cp/crm/sites', label: 'Sites', icon: MapPinIcon, moduleKey: 'crm' },
+  { path: '/cp/contracts', label: 'Contracts', icon: DocumentDuplicateIcon, moduleKey: 'contracts' },
   { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
   { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
+  sec('Maintenance'),
+  { path: '/cp/pm/plans', label: 'PM Plans', icon: BookOpenIcon, moduleKey: 'pm' },
+  { path: '/cp/pm/schedules', label: 'PM Schedules', icon: CalendarIcon, moduleKey: 'pm' },
+  { path: '/cp/pm/compliance', label: 'PM Compliance', icon: ChartPieIcon, moduleKey: 'pm' },
   {
     path: '/cp/inventory',
     label: 'Inventory',
@@ -31,6 +53,17 @@ const adminMenuItems = [
     ],
   },
   { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
+
+  sec('Assets & Fleet'),
+  { path: '/cp/assets', label: 'Installed Assets', icon: WrenchScrewdriverIcon, moduleKey: 'assets' },
+  { path: '/cp/assets/types', label: 'Asset Types', icon: TagIcon, moduleKey: 'assets' },
+  { path: '/cp/fleet/units', label: 'Fleet Units', icon: TruckIcon, moduleKey: 'fleet' },
+  { path: '/cp/fleet/external-repairs', label: 'External Repairs', icon: LifebuoyIcon, moduleKey: 'fleet' },
+  { path: '/cp/fleet/reports', label: 'Fleet Reports', icon: ChartBarIcon, moduleKey: 'fleet' },
+  { path: '/cp/routing/route-plans', label: 'Route Plans', icon: MapIcon, moduleKey: 'routing' },
+  { path: '/cp/routing/geo-fences', label: 'Geo-Fences', icon: MapPinIcon, moduleKey: 'routing' },
+  { path: '/cp/capital-plan/aging', label: 'Asset Aging', icon: ChartPieIcon, moduleKey: 'capital_plan' },
+  { path: '/cp/capital-plan/plans', label: 'Capital Plans', icon: CurrencyDollarIcon, moduleKey: 'capital_plan' },
   {
     path: '/cp/dispatch',
     label: 'Dispatch',
@@ -78,10 +111,15 @@ const adminMenuItems = [
     ],
   },
   { path: '/cp/document-vault', label: 'Document Vault', icon: DocumentDuplicateIcon, moduleKey: 'documents' },
+  { path: '/cp/voice-notes', label: 'Voice Notes', icon: MicrophoneIcon, moduleKey: 'voice_notes' },
+  { path: '/cp/subcontractors', label: 'Subcontractors', icon: BuildingOfficeIcon, moduleKey: 'subcontractors' },
+
+  sec('Finance'),
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
   { path: '/cp/financial/reconciliation', label: 'Reconciliation', icon: ClipboardDocumentCheckIcon, moduleKey: 'financial' },
   { path: '/cp/financial/categories', label: 'Account Categories', icon: FolderIcon, moduleKey: 'financial' },
   { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
+  { path: '/cp/branches/dashboards', label: 'Branch Dashboards', icon: BuildingOfficeIcon, moduleKey: 'reports' },
   {
     path: '/cp/inspections/work',
     label: 'Inspections',
@@ -139,6 +177,13 @@ const adminMenuItems = [
       },
     ],
   },
+  sec('Admin & Integrations'),
+  { path: '/cp/divisions', label: 'Divisions', icon: BuildingOffice2Icon, moduleKey: 'divisions' },
+  { path: '/cp/integrations', label: 'Integrations', icon: PuzzlePieceIcon, moduleKey: 'integrations' },
+  { path: '/cp/sso/providers', label: 'SSO Providers', icon: KeyIcon, moduleKey: 'sso' },
+  { path: '/cp/security-events', label: 'Security Events', icon: FingerPrintIcon, moduleKey: 'security' },
+  { path: '/cp/retention/policies', label: 'Retention Policies', icon: TrashIcon, moduleKey: 'retention' },
+  { path: '/cp/custom-fields', label: 'Custom Fields', icon: AdjustmentsHorizontalIcon, moduleKey: 'custom_fields' },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
   {
     path: '/cp/users',
@@ -253,19 +298,26 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       return technicianMenuItems
     }
 
-    // Admin users see all menu items - no filtering needed
-    if (user?.role?.toLowerCase() === 'admin') {
-      return adminMenuItems
-    }
+    // Admin users see everything as-is.
+    const items = user?.role?.toLowerCase() === 'admin'
+      ? adminMenuItems
+      : adminMenuItems.filter((item) => {
+          if (item.divider) {
+            return true
+          }
+          if (!item.moduleKey) {
+            return true
+          }
+          return hasModuleAccess(item.moduleKey)
+        })
 
-    // For other staff roles, filter based on module access
-    return adminMenuItems.filter((item) => {
-      // Items without moduleKey are always shown (settings, users)
-      if (!item.moduleKey) {
+    // Prune dividers that would otherwise headline an empty section.
+    return items.filter((item, idx) => {
+      if (!item.divider) {
         return true
       }
-      // Check if user has access to this module
-      return hasModuleAccess(item.moduleKey)
+      const next = items[idx + 1]
+      return next && !next.divider
     })
   }, [type, user?.role, hasModuleAccess])
 
@@ -282,7 +334,29 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
     [isOpen]
   )
 
-  const renderMenuItem = (item) => {
+  const renderMenuItem = (item, idx) => {
+    if (item.divider) {
+      // Hide section headings entirely when collapsed — a thin separator
+      // would just add visual noise next to icons.
+      if (isCollapsed) {
+        return (
+          <div
+            key={`divider-${idx}-${item.label}`}
+            className="hidden lg:block my-2 border-t border-gray-700"
+            aria-hidden="true"
+          />
+        )
+      }
+      return (
+        <div
+          key={`divider-${idx}-${item.label}`}
+          className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500"
+        >
+          {item.label}
+        </div>
+      )
+    }
+
     const Icon = item.icon
     const isActive = isActiveRoute(pathname, item.path)
     const isChildActive = item.children?.some((child) => isActiveRoute(pathname, child.path))
@@ -401,7 +475,7 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
             aria-label="Main navigation"
           >
             <div className={isCollapsed ? 'lg:space-y-2 space-y-1' : 'space-y-1'}>
-              {menuItems.map((item) => renderMenuItem(item))}
+              {menuItems.map((item, idx) => renderMenuItem(item, idx))}
             </div>
           </nav>
         </div>

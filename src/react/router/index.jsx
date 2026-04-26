@@ -130,6 +130,14 @@ import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
 import EssLayout from '../components/layout/EssLayout'
 import NotFound from '../views/NotFound'
+import PlaceholderPage from '../views/PlaceholderPage'
+
+// WOMS expansion modules — all stubbed to PlaceholderPage during foundation
+// pass (Phase A of the wire-up plan). Deep wire-up happens module-by-module
+// in subsequent phases.
+const stub = (title, description) => (
+  <PlaceholderPage title={title} description={description} />
+)
 
 const reactBasename = import.meta.env.VITE_REACT_BASE || ''
 
@@ -288,6 +296,91 @@ const protectedRoutes = [
   { path: '/cp/cms/templates/create', name: 'CMSTemplateCreate', auth: 'requiresAuth', element: <CMSTemplateForm /> },
   { path: '/cp/cms/templates/:id', name: 'CMSTemplateEdit', auth: 'requiresAuth', element: <CMSTemplateForm /> },
   { path: '/cp/cms/404-manager', name: 'NotFoundManager', auth: 'requiresAuth', element: <NotFoundManager /> },
+  // ── WOMS expansion stubs (Phase A foundation pass) ─────────────────
+  // CRM
+  { path: '/cp/crm/companies', name: 'CrmCompanies', auth: 'requiresAuth', element: stub('Companies', 'B2B / commercial customer accounts. Each company has one or more sites.') },
+  { path: '/cp/crm/companies/create', name: 'CrmCompanyCreate', auth: 'requiresAuth', element: stub('New Company', 'Create a B2B company record.') },
+  { path: '/cp/crm/companies/:id', name: 'CrmCompanyDetail', auth: 'requiresAuth', element: stub('Company Detail', 'Sites, billing contacts, contracts, and entitlements for one company.') },
+  { path: '/cp/crm/sites', name: 'CrmSites', auth: 'requiresAuth', element: stub('Sites', 'Service locations across all companies. Each site can host installed assets and contracts.') },
+  { path: '/cp/crm/sites/:id', name: 'CrmSiteDetail', auth: 'requiresAuth', element: stub('Site Detail', 'Contacts, blackout windows, codes, assets, and contracts for one site.') },
+
+  // Contracts
+  { path: '/cp/contracts', name: 'ContractsList', auth: 'requiresAuth', element: stub('Contracts', 'Master service agreements with sites, entitlements, billing schedules, and renewals.') },
+  { path: '/cp/contracts/create', name: 'ContractCreate', auth: 'requiresAuth', element: stub('New Contract', 'Draft a new service contract.') },
+  { path: '/cp/contracts/:id', name: 'ContractDetail', auth: 'requiresAuth', element: stub('Contract Detail', 'Sites, entitlements, amendments, billing, and signing status.') },
+
+  // Tickets
+  { path: '/cp/tickets', name: 'TicketsList', auth: 'requiresAuth', element: stub('Tickets', 'Service intake — requests routed to queues, scoped by SLA, and converted to workorders.') },
+  { path: '/cp/tickets/create', name: 'TicketCreate', auth: 'requiresAuth', element: stub('New Ticket', 'Open a new service ticket.') },
+  { path: '/cp/tickets/:id', name: 'TicketDetail', auth: 'requiresAuth', element: stub('Ticket Detail', 'Comments, SLA, ETA promises, triage suggestions, and linked workorders.') },
+  { path: '/cp/tickets/triage', name: 'TicketTriage', auth: 'requiresAuth', element: stub('Triage Suggestions', 'AI / rule-driven recommendations awaiting accept/reject.') },
+  { path: '/cp/tickets/queues', name: 'TicketQueues', auth: 'requiresAuth', element: stub('Ticket Queues', 'Routing queues for ticket assignment.') },
+  { path: '/cp/tickets/sla-policies', name: 'TicketSlaPolicies', auth: 'requiresAuth', element: stub('SLA Policies', 'Response and resolution targets per category/priority.') },
+  { path: '/cp/tickets/routing-rules', name: 'TicketRoutingRules', auth: 'requiresAuth', element: stub('Routing Rules', 'Rules that auto-route inbound tickets into queues.') },
+  { path: '/cp/tickets/escalation-rules', name: 'TicketEscalationRules', auth: 'requiresAuth', element: stub('Escalation Rules', 'When SLA risk thresholds trip, escalate via these rules.') },
+  { path: '/cp/tickets/categories', name: 'TicketCategories', auth: 'requiresAuth', element: stub('Ticket Categories', 'Top-level categorization for incoming requests.') },
+  { path: '/cp/tickets/close-reasons', name: 'TicketCloseReasons', auth: 'requiresAuth', element: stub('Close Reasons', 'Catalog of values used to close a ticket.') },
+  { path: '/cp/tickets/resolution-codes', name: 'TicketResolutionCodes', auth: 'requiresAuth', element: stub('Resolution Codes', 'Catalog of how a ticket was resolved.') },
+  { path: '/cp/tickets/failure-codes', name: 'TicketFailureCodes', auth: 'requiresAuth', element: stub('Failure Codes', 'Catalog of failure-mode codes for analytics.') },
+
+  // PM (preventive maintenance)
+  { path: '/cp/pm/plans', name: 'PmPlans', auth: 'requiresAuth', element: stub('PM Plans', 'Preventive-maintenance templates.') },
+  { path: '/cp/pm/schedules', name: 'PmSchedules', auth: 'requiresAuth', element: stub('PM Schedules', 'Plans applied to specific targets on a cadence.') },
+  { path: '/cp/pm/compliance', name: 'PmCompliance', auth: 'requiresAuth', element: stub('PM Compliance', 'Overdue and at-risk PM rollups.') },
+
+  // Assets
+  { path: '/cp/assets', name: 'AssetsList', auth: 'requiresAuth', element: stub('Installed Assets', 'Per-site asset registry with QR labels, documents, and links.') },
+  { path: '/cp/assets/types', name: 'AssetTypes', auth: 'requiresAuth', element: stub('Asset Types', 'Catalog of asset categories per division.') },
+  { path: '/cp/assets/:id', name: 'AssetDetail', auth: 'requiresAuth', element: stub('Asset Detail', 'Lifecycle, documents, links, and QR for one installed asset.') },
+
+  // Fleet
+  { path: '/cp/fleet/units', name: 'FleetUnits', auth: 'requiresAuth', element: stub('Fleet Units', 'Vehicles, trailers, and equipment with readings, assignments, and downtime.') },
+  { path: '/cp/fleet/units/:id', name: 'FleetUnitDetail', auth: 'requiresAuth', element: stub('Unit Detail', 'Readings, assignments, downtime, external repairs, and PM bindings.') },
+  { path: '/cp/fleet/external-repairs', name: 'FleetExternalRepairs', auth: 'requiresAuth', element: stub('External Repairs', 'Work farmed out to third-party shops.') },
+  { path: '/cp/fleet/reports', name: 'FleetReports', auth: 'requiresAuth', element: stub('Fleet Reports', 'Cost-per-mile, cost-per-hour, and utilization rollups.') },
+
+  // Routing
+  { path: '/cp/routing/route-plans', name: 'RoutePlans', auth: 'requiresAuth', element: stub('Route Plans', 'Multi-stop dispatch routes with optimization and stop lifecycle.') },
+  { path: '/cp/routing/route-plans/:id', name: 'RoutePlanDetail', auth: 'requiresAuth', element: stub('Route Plan Detail', 'Stops, assignments, and live progress.') },
+  { path: '/cp/routing/geo-fences', name: 'GeoFences', auth: 'requiresAuth', element: stub('Geo-Fences', 'Boundaries that emit events as units enter/exit.') },
+
+  // Capital plan
+  { path: '/cp/capital-plan/aging', name: 'CapitalPlanAging', auth: 'requiresAuth', element: stub('Asset Aging', 'Replacement-readiness rollups by company, division, or portfolio.') },
+  { path: '/cp/capital-plan/scoring-models', name: 'CapitalPlanScoringModels', auth: 'requiresAuth', element: stub('Scoring Models', 'Tunable models that drive aging classification.') },
+  { path: '/cp/capital-plan/plans', name: 'CapitalPlanPlans', auth: 'requiresAuth', element: stub('Capital Plans', 'Multi-year replacement plans with scenarios.') },
+  { path: '/cp/capital-plan/plans/:id', name: 'CapitalPlanDetail', auth: 'requiresAuth', element: stub('Capital Plan Detail', 'Scenarios, line items, and financial rollups for one plan.') },
+
+  // Org structure
+  { path: '/cp/divisions', name: 'Divisions', auth: 'requiresAuth', element: stub('Divisions', 'Top-level org partitions above branches.') },
+  { path: '/cp/branches/dashboards', name: 'BranchDashboards', auth: 'requiresAuth', element: stub('Branch Dashboards', 'Per-branch operational KPIs.') },
+  { path: '/cp/branches/:id/dashboard', name: 'BranchDashboard', auth: 'requiresAuth', element: stub('Branch Dashboard', 'Live ops snapshot for one branch.') },
+
+  // Subcontractors
+  { path: '/cp/subcontractors', name: 'Subcontractors', auth: 'requiresAuth', element: stub('Subcontractors', 'External vendors that perform work on our behalf.') },
+  { path: '/cp/subcontractors/:id', name: 'SubcontractorDetail', auth: 'requiresAuth', element: stub('Subcontractor Detail', 'Contacts, assignments, and performance.') },
+
+  // Voice notes
+  { path: '/cp/voice-notes', name: 'VoiceNotes', auth: 'requiresAuth', element: stub('Voice Notes', 'Audio attachments on tickets and workorders, with transcription.') },
+  { path: '/cp/voice-notes/pending', name: 'VoiceNotesPending', auth: 'requiresAuth', element: stub('Pending Voice Notes', 'Voice notes awaiting review or transcription.') },
+
+  // Custom fields
+  { path: '/cp/custom-fields', name: 'CustomFields', auth: 'requiresAuth', element: stub('Custom Fields', 'Per-entity field definitions and values.') },
+
+  // Integrations (third-party connections — distinct from settings/integrations stub)
+  { path: '/cp/integrations', name: 'IntegrationsList', auth: 'requiresAuth', element: stub('Integrations', 'Third-party providers — accounting, telematics, mapping, access control.') },
+  { path: '/cp/integrations/:id', name: 'IntegrationDetail', auth: 'requiresAuth', element: stub('Integration Detail', 'Connection settings, sync history, and webhook events.') },
+
+  // SSO providers
+  { path: '/cp/sso/providers', name: 'SsoProviders', auth: 'requiresAuth', element: stub('SSO Providers', 'Identity providers for single sign-on.') },
+
+  // Security & retention
+  { path: '/cp/security-events', name: 'SecurityEvents', auth: 'requiresAuth', element: stub('Security Events', 'Auth failures, MFA challenges, and suspicious activity.') },
+  { path: '/cp/retention/policies', name: 'RetentionPolicies', auth: 'requiresAuth', element: stub('Retention Policies', 'Data pruning rules with execution history.') },
+  { path: '/cp/retention/runs', name: 'RetentionRuns', auth: 'requiresAuth', element: stub('Retention Runs', 'History of retention-policy executions.') },
+
+  // ETA promises
+  { path: '/cp/eta/promises', name: 'EtaPromises', auth: 'requiresAuth', element: stub('ETA Promises', 'Customer-facing arrival commitments across tickets and workorders.') },
+
   { path: '/portal', name: 'CustomerPortal', auth: 'requiresAuth', element: <CustomerPortalDashboard /> },
   { path: '/portal/invoices', name: 'CustomerInvoices', auth: 'requiresAuth', element: <CustomerPortalInvoices /> },
   { path: '/portal/invoices/:id', name: 'CustomerInvoiceDetail', auth: 'requiresAuth', element: <CustomerInvoiceDetail /> },
