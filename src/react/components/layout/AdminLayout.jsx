@@ -57,6 +57,18 @@ export default function AdminLayout({ children }) {
     sidebarRef.current?.toggleSidebar()
   }
 
+  // Forced password rotation: skip the entire admin chrome (Sidebar, CMS
+  // providers, Outlet) and render only the overlay. Mounting the dashboard
+  // would fire data fetches that the middleware blocks with 403, polluting
+  // the console and racing with the overlay.
+  if (user?.password_must_change) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <PasswordRotationOverlay />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar
@@ -87,7 +99,6 @@ export default function AdminLayout({ children }) {
         </div>
       </div>
       {user?.two_factor_setup_pending && !user?.two_factor_enabled ? <TwoFactorSetupWizard /> : null}
-      {user?.password_must_change ? <PasswordRotationOverlay /> : null}
     </div>
   )
 }

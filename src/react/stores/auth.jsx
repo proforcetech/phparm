@@ -36,14 +36,38 @@ function resolveInitialServiceLineId(serviceLines, primaryId) {
   return null
 }
 
+function readStoredJson(key) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null
+  }
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function readStoredString(key) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null
+  }
+  return window.localStorage.getItem(key)
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [token, setToken] = useState(null)
-  const [impersonation, setImpersonation] = useState(null)
-  const [portalConfig, setPortalConfig] = useState({
+  // Hydrate synchronously from localStorage so the first render has the user
+  // payload available — including flags like password_must_change. Without
+  // this, AdminLayout briefly mounts the dashboard (which fires data fetches)
+  // before checkAuth's useEffect can populate state, and a forced-rotation
+  // user gets bounced by the middleware gate before the overlay can render.
+  const [user, setUser] = useState(() => readStoredJson('user'))
+  const [token, setToken] = useState(() => readStoredString('auth_token'))
+  const [impersonation, setImpersonation] = useState(() => readStoredJson('impersonation'))
+  const [portalConfig, setPortalConfig] = useState(() => ({
     apiBase: '/api',
-    nonce: null,
-  })
+    nonce: readStoredString('portal_nonce'),
+  }))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [pendingChallenge, setPendingChallenge] = useState(null)

@@ -39,6 +39,14 @@ function shouldHandleSessionExpiration(error) {
     return false
   }
 
+  // Forced password rotation is NOT a session expiration: the user is still
+  // authenticated, the middleware is just gating non-allowlisted endpoints
+  // until they rotate. The PasswordRotationOverlay handles the resolution;
+  // bouncing to /login here would clear their session and break the flow.
+  if (responseData?.error === 'password_change_required') {
+    return false
+  }
+
   const path = normalizeRequestPath(error.config?.url || '')
   const authFlowPaths = new Set([
     '/auth/login',
