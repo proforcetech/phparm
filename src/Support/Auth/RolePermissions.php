@@ -61,6 +61,14 @@ class RolePermissions
             'view_settings',
             'manage_settings',
             'view_audit_logs',
+
+            // Phase 11 of docs/woms-expansion-plan.md: service line catalog.
+            // Admin only — per-slug permissions for individual lines land
+            // with their respective phases (12-18). Admin's `*` in the
+            // config/auth.php role definition already covers this; the
+            // explicit listing here documents the gate for the static
+            // defaults used by tests.
+            'settings.service_lines.manage',
         ],
         
         self::ROLE_MANAGER => [

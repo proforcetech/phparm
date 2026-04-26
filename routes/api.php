@@ -1274,6 +1274,29 @@ return function (Router $router, array $config, $connection) {
         $moduleService = new \App\Support\Auth\ModuleAccessService($connection, $gate);
         $userData['accessible_modules'] = $moduleService->getAccessibleModulesForUser($user);
 
+        // Include service lines (Phase 11 of docs/woms-expansion-plan.md). The
+        // sidebar trade switcher reads these. Trim to the fields the UI needs
+        // — full rows are available via /api/service-lines.
+        try {
+            $serviceLineRepository = new \App\Services\ServiceLine\ServiceLineRepository($connection);
+            $serviceLineService = new \App\Services\ServiceLine\ServiceLineService($serviceLineRepository, $connection);
+            $effective = $serviceLineService->getEffectiveLinesForUser($user->id);
+            $userData['service_lines'] = array_map(static function ($line) {
+                return [
+                    'id' => $line->id,
+                    'slug' => $line->slug,
+                    'name' => $line->name,
+                    'icon' => $line->icon,
+                ];
+            }, $effective['lines']);
+            $userData['primary_service_line_id'] = $effective['primary_id'];
+        } catch (\Throwable $e) {
+            // Don't break /me if the service_lines tables aren't migrated yet.
+            error_log('Failed to load service lines for /api/auth/me: ' . $e->getMessage());
+            $userData['service_lines'] = [];
+            $userData['primary_service_line_id'] = null;
+        }
+
         return Response::json([
             'user' => $userData,
             'impersonation' => $buildImpersonationPayload(),

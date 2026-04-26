@@ -49,6 +49,11 @@ class LaborTaskService
             $params['service_type_id'] = (int) $filters['service_type_id'];
         }
 
+        if (!empty($filters['service_line_id'])) {
+            $baseSql .= ' AND lt.service_line_id = :service_line_id';
+            $params['service_line_id'] = (int) $filters['service_line_id'];
+        }
+
         $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
@@ -116,8 +121,8 @@ class LaborTaskService
         }
 
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO labor_tasks (name, description, flat_rate_minutes, labor_rate, service_type_id, is_active, display_order, created_at, updated_at) '
-            . 'VALUES (:name, :description, :flat_rate_minutes, :labor_rate, :service_type_id, :is_active, :display_order, NOW(), NOW())'
+            'INSERT INTO labor_tasks (name, description, flat_rate_minutes, labor_rate, service_type_id, service_line_id, is_active, display_order, created_at, updated_at) '
+            . 'VALUES (:name, :description, :flat_rate_minutes, :labor_rate, :service_type_id, :service_line_id, :is_active, :display_order, NOW(), NOW())'
         );
 
         $stmt->execute([
@@ -126,6 +131,9 @@ class LaborTaskService
             'flat_rate_minutes' => $data['flat_rate_minutes'] ?? 0,
             'labor_rate' => $data['labor_rate'] ?? null,
             'service_type_id' => $data['service_type_id'] ?? null,
+            'service_line_id' => isset($data['service_line_id']) && $data['service_line_id'] !== null
+                ? (int) $data['service_line_id']
+                : null,
             'is_active' => isset($data['is_active']) ? (int) $data['is_active'] : 1,
             'display_order' => $data['display_order'] ?? 0,
         ]);
@@ -153,13 +161,14 @@ class LaborTaskService
         $flatRateMinutes = $data['flat_rate_minutes'] ?? $task->flat_rate_minutes;
         $laborRate = array_key_exists('labor_rate', $data) ? $data['labor_rate'] : $task->labor_rate;
         $serviceTypeId = array_key_exists('service_type_id', $data) ? $data['service_type_id'] : $task->service_type_id;
+        $serviceLineId = array_key_exists('service_line_id', $data) ? $data['service_line_id'] : $task->service_line_id;
         $isActive = isset($data['is_active']) ? (bool) $data['is_active'] : $task->is_active;
         $displayOrder = $data['display_order'] ?? $task->display_order;
 
         $stmt = $this->connection->pdo()->prepare(
             'UPDATE labor_tasks SET name = :name, description = :description, flat_rate_minutes = :flat_rate_minutes, '
-            . 'labor_rate = :labor_rate, service_type_id = :service_type_id, is_active = :is_active, '
-            . 'display_order = :display_order, updated_at = NOW() WHERE id = :id'
+            . 'labor_rate = :labor_rate, service_type_id = :service_type_id, service_line_id = :service_line_id, '
+            . 'is_active = :is_active, display_order = :display_order, updated_at = NOW() WHERE id = :id'
         );
 
         $stmt->execute([
@@ -169,6 +178,7 @@ class LaborTaskService
             'flat_rate_minutes' => $flatRateMinutes,
             'labor_rate' => $laborRate,
             'service_type_id' => $serviceTypeId,
+            'service_line_id' => $serviceLineId !== null ? (int) $serviceLineId : null,
             'is_active' => $isActive ? 1 : 0,
             'display_order' => $displayOrder,
         ]);

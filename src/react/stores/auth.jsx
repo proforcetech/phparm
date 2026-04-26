@@ -1,10 +1,40 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 import { authService } from '../../services/auth.service'
 import { portalService } from '../../services/portal.service'
+import { serviceLineService } from '../../services/serviceLine.service'
 import { initCsrfToken } from '../../services/api'
 
 const AuthContext = createContext(null)
+
+const SERVICE_LINE_STORAGE_KEY = 'phparm.currentServiceLineId'
+
+function readStoredServiceLineId() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null
+  }
+  const raw = window.localStorage.getItem(SERVICE_LINE_STORAGE_KEY)
+  if (raw === null || raw === '') {
+    return null
+  }
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function resolveInitialServiceLineId(serviceLines, primaryId) {
+  const stored = readStoredServiceLineId()
+  if (stored !== null && serviceLines.some((line) => line.id === stored)) {
+    return stored
+  }
+  if (
+    primaryId !== null &&
+    primaryId !== undefined &&
+    serviceLines.some((line) => line.id === primaryId)
+  ) {
+    return primaryId
+  }
+  return null
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -17,6 +47,71 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [pendingChallenge, setPendingChallenge] = useState(null)
+  const [serviceLines, setServiceLines] = useState([])
+  const [primaryServiceLineId, setPrimaryServiceLineId] = useState(null)
+  const [currentServiceLineId, setCurrentServiceLineIdState] = useState(null)
+
+  // Whenever the user payload changes, sync derived service-line state.
+  // Uses the rule: localStorage > user.primary_service_line_id > null.
+  useEffect(() => {
+    if (!user) {
+      setServiceLines([])
+      setPrimaryServiceLineId(null)
+      setCurrentServiceLineIdState(null)
+      return
+    }
+    const lines = Array.isArray(user.service_lines) ? user.service_lines : []
+    const primaryId =
+      typeof user.primary_service_line_id === 'number'
+        ? user.primary_service_line_id
+        : user.primary_service_line_id != null
+          ? Number.parseInt(user.primary_service_line_id, 10) || null
+          : null
+    setServiceLines(lines)
+    setPrimaryServiceLineId(primaryId)
+    setCurrentServiceLineIdState(resolveInitialServiceLineId(lines, primaryId))
+  }, [user])
+
+  const currentServiceLine = useMemo(() => {
+    if (currentServiceLineId === null || currentServiceLineId === undefined) {
+      return null
+    }
+    return serviceLines.find((line) => line.id === currentServiceLineId) ?? null
+  }, [serviceLines, currentServiceLineId])
+
+  const setCurrentServiceLine = useCallback(
+    (id) => {
+      const numericId =
+        typeof id === 'number' ? id : Number.parseInt(id, 10)
+      if (!Number.isFinite(numericId)) {
+        return
+      }
+      // 1. Update local React state immediately (UI is optimistic).
+      setCurrentServiceLineIdState(numericId)
+      // 2. Persist to localStorage so the choice survives reloads.
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(SERVICE_LINE_STORAGE_KEY, String(numericId))
+        }
+      } catch (storageErr) {
+        // Non-fatal: state still updates in memory.
+        console.warn('[Auth] Failed to persist current service line:', storageErr)
+      }
+      // 3. Fire-and-forget server sync. Caller (component) handles toast on failure.
+      return serviceLineService
+        .setPrimary(numericId)
+        .then((data) => {
+          if (data && typeof data.primary_id === 'number') {
+            setPrimaryServiceLineId(data.primary_id)
+          }
+          if (data && Array.isArray(data.service_lines) && data.service_lines.length > 0) {
+            setServiceLines(data.service_lines)
+          }
+          return data
+        })
+    },
+    []
+  )
 
   const isAuthenticated = useMemo(() => !!token, [token])
   const isCustomer = useMemo(() => user?.role?.toLowerCase() === 'customer', [user])
@@ -211,10 +306,14 @@ export function AuthProvider({ children }) {
       setToken(null)
       setImpersonation(null)
       setPortalConfig((prev) => ({ ...prev, nonce: null }))
+      setServiceLines([])
+      setPrimaryServiceLineId(null)
+      setCurrentServiceLineIdState(null)
       localStorage.removeItem('auth_token')
       localStorage.removeItem('user')
       localStorage.removeItem('portal_nonce')
       localStorage.removeItem('impersonation')
+      localStorage.removeItem(SERVICE_LINE_STORAGE_KEY)
       window.location.assign('/login')
     }
   }, [])
@@ -417,6 +516,12 @@ export function AuthProvider({ children }) {
       hasPermission,
       hasModule,
       hasModuleAccess,
+      // Phase 11: WOMS multi-trade service-line state.
+      serviceLines,
+      primaryServiceLineId,
+      currentServiceLineId,
+      currentServiceLine,
+      setCurrentServiceLine,
     }),
     [
       bootstrapPortal,
@@ -446,6 +551,11 @@ export function AuthProvider({ children }) {
       hasPermission,
       hasModule,
       hasModuleAccess,
+      serviceLines,
+      primaryServiceLineId,
+      currentServiceLineId,
+      currentServiceLine,
+      setCurrentServiceLine,
     ]
   )
 

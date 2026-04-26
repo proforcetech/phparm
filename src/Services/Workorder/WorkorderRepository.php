@@ -611,7 +611,11 @@ class WorkorderRepository
             'estimate_id' => (int) $row['estimate_id'],
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => (int) $row['vehicle_id'],
+            'service_line_id' => isset($row['service_line_id']) && $row['service_line_id'] !== null
+                ? (int) $row['service_line_id']
+                : null,
             'status' => (string) $row['status'],
+            'type' => (string) ($row['type'] ?? Workorder::TYPE_CORRECTIVE),
             'priority' => (string) ($row['priority'] ?? 'normal'),
             'assigned_technician_id' => $row['assigned_technician_id'] !== null ? (int) $row['assigned_technician_id'] : null,
             'started_at' => $row['started_at'] ?? null,

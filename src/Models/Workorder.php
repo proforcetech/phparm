@@ -23,6 +23,28 @@ class Workorder extends BaseModel
     public const PRIORITY_HIGH = 'high';
     public const PRIORITY_URGENT = 'urgent';
 
+    // Trade-aware WO type vocabulary — Phase 11 of docs/woms-expansion-plan.md.
+    // Validated in PHP only (no DB CHECK constraint) so adding a new type
+    // doesn't require a schema migration. Default is 'corrective' both here
+    // and in the schema (migration 152), preserving legacy semantics.
+    public const TYPE_CORRECTIVE = 'corrective';
+    public const TYPE_PREVENTIVE = 'preventive';
+    public const TYPE_INSPECTION = 'inspection';
+    public const TYPE_INSTALL = 'install';
+    public const TYPE_PROJECT = 'project';
+    public const TYPE_RECURRING_VISIT = 'recurring_visit';
+    public const TYPE_CHANGE_REQUEST = 'change_request';
+
+    public const ALLOWED_TYPES = [
+        self::TYPE_CORRECTIVE,
+        self::TYPE_PREVENTIVE,
+        self::TYPE_INSPECTION,
+        self::TYPE_INSTALL,
+        self::TYPE_PROJECT,
+        self::TYPE_RECURRING_VISIT,
+        self::TYPE_CHANGE_REQUEST,
+    ];
+
     public const ALLOWED_STATUSES = [
         self::STATUS_PENDING,
         self::STATUS_IN_PROGRESS,
@@ -49,7 +71,9 @@ class Workorder extends BaseModel
     public int $customer_id;
     public int $vehicle_id;
     public ?int $branch_id = null;
+    public ?int $service_line_id = null;
     public string $status = self::STATUS_PENDING;
+    public string $type = self::TYPE_CORRECTIVE;
     public string $priority = self::PRIORITY_NORMAL;
     public ?int $assigned_technician_id = null;
     public ?string $started_at = null;
@@ -142,5 +166,15 @@ class Workorder extends BaseModel
         ];
 
         return in_array($newStatus, $transitions[$this->status] ?? [], true);
+    }
+
+    /**
+     * Single chokepoint for validating a workorder type string. The DB column
+     * is VARCHAR with no CHECK constraint, so callers writing the column must
+     * gate input through this method to keep `ALLOWED_TYPES` authoritative.
+     */
+    public static function isValidType(string $type): bool
+    {
+        return in_array($type, self::ALLOWED_TYPES, true);
     }
 }
