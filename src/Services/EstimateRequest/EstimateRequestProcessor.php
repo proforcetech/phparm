@@ -41,7 +41,7 @@ class EstimateRequestProcessor
      * Process an estimate request and create draft estimate
      *
      * @param EstimateRequest $request
-     * @return array{estimate_id: int, customer_id: int, vehicle_id: int|null}
+     * @return array{estimate_id: int, estimate_number: string, customer_id: int, vehicle_id: int|null}
      */
     public function processRequest(EstimateRequest $request): array
     {
@@ -58,7 +58,8 @@ class EstimateRequestProcessor
             }
 
             // 3. Create draft estimate
-            $estimateId = $this->createDraftEstimate($customer->id, $vehicleId, $request);
+            $estimateData = $this->createDraftEstimate($customer->id, $vehicleId, $request);
+            $estimateId = $estimateData['id'];
 
             // 4. Link estimate request to created records
             $this->requestRepository->linkToCustomerAndVehicle($request->id, $customer->id, $vehicleId);
@@ -68,6 +69,7 @@ class EstimateRequestProcessor
 
             return [
                 'estimate_id' => $estimateId,
+                'estimate_number' => $estimateData['number'],
                 'customer_id' => $customer->id,
                 'vehicle_id' => $vehicleId,
             ];
@@ -171,7 +173,7 @@ class EstimateRequestProcessor
     /**
      * Create draft estimate
      */
-    private function createDraftEstimate(int $customerId, ?int $vehicleId, EstimateRequest $request): int
+    private function createDraftEstimate(int $customerId, ?int $vehicleId, EstimateRequest $request): array
     {
         // Generate estimate number
         $estimateNumber = $this->generateEstimateNumber();
@@ -227,7 +229,10 @@ class EstimateRequestProcessor
             'internal_notes' => $internalNotes,
         ]);
 
-        return (int) $this->connection->pdo()->lastInsertId();
+        return [
+            'id' => (int) $this->connection->pdo()->lastInsertId(),
+            'number' => $estimateNumber,
+        ];
     }
 
     /**

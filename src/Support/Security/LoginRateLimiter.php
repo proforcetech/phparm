@@ -4,6 +4,7 @@ namespace App\Support\Security;
 
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
+use App\Support\Http\IpAddressResolver;
 use App\Support\Http\RateLimiter;
 use App\Support\Http\Request;
 
@@ -157,20 +158,9 @@ class LoginRateLimiter
 
     public static function clientIp(Request $request): string
     {
-        $forwardedFor = $request->header('X-Forwarded-For');
-        if ($forwardedFor !== null) {
-            $ips = array_map('trim', explode(',', $forwardedFor));
-            if (!empty($ips)) {
-                return $ips[0];
-            }
-        }
-
-        $realIp = $request->header('X-Real-IP');
-        if ($realIp !== null) {
-            return $realIp;
-        }
-
-        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        return $request->getClientIp()
+            ?? IpAddressResolver::resolve($_SERVER, [])
+            ?? '127.0.0.1';
     }
 
     private function computeRetryAfter(string $ipKey, string $identifierKey): int

@@ -132,20 +132,26 @@ class PayPalGateway implements PaymentGatewayInterface
         }
     }
 
-    public function handleWebhook(array $payload, string $signature = ''): array
+    public function handleWebhook(
+        array $payload,
+        string $signature = '',
+        ?string $rawBody = null,
+        ?string $requestUrl = null
+    ): array
     {
         $this->assertConfigured();
+        $this->assertWebhookConfigured();
 
-        // PayPal webhook verification
-        if ($signature && $this->webhookId) {
-            if (!$this->verifyWebhookSignature($payload, $signature)) {
-                throw new InvalidArgumentException('Invalid webhook signature');
-            }
+        if ($signature === '') {
+            throw new InvalidArgumentException('Webhook signature is required');
+        }
+
+        if (!$this->verifyWebhookSignature($payload, $signature)) {
+            throw new InvalidArgumentException('Invalid webhook signature');
         }
 
         $eventType = $payload['event_type'] ?? '';
-
-        return match (true) {
+        $normalized = match (true) {
             str_contains($eventType, 'PAYMENT.SALE.COMPLETED') => $this->handlePaymentCompleted($payload['resource'] ?? []),
             str_contains($eventType, 'PAYMENT.SALE.REFUNDED') => $this->handlePaymentRefunded($payload['resource'] ?? []),
             str_contains($eventType, 'PAYMENT.SALE.DENIED') => $this->handlePaymentDenied($payload['resource'] ?? []),
@@ -154,6 +160,10 @@ class PayPalGateway implements PaymentGatewayInterface
                 'handled' => false,
             ],
         };
+
+        $normalized['provider_event_id'] = $payload['id'] ?? null;
+
+        return $normalized;
     }
 
     public function getTransaction(string $transactionId): array
@@ -228,6 +238,13 @@ class PayPalGateway implements PaymentGatewayInterface
             && class_exists('\PayPal\Rest\ApiContext');
     }
 
+    private function assertWebhookConfigured(): void
+    {
+        if ($this->webhookId === '') {
+            throw new RuntimeException('PayPal webhook ID is not configured.');
+        }
+    }
+
     private function initializeApiContext(): void
     {
         $this->apiContext = new \PayPal\Rest\ApiContext(
@@ -287,10 +304,6 @@ class PayPalGateway implements PaymentGatewayInterface
      */
     private function verifyWebhookSignature(array $payload, string $signature): bool
     {
-        if (!$this->webhookId) {
-            return true; // Skip verification if no webhook ID configured
-        }
-
         try {
             $webhookEvent = new \PayPal\Api\WebhookEvent();
             $webhookEvent->fromArray($payload);
@@ -319,9 +332,11 @@ class PayPalGateway implements PaymentGatewayInterface
         return [
             'event_type' => 'payment.completed',
             'transaction_id' => $resource['id'] ?? '',
+            'payment_id' => $resource['parent_payment'] ?? null,
             'amount' => ($resource['amount']['total'] ?? 0),
             'currency' => $resource['amount']['currency'] ?? 'USD',
             'payment_method' => 'paypal',
+            'reference' => $resource['invoice_number'] ?? null,
             'status' => 'succeeded',
             'handled' => true,
         ];
@@ -337,8 +352,10 @@ class PayPalGateway implements PaymentGatewayInterface
             'event_type' => 'payment.refunded',
             'transaction_id' => $resource['sale_id'] ?? '',
             'refund_id' => $resource['id'] ?? '',
+            'payment_id' => $resource['parent_payment'] ?? null,
             'amount' => ($resource['amount']['total'] ?? 0),
             'currency' => $resource['amount']['currency'] ?? 'USD',
+            'reference' => $resource['invoice_number'] ?? null,
             'status' => 'refunded',
             'handled' => true,
         ];
@@ -353,9 +370,11 @@ class PayPalGateway implements PaymentGatewayInterface
         return [
             'event_type' => 'payment.denied',
             'transaction_id' => $resource['id'] ?? '',
+            'payment_id' => $resource['parent_payment'] ?? null,
             'amount' => ($resource['amount']['total'] ?? 0),
             'currency' => $resource['amount']['currency'] ?? 'USD',
             'payment_method' => 'paypal',
+            'reference' => $resource['invoice_number'] ?? null,
             'status' => 'failed',
             'handled' => true,
         ];

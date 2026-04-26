@@ -78,6 +78,41 @@ class SettingsRepository
     }
 
     /**
+     * @param array<string, mixed> $defaults
+     * @return array<string, mixed>
+     */
+    public function getMany(array $defaults): array
+    {
+        if ($defaults === []) {
+            return [];
+        }
+
+        $keys = array_keys($defaults);
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT * FROM settings WHERE `key` IN ({$placeholders})"
+        );
+        $stmt->execute($keys);
+
+        $values = $defaults;
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $key = (string) ($row['key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+
+            $value = $this->decodeValue((string) ($row['value'] ?? ''), (string) ($row['type'] ?? 'string'));
+            if (in_array($key, self::HTML_SETTING_KEYS, true)) {
+                $value = $this->sanitizeHtmlSetting($value);
+            }
+
+            $values[$key] = $value;
+        }
+
+        return $values;
+    }
+
+    /**
      * @param mixed $value
      */
     public function set(string $key, $value, ?string $type = null, string $group = 'general', ?string $description = null): void
@@ -129,8 +164,24 @@ class SettingsRepository
      */
     public function seedDefaults(array $defaults): void
     {
+        if ($defaults === []) {
+            return;
+        }
+
+        $keys = array_keys($defaults);
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT `key` FROM settings WHERE `key` IN ({$placeholders})"
+        );
+        $stmt->execute($keys);
+
+        $existingKeys = array_fill_keys(
+            array_map('strval', $stmt->fetchAll(PDO::FETCH_COLUMN)),
+            true
+        );
+
         foreach ($defaults as $key => $definition) {
-            if ($this->exists($key)) {
+            if (isset($existingKeys[$key])) {
                 continue;
             }
 

@@ -456,10 +456,14 @@ class InvoiceService
 
     public function findByPublicToken(string $token): ?Invoice
     {
+        $tokenHash = $this->hashPublicToken($token);
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT * FROM invoices WHERE public_token = :token'
+            'SELECT * FROM invoices WHERE public_token = :token OR public_token = :token_hash'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $tokenHash,
+        ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -718,7 +722,9 @@ class InvoiceService
             'due_date' => $payload['due_date'] ?? null,
             'notes' => $payload['notes'] ?? null,
             'split_billing' => !empty($payload['split_billing']) ? 1 : 0,
-            'public_token' => $payload['public_token'] ?? $this->generatePublicToken(),
+            'public_token' => isset($payload['public_token'])
+                ? $this->hashPublicToken((string) $payload['public_token'])
+                : $this->hashPublicToken($this->generatePublicToken()),
             'public_token_expires_at' => $payload['public_token_expires_at'] ?? $this->calculatePublicExpiry(),
         ]);
 
@@ -864,7 +870,8 @@ class InvoiceService
     private function syncInvoiceBalance(int $invoiceId): void
     {
         $paymentsStmt = $this->connection->pdo()->prepare(
-            'SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = :invoice_id'
+            'SELECT COALESCE(SUM(amount), 0) AS paid FROM payments '
+            . 'WHERE invoice_id = :invoice_id AND status IN (\'succeeded\', \'paid\', \'completed\', \'success\')'
         );
         $paymentsStmt->execute(['invoice_id' => $invoiceId]);
         $paid = (float) ($paymentsStmt->fetch(PDO::FETCH_ASSOC)['paid'] ?? 0.0);
@@ -889,21 +896,50 @@ class InvoiceService
             $this->applyStatus($invoiceId, 'paid');
         } elseif ($paid > 0 && !in_array($invoice->status, ['paid', 'partial'], true)) {
             $this->applyStatus($invoiceId, 'partial');
+        } elseif (
+            $paid <= 0.0
+            && $invoice->status !== 'pending'
+            && in_array($invoice->status, ['paid', 'partial'], true)
+        ) {
+            $this->applyStatus($invoiceId, 'pending');
         }
     }
 
     private function insertPayment(int $invoiceId, array $payload): int
     {
+        $status = $this->normalizePaymentStatus((string) ($payload['status'] ?? 'succeeded'));
+        $method = strtolower(trim((string) ($payload['method'] ?? 'manual')));
+        if ($method === '') {
+            $method = 'manual';
+        }
+
+        $gateway = trim((string) ($payload['gateway'] ?? ''));
+        if ($gateway === '') {
+            $gateway = $method;
+        }
+
+        $transactionId = trim((string) ($payload['transaction_id'] ?? $payload['reference'] ?? ''));
+        if ($transactionId === '') {
+            $transactionId = uniqid('manual_', true);
+        }
+
+        $reference = trim((string) ($payload['reference'] ?? ''));
+        if ($reference === '') {
+            $reference = $transactionId;
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO payments (invoice_id, amount, method, reference, status, metadata, paid_at, created_at) ' .
-            'VALUES (:invoice_id, :amount, :method, :reference, :status, :metadata, NOW(), NOW())'
+            'INSERT INTO payments (invoice_id, gateway, method, transaction_id, amount, reference, status, metadata, paid_at, created_at) ' .
+            'VALUES (:invoice_id, :gateway, :method, :transaction_id, :amount, :reference, :status, :metadata, NOW(), NOW())'
         );
         $stmt->execute([
             'invoice_id' => $invoiceId,
+            'gateway' => $gateway,
+            'transaction_id' => $transactionId,
             'amount' => $payload['amount'],
-            'method' => $payload['method'],
-            'reference' => $payload['reference'] ?? null,
-            'status' => $payload['status'] ?? 'succeeded',
+            'method' => $method,
+            'reference' => $reference,
+            'status' => $status,
             'metadata' => json_encode($payload['metadata'] ?? []),
         ]);
 
@@ -915,6 +951,11 @@ class InvoiceService
      */
     private function recordUndepositedFundsEntry(int $invoiceId, int $paymentId, array $payload, ?int $actorId): void
     {
+        $status = $this->normalizePaymentStatus((string) ($payload['status'] ?? 'succeeded'));
+        if (!in_array($status, ['succeeded', 'paid', 'completed', 'success'], true)) {
+            return;
+        }
+
         $method = strtolower((string) ($payload['method'] ?? ''));
         if (!in_array($method, ['cash', 'check'], true)) {
             return;
@@ -944,6 +985,13 @@ class InvoiceService
             'description' => sprintf('Cash/check payment recorded for invoice %d; held in Undeposited Funds.', $invoiceId),
             'idempotency_key' => 'undeposited-payment-' . $paymentId,
         ], $actorId ?? 0);
+    }
+
+    private function normalizePaymentStatus(string $status): string
+    {
+        $status = strtolower(trim($status));
+
+        return $status === '' ? 'succeeded' : $status;
     }
 
     /**
@@ -1336,6 +1384,11 @@ class InvoiceService
     private function generatePublicToken(): string
     {
         return bin2hex(random_bytes(20));
+    }
+
+    private function hashPublicToken(string $token): string
+    {
+        return hash('sha256', $token);
     }
 
     private function calculatePublicExpiry(): string

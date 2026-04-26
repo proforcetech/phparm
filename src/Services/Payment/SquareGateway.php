@@ -156,19 +156,26 @@ class SquareGateway implements PaymentGatewayInterface
         }
     }
 
-    public function handleWebhook(array $payload, string $signature = ''): array
+    public function handleWebhook(
+        array $payload,
+        string $signature = '',
+        ?string $rawBody = null,
+        ?string $requestUrl = null
+    ): array
     {
         $this->assertConfigured();
+        $this->assertWebhookConfigured();
 
-        if ($signature && $this->webhookSignatureKey) {
-            if (!$this->verifyWebhookSignature($payload, $signature)) {
-                throw new InvalidArgumentException('Invalid webhook signature');
-            }
+        if ($signature === '') {
+            throw new InvalidArgumentException('Webhook signature is required');
+        }
+
+        if (!$this->verifyWebhookSignature($rawBody, $signature, $requestUrl)) {
+            throw new InvalidArgumentException('Invalid webhook signature');
         }
 
         $eventType = $payload['type'] ?? '';
-
-        return match ($eventType) {
+        $normalized = match ($eventType) {
             'payment.created' => $this->handlePaymentCreated($payload['data']['object']['payment'] ?? []),
             'payment.updated' => $this->handlePaymentUpdated($payload['data']['object']['payment'] ?? []),
             'refund.created' => $this->handleRefundCreated($payload['data']['object']['refund'] ?? []),
@@ -177,6 +184,10 @@ class SquareGateway implements PaymentGatewayInterface
                 'handled' => false,
             ],
         };
+
+        $normalized['provider_event_id'] = $payload['event_id'] ?? $payload['id'] ?? null;
+
+        return $normalized;
     }
 
     public function getTransaction(string $transactionId): array
@@ -264,6 +275,13 @@ class SquareGateway implements PaymentGatewayInterface
             && class_exists('\Square\SquareClient');
     }
 
+    private function assertWebhookConfigured(): void
+    {
+        if ($this->webhookSignatureKey === '') {
+            throw new RuntimeException('Square webhook signature key is not configured.');
+        }
+    }
+
     private function initializeClient(): void
     {
         $this->client = new \Square\SquareClient([
@@ -323,20 +341,19 @@ class SquareGateway implements PaymentGatewayInterface
     }
 
     /**
-     * @param array<string, mixed> $payload
      */
-    private function verifyWebhookSignature(array $payload, string $signature): bool
+    private function verifyWebhookSignature(?string $rawBody, string $signature, ?string $requestUrl): bool
     {
-        if (!$this->webhookSignatureKey) {
-            return true; // Skip verification if no key configured
+        if ($rawBody === null || $rawBody === '' || $requestUrl === null || $requestUrl === '') {
+            return false;
         }
 
         try {
             return \Square\Utils\WebhooksHelper::isValidWebhookEventSignature(
-                json_encode($payload),
+                $rawBody,
                 $signature,
                 $this->webhookSignatureKey,
-                env('APP_URL', '')
+                $requestUrl
             );
         } catch (\Exception $e) {
             return false;
@@ -357,6 +374,7 @@ class SquareGateway implements PaymentGatewayInterface
             'payment_method' => $payment['source_type'] ?? null,
             'status' => $this->normalizeStatus($payment['status'] ?? 'PENDING'),
             'order_id' => $payment['order_id'] ?? null,
+            'reference' => $payment['reference_id'] ?? null,
             'handled' => true,
         ];
     }
@@ -375,6 +393,7 @@ class SquareGateway implements PaymentGatewayInterface
             'payment_method' => $payment['source_type'] ?? null,
             'status' => $this->normalizeStatus($payment['status'] ?? 'PENDING'),
             'order_id' => $payment['order_id'] ?? null,
+            'reference' => $payment['reference_id'] ?? null,
             'handled' => true,
         ];
     }

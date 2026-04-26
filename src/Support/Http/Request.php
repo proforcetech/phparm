@@ -7,6 +7,7 @@ class Request
     private string $method;
     private string $uri;
     private string $path;
+    private string $rawBody;
 
     /**
      * @var array<string, mixed>
@@ -43,6 +44,7 @@ class Request
      * @param array<string, mixed> $body
      * @param array<string, string> $headers
      * @param array<string, mixed> $server
+     * @param array<string, mixed> $files
      */
     public function __construct(
         string $method,
@@ -51,11 +53,13 @@ class Request
         array $body = [],
         array $headers = [],
         array $server = [],
-        array $files = []
+        array $files = [],
+        string $rawBody = ''
     ) {
         $this->method = strtoupper($method);
         $this->uri = $uri;
         $this->path = rawurldecode(parse_url($uri, PHP_URL_PATH) ?: '/');
+        $this->rawBody = $rawBody;
         $this->query = $query;
         $this->body = $body;
         $this->headers = $headers;
@@ -91,17 +95,18 @@ class Request
         }
 
         $body = [];
+        $rawBody = file_get_contents('php://input');
+        $rawBody = $rawBody !== false ? $rawBody : '';
         $contentType = $headers['CONTENT-TYPE'] ?? '';
 
         if (str_contains($contentType, 'application/json')) {
-            $rawBody = file_get_contents('php://input');
-            $decoded = json_decode($rawBody !== false ? $rawBody : '', true);
+            $decoded = json_decode($rawBody, true);
             $body = is_array($decoded) ? $decoded : [];
         } else {
             $body = $_POST;
         }
 
-        return new self($method, $uri, $_GET, $body, $headers, $_SERVER, $_FILES);
+        return new self($method, $uri, $_GET, $body, $headers, $_SERVER, $_FILES, $rawBody);
     }
 
     public function method(): string
@@ -138,6 +143,11 @@ class Request
     public function body(): array
     {
         return $this->body;
+    }
+
+    public function rawBody(): string
+    {
+        return $this->rawBody;
     }
 
     public function input(string $key, mixed $default = null): mixed
@@ -211,6 +221,24 @@ class Request
         return $this->method === strtoupper($method);
     }
 
+    public function fullUrl(): string
+    {
+        $scheme = 'http';
+        $https = $this->server['HTTPS'] ?? null;
+        if ($https !== null && $https !== '' && strtolower((string) $https) !== 'off') {
+            $scheme = 'https';
+        } elseif (!empty($this->server['REQUEST_SCHEME'])) {
+            $scheme = (string) $this->server['REQUEST_SCHEME'];
+        }
+
+        $host = $this->header('HOST')
+            ?? (isset($this->server['HTTP_HOST']) ? (string) $this->server['HTTP_HOST'] : null)
+            ?? (isset($this->server['SERVER_NAME']) ? (string) $this->server['SERVER_NAME'] : null)
+            ?? 'localhost';
+
+        return $scheme . '://' . $host . $this->uri;
+    }
+
     /**
      * Get the client's IP address
      * Checks for proxied requests via X-Forwarded-For header
@@ -219,17 +247,6 @@ class Request
      */
     public function getClientIp(): ?string
     {
-        // Check for forwarded IP (when behind proxy/load balancer)
-        if (!empty($this->server['HTTP_X_FORWARDED_FOR'])) {
-            $ips = explode(',', $this->server['HTTP_X_FORWARDED_FOR']);
-            return trim($ips[0]);
-        }
-
-        if (!empty($this->server['HTTP_X_REAL_IP'])) {
-            return $this->server['HTTP_X_REAL_IP'];
-        }
-
-        // Direct connection
-        return $this->server['REMOTE_ADDR'] ?? null;
+        return IpAddressResolver::resolve($this->server, $this->headers);
     }
 }

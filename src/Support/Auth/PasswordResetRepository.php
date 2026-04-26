@@ -23,13 +23,14 @@ class PasswordResetRepository
     {
         $token = bin2hex(random_bytes(32));
         $expiresAt = (new DateTimeImmutable())->add(new DateInterval('PT' . $this->expiryMinutes . 'M'));
+        $tokenHash = $this->hashToken($token);
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO password_resets (email, token, expires_at, created_at) VALUES (:email, :token, :expires_at, NOW())'
         );
         $stmt->execute([
             'email' => $email,
-            'token' => $token,
+            'token' => $tokenHash,
             'expires_at' => $expiresAt->format('Y-m-d H:i:s'),
         ]);
 
@@ -44,10 +45,14 @@ class PasswordResetRepository
 
     public function findValidToken(string $token): ?PasswordResetToken
     {
+        $tokenHash = $this->hashToken($token);
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT * FROM password_resets WHERE token = :token AND used_at IS NULL LIMIT 1'
+            'SELECT * FROM password_resets WHERE (token = :token OR token = :token_hash) AND used_at IS NULL LIMIT 1'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $tokenHash,
+        ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -64,9 +69,18 @@ class PasswordResetRepository
 
     public function markUsed(string $token): void
     {
+        $tokenHash = $this->hashToken($token);
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE password_resets SET used_at = NOW() WHERE token = :token'
+            'UPDATE password_resets SET used_at = NOW() WHERE token = :token OR token = :token_hash'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $tokenHash,
+        ]);
+    }
+
+    private function hashToken(string $token): string
+    {
+        return hash('sha256', $token);
     }
 }

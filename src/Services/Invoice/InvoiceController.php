@@ -216,10 +216,16 @@ class InvoiceController
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    public function handleWebhook(string $provider, array $payload, string $signature = ''): array
+    public function handleWebhook(
+        string $provider,
+        array $payload,
+        string $signature = '',
+        ?string $rawBody = null,
+        ?string $requestUrl = null
+    ): array
     {
         // Webhooks don't require user authentication
-        return $this->payments->handleWebhook($provider, $payload, $signature);
+        return $this->payments->handleWebhook($provider, $payload, $signature, $rawBody, $requestUrl);
     }
 
     /**

@@ -125,42 +125,44 @@ class StripeGateway implements PaymentGatewayInterface
         }
     }
 
-    public function handleWebhook(array $payload, string $signature = ''): array
+    public function handleWebhook(
+        array $payload,
+        string $signature = '',
+        ?string $rawBody = null,
+        ?string $requestUrl = null
+    ): array
     {
         $this->assertConfigured();
+        $this->assertWebhookConfigured();
 
         if (!$signature) {
             throw new InvalidArgumentException('Webhook signature is required');
         }
+        if ($rawBody === null || $rawBody === '') {
+            throw new InvalidArgumentException('Raw webhook body is required');
+        }
 
         try {
-            // Verify webhook signature
             $event = \Stripe\Webhook::constructEvent(
-                json_encode($payload),
+                $rawBody,
                 $signature,
                 $this->webhookSecret
             );
 
-            // Handle different event types
-            switch ($event->type) {
-                case 'checkout.session.completed':
-                    return $this->handleCheckoutCompleted($event->data->object);
+            $normalized = match ($event->type) {
+                'checkout.session.completed' => $this->handleCheckoutCompleted($event->data->object),
+                'payment_intent.succeeded' => $this->handlePaymentSucceeded($event->data->object),
+                'payment_intent.payment_failed' => $this->handlePaymentFailed($event->data->object),
+                'charge.refunded' => $this->handleRefund($event->data->object),
+                default => [
+                    'event_type' => $event->type,
+                    'handled' => false,
+                ],
+            };
 
-                case 'payment_intent.succeeded':
-                    return $this->handlePaymentSucceeded($event->data->object);
+            $normalized['provider_event_id'] = $event->id;
 
-                case 'payment_intent.payment_failed':
-                    return $this->handlePaymentFailed($event->data->object);
-
-                case 'charge.refunded':
-                    return $this->handleRefund($event->data->object);
-
-                default:
-                    return [
-                        'event_type' => $event->type,
-                        'handled' => false,
-                    ];
-            }
+            return $normalized;
 
         } catch (\Stripe\Exception\SignatureVerificationException $e) {
             throw new InvalidArgumentException('Invalid webhook signature: ' . $e->getMessage(), 0, $e);
@@ -277,6 +279,13 @@ class StripeGateway implements PaymentGatewayInterface
                 throw new RuntimeException('Stripe PHP library not installed. Run: composer require stripe/stripe-php');
             }
             throw new RuntimeException('Stripe gateway is not configured. Please set secret_key in configuration.');
+        }
+    }
+
+    private function assertWebhookConfigured(): void
+    {
+        if ($this->webhookSecret === '') {
+            throw new RuntimeException('Stripe webhook secret is not configured.');
         }
     }
 

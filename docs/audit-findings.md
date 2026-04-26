@@ -1,0 +1,902 @@
+# Audit Findings Register
+
+Use this file as the live register during audit execution.
+
+## Status Legend
+
+- `open`
+- `in_progress`
+- `resolved`
+- `accepted_risk`
+- `deferred`
+- `false_positive`
+
+## Findings
+
+#### AUD-001
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `high`
+- Location: `src/Support/Http/Request.php:220`, `src/Support/Http/Middleware.php:715`, `src/Support/Security/LoginRateLimiter.php:158`
+- Summary: IP-based security decisions trust `X-Forwarded-For` and `X-Real-IP` from any client without a trusted-proxy boundary.
+- Evidence: `Request::getClientIp()`, `Middleware::getClientIp()`, and `LoginRateLimiter::clientIp()` all prefer client-supplied forwarding headers over `REMOTE_ADDR` with no proxy allowlist or server-side normalization.
+- Impact: A client can spoof its apparent IP address to bypass IP-based login throttling, distort audit and approval logs, and weaken impersonation hijack detection that depends on request IP matching.
+- Recommended fix: Only trust forwarding headers when the request comes from a configured trusted proxy or when the web server has already normalized client IP. Otherwise use `REMOTE_ADDR`. Centralize the logic so rate limiting, logging, and session security all use the same trusted source.
+- Actual fix: Added shared trusted-proxy-aware resolution in `src/Support/Http/IpAddressResolver.php` and routed `Request`, `Middleware`, and `LoginRateLimiter` through it. Forwarded headers are now only honored when `REMOTE_ADDR` matches `TRUSTED_PROXIES`.
+- Verification: `php tests/IpAddressResolverTest.php`; `php -l src/Support/Http/IpAddressResolver.php`; `php -l src/Support/Http/Request.php`; `php -l src/Support/Http/Middleware.php`; `php -l src/Support/Security/LoginRateLimiter.php`
+- Residual risk: Deployments behind a reverse proxy must set `TRUSTED_PROXIES` correctly or the app will fall back to the proxy IP rather than the originating client IP.
+
+#### AUD-002
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `high`
+- Location: `src/Support/Auth/PasswordResetRepository.php:22`, `src/Support/Auth/EmailVerificationRepository.php:22`
+- Summary: Password reset tokens and email verification tokens are stored and looked up in plaintext.
+- Evidence: `createToken()` writes raw `token` values to `password_resets` and `email_verifications`, and `findValidToken()` queries those same raw values directly instead of hashing them.
+- Impact: Any read access to the application database exposes still-valid reset and verification tokens, which can be used directly for account takeover or account activation without needing the original email message.
+- Recommended fix: Store only a hash of each token, compare by hashing the presented token, and invalidate or rotate any existing plaintext tokens during rollout. Apply the same approach consistently to all bearer-style recovery tokens.
+- Actual fix: New password reset and email verification tokens are now stored as SHA-256 hashes, while lookup and mark-used paths accept either the legacy plaintext form or the new hashed form to preserve compatibility during rollout.
+- Verification: `php -l src/Support/Auth/PasswordResetRepository.php`; `php -l src/Support/Auth/EmailVerificationRepository.php`; `php -l tests/AuthTokenRepositorySecurityTest.php`; `php tests/AuthTokenRepositorySecurityTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`
+- Residual risk: Legacy plaintext rows already stored in the database remain plaintext until they expire or are explicitly rotated/migrated.
+
+#### AUD-003
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Services/Tracking/TrackingService.php:42`, `database/migrations/055_job_tracking_links.sql:3`, `src/Services/Invoice/InvoiceService.php:457`, `database/migrations/018_invoice_public_tokens.sql:34`
+- Summary: Public access tokens for tracking links and invoice links are persisted in plaintext rather than hashed-at-rest.
+- Evidence: `job_tracking_links` stores a raw `token` column and `TrackingService` inserts and queries it directly. Invoice public access also resolves by direct `public_token` equality, and the migration seeds public invoice tokens directly into the `invoices` table.
+- Impact: Database read exposure immediately yields active tracking links and public invoice links. Those tokens grant direct access to customer/job/invoice data without any second factor.
+- Recommended fix: Store only token hashes for public bearer links, compare on hashed lookup, and rotate existing live tokens. Keep only short non-sensitive display codes in plaintext when necessary.
+- Actual fix: New invoice public tokens and job tracking link tokens are now stored as SHA-256 hashes in the existing columns. Lookup and revoke paths accept either the legacy plaintext form or the new hashed form so existing live links continue to work during rollout.
+- Verification: `php tests/PublicLinkHashingContractTest.php`; `php -l src/Services/Invoice/InvoiceService.php`; `php -l src/Services/Tracking/TrackingService.php`; `php -l tests/PublicLinkHashingContractTest.php`
+- Residual risk: Legacy plaintext token rows already stored in the database remain plaintext until they are rotated, expired, or replaced.
+
+#### AUD-004
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `medium`
+- Location: `routes/api.php:4096`
+- Summary: The short-code estimate redirect uses untrusted `Origin` or `Referer` headers to construct the `Location` header.
+- Evidence: `/e/{shortCode}` sets `$baseUrl` from `Origin` or `Referer` and then emits `Location: {baseUrl}/estimate/view?code={shortCode}`.
+- Impact: An attacker can supply a malicious header value and turn the endpoint into an open redirect, which is useful for phishing, trust abuse, and link laundering through the application domain.
+- Recommended fix: Build redirects from a server-side canonical application URL or a validated internal path only. Do not derive redirect targets from request-controlled headers.
+- Actual fix: The redirect now uses `APP_URL` as the canonical base instead of request-controlled `Origin` or `Referer` headers.
+- Verification: `php -l routes/api.php`
+- Residual risk: `APP_URL` must remain correct for each deployed environment or redirects may point to the wrong canonical host.
+
+#### AUD-005
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `medium`
+- Location: `routes/api.php:538`
+- Summary: The public estimate-request upload flow moves user-supplied files to disk without enforcing an explicit MIME/extension allowlist or upload size limit before persistence.
+- Evidence: `/api/public/estimate-request` iterates over `$_FILES['photos']`, preserves the original extension into the stored filename, and calls `move_uploaded_file()` directly. MIME is detected only after the file is already saved, and the detected type is recorded rather than validated.
+- Impact: Attackers can submit arbitrary files through a public endpoint. Depending on deployment and downstream file handling, this increases risk of malware hosting, storage abuse, or unintended execution/exposure if the upload directory is later served by the web tier.
+- Recommended fix: Validate file count, size, extension, and server-detected MIME before moving the upload. Restrict this path to a narrow image allowlist if the endpoint is intended for photos only, and store uploads outside any directly served path.
+- Actual fix: Added `PublicEstimatePhotoUploadValidator` and moved the public estimate-request photo flow to validate upload status, file size, and server-detected MIME before persistence. Saved filenames now use a randomized basename plus an extension derived from the validated MIME instead of the user-supplied filename.
+- Verification: `php tests/PublicEstimatePhotoUploadValidatorTest.php`; `php -l src/Services/EstimateRequest/PublicEstimatePhotoUploadValidator.php`; `php -l routes/api.php`; `php -l tests/PublicEstimatePhotoUploadValidatorTest.php`
+- Residual risk: Invalid files are skipped rather than failing the full estimate-request submission, so monitoring should still watch for repeated abusive upload attempts.
+
+#### AUD-008
+
+- Status: `resolved`
+- Category: `error_handling`
+- Severity: `high`
+- Location: `src/Services/Invoice/PaymentProcessingService.php:141`, `src/Services/Payment/SquareGateway.php:364`, `src/Services/Payment/PayPalGateway.php:327`
+- Summary: Valid Square and PayPal webhook events can be accepted but never reconciled because normalized webhook data often omits `invoice_id`, and refund events would be misrouted through the payment-recording path if reconciliation later succeeded.
+- Evidence: `PaymentProcessingService::handleWebhook()` previously only recorded results when the normalized payload already contained `invoice_id`. Stripe supplied that field, but Square only returned fields such as `order_id` and PayPal returned sale/payment identifiers. The same method also routed every webhook with a `status` field through `recordPayment()`, including refund events.
+- Impact: Successful payment and refund webhooks can be silently dropped or applied through the wrong persistence path, which breaks invoice balance updates, refund auditability, and payment reconciliation.
+- Recommended fix: Resolve invoice ownership server-side from trusted stored checkout/payment records and route refund events through refund persistence instead of the payment writer.
+- Actual fix: `PaymentProcessingService` now resolves `invoice_id` from explicit references, existing payment records, and stored checkout-session metadata. It also logs unmatched handled events for investigation and routes refund webhooks into `recordRefund()`. Square webhook normalization now preserves `reference_id`, and PayPal normalization now preserves parent payment and invoice reference identifiers to support reconciliation.
+- Verification: `php tests/PaymentWebhookReconciliationTest.php`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l src/Services/Payment/SquareGateway.php`; `php -l src/Services/Payment/PayPalGateway.php`; `php -l tests/PaymentWebhookReconciliationTest.php`
+- Residual risk: Historical payment sessions created before these metadata improvements still rely on whatever provider identifiers were already stored, so some older unmatched events may require manual reconciliation.
+
+#### AUD-009
+
+- Status: `resolved`
+- Category: `error_handling`
+- Severity: `high`
+- Location: `src/Services/Invoice/PaymentProcessingService.php:279`, `database/install/install.sql:268`, `database/install/install.sql:854`
+- Summary: Duplicate webhook deliveries are not idempotent at the payment/refund persistence layer, and unmatched handled events had no automated recovery path after initial ingestion.
+- Evidence: The service attempted to use `ON DUPLICATE KEY UPDATE` for `payments`, but the schema does not define a unique key on `transaction_id` or `reference`, so duplicate webhook deliveries could insert multiple payment rows and reapply invoice balance updates. `refunds` likewise had no duplicate guard on `refund_id`, and unmatched webhook events were only logged without any replay mechanism.
+- Impact: Provider retries can double-record payments or refunds, distort invoice balances, and leave previously unmatched but otherwise valid events stranded until someone reconciles them manually.
+- Recommended fix: Add application-level idempotency around payment/refund persistence keyed by trusted provider identifiers, prevent regressive invoice state transitions from duplicate/non-terminal events, and replay previously unmatched events once enough local linkage data exists to resolve them safely.
+- Actual fix: `PaymentProcessingService` now deduplicates payment writes by existing transaction/reference on the target invoice, deduplicates refunds by `refund_id`, avoids reapplying already successful payment amounts, and skips regressive invoice-state transitions when a duplicate non-success event arrives after a successful payment. Unmatched handled events now log full normalized webhook data, and session/payment writes trigger `recoverUnmatchedWebhookEvents()` to replay recoverable audit-log entries once a provider session/payment mapping exists.
+- Verification: `php tests/PaymentWebhookReconciliationTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l tests/PaymentWebhookReconciliationTest.php`
+- Residual risk: Application-level idempotency still depends on stable provider identifiers already being present in webhook normalization; if a provider changes identifiers or historical rows contain inconsistent transaction/reference values, some edge cases may still require manual reconciliation.
+
+#### AUD-010
+
+- Status: `resolved`
+- Category: `error_handling`
+- Severity: `high`
+- Location: `src/Services/Invoice/PaymentProcessingService.php:353`
+- Summary: Refund ingestion updates invoice status coarsely without adjusting `amount_paid`, `balance_due`, or `paid_at`, so partial refunds leave invoice balances incorrect and full refunds can preserve stale paid state.
+- Evidence: `recordRefund()` previously inserted the refund row and then unconditionally set `invoices.status = 'refunded'`. It did not reduce `amount_paid`, restore `balance_due`, or clear `paid_at` when the invoice was no longer fully paid.
+- Impact: Refund webhook/application processing can leave invoices showing the wrong outstanding balance and wrong payment state, which cascades into public payment portals, dashboards, deposits, and follow-up collections logic.
+- Recommended fix: Apply refunds as balance deltas against the invoice, derive the resulting invoice status from the remaining paid amount and balance due, and make refund replay idempotent so duplicate deliveries do not repeatedly reduce the balance.
+- Actual fix: `PaymentProcessingService` now applies refunded amounts through `syncInvoiceAfterRefund()`, using delta-based logic against any existing refund record. Refunds reduce `amount_paid`, restore `balance_due`, clear `paid_at` when the invoice is no longer fully paid, and set invoice status back to `partial` or `pending` as appropriate instead of forcing a blanket `refunded` state.
+- Verification: `php tests/PaymentWebhookReconciliationTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l tests/PaymentWebhookReconciliationTest.php`
+- Residual risk: The broader invoice domain still does not have a first-class invoice status for fully refunded/credited documents, so business reporting may still need a more explicit refund/credit state model later.
+
+#### AUD-011
+
+- Status: `resolved`
+- Category: `error_handling`
+- Severity: `medium`
+- Location: `src/Services/Invoice/PaymentProcessingService.php:767`, `database/migrations/097_payment_webhook_events.sql:1`
+- Summary: Unmatched webhook recovery depended on replaying generic `audit_logs`, which is an imprecise and expensive source for payment reconciliation state and did not give webhook deliveries a first-class persistence model.
+- Evidence: `recoverUnmatchedWebhookEvents()` previously scanned `audit_logs` for `payment.webhook_unmatched` and `payment.webhook_recovered` entries, then re-decoded the embedded normalized payloads. That path mixes observability and operational recovery concerns, and it scales poorly as audit history grows.
+- Impact: Older unmatched payment events are harder to backfill efficiently, operational recovery depends on audit-retention behavior, and webhook troubleshooting lacks a dedicated event ledger with provider IDs, attempts, and processing timestamps.
+- Recommended fix: Introduce a dedicated webhook-events store for payment deliveries, persist normalized webhook identifiers/status there, and use it as the primary unmatched/recovery source with compatibility fallback for historical audit-log-only events.
+- Actual fix: Added `payment_webhook_events` in [097_payment_webhook_events.sql](/var/www/phparm/database/migrations/097_payment_webhook_events.sql), [install.sql](/var/www/phparm/database/install/install.sql), and [dashboard/install.sql](/var/www/phparm/src/react/views/dashboard/install.sql). `PaymentProcessingService` now records normalized webhook events into that table when present, uses provider-native event IDs when available, and replays unmatched events from the dedicated store before falling back to historical `audit_logs`.
+- Verification: `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l src/Services/Payment/StripeGateway.php`; `php -l src/Services/Payment/SquareGateway.php`; `php -l src/Services/Payment/PayPalGateway.php`; `php -l tests/PaymentWebhookReconciliationTest.php`; `php tests/PaymentWebhookReconciliationTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`
+- Residual risk: Existing historical unmatched events recorded only in `audit_logs` still rely on the fallback path until the new migration is applied and fresh webhook traffic begins populating `payment_webhook_events`.
+
+#### AUD-012
+
+- Status: `resolved`
+- Category: `error_handling`
+- Severity: `high`
+- Location: `src/Services/Invoice/InvoiceService.php:870`, `src/Services/Invoice/InvoiceService.php:901`, `database/install/install.sql:268`, `src/react/views/dashboard/install.sql:353`
+- Summary: Manual/back-office invoice payments used a different persistence contract than gateway payments, which could both violate the installed schema and reduce invoice balances for failed or pending payment attempts.
+- Evidence: `InvoiceService::insertPayment()` previously inserted only `amount`, `method`, `reference`, `status`, and `metadata`, while the installed schema defines `payments.transaction_id NOT NULL` and historically `gateway NOT NULL`. `syncInvoiceBalance()` also summed every payment row regardless of status, so failed manual entries still reduced `balance_due`.
+- Impact: Manual payment recording could fail on some installs, and when it succeeded it could leave invoice balances/statuses inconsistent with the gateway payment flow by counting non-successful attempts as paid money.
+- Recommended fix: Normalize manual payment inserts to the full payments schema, generate fallback transaction/reference identifiers when absent, and only treat successful payment statuses as balance-affecting.
+- Actual fix: `InvoiceService` now writes schema-valid manual payment rows with normalized `gateway`, `method`, `transaction_id`, `reference`, and `status` fields. Balance sync now sums only successful payment statuses, reverts invoices back to `pending` when no successful payments remain, and suppresses undeposited-funds entries for non-successful manual payment attempts. I also aligned the install SQL snapshots so the payments table definition matches the migrated shape.
+- Verification: `php tests/InvoiceManualPaymentConsistencyTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`; `php -l src/Services/Invoice/InvoiceService.php`; `php -l tests/InvoiceManualPaymentConsistencyTest.php`; `php -l database/install/install.sql`
+- Residual risk: Manual payment and gateway payment flows still live in separate services, so a future refactor should likely extract a shared payment-recording policy to eliminate duplicated status semantics entirely.
+
+#### AUD-013
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `public/index.php:52`, `routes/api.php:1`, `routes/cms.php:1`
+- Summary: Every API request paid the bootstrap cost of loading both the API route graph and the CMS route graph even when the request could never match a CMS route.
+- Evidence: [public/index.php](/var/www/phparm/public/index.php) unconditionally required both [routes/api.php](/var/www/phparm/routes/api.php) and [routes/cms.php](/var/www/phparm/routes/cms.php) before dispatch. The API route file alone is 9,862 lines, and CMS bootstrap also initializes cache/auth/page-controller state that is irrelevant for `/api/*` and `/health`.
+- Impact: API requests carry avoidable PHP parse/bootstrap overhead on every hit, increasing latency and reducing throughput on the dominant request class.
+- Recommended fix: Load the CMS route set only for non-API requests, and keep API/health requests on the leaner route/bootstrap path.
+- Actual fix: `public/index.php` now loads `routes/cms.php` only for non-API, non-health requests.
+- Verification: `php -l public/index.php`
+- Residual risk: API requests still pay the cost of constructing the large API route graph on every request because routes are not yet compiled or cached.
+
+#### AUD-014
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Invoice/PaymentProcessingService.php:447`, `src/Services/Invoice/PaymentProcessingService.php:527`
+- Summary: Payment reconciliation used broad row scans for duplicate detection and invoice/session resolution during webhook handling.
+- Evidence: `findExistingPaymentRecord()` previously selected every payment row for an invoice and scanned in PHP. `findInvoiceIdByPaymentSession()` selected all `payment_sessions` rows for a provider, decoded JSON metadata row-by-row, and searched for identifiers in PHP.
+- Impact: As payment history grows, webhook handling time degrades with invoice/provider row count instead of staying close to constant-time for common exact-match cases.
+- Recommended fix: Push exact-match filtering into SQL first, and only fall back to metadata decoding on a narrowed candidate set.
+- Actual fix: `findExistingPaymentRecord()` now performs targeted SQL lookup with exact transaction/reference predicates and `LIMIT 1`. `findInvoiceIdByPaymentSession()` now first checks exact `session_id` matches in SQL, then narrows metadata fallback to rows whose metadata text contains one of the candidate identifiers before decoding JSON in PHP.
+- Verification: `php -l src/Services/Invoice/PaymentProcessingService.php`
+- Residual risk: Metadata-based fallback is still less efficient than fully indexed relational linkage for `payment_id` and `order_id`, so very large payment-session tables would still benefit from explicit indexed columns or lookup tables.
+
+#### AUD-015
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:3628`, `routes/api.php:4176`
+- Summary: Two estimate read endpoints used an N+1 query pattern to load estimate items, issuing one additional query per estimate job.
+- Evidence: The authenticated estimate detail route and the public estimate-view route both fetched all estimate jobs first, then reused a prepared statement inside a loop to query `estimate_items` once per job.
+- Impact: Estimates with many jobs incurred query count growth proportional to job count, increasing latency and database load on frequently viewed estimate detail pages.
+- Recommended fix: Batch-load estimate items for all jobs in one query and group them in PHP by `estimate_job_id`.
+- Actual fix: Added a shared `loadEstimateJobsWithItems` helper in `routes/api.php` that fetches all jobs, loads all matching items with a single `IN (...)` query, and attaches grouped items to each job. Both estimate detail endpoints now use that helper.
+- Verification: `php -l routes/api.php`
+- Residual risk: The endpoints still build full nested estimate payloads synchronously, so very large estimates could benefit further from slimmer list/detail payload separation or response caching.
+
+#### AUD-016
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:200`, `routes/cms.php:24`
+- Summary: Route bootstrap eagerly loaded custom role permissions from the database even on requests that never touched authorization-sensitive handlers.
+- Evidence: Both `routes/api.php` and `routes/cms.php` called `RolePermissions::fromDatabase(...)` while defining routes, before any route matching occurred.
+- Impact: Public/API requests paid avoidable database/bootstrap cost just to construct authorization metadata that many requests never use.
+- Recommended fix: Defer custom role-permission loading until an auth service or gate actually needs it.
+- Actual fix: Both route files now wrap role-permission loading in lazy `RolePermissions` proxies, so the database-backed permission load only happens on first real authorization use.
+- Verification: `php -l routes/api.php`; `php -l routes/cms.php`
+- Residual risk: Requests that do need authorization still pay the database lookup once per request because role permissions are not yet cached across requests.
+
+#### AUD-017
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Support/SettingsRepository.php:130`, `routes/api.php:299`
+- Summary: Default settings seeding performed one existence query per configured key during API route bootstrap.
+- Evidence: `SettingsRepository::seedDefaults()` previously called `exists()` inside a loop for every configured default, causing N database round trips before route dispatch on every request path that seeded defaults.
+- Impact: Request bootstrap time scaled with the number of configured defaults instead of staying near constant-time, wasting database capacity on already-initialized environments.
+- Recommended fix: Batch-load existing setting keys once, then insert only the truly missing defaults.
+- Actual fix: `SettingsRepository::seedDefaults()` now fetches all existing keys in a single `IN (...)` query and only calls `set()` for missing defaults.
+- Verification: `php -l src/Support/SettingsRepository.php`
+- Residual risk: Default seeding still runs during request bootstrap rather than deployment/bootstrap tasks, so missing defaults are handled more efficiently but the responsibility still lives on the hot path.
+
+#### AUD-018
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:8008`, `routes/api.php:8649`, `src/Support/SettingsRepository.php:84`
+- Summary: Storage notice PDF and template preview endpoints performed multiple serial settings lookups for related shop/template keys during a single request.
+- Evidence: Both handlers called `settingsRepository->get()` repeatedly for `shop.address`, `shop.name`, `shop.phone`, and template-specific keys, causing several round trips to the `settings` table per request.
+- Impact: These endpoints paid avoidable query overhead in an already synchronous request path that also performs PDF/template rendering work.
+- Recommended fix: Add batched settings reads and fetch the needed keys in one query per request.
+- Actual fix: Added `SettingsRepository::getMany()` and switched both storage notice handlers to load their related settings in one batched read before building the PDF/preview payload.
+- Verification: `php -l src/Support/SettingsRepository.php`; `php -l routes/api.php`
+- Residual risk: Other route handlers still use repeated `settingsRepository->get()` patterns, so the same batched approach should be applied opportunistically elsewhere on hot paths.
+
+#### AUD-019
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:3705`, `routes/api.php:4096`, `routes/api.php:4298`, `routes/api.php:4550`
+- Summary: Several estimate and workorder detail endpoints performed serial enrichment queries for customer, vehicle, and technician summaries.
+- Evidence: These handlers fetched the base estimate/workorder payload first, then issued separate `SELECT ... WHERE id = :id` lookups for related customer, vehicle, and sometimes technician rows.
+- Impact: Detail endpoints paid extra round trips and connection work for small related lookups that can be satisfied together, increasing latency on frequently viewed records.
+- Recommended fix: Batch the related entity lookups into a single summary query and reuse it across the affected handlers.
+- Actual fix: Added a shared `loadEntityParties` helper in `routes/api.php` that resolves customer, vehicle, and technician summaries in one query. The authenticated estimate detail endpoint, both public estimate detail endpoints, and the workorder detail endpoint now use that helper instead of issuing multiple serial lookups.
+- Verification: `php -l routes/api.php`
+- Residual risk: The affected endpoints still assemble some additional data synchronously, so further gains would come from moving more detail composition into shared repository/service queries rather than route-layer enrichment.
+
+#### AUD-020
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:2187`, `routes/api.php:8961`
+- Summary: The CMS route block eagerly constructed cache and controller/service objects during route registration even when the current request never matched a CMS endpoint.
+- Evidence: `routes/api.php` created `CMSCacheService`, `CategoryController`, `PageController`, `MenuController`, `MediaController`, and `CMSApiController` unconditionally near the top of route registration, then captured those instances across both public and authenticated CMS handlers.
+- Impact: Every request paid the object-construction and dependency-wiring cost for the full CMS API graph, including non-CMS traffic that only needed unrelated API routes.
+- Recommended fix: Defer CMS object construction until the first CMS handler actually needs the dependency, while keeping a single reused instance per request.
+- Actual fix: Replaced the eager CMS cache/controller/API-controller setup in `routes/api.php` with shared lazy proxy instances. The CMS cache service and controllers are now instantiated on first method call instead of during route definition.
+- Verification: `php -l routes/api.php`
+- Residual risk: `routes/api.php` still defines a very large number of closures and some non-CMS groups still instantiate services inside route-group setup, so further bootstrap reductions will require the same lazy-loading treatment in other route domains.
+
+#### AUD-021
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:2372`
+- Summary: The authenticated dashboard route group eagerly instantiated dashboard, branch, inventory-notification, and PartsTech dependencies during route registration even when the request did not hit those endpoints.
+- Evidence: The dashboard/authenticated group created `DashboardService`, `DashboardController`, `BranchController`, `InventoryPullRequestRepository`, and `PartsTechService` at group setup time before any `/api/dashboard`, `/api/branches`, or `/api/partstech/*` route was matched.
+- Impact: Every authenticated request paid unnecessary object-construction and dependency wiring cost for dashboard and integration code paths that are irrelevant to most requests.
+- Recommended fix: Convert those dependencies to shared lazy instances so construction happens on first use inside the matched handler instead of during route bootstrap.
+- Actual fix: Updated the authenticated dashboard group in `routes/api.php` to build the dashboard controller, branch controller, inventory pull-request repository, and PartsTech service through the shared lazy-service helper.
+- Verification: `php -l routes/api.php`
+- Residual risk: Other authenticated route groups in `routes/api.php`, including customer and inventory domains, still construct controllers and repositories eagerly at group definition time.
+
+#### AUD-022
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:2587`, `routes/api.php:2662`, `routes/api.php:2838`, `routes/api.php:2880`
+- Summary: Several adjacent authenticated route groups still eagerly constructed controllers, repositories, and import services during route registration even when those domains were not used by the current request.
+- Evidence: The customer, service-type, CSV-import, and inventory groups each created their controller/service graphs at group setup time, including inventory low-stock, lookup, transfer, and import dependencies, before any matching route handler ran.
+- Impact: Authenticated requests unrelated to customer or inventory workflows still paid object-construction and dependency-wiring cost for those domains, increasing API bootstrap latency on the largest route file.
+- Recommended fix: Apply the shared lazy-service pattern to these groups so their dependencies are instantiated only when the matched route first uses them.
+- Actual fix: Converted the customer controller, service-type controller, CSV import services, inventory controller, inventory lookup controller, stock-order controller, and transfer controller in `routes/api.php` to shared lazy instances.
+- Verification: `php -l routes/api.php`
+- Residual risk: The vehicle-master/authenticated block still eagerly constructs a heavier VIN-decoder and normalization stack, and additional route domains later in `routes/api.php` may still have the same pattern.
+
+#### AUD-023
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:2732`
+- Summary: The authenticated vehicle-master route group eagerly built the vehicle repository, VIN decoder stack, normalization job, vehicle controller, and customer-vehicle service during route registration.
+- Evidence: The vehicle block loaded `config/vin_decoder.php`, instantiated `VinDecoderFactory`, created the decoder chain, created `VehicleNormalizationJob`, then built `VehicleMasterController` and `CustomerVehicleService` before any `/api/vehicles*` route had matched.
+- Impact: Every authenticated request paid the setup cost for VIN decoding and vehicle normalization dependencies even when the request had nothing to do with vehicle APIs.
+- Recommended fix: Move the vehicle-master dependency graph behind shared lazy instances so vehicle routes alone incur that setup work.
+- Actual fix: Updated the vehicle-master route group in `routes/api.php` so `VehicleMasterController` and `CustomerVehicleService` are created lazily on first use, including deferred VIN-decoder config loading and normalization job setup.
+- Verification: `php -l routes/api.php`
+- Residual risk: Additional authenticated route groups later in `routes/api.php` may still instantiate their controllers and repositories during route definition, so the bootstrap pass should continue further down the file.
+
+#### AUD-024
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:3427`, `routes/api.php:4040`, `routes/api.php:4113`
+- Summary: Core-return, reminder-campaign, and public-invoice routes eagerly built full service/controller graphs during route registration even when the request did not target those features.
+- Evidence: `routes/api.php` instantiated `CoreReturnService` and `CoreReturnController` for all authenticated requests, built the reminder notification/scheduler/controller stack for all admin/manager authenticated requests, and created the public invoice payment/service/PDF stack before any matching public invoice route was hit.
+- Impact: Both authenticated and public traffic paid avoidable object-construction and dependency-wiring cost for specialized domains that are only used by a small subset of routes.
+- Recommended fix: Move those route-level dependency graphs behind the shared lazy-service helper so only matching routes pay their bootstrap cost.
+- Actual fix: Converted the core-return controller, reminder campaign controller stack, and public invoice controller in `routes/api.php` to lazily instantiated shared instances.
+- Verification: `php -l routes/api.php`
+- Residual risk: The authenticated invoice and workorder route groups still build larger dependency graphs eagerly and remain the strongest remaining route-bootstrap targets.
+
+#### AUD-025
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:4431`, `routes/api.php:4517`
+- Summary: The authenticated invoice and workorder route groups eagerly constructed the largest remaining payment, messaging, tracking, repository, and controller graphs during route registration.
+- Evidence: `routes/api.php` built the invoice payment gateway/controller stack and the workorder messaging, financial, repository, tracking, notification, and controller stack before any `/api/invoices*` or `/api/workorders*` route matched.
+- Impact: Authenticated requests unrelated to invoices or workorders still paid the heaviest remaining object-construction and dependency-wiring cost on the main API bootstrap path.
+- Recommended fix: Move the invoice controller, onsite payment controller, workorder controller, workorder repository, tracking service, and workorder status notifications behind lazy route-level factories so only matched invoice/workorder requests pay that setup cost.
+- Actual fix: Converted the invoice and workorder route groups in `routes/api.php` to lazily instantiate their captured controller/service/repository dependencies, including deferred payment gateway, messaging, tracking, and notification graph construction.
+- Verification: `php -l routes/api.php`
+- Residual risk: The appointment/user/messaging/dispatch block further down `routes/api.php` still eagerly constructs another large shared graph and is the next strongest route-bootstrap target.
+
+#### AUD-026
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:4934`, `routes/api.php:5445`
+- Summary: The appointment, user, messaging, driver-dispatch, tracking, and advanced-dispatch route sections eagerly built another large shared graph during route registration.
+- Evidence: `routes/api.php` instantiated the appointment controller stack, user/role controllers, messaging and masked-SMS controllers, driver-dispatch controller, tracking service, and the advanced-dispatch ETA/recommendation/waterfall/geofencing/audit services before those routes were matched.
+- Impact: Requests unrelated to appointments, staff messaging, or dispatch features still paid substantial object-construction, config-loading, and dependency-wiring overhead on API bootstrap.
+- Recommended fix: Defer those captured controllers and services behind the shared lazy-service helper so the route graph only materializes when the corresponding route family is invoked.
+- Actual fix: Converted the appointment, user, role, messaging, masked-SMS, driver-dispatch, tracking, and advanced-dispatch route dependencies in `routes/api.php` to lazy shared instances, including deferred notification and dispatch config loading.
+- Verification: `php -l routes/api.php`
+- Residual risk: Additional later authenticated groups in `routes/api.php`, including VIN decoder settings, inspection, and other downstream domains, may still instantiate controllers/services eagerly during route definition.
+
+#### AUD-027
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `routes/api.php:6203`, `routes/api.php:6704`, `routes/api.php:6810`, `routes/api.php:6928`, `routes/api.php:8772`
+- Summary: Several later route groups in the lower half of `routes/api.php` still eagerly instantiated controllers and service graphs during route registration.
+- Evidence: The inspection, QC/truck-checklist, warranty, credit-account, customer-retention, time-tracking/payroll/leave/labor-task, and admin settings/bank-feed/notification-template groups each constructed their controller/service dependencies before any matching route handler ran.
+- Impact: Even after earlier bootstrap reductions, unrelated requests still paid avoidable object-construction and config-loading cost from these downstream route domains.
+- Recommended fix: Continue applying the shared lazy-service pattern to the remaining lower-file route groups so dependency graphs are created only when their route family is invoked.
+- Actual fix: Converted the lower-half inspection, inspection-estimate bridge, QC, truck-checklist, driver-shift, warranty, credit-account, customer-retention, time-tracking/payroll/leave/labor-task, and admin settings/bank-feed/notification-template dependencies in `routes/api.php` to lazy shared instances.
+- Verification: `php -l routes/api.php`
+- Residual risk: The remaining performance work is less about route bootstrap and more about targeted request-path query patterns, repeated settings reads, and any still-eager edge groups not yet converted near the end of `routes/api.php`.
+
+#### AUD-028
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:300`, `routes/api.php:7704`
+- Summary: Two remaining request-path settings loaders still performed serial reads for small related key sets instead of a single batched lookup.
+- Evidence: The reCAPTCHA config loader fetched four `integrations.recaptcha.*` keys with separate `settingsRepository->get()` calls, and the storage-fee automation route fetched `storage.daily_fee` and `storage.gate_fee` as separate reads during an already heavy workflow.
+- Impact: These handlers paid avoidable extra trips to the `settings` table on requests that already do meaningful synchronous work, adding small but repeatable latency and DB overhead.
+- Recommended fix: Switch the remaining small related-key lookups to `SettingsRepository::getMany()` so each request path fetches the needed settings in one query.
+- Actual fix: Updated the reCAPTCHA config loader and the storage-fee automation route in `routes/api.php` to load their related settings via `SettingsRepository::getMany()`.
+- Verification: `php -l routes/api.php`
+- Residual risk: The remaining performance opportunities are now more endpoint-specific, such as serial enrichment queries or repeated config/template initialization in individual handlers, rather than obvious repeated settings reads.
+
+#### AUD-029
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:2207`, `routes/api.php:3981`, `routes/api.php:4235`
+- Summary: Estimate sharing and public-estimate actions repeatedly rebuilt the same notification/link/share service stack inside individual handlers and used `COUNT(*)` where only existence was needed.
+- Evidence: The share-by-email and share-by-SMS handlers each recreated notification dispatcher, messaging, estimate repository, editor, approval audit, public-link, and share-service objects per request, and the public estimate view handler used `SELECT COUNT(*) FROM estimate_signatures` only to determine whether any signature existed.
+- Impact: These estimate-facing endpoints paid avoidable object-construction cost and a heavier aggregate query than necessary on user-facing request paths.
+- Recommended fix: Reuse shared request-local lazy estimate share/public-link services across the related handlers and replace the signature count with an existence check.
+- Actual fix: Added shared lazy `EstimatePublicLinkService` and `EstimateShareService` helpers in `routes/api.php`, switched the estimate share/public-estimate action handlers to use them, and replaced the signature `COUNT(*)` query with a `SELECT 1 ... LIMIT 1` existence check helper.
+- Verification: `php -l routes/api.php`
+- Residual risk: Other user-facing handlers still initialize notification/template stacks inline and may benefit from the same consolidation where the path is hot enough to justify it.
+
+#### AUD-030
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:698`, `routes/api.php:4192`
+- Summary: Public estimate-request and related public estimate handlers still rebuilt small notification/settings helpers inline on each request.
+- Evidence: The estimate-request submission route created a fresh notification dispatcher stack inside the request handler, and the adjacent public estimate routes created ad hoc settings repository usage rather than reusing the existing request-level helpers already present in the route file.
+- Impact: These public customer-facing paths paid avoidable object-construction and helper setup cost on every request, even though equivalent request-local shared helpers already existed.
+- Recommended fix: Reuse shared lazy notification/settings helpers on these public estimate paths instead of rebuilding the same dispatcher/repository stack inline.
+- Actual fix: Added a shared lazy default notification dispatcher in `routes/api.php`, switched the public estimate-request submission route to reuse it, and routed the related public estimate settings reads through the existing request-level `SettingsRepository` instance.
+- Verification: `php -l routes/api.php`
+- Residual risk: Additional public-facing handlers may still initialize notification/config/template objects inline where consolidation would help, but the remaining wins are narrower and should be prioritized by traffic and latency data.
+
+#### AUD-031
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:4392`
+- Summary: The public estimate-by-code endpoint still used an aggregate signature count and an ad hoc settings repository despite equivalent lightweight helpers already existing in the same route file.
+- Evidence: The handler queried `COUNT(*) FROM estimate_signatures` only to determine whether any signature existed and instantiated a new `SettingsRepository` just to read `documents.terms.estimates`.
+- Impact: The public estimate short-code path paid unnecessary query work and helper construction on a customer-facing request path.
+- Recommended fix: Reuse the shared signature-existence helper and request-level settings repository already present in `routes/api.php`.
+- Actual fix: Updated the public estimate-by-code handler in `routes/api.php` to use the shared `estimateHasSignature` existence helper and the existing request-level `SettingsRepository`.
+- Verification: `php -l routes/api.php`
+- Residual risk: Remaining performance opportunities are now mostly isolated endpoint-level issues rather than repeated patterns across the public estimate flow.
+
+#### AUD-032
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:5902`
+- Summary: The VIN decoder settings routes still loaded `config/vin_decoder.php`, conditionally created `PartsTechService`, and built `VinDecoderFactory` during route registration.
+- Evidence: The VIN decoder settings group initialized the decoder config and factory before any `/api/settings/vin-decoder*` route matched, even though those routes are admin-only and relatively infrequent.
+- Impact: Every authenticated request still paid a small amount of config-loading and object-construction overhead from an admin-only settings feature.
+- Recommended fix: Defer VIN decoder config and factory creation until one of the VIN decoder settings/statistics routes is actually invoked, and reuse the existing request-level `SettingsRepository` for updates.
+- Actual fix: Replaced the eager VIN decoder config/factory setup in `routes/api.php` with a cached config loader closure plus a lazy `VinDecoderFactory`, and switched the settings update handler to reuse the existing `SettingsRepository`.
+- Verification: `php -l routes/api.php`
+- Residual risk: The remaining performance issues are now mostly endpoint-specific SQL and inline helper work rather than obvious route-definition initialization blocks.
+
+#### AUD-033
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:1738`, `routes/api.php:1912`, `routes/api.php:5208`
+- Summary: Several auth and invitation email flows still rebuilt the same notification dispatcher stack inline on each request.
+- Evidence: The forgot-password, resend-verification, and user-invite handlers each loaded `config/notifications.php` and instantiated `TemplateEngine`, `NotificationLogRepository`, and `NotificationDispatcher` directly inside the request handler before sending mail.
+- Impact: These user-facing auth flows paid repeated object-construction and config-loading cost for the same mail dispatcher setup, despite equivalent shared helpers already existing in the route file.
+- Recommended fix: Route these email flows through the shared default notification dispatcher so the same request-local mail stack is reused.
+- Actual fix: Updated the forgot-password, resend-verification, and user-invite handlers in `routes/api.php` to use the shared lazy default notification dispatcher instead of rebuilding the dispatcher stack inline.
+- Verification: `php -l routes/api.php`
+- Residual risk: Remaining performance work is now mostly about SQL/query shaping and a few isolated inline helper initializations, not repeated mail-dispatch construction patterns.
+
+#### AUD-034
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:8194`
+- Summary: The storage notice send endpoint performed a separate existence lookup before issuing the update that could already determine whether the record existed.
+- Evidence: The handler first executed `SELECT id FROM lien_notices WHERE id = ?`, then ran the `UPDATE lien_notices ... WHERE id = ?`, and only then fetched the updated notice payload.
+- Impact: Each send request paid an avoidable extra database round trip on an admin/storage workflow that already does synchronous follow-up work.
+- Recommended fix: Use the update result itself to detect a missing row and skip the pre-update existence query.
+- Actual fix: Updated the storage notice send handler in `routes/api.php` to rely on `rowCount()` from the `UPDATE` statement for not-found detection before fetching the updated notice record.
+- Verification: `php -l routes/api.php`
+- Residual risk: Other storage/admin handlers still use similar check-then-write patterns and could be tightened opportunistically, but the remaining issues are incremental rather than systemic.
+
+#### AUD-035
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:8049`
+- Summary: The storage fee delete endpoint performed a separate existence query before deleting, even though the delete target and downstream idempotency key were already known from the route parameter.
+- Evidence: The handler first queried `SELECT id FROM storage_fees WHERE id = ?`, then issued `DELETE FROM storage_fees WHERE id = ?`, and finally used the fetched ID only to rebuild the same `storage-fee-{id}` idempotency key that could be derived from the request path directly.
+- Impact: Each delete request paid an avoidable extra database round trip on an admin/storage workflow.
+- Recommended fix: Rely on the delete statement’s affected-row count for not-found detection and derive the idempotency key directly from the route ID.
+- Actual fix: Updated the storage fee delete handler in `routes/api.php` to use `rowCount()` from the `DELETE` statement for not-found detection and to build the financial-entry idempotency key directly from the route ID.
+- Verification: `php -l routes/api.php`
+- Residual risk: Similar check-then-write patterns may still exist in other admin/storage endpoints, but the remaining wins are incremental and should be taken opportunistically.
+
+#### AUD-036
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:6130`
+- Summary: The VIN decoder logs endpoint always ran a second `COUNT(*)` query for pagination metadata even when the current page size already proved the total result count.
+- Evidence: After fetching the current page of `vin_decode_log` rows, the handler unconditionally executed `SELECT COUNT(*) as total FROM vin_decode_log ...` regardless of whether the returned row count was already less than the requested limit.
+- Impact: Trailing pages and small result sets paid an unnecessary second aggregate query on an admin/reporting endpoint.
+- Recommended fix: Infer `total` directly when the fetched row count is smaller than the requested page size and only issue the count query when the page is full.
+- Actual fix: Updated the VIN decoder logs handler in `routes/api.php` to skip the `COUNT(*)` query when the current page contains fewer rows than the requested limit, deriving `total` from `offset + count(rows)` in that case.
+- Verification: `php -l routes/api.php`
+- Residual risk: Other paginated admin/reporting endpoints may still use unconditional second queries for metadata even when the current page already implies the total.
+
+#### AUD-037
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:6702`, `routes/api.php:7788`
+- Summary: Two authenticated admin flows were still constructing fresh `SettingsRepository` instances even though the route file already maintains a shared request-level repository.
+- Evidence: The dispatch settings update handler instantiated `new \App\Support\SettingsRepository($connection)` inside the route callback, and the lazy payroll export controller builder did the same while the surrounding route graph already had `$settingsRepository` available.
+- Impact: Each request to those admin routes paid a small but avoidable object-construction cost and duplicated access to the same request-scoped settings dependency pattern used elsewhere in the file.
+- Recommended fix: Reuse the existing request-level `SettingsRepository` in both the dispatch settings handler and the payroll export controller factory.
+- Actual fix: Updated `routes/api.php` so the dispatch settings save route and the lazy payroll export controller both use the existing shared `$settingsRepository` instead of creating new repository instances.
+- Verification: `php -l routes/api.php`
+- Residual risk: Remaining performance work is now mostly endpoint-level SQL/query shaping rather than repeated repository construction patterns.
+
+#### AUD-038
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:7650`, `routes/api.php:7884`, `routes/api.php:8149`, `routes/api.php:8676`
+- Summary: The storage and auction handlers repeated the same `impound_cases` lookup by `case_number` inline across multiple routes instead of sharing one request-local resolver.
+- Evidence: The storage fee create route, storage fee update route, lien notice create route, and auction lot create route each prepared and executed `SELECT id FROM impound_cases WHERE case_number = ? LIMIT 1` independently in their own handler bodies.
+- Impact: This duplicated the same query-preparation and lookup path across several adjacent admin workflows, adding small repeated request overhead and making the route file harder to optimize consistently.
+- Recommended fix: Centralize the case-number-to-ID resolution into one shared helper closure for the storage and auction block and reuse it across those handlers.
+- Actual fix: Added a shared `resolveImpoundCaseIdByNumber` helper in `routes/api.php` and switched the storage fee create/update, lien notice create, and auction lot create handlers to use it instead of duplicating the same lookup code inline.
+- Verification: `php -l routes/api.php`
+- Residual risk: This reduces duplicated resolver work, but the remaining performance opportunities in the storage/admin area are now more likely to be endpoint-specific SQL shape issues than repeated lookup scaffolding.
+
+#### AUD-039
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:9722`, `routes/api.php:9788`
+- Summary: The CMS 404 log and redirect list endpoints always ran a second total-count query even when the current page already proved the total result count.
+- Evidence: After fetching a page of 404 logs or redirects, both handlers unconditionally called repository `count()` methods for pagination metadata, even when `count(results) < per_page` meant the current page was already the final page.
+- Impact: Small result sets and trailing admin pages paid an unnecessary second database query on each request.
+- Recommended fix: Reuse the short-page optimization from the VIN decoder logs endpoint by deriving `total` from `offset + count(results)` when the fetched page is smaller than `per_page`, and only run the repository count query for full pages.
+- Actual fix: Updated the `/api/404-logs` and `/api/redirects` handlers in `routes/api.php` to skip the extra count query on short/final pages and infer the total directly in those cases.
+- Verification: `php -l routes/api.php`
+- Residual risk: Other paginated admin endpoints may still use unconditional total-count queries, but the remaining work is now endpoint-by-endpoint rather than a repeated broad pattern.
+
+#### AUD-040
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Payroll/PayrollExportService.php:25`
+- Summary: The payroll export history service always executed a total-count query even when the fetched page already proved the total number of rows.
+- Evidence: `PayrollExportService::list()` ran `SELECT COUNT(*) FROM payroll_exports` before fetching the page, even though a page returning fewer than `limit` rows already establishes that `offset + rowCount` is the full total.
+- Impact: Small export histories and trailing pages paid an unnecessary aggregate query on each admin request.
+- Recommended fix: Fetch the page first and only run the `COUNT(*)` query when the page is full; otherwise derive `total` directly from `offset + count(rows)`.
+- Actual fix: Updated `PayrollExportService::list()` to load the requested page first, infer `total` on short/final pages, and fall back to the `COUNT(*)` query only when needed.
+- Verification: `php -l src/Services/Payroll/PayrollExportService.php`
+- Residual risk: Other service-layer paginated endpoints may still compute totals unconditionally and should be reviewed individually.
+
+#### AUD-041
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/TimeTracking/TimeTrackingService.php:98`
+- Summary: The time tracking list service always executed a total-count query before fetching the requested page, even when the page result itself could already prove the total.
+- Evidence: `TimeTrackingService::list()` prepared and executed `SELECT COUNT(*) ...` against the filtered `time_entries` join set before the page query, despite the fact that a page returning fewer than `limit` rows already establishes `offset + rowCount` as the total.
+- Impact: Small result sets and trailing pages paid an unnecessary aggregate query on a likely hotter admin workflow.
+- Recommended fix: Fetch the requested page first and only run the `COUNT(*)` query when the page is full; otherwise derive `total` directly from `offset + count(rows)`.
+- Actual fix: Updated `TimeTrackingService::list()` to infer `total` from the fetched page on short/final pages and fall back to the existing count query only when needed.
+- Verification: `php -l src/Services/TimeTracking/TimeTrackingService.php`
+- Residual risk: Similar unconditional total-count patterns may still remain in other service-layer list endpoints, especially leave requests and financial pagination.
+
+#### AUD-042
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/LeaveRequests/LeaveRequestService.php:24`
+- Summary: The leave-request list service always executed a filtered total-count query before fetching the requested page, even when the page result itself could already prove the total.
+- Evidence: `LeaveRequestService::list()` prepared and executed `SELECT COUNT(*) ...` against the filtered `leave_requests` join set before the page query, despite the fact that a page returning fewer than `limit` rows already establishes `offset + rowCount` as the total.
+- Impact: Small result sets and trailing pages paid an unnecessary aggregate query on each leave-request admin view.
+- Recommended fix: Fetch the requested page first and only run the `COUNT(*)` query when the page is full; otherwise derive `total` directly from `offset + count(rows)`.
+- Actual fix: Updated `LeaveRequestService::list()` to infer `total` from the fetched page on short/final pages and fall back to the filtered count query only when needed.
+- Verification: `php -l src/Services/LeaveRequests/LeaveRequestService.php`
+- Residual risk: Other paginated service paths, especially financial entry pagination, may still compute totals unconditionally and should be reviewed individually.
+
+#### AUD-043
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Financial/FinancialEntryService.php:203`
+- Summary: The paginated financial entry query always executed a filtered total-count query before returning results, even when the fetched page itself could already prove the total.
+- Evidence: `FinancialEntryService::query()` computed `SELECT COUNT(*) FROM (...)` whenever pagination was enabled, despite the fact that a page returning fewer than `per_page` rows already establishes `offset + rowCount` as the total.
+- Impact: Small result sets and trailing pages paid an unnecessary aggregate query on financial history views.
+- Recommended fix: Fetch the page first and only run the filtered count query when the page is full; otherwise derive `total` directly from `offset + count(entries)`.
+- Actual fix: Updated `FinancialEntryService::query()` to build a reusable filtered base SQL, infer `total` from the fetched page on short/final pages, and fall back to the filtered count query only when needed.
+- Verification: `php -l src/Services/Financial/FinancialEntryService.php`
+- Residual risk: The broad repeated pagination-count pattern is largely reduced now, so the remaining performance work should focus more on endpoint-specific SQL shape or expensive synchronous workflows.
+
+#### AUD-044
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:719`, `src/Services/EstimateRequest/EstimateRequestProcessor.php:46`
+- Summary: The public estimate request flow re-read data it had just created, issuing extra database queries for the draft estimate number and uploaded-photo count.
+- Evidence: After `EstimateRequestProcessor::processRequest()` created the draft estimate, the route executed `SELECT number FROM estimates WHERE id = :id` just to populate email data. The same handler also called `EstimateRequestRepository::getMedia()` purely to count uploaded photos even though it had just inserted those media rows in the same request.
+- Impact: Every successfully processed public estimate request paid unnecessary follow-up queries on a customer-facing path that already performs synchronous writes, uploads, and notifications.
+- Recommended fix: Return the generated estimate number directly from the processor and track uploaded-photo count during the upload loop so the notification path can reuse in-memory values.
+- Actual fix: Updated `EstimateRequestProcessor::processRequest()` to return `estimate_number`, changed the public estimate request route in `routes/api.php` to reuse that value, and replaced the media recount query with a local `uploadedPhotoCount` tracked during upload handling.
+- Verification: `php -l routes/api.php`; `php -l src/Services/EstimateRequest/EstimateRequestProcessor.php`
+- Residual risk: The public estimate request path still does substantial synchronous work, so any further performance gains there would likely come from larger workflow changes rather than eliminating small follow-up reads.
+
+#### AUD-045
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `routes/api.php:8377`, `routes/api.php:8490`, `routes/api.php:8701`, `routes/api.php:8761`
+- Summary: Several storage and auction write handlers re-queried the just-written row only to build the API response from values the request already had in memory.
+- Evidence: The storage impound-case create/update routes and auction lot create/update routes each issued a follow-up `SELECT ... WHERE id = ?` immediately after `INSERT` or `UPDATE`, even though the response shape consisted of fields already present in the request payload, generated IDs, and locally computed timestamps.
+- Impact: These admin write paths paid an extra round trip after every successful write, adding avoidable latency to synchronous storage and auction workflows.
+- Recommended fix: Assemble the response payload directly from the inserted/updated values, generated IDs, and computed timestamps instead of re-reading the row immediately after the write.
+- Actual fix: Updated the storage impound-case and auction lot create/update handlers in `routes/api.php` to return assembled response payloads directly and removed the immediate post-write row fetches. A small `nullableFloat` helper keeps numeric response fields consistent where nullable values are involved.
+- Verification: `php -l routes/api.php`
+- Residual risk: This removes the extra write-follow-up read pattern from these handlers, but the broader storage/admin area may still have heavier synchronous workflows that need deeper SQL or workflow-level tuning.
+
+#### AUD-046
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Customer/CustomerRepository.php:233`
+- Summary: The customer retention query always executed its grouped total-count query even when the fetched page already proved the total result count.
+- Evidence: `CustomerRepository::findInactiveCustomers()` fetched the retention page and then unconditionally ran a second `COUNT(*)` over a grouped subquery, despite the fact that a page returning fewer than `limit` rows already establishes `offset + rowCount` as the total.
+- Impact: Small retention result sets and trailing pages paid an unnecessary grouped aggregate query on report requests.
+- Recommended fix: Infer `total` from `offset + count(rows)` when the fetched page is shorter than `limit`, and only run the grouped count query when the page is full.
+- Actual fix: Updated `CustomerRepository::findInactiveCustomers()` to skip the grouped count query on short/final pages and derive the total directly in those cases.
+- Verification: `php -l src/Services/Customer/CustomerRepository.php`
+- Residual risk: The remaining performance work is now more likely to be report-specific aggregate/query design or synchronous workflow cost rather than the repeated pagination-count pattern.
+
+#### AUD-047
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Customer/CustomerRepository.php:271`
+- Summary: The customer retention repository still ran its grouped total-count query for full exports even when it had already loaded the complete result set into memory.
+- Evidence: `findInactiveCustomers()` is used with `limit = null` for retention export paths. In that mode it fetches all matching rows first, but previously still executed the grouped `COUNT(*)` subquery afterward even though `count(rows)` already provided the exact total.
+- Impact: Full customer retention exports paid an unnecessary extra grouped aggregate query after loading the entire dataset.
+- Recommended fix: When `limit` is `null`, treat the fetched row count as the total and skip the grouped count query entirely.
+- Actual fix: Updated `CustomerRepository::findInactiveCustomers()` so full export calls with `limit = null` now use `count(rows)` as the total and avoid the second grouped count query.
+- Verification: `php -l src/Services/Customer/CustomerRepository.php`
+- Residual risk: Report/export paths in other domains may still do similar “fetch all rows, then count again” work and should be reviewed individually.
+
+#### AUD-048
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/TimeTracking/LaborTaskService.php:29`
+- Summary: The labor-task list service always executed a filtered total-count query before returning the requested page, even when the fetched page already proved the total.
+- Evidence: `LaborTaskService::list()` prepared and executed `SELECT COUNT(*) ...` against the filtered labor-task join set before the page query, despite the fact that a page returning fewer than `limit` rows already establishes `offset + rowCount` as the total.
+- Impact: Small result sets and trailing pages paid an unnecessary aggregate query on labor-task administration screens.
+- Recommended fix: Fetch the requested page first and only run the `COUNT(*)` query when the page is full; otherwise derive `total` directly from `offset + count(rows)`.
+- Actual fix: Updated `LaborTaskService::list()` to infer `total` from the fetched page on short/final pages and fall back to the filtered count query only when needed.
+- Verification: `php -l src/Services/TimeTracking/LaborTaskService.php`
+- Residual risk: Remaining performance work is now less about repeated pagination-count patterns and more about endpoint-specific aggregates or synchronous workflow cost.
+
+#### AUD-049
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Workorder/WorkorderController.php:50`
+- Summary: The workorder list controller always requested a separate repository total count after fetching the current page, even when the current page already proved the total.
+- Evidence: `WorkorderController::index()` called `repository->list(...)` and then unconditionally called `repository->count(...)`, despite the fact that a page returning fewer than `limit` workorders already establishes `offset + rowCount` as the total.
+- Impact: Small result sets and trailing pages paid an unnecessary second query on a likely common workorder listing path.
+- Recommended fix: Infer `total` from `offset + count(workorders)` when the current page is shorter than `limit`, and only call `repository->count(...)` when the page is full.
+- Actual fix: Updated `WorkorderController::index()` to skip the repository count query on short/final pages and derive the total directly in those cases.
+- Verification: `php -l src/Services/Workorder/WorkorderController.php`
+- Residual risk: The broader workorder list path still does per-row enrichment and sub-estimate loading, so future performance gains there are more likely to come from shaping that enrichment work rather than further count-query cleanup.
+
+#### AUD-050
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Workorder/WorkorderController.php:58`, `src/Services/Workorder/WorkorderService.php:518`
+- Summary: The workorder list performed an N+1 query pattern for sub-estimates by loading them once per workorder during list response assembly.
+- Evidence: `WorkorderController::index()` mapped each listed workorder and called `WorkorderService::getSubEstimates($workorder->id)` inside the loop, producing one `SELECT * FROM estimates WHERE workorder_id = ...` query per listed row.
+- Impact: Workorder list requests with many rows paid a growing number of extra queries, adding avoidable latency and database load on a common operational screen.
+- Recommended fix: Batch-load sub-estimates for the current page’s workorder IDs in one query and group them in memory before building the response.
+- Actual fix: Added `WorkorderService::getSubEstimatesForWorkorders()` to fetch all page sub-estimates in one `IN (...)` query, and updated `WorkorderController::index()` to reuse that grouped result instead of calling `getSubEstimates()` per row.
+- Verification: `php -l src/Services/Workorder/WorkorderController.php`; `php -l src/Services/Workorder/WorkorderService.php`
+- Residual risk: The workorder list still performs per-row enrichment beyond sub-estimates, so additional wins may remain in `enrichWorkorder()` or other related lookups.
+
+#### AUD-051
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Workorder/WorkorderController.php:637`, `src/Services/Workorder/WorkorderRepository.php:213`
+- Summary: The workorder stats endpoint issued five separate count queries for closely related status buckets that can be computed in one grouped query.
+- Evidence: `WorkorderController::stats()` called `repository->count(...)` separately for `pending`, `in_progress`, `on_hold`, `completed`, and again for `total_active`, even though all of those numbers are derived from the same status dimension and base filter set.
+- Impact: Each workorder stats request paid multiple redundant database round trips on an operational dashboard path.
+- Recommended fix: Replace the repeated status-specific count calls with one repository method that groups counts by status for the requested filter scope, then derive `total_active` in memory.
+- Actual fix: Added `WorkorderRepository::countByStatuses()` to fetch grouped status counts in one query and updated `WorkorderController::stats()` to use it, computing `total_active` from the grouped result instead of issuing a fifth query.
+- Verification: `php -l src/Services/Workorder/WorkorderController.php`; `php -l src/Services/Workorder/WorkorderRepository.php`
+- Residual risk: The workorder stats path is much tighter now, but other dashboard/report endpoints may still have similar repeated count patterns that should be reviewed separately.
+
+#### AUD-052
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Dashboard/DashboardService.php:101`
+- Summary: The dashboard KPI path computed invoice totals and invoice tax with two separate aggregate queries over the same filtered invoice scope.
+- Evidence: `DashboardService::kpis()` first queried invoice totals (`SUM(total)`, `AVG(total)`, `SUM(amount_paid)`, `SUM(balance_due)`) and then issued a second query against the same invoice join/filter set solely to compute `SUM(i.tax)`.
+- Impact: Each KPI request paid an avoidable extra aggregate query on a likely high-traffic dashboard endpoint.
+- Recommended fix: Fold invoice tax into the existing invoice totals aggregate so the KPI path scans the filtered invoice scope only once.
+- Actual fix: Updated the invoice aggregate query in `DashboardService::kpis()` to include `SUM(i.tax) AS total_tax` and reused that value for `taxTotals['invoices']`, removing the second invoice-tax query.
+- Verification: `php -l src/Services/Dashboard/DashboardService.php`
+- Residual risk: The dashboard KPI path still executes multiple domain-specific aggregates by design, so the remaining wins there would require larger query consolidation tradeoffs rather than isolated duplicate-query cleanup.
+
+#### AUD-053
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Financial/FinancialReportService.php:160`
+- Summary: The financial report path computed billable minutes and paid minutes with two separate aggregates over the same filtered `time_entries` range.
+- Evidence: `FinancialReportService::summary()` first queried `SUM(duration_minutes)` for all non-rejected entries, then issued a second query against the same date range solely to compute the approved subset.
+- Impact: Each financial summary request paid an avoidable extra aggregate scan over `time_entries`.
+- Recommended fix: Fold both metrics into one aggregate query using conditional sums over the shared date range.
+- Actual fix: Replaced the separate billable and paid time-entry queries in `FinancialReportService::summary()` with a single aggregate query that returns both `billable_minutes` and `paid_minutes`.
+- Verification: `php -l src/Services/Financial/FinancialReportService.php`
+- Residual risk: The financial summary still performs several domain-specific aggregates by design, so further gains there would come from broader report-level consolidation rather than another small duplicate-query fix.
+
+#### AUD-054
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Dashboard/DashboardService.php:82`
+- Summary: The dashboard KPI path computed estimate status counts and estimate tax with two separate aggregate queries over the same filtered estimate scope.
+- Evidence: `DashboardService::kpis()` first queried grouped estimate status counts, then issued a second query against the same filtered estimate set solely to compute `SUM(e.tax)`.
+- Impact: Each KPI request paid an avoidable extra aggregate scan over estimates.
+- Recommended fix: Include estimate tax in the grouped status-count query and accumulate the tax total from those grouped rows instead of issuing a second estimate-tax query.
+- Actual fix: Updated the grouped estimate status query in `DashboardService::kpis()` to also return `SUM(e.tax) AS total_tax`, then summed that grouped tax data in memory to populate `taxTotals['estimates']`.
+- Verification: `php -l src/Services/Dashboard/DashboardService.php`
+- Residual risk: The dashboard KPI path still has multiple domain-specific aggregates by design, so the remaining wins there would require broader consolidation tradeoffs rather than another isolated duplicate-query cleanup.
+
+#### AUD-055
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Dashboard/DashboardService.php:320`
+- Summary: The dashboard WIP aging query evaluated the same expensive status-age expression twice for every matching workorder row.
+- Evidence: `DashboardService::wipAging()` used the full `TIMESTAMPDIFF(...subquery...)` expression once to compute `age_days` and then repeated the same expression again inside the bucket `CASE` statement.
+- Impact: Each WIP aging request paid extra CPU/database work on a query that already includes a correlated subquery against `workorder_status_history`.
+- Recommended fix: Compute `age_days` once in an inner subquery, then bucket that derived value in the outer query.
+- Actual fix: Reworked the WIP aging SQL in `DashboardService::wipAging()` so the correlated age expression is calculated once in an `aged` subquery and the bucketing logic runs against that derived `age_days` value.
+- Verification: `php -l src/Services/Dashboard/DashboardService.php`
+- Residual risk: The WIP aging report still depends on a correlated history lookup per workorder; further gains there would require a broader data-model or materialization change rather than SQL deduplication alone.
+
+#### AUD-056
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Workorder/WorkorderRepository.php:344`
+- Summary: Workorder technician assignment and priority updates re-read the same workorder immediately after the update even though the repository already had the pre-update model in memory and only a small subset of fields changed.
+- Evidence: `assignTechnician()` and `updatePriority()` each called `find($id)` before the update for validation/logging and then called `find($id)` again after the update solely to return the updated workorder model.
+- Impact: These common operational updates paid an unnecessary extra round trip after every successful write.
+- Recommended fix: Reuse the loaded workorder model, update the changed fields in memory, set a fresh `updated_at`, and return a new `Workorder` instance without re-querying the row.
+- Actual fix: Updated `assignTechnician()` and `updatePriority()` in `WorkorderRepository` to return a reconstructed `Workorder` built from the already-loaded model plus the changed fields, removing the post-update `find($id)` calls.
+- Verification: `php -l src/Services/Workorder/WorkorderRepository.php`
+- Residual risk: Other workorder repository update paths may still re-read rows after writes when they need fields not already loaded, so further cleanup there should be evaluated case by case.
+
+#### AUD-057
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Workorder/WorkorderRepository.php:445`
+- Summary: Workorder detail assembly loaded job items with an N+1 pattern by querying items once per job.
+- Evidence: `WorkorderRepository::getJobsWithItems()` fetched all jobs, then called `getJobItems($job->id)` inside a loop, issuing one `SELECT * FROM workorder_items ...` query per workorder job.
+- Impact: Workorder detail and related endpoints paid a growing number of extra queries as job count increased.
+- Recommended fix: Batch-load all job items for the workorder’s job IDs in one `IN (...)` query and group them in memory by `workorder_job_id`.
+- Actual fix: Updated `WorkorderRepository::getJobsWithItems()` to fetch all page job items in one batched query and group them by job ID before building the response.
+- Verification: `php -l src/Services/Workorder/WorkorderRepository.php`
+- Residual risk: Other evidence/detail flows around workorder jobs may still load slices independently, but the core jobs-with-items path is no longer N+1.
+
+#### AUD-058
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Workorder/WorkorderRepository.php:255`, `src/Services/Workorder/WorkorderRepository.php:475`
+- Summary: Workorder and workorder-job status updates both re-read the same row after the write even though the repository already had enough data to construct the updated model.
+- Evidence: `updateStatus()` loaded the workorder before updating it for validation/history and then called `find($id)` again after the update. `updateJobStatus()` updated the row and then immediately selected it again to log and return the updated model.
+- Impact: Common lifecycle transitions paid an unnecessary extra read after each successful status change.
+- Recommended fix: Reuse the preloaded row/model, apply the changed status and timestamps in memory, and return a reconstructed model without issuing a second fetch.
+- Actual fix: Updated `updateStatus()` to return a reconstructed `Workorder` from the already-loaded model, and updated `updateJobStatus()` to fetch the current job row once before the write, reuse it for logging, and return a reconstructed `WorkorderJob` after applying the changed fields in memory.
+- Verification: `php -l src/Services/Workorder/WorkorderRepository.php`
+- Residual risk: Some update paths may still need post-write reads when database-side defaults or triggers materially change returned fields, but these status transitions no longer require them.
+
+#### AUD-059
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Financial/ReconciliationService.php:236`
+- Summary: The reconciliation session summary query used six separate scalar subqueries to compute counts and totals that can be aggregated in grouped derived tables instead.
+- Evidence: `ReconciliationService::sessionSummary()` independently queried bank transaction count/total, ledger entry count/total, matched count, and discrepancy count via separate scalar subqueries tied to the same session.
+- Impact: Each summary request paid multiple redundant scans across reconciliation and ledger tables.
+- Recommended fix: Replace the scalar subqueries with grouped derived tables joined once to the session row, using conditional aggregates where possible.
+- Actual fix: Reworked `sessionSummary()` to join grouped aggregates for bank transactions, reconciliation matches, and ledger entries, collapsing the repeated scalar subqueries into one summary query.
+- Verification: `php -l src/Services/Financial/ReconciliationService.php`
+- Residual risk: Ledger totals still depend on date-range joins against `financial_entries`; any further gains there would require indexing or broader reconciliation-summary materialization rather than SQL shape cleanup alone.
+
+#### AUD-060
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Workorder/WorkorderRepository.php:58`, `src/Services/Dashboard/DashboardService.php:290`, `database/migrations/098_workorder_status_history_composite_index.sql:1`
+- Summary: Workorder status-age filtering and WIP aging relied on a correlated lookup into `workorder_status_history`, causing repeated history scans across list, count, and aging queries.
+- Evidence: `WorkorderRepository::list()` and `count()` used `SELECT MAX(created_at) FROM workorder_status_history ... WHERE workorder_id = ... AND to_status = workorders.status` inside the age expression, and `DashboardService::wipAging()` used the same correlated pattern before bucketing rows by age.
+- Impact: Workorder list/count filters and WIP aging paid repeated correlated history lookups, which scale poorly as workorder and status-history volumes grow.
+- Recommended fix: Replace the correlated lookup with a grouped derived table keyed by `(workorder_id, to_status)`, join it once into the outer query, and support that access pattern with a composite `(workorder_id, to_status, created_at)` index.
+- Actual fix: Reworked `WorkorderRepository::list()` and `count()` plus `DashboardService::wipAging()` to use a grouped history join instead of correlated lookups, added migration [098_workorder_status_history_composite_index.sql](/var/www/phparm/database/migrations/098_workorder_status_history_composite_index.sql), and updated both install snapshots to include the new composite history index.
+- Verification: `php -l src/Services/Workorder/WorkorderRepository.php`; `php -l src/Services/Dashboard/DashboardService.php`; `php -l src/Services/Financial/ReconciliationService.php`
+- Residual risk: This removes the correlated-query shape, but long-term workorder analytics may still benefit from a materialized current-status timestamp if history growth becomes very large.
+
+#### AUD-061
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `high`
+- Location: `routes/cms.php:188`, `routes/cms.php:204`, `routes/cms.php:283`, `public/index.php:54`
+- Summary: Legacy `/cms/admin/*` HTML routes bypass the application auth and CSRF middleware model and delegate directly to `AdminController`.
+- Evidence: `public/index.php` loads `routes/cms.php` only for non-API requests, after `routes/api.php` has already attached its global auth/CSRF middleware to the API router only. In `routes/cms.php`, the `/cms/admin/*` routes directly instantiate `new AdminController()` for dashboard, page, component, template, cache, settings, and user-management actions without any route middleware, `AccessGate` assertion, or CSRF validation at the route layer.
+- Impact: The legacy CMS admin surface relies entirely on opaque controller internals for authentication, authorization, and CSRF handling. If any controller action is incomplete or inconsistent, sensitive CMS admin functions become directly reachable or CSRFable with no defense-in-depth at the application route boundary.
+- Recommended fix: Put `/cms/admin/*` behind explicit route-layer protection. Require authenticated CMS/admin session state for non-login routes, fail closed on missing auth, and enforce CSRF validation on state-changing legacy CMS form posts before controller dispatch.
+- Actual fix: Retired the legacy HTML admin path in `routes/cms.php`. `GET /cms/admin*` now redirects to the SPA-admin replacement paths under `/cp/cms` or `/cp/login`, and legacy `POST /cms/admin*` requests now fail closed with HTTP 410 instead of dispatching to `AdminController`.
+- Verification: `php -l routes/cms.php`
+- Residual risk: Existing bookmarks or automation that still submit directly to `/cms/admin*` must be updated to the SPA-admin and `/api/cms` flows.
+
+#### AUD-062
+
+- Status: `resolved`
+- Category: `error_handling`
+- Severity: `medium`
+- Location: `config/cms.php:35`, `src/CMS/CMSBootstrap.php:106`, `src/Services/CMS/CMSAuthBridge.php:134`
+- Summary: The CMS session bridge and the legacy CMS bootstrap use different session assumptions, which can leave the HTML admin surface operating on a different session cookie than the authenticated app session.
+- Evidence: `CMSAuthBridge::initializeCMSSession()` calls `session_start()` with the default PHP session name and writes `cms_user_*` values into that session. `CMSBootstrap::initSession()` instead sets `session_name('fixitforus_cms')` from `config/cms.php` before starting the legacy CMS session. That means the JWT/app-authenticated API path and the legacy `/cms/admin` path do not clearly share the same session namespace.
+- Impact: CMS session bridging can fail or behave inconsistently across the API and legacy HTML admin surfaces, causing broken access, confusing dual-session behavior, or authentication state that does not line up with the intended app user session.
+- Recommended fix: Standardize the CMS/session integration model. Either reuse the same secure app session for CMS bridging or explicitly isolate the legacy CMS session and perform a deliberate, validated handoff between them. Do not rely on implicit `session_start()` behavior with different session names.
+- Actual fix: Normalized the CMS bootstrap to use the existing app session namespace instead of forcing a separate `fixitforus_cms` session cookie. `config/cms.php` now points the admin prefix at `/cp/cms`, `CMSBootstrap::initSession()` no longer overrides the session name, and `cms_admin_url()` now emits the SPA admin path instead of the retired `/cms/admin` path.
+- Verification: `php -l src/CMS/CMSBootstrap.php`; `php -l config/cms.php`
+- Residual risk: The external legacy CMS implementation is not present in this workspace, so any remaining references to the retired `/cms/admin` path outside this repo still need to be updated operationally.
+
+#### AUD-006
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `high`
+- Location: `routes/api.php:1862`, `src/Services/Payment/SquareGateway.php:159`, `src/Services/Payment/PayPalGateway.php:135`
+- Summary: Public Square and PayPal webhook endpoints can process payloads without a verified signature when the signature header is missing, and verification is skipped entirely when the corresponding secret/ID is not configured.
+- Evidence: The public webhook routes call `handleWebhook()` directly. In `SquareGateway::handleWebhook()` and `PayPalGateway::handleWebhook()`, verification only runs inside `if ($signature && ...)`, so an empty signature bypasses verification logic instead of failing closed. Both verifier helpers also explicitly return success when the webhook secret/key is unset.
+- Impact: An attacker can post forged webhook payloads to public payment webhook endpoints and potentially trigger payment state changes or payment record creation whenever the downstream payload contains enough accepted fields. Even when invoice reconciliation is incomplete, this still undermines trust in payment-event ingestion.
+- Recommended fix: Require signature/header presence on every public webhook request, fail closed when webhook credentials are missing, and reject unsigned or partially signed requests before any payload processing.
+- Actual fix: Updated webhook routes to pass full verification context and changed Stripe, Square, and PayPal gateway handlers to fail closed. Webhook handlers now require the signature header, and Square/PayPal also require their configured webhook credential before processing any payload.
+- Verification: `php -l src/Services/Payment/StripeGateway.php`; `php -l src/Services/Payment/SquareGateway.php`; `php -l src/Services/Payment/PayPalGateway.php`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l src/Services/Invoice/InvoiceController.php`; `php -l routes/api.php`
+- Residual risk: Deployments must provide valid Stripe webhook secret, Square webhook signature key, and PayPal webhook ID or public webhook delivery will now fail by design.
+
+#### AUD-007
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Support/Http/Request.php:66`, `routes/api.php:1862`, `src/Services/Payment/StripeGateway.php:128`, `src/Services/Payment/SquareGateway.php:328`
+- Summary: Webhook signature verification is built on transformed request data rather than the original raw request body and request URL.
+- Evidence: `Request::capture()` reads `php://input`, decodes JSON, and only exposes the parsed array. The payment webhook routes pass `$request->body()` to gateway handlers. Stripe then verifies `json_encode($payload)` instead of the raw body, and Square signs against `env('APP_URL', '')` rather than the actual notification URL used by the request.
+- Impact: Providers that sign the exact raw payload or full notification URL may fail verification unpredictably. In practice this pushes teams toward weakening or bypassing verification to keep webhooks working, which increases the chance of accepting forged events later.
+- Recommended fix: Preserve the raw request body in the request object, pass it through to webhook verifiers, and verify against the exact endpoint URL/provider-specific canonical string rather than reconstructed values.
+- Actual fix: `Request` now preserves the original raw body and exposes `rawBody()` and `fullUrl()`. Payment webhook routes pass that data into the payment service, Stripe now verifies the original raw body, and Square now verifies against the original raw body plus the exact request URL instead of reconstructed values.
+- Verification: `php tests/RequestWebhookSupportTest.php`; `php -l src/Support/Http/Request.php`; `php -l src/Services/Payment/PaymentGatewayInterface.php`; `php -l routes/api.php`
+- Residual risk: If an environment terminates TLS or rewrites host/scheme before PHP sees the request, the application must still receive the externally correct webhook URL for providers that sign the notification URL.
+
+### Template
+
+#### AUD-XXX
+
+- Status:
+- Category:
+- Severity:
+- Location:
+- Summary:
+- Evidence:
+- Impact:
+- Recommended fix:
+- Actual fix:
+- Verification:
+- Residual risk:
+
+## Initial Notes
+
+No confirmed findings recorded yet. Phase 1 completed the baseline inventory and prioritization. Confirmed issues should be added here during Phases 2 through 6.

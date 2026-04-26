@@ -35,11 +35,18 @@ interface PaymentGatewayInterface
      *
      * @param array<string, mixed> $payload Webhook payload from gateway
      * @param string $signature Webhook signature for verification
+     * @param string|null $rawBody Raw request body as received from the provider
+     * @param string|null $requestUrl Exact webhook URL requested by the provider
      * @return array<string, mixed> Normalized payment data
      * @throws \InvalidArgumentException If webhook signature is invalid
      * @throws \RuntimeException If webhook processing fails
      */
-    public function handleWebhook(array $payload, string $signature = ''): array;
+    public function handleWebhook(
+        array $payload,
+        string $signature = '',
+        ?string $rawBody = null,
+        ?string $requestUrl = null
+    ): array;
 
     /**
      * Retrieve payment/transaction details from gateway

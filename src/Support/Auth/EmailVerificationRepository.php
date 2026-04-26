@@ -23,13 +23,14 @@ class EmailVerificationRepository
     {
         $token = bin2hex(random_bytes(32));
         $expiresAt = (new DateTimeImmutable())->add(new DateInterval('PT' . $this->expiryHours . 'H'));
+        $tokenHash = $this->hashToken($token);
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO email_verifications (user_id, token, expires_at, created_at) VALUES (:user_id, :token, :expires_at, NOW())'
         );
         $stmt->execute([
             'user_id' => $userId,
-            'token' => $token,
+            'token' => $tokenHash,
             'expires_at' => $expiresAt->format('Y-m-d H:i:s'),
         ]);
 
@@ -44,10 +45,14 @@ class EmailVerificationRepository
 
     public function findValidToken(string $token): ?EmailVerificationToken
     {
+        $tokenHash = $this->hashToken($token);
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT * FROM email_verifications WHERE token = :token AND used_at IS NULL LIMIT 1'
+            'SELECT * FROM email_verifications WHERE (token = :token OR token = :token_hash) AND used_at IS NULL LIMIT 1'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $tokenHash,
+        ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -64,9 +69,18 @@ class EmailVerificationRepository
 
     public function markUsed(string $token): void
     {
+        $tokenHash = $this->hashToken($token);
         $stmt = $this->connection->pdo()->prepare(
-            'UPDATE email_verifications SET used_at = NOW() WHERE token = :token'
+            'UPDATE email_verifications SET used_at = NOW() WHERE token = :token OR token = :token_hash'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $tokenHash,
+        ]);
+    }
+
+    private function hashToken(string $token): string
+    {
+        return hash('sha256', $token);
     }
 }
