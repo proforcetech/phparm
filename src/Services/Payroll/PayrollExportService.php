@@ -27,9 +27,6 @@ class PayrollExportService
         $limit = max(1, min(100, $limit));
         $offset = max(0, $offset);
 
-        $countStmt = $this->connection->pdo()->query('SELECT COUNT(*) FROM payroll_exports');
-        $total = (int) $countStmt->fetchColumn();
-
         $stmt = $this->connection->pdo()->prepare(
             'SELECT pe.*, u.name AS created_by_name '
             . 'FROM payroll_exports pe '
@@ -40,9 +37,14 @@ class PayrollExportService
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rowCount = count($rows);
+        $total = $rowCount < $limit
+            ? $offset + $rowCount
+            : (int) $this->connection->pdo()->query('SELECT COUNT(*) FROM payroll_exports')->fetchColumn();
 
         return [
-            'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            'data' => $rows,
             'pagination' => [
                 'total' => $total,
                 'limit' => $limit,

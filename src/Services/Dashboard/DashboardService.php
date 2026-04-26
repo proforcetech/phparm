@@ -80,13 +80,15 @@ class DashboardService
             }
 
             $estimateStmt = $pdo->prepare(
-                'SELECT e.status, COUNT(*) AS total FROM estimates e' . $estimateJoin
+                'SELECT e.status, COUNT(*) AS total, SUM(e.tax) AS total_tax FROM estimates e' . $estimateJoin
                 . ' WHERE e.created_at BETWEEN :start AND :end'
                 . $estimateCustomerFilter . $estimateTechnicianFilter . $estimateBranchFilter . ' GROUP BY e.status'
             );
             $estimateStmt->execute($this->withTechnician($baseBindings, $technicianId));
+            $estimateTax = 0.0;
             foreach ($estimateStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $response->estimateStatusCounts[$row['status']] = (int) $row['total'];
+                $estimateTax += (float) ($row['total_tax'] ?? 0);
             }
 
             $invoiceBranchFilter = '';
@@ -99,7 +101,8 @@ class DashboardService
             }
 
             $invoiceStmt = $pdo->prepare(
-                'SELECT SUM(i.total) AS total, AVG(i.total) AS average, SUM(i.amount_paid) AS paid, SUM(i.balance_due) AS outstanding '
+                'SELECT SUM(i.total) AS total, AVG(i.total) AS average, SUM(i.amount_paid) AS paid, '
+                . 'SUM(i.balance_due) AS outstanding, SUM(i.tax) AS total_tax '
                 . 'FROM invoices i' . $invoiceJoin . ' WHERE i.issue_date BETWEEN :start AND :end'
                 . str_replace('customer_id', 'i.customer_id', $customerFilter)
                 . ($technicianId !== null ? ' AND e.technician_id = :technician_id' : '')
@@ -115,22 +118,7 @@ class DashboardService
                 'outstanding' => (float) ($invoiceRow['outstanding'] ?? 0),
             ];
 
-            $estimateTaxStmt = $pdo->prepare(
-                'SELECT SUM(e.tax) AS total_tax FROM estimates e' . $estimateJoin
-                . ' WHERE e.created_at BETWEEN :start AND :end'
-                . $estimateCustomerFilter . $estimateTechnicianFilter . $estimateBranchFilter
-            );
-            $estimateTaxStmt->execute($this->withTechnician($baseBindings, $technicianId));
-            $estimateTax = (float) ($estimateTaxStmt->fetchColumn() ?: 0);
-
-            $invoiceTaxStmt = $pdo->prepare(
-                'SELECT SUM(i.tax) AS total_tax FROM invoices i' . $invoiceJoin . ' WHERE i.issue_date BETWEEN :start AND :end'
-                . str_replace('customer_id', 'i.customer_id', $customerFilter)
-                . ($technicianId !== null ? ' AND e.technician_id = :technician_id' : '')
-                . $invoiceBranchFilter
-            );
-            $invoiceTaxStmt->execute($invoiceBindings);
-            $invoiceTax = (float) ($invoiceTaxStmt->fetchColumn() ?: 0);
+            $invoiceTax = (float) ($invoiceRow['total_tax'] ?? 0);
 
             $response->taxTotals = [
                 'estimates' => $estimateTax,
@@ -300,11 +288,12 @@ class DashboardService
         $this->enforceRoleScope($role, $options);
 
         $pdo = $this->connection->pdo();
-        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE((
-            SELECT MAX(created_at)
-            FROM workorder_status_history wsh
-            WHERE wsh.workorder_id = w.id AND wsh.to_status = w.status
-        ), w.updated_at, w.created_at), NOW())';
+        $historyJoin = ' LEFT JOIN (
+            SELECT workorder_id, to_status, MAX(created_at) AS last_status_at
+            FROM workorder_status_history
+            GROUP BY workorder_id, to_status
+        ) wsh ON wsh.workorder_id = w.id AND wsh.to_status = w.status';
+        $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE(wsh.last_status_at, w.updated_at, w.created_at), NOW())';
 
         $technicianFilter = '';
         $customerFilter = '';
@@ -332,14 +321,16 @@ class DashboardService
         $stmt = $pdo->prepare(
             'SELECT bucket, COUNT(*) AS total, MAX(age_days) AS oldest_days FROM ('
             . 'SELECT CASE '
-            . 'WHEN ' . $ageExpression . ' BETWEEN 0 AND 2 THEN "0-2" '
-            . 'WHEN ' . $ageExpression . ' BETWEEN 3 AND 7 THEN "3-7" '
-            . 'WHEN ' . $ageExpression . ' BETWEEN 8 AND 14 THEN "8-14" '
+            . 'WHEN age_days BETWEEN 0 AND 2 THEN "0-2" '
+            . 'WHEN age_days BETWEEN 3 AND 7 THEN "3-7" '
+            . 'WHEN age_days BETWEEN 8 AND 14 THEN "8-14" '
             . 'ELSE "15+" '
-            . 'END AS bucket, '
-            . $ageExpression . ' AS age_days '
+            . 'END AS bucket, age_days FROM ('
+            . 'SELECT ' . $ageExpression . ' AS age_days '
             . 'FROM workorders w '
+            . $historyJoin
             . 'WHERE w.status IN (:status_parts_pending, :status_authorized)' . $technicianFilter . $customerFilter . $branchFilter
+            . ') AS aged '
             . ') AS bucketed '
             . 'GROUP BY bucket'
         );

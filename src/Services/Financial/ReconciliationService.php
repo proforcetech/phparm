@@ -236,14 +236,35 @@ class ReconciliationService
     public function sessionSummary(int $sessionId): array
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT ' .
-            '(SELECT COUNT(*) FROM reconciliation_bank_transactions WHERE session_id = :session_id) AS bank_count, ' .
-            '(SELECT COALESCE(SUM(amount), 0) FROM reconciliation_bank_transactions WHERE session_id = :session_id) AS bank_total, ' .
-            '(SELECT COUNT(*) FROM financial_entries fe WHERE fe.entry_date BETWEEN rs.start_date AND rs.end_date) AS ledger_count, ' .
-            '(SELECT COALESCE(SUM(amount), 0) FROM financial_entries fe WHERE fe.entry_date BETWEEN rs.start_date AND rs.end_date) AS ledger_total, ' .
-            '(SELECT COUNT(*) FROM reconciliation_matches WHERE session_id = :session_id AND status = \"matched\") AS matched_count, ' .
-            '(SELECT COUNT(*) FROM reconciliation_matches WHERE session_id = :session_id AND status = \"discrepancy\") AS discrepancy_count ' .
-            'FROM reconciliation_sessions rs WHERE rs.id = :session_id'
+            'SELECT
+                COALESCE(bt.bank_count, 0) AS bank_count,
+                COALESCE(bt.bank_total, 0) AS bank_total,
+                COALESCE(fe.ledger_count, 0) AS ledger_count,
+                COALESCE(fe.ledger_total, 0) AS ledger_total,
+                COALESCE(rm.matched_count, 0) AS matched_count,
+                COALESCE(rm.discrepancy_count, 0) AS discrepancy_count
+             FROM reconciliation_sessions rs
+             LEFT JOIN (
+                SELECT session_id, COUNT(*) AS bank_count, COALESCE(SUM(amount), 0) AS bank_total
+                FROM reconciliation_bank_transactions
+                GROUP BY session_id
+             ) bt ON bt.session_id = rs.id
+             LEFT JOIN (
+                SELECT
+                    session_id,
+                    SUM(CASE WHEN status = "matched" THEN 1 ELSE 0 END) AS matched_count,
+                    SUM(CASE WHEN status = "discrepancy" THEN 1 ELSE 0 END) AS discrepancy_count
+                FROM reconciliation_matches
+                GROUP BY session_id
+             ) rm ON rm.session_id = rs.id
+             LEFT JOIN (
+                SELECT rs2.id AS session_id, COUNT(fe.id) AS ledger_count, COALESCE(SUM(fe.amount), 0) AS ledger_total
+                FROM reconciliation_sessions rs2
+                LEFT JOIN financial_entries fe
+                    ON fe.entry_date BETWEEN rs2.start_date AND rs2.end_date
+                GROUP BY rs2.id
+             ) fe ON fe.session_id = rs.id
+             WHERE rs.id = :session_id'
         );
         $stmt->execute(['session_id' => $sessionId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

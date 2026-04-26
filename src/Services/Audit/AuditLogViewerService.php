@@ -28,6 +28,16 @@ class AuditLogViewerService
             $sql .= ' AND entity_type = :entity_type';
             $params['entity_type'] = $filters['entity_type'];
         }
+        // Phase 1.4 of docs/expansion-plan.md: entity_id lets UIs pull a
+        // per-record timeline (e.g. "all mutations to this site").
+        if (!empty($filters['entity_id'])) {
+            $sql .= ' AND entity_id = :entity_id';
+            $params['entity_id'] = (int) $filters['entity_id'];
+        }
+        if (!empty($filters['event'])) {
+            $sql .= ' AND event = :event';
+            $params['event'] = $filters['event'];
+        }
         if (!empty($filters['actor_id'])) {
             $sql .= ' AND actor_id = :actor_id';
             $params['actor_id'] = (int) $filters['actor_id'];
@@ -41,14 +51,24 @@ class AuditLogViewerService
             $params['to'] = (new DateTimeImmutable($filters['to']))->format('Y-m-d H:i:s');
         }
 
-        $sql .= ' ORDER BY created_at DESC LIMIT 500';
+        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : 500;
+        $offset = isset($filters['offset']) ? max(0, (int) $filters['offset']) : 0;
+        $sql .= ' ORDER BY created_at DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
+
         $stmt = $this->connection->pdo()->prepare($sql);
         $stmt->execute($params);
 
         $entries = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $context = json_decode($row['context'] ?? '[]', true) ?: [];
-            $entries[] = new AuditEntry($row['event'], $row['entity_type'], $row['entity_id'], $row['actor_id'], $context);
+            $entries[] = new AuditEntry(
+                $row['event'],
+                $row['entity_type'],
+                $row['entity_id'],
+                $row['actor_id'] !== null ? (int) $row['actor_id'] : null,
+                $context,
+                $row['created_at'] ?? null
+            );
         }
 
         return $entries;

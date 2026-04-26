@@ -57,10 +57,6 @@ class LeaveRequestService
             $params['search'] = '%' . $filters['search'] . '%';
         }
 
-        $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
-        $countStmt->execute($params);
-        $total = (int) $countStmt->fetchColumn();
-
         $sql = 'SELECT lr.*, u.name AS user_name, ru.name AS reviewer_name ' . $baseSql
             . ' ORDER BY lr.created_at DESC LIMIT :limit OFFSET :offset';
         $stmt = $this->connection->pdo()->prepare($sql);
@@ -74,6 +70,14 @@ class LeaveRequestService
         $stmt->execute();
 
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rowCount = count($rows);
+        $total = $rowCount < $limit
+            ? $offset + $rowCount
+            : (function () use ($baseSql, $params): int {
+                $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
+                $countStmt->execute($params);
+                return (int) $countStmt->fetchColumn();
+            })();
         $requests = array_map(static fn (array $row) => new LeaveRequest($row), $rows);
         $metaById = [];
         foreach ($rows as $row) {

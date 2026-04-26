@@ -353,13 +353,13 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 CREATE TABLE IF NOT EXISTS payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
-    gateway VARCHAR(40) NOT NULL,
-    method VARCHAR(40) NULL
+    gateway VARCHAR(40) NULL,
+    method VARCHAR(40) NULL,
     transaction_id VARCHAR(120) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
-    referene VARCHAR(40) NULL
+    reference VARCHAR(255) NULL,
     status VARCHAR(40) NOT NULL,
-    metadata JSON NULL
+    metadata JSON NULL,
     paid_at DATETIME NOT NULL,
     created_at TIMESTAMP NULL,
     INDEX idx_payment_invoice (invoice_id),
@@ -917,6 +917,33 @@ CREATE TABLE IF NOT EXISTS refunds (
     CONSTRAINT fk_refund_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS payment_webhook_events (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    provider VARCHAR(40) NOT NULL,
+    provider_event_id VARCHAR(191) NULL,
+    dedupe_key VARCHAR(191) NOT NULL,
+    event_type VARCHAR(120) NOT NULL,
+    invoice_id INT UNSIGNED NULL,
+    transaction_id VARCHAR(191) NULL,
+    refund_id VARCHAR(191) NULL,
+    payment_id VARCHAR(191) NULL,
+    session_id VARCHAR(191) NULL,
+    order_id VARCHAR(191) NULL,
+    status VARCHAR(40) NOT NULL DEFAULT 'unmatched',
+    payload JSON NOT NULL,
+    attempts INT UNSIGNED NOT NULL DEFAULT 1,
+    matched_at TIMESTAMP NULL,
+    processed_at TIMESTAMP NULL,
+    recovered_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX uniq_payment_webhook_events_dedupe ON payment_webhook_events (dedupe_key),
+    INDEX idx_payment_webhook_events_provider_status (provider, status),
+    INDEX idx_payment_webhook_events_invoice (invoice_id),
+    INDEX idx_payment_webhook_events_provider_event (provider, provider_event_id),
+    CONSTRAINT fk_payment_webhook_events_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 
 -- CMS content core tables
@@ -1387,6 +1414,7 @@ CREATE TABLE IF NOT EXISTS workorder_status_history (
     client_event_id VARCHAR(64) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_workorder_status_history_workorder (workorder_id),
+    INDEX idx_workorder_status_history_workorder_status_created (workorder_id, to_status, created_at),
     UNIQUE INDEX idx_workorder_status_event (workorder_id, client_event_id),
     CONSTRAINT fk_workorder_status_history_workorder FOREIGN KEY (workorder_id) REFERENCES workorders (id) ON DELETE CASCADE,
     CONSTRAINT fk_workorder_status_history_user FOREIGN KEY (changed_by) REFERENCES users (id)

@@ -10,6 +10,7 @@ class InspectionReport extends BaseModel
     public ?int $vehicle_id = null;
     public ?int $estimate_id = null;
     public ?int $appointment_id = null;
+    public ?int $site_asset_id = null;
     public string $status;
     public ?string $summary = null;
     public ?string $pdf_path = null;

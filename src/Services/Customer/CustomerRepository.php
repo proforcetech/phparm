@@ -49,6 +49,28 @@ class CustomerRepository
     }
 
     /**
+     * Phase 6.4 of docs/expansion-plan.md — portal billing queue needs the set
+     * of customer IDs owned by a company_id (the estimates/invoices legacy
+     * schema uses customer_id, not company_id, so portal scoping resolves via
+     * this bridge). Returns only IDs so callers can drive a single filtered
+     * invoice query instead of hydrating every Customer.
+     *
+     * @return array<int, int>
+     */
+    public function listIdsForCompany(int $companyId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id FROM customers WHERE company_id = :cid ORDER BY id ASC'
+        );
+        $stmt->execute(['cid' => $companyId]);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $out[] = (int) $row['id'];
+        }
+        return $out;
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function create(array $data): Customer
@@ -268,20 +290,27 @@ class CustomerRepository
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $countSql = 'SELECT COUNT(*) AS total FROM (
-            SELECT c.id,
-                MAX(COALESCE(w.completed_at, w.created_at)) AS last_workorder_at
-                ' . $baseFrom . ' ' . $where . '
-                GROUP BY c.id
-                HAVING last_workorder_at IS NULL OR last_workorder_at < :cutoff
-            ) AS retention_results';
+        $rowCount = count($rows);
+        if ($limit === null) {
+            $total = $rowCount;
+        } elseif ($rowCount < $limit) {
+            $total = $offset + $rowCount;
+        } else {
+            $countSql = 'SELECT COUNT(*) AS total FROM (
+                SELECT c.id,
+                    MAX(COALESCE(w.completed_at, w.created_at)) AS last_workorder_at
+                    ' . $baseFrom . ' ' . $where . '
+                    GROUP BY c.id
+                    HAVING last_workorder_at IS NULL OR last_workorder_at < :cutoff
+                ) AS retention_results';
 
-        $countStmt = $this->connection->pdo()->prepare($countSql);
-        foreach ($bindings as $key => $value) {
-            $countStmt->bindValue(':' . $key, $value);
+            $countStmt = $this->connection->pdo()->prepare($countSql);
+            foreach ($bindings as $key => $value) {
+                $countStmt->bindValue(':' . $key, $value);
+            }
+            $countStmt->execute();
+            $total = (int) ($countStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
         }
-        $countStmt->execute();
-        $total = (int) ($countStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
         return [
             'data' => $rows,

@@ -202,55 +202,43 @@ class FinancialEntryService
      */
     private function query(array $filters, bool $withPagination = false): array
     {
-        $sql = 'SELECT * FROM financial_entries WHERE 1=1';
+        $baseSql = 'SELECT * FROM financial_entries WHERE 1=1';
         $params = [];
 
         if (!empty($filters['type'])) {
-            $sql .= ' AND type = :type';
+            $baseSql .= ' AND type = :type';
             $params['type'] = $filters['type'];
         }
 
         if (!empty($filters['category'])) {
-            $sql .= ' AND category = :category';
+            $baseSql .= ' AND category = :category';
             $params['category'] = $filters['category'];
         }
 
         if (!empty($filters['vendor'])) {
-            $sql .= ' AND vendor = :vendor';
+            $baseSql .= ' AND vendor = :vendor';
             $params['vendor'] = $filters['vendor'];
         }
 
         if (!empty($filters['start_date'])) {
-            $sql .= ' AND entry_date >= :start_date';
+            $baseSql .= ' AND entry_date >= :start_date';
             $params['start_date'] = $filters['start_date'];
         }
 
         if (!empty($filters['end_date'])) {
-            $sql .= ' AND entry_date <= :end_date';
+            $baseSql .= ' AND entry_date <= :end_date';
             $params['end_date'] = $filters['end_date'];
         }
 
         if (!empty($filters['search'])) {
-            $sql .= ' AND (vendor LIKE :search OR reference LIKE :search OR purchase_order LIKE :search OR description LIKE :search)';
+            $baseSql .= ' AND (vendor LIKE :search OR reference LIKE :search OR purchase_order LIKE :search OR description LIKE :search)';
             $params['search'] = '%' . $filters['search'] . '%';
         }
 
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perPage = max(1, min(100, (int) ($filters['per_page'] ?? 25)));
 
-        $count = null;
-        if ($withPagination) {
-            $countSql = 'SELECT COUNT(*) FROM (' . $sql . ') as counted';
-            $countStmt = $this->connection->pdo()->prepare($countSql);
-            foreach ($params as $key => $value) {
-                $param = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
-                $countStmt->bindValue(':' . $key, $value, $param);
-            }
-            $countStmt->execute();
-            $count = (int) $countStmt->fetchColumn();
-        }
-
-        $sql .= ' ORDER BY entry_date DESC, id DESC';
+        $sql = $baseSql . ' ORDER BY entry_date DESC, id DESC';
         if ($withPagination) {
             $sql .= ' LIMIT :limit OFFSET :offset';
         }
@@ -271,6 +259,24 @@ class FinancialEntryService
         $entries = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $entries[] = new FinancialEntry($row);
+        }
+
+        $count = null;
+        if ($withPagination) {
+            $entryCount = count($entries);
+            $offset = ($page - 1) * $perPage;
+            if ($entryCount < $perPage) {
+                $count = $offset + $entryCount;
+            } else {
+                $countSql = 'SELECT COUNT(*) FROM (' . $baseSql . ') as counted';
+                $countStmt = $this->connection->pdo()->prepare($countSql);
+                foreach ($params as $key => $value) {
+                    $param = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+                    $countStmt->bindValue(':' . $key, $value, $param);
+                }
+                $countStmt->execute();
+                $count = (int) $countStmt->fetchColumn();
+            }
         }
 
         return [

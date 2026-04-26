@@ -157,23 +157,20 @@ class FinancialReportService
         ]);
         $taxCollected = (float) ($taxStmt->fetchColumn() ?: 0);
 
-        $billableStmt = $pdo->prepare(
-            'SELECT SUM(duration_minutes) FROM time_entries WHERE started_at BETWEEN :start AND :end AND status != "rejected"'
+        $timeStmt = $pdo->prepare(
+            'SELECT
+                SUM(CASE WHEN status != "rejected" THEN duration_minutes ELSE 0 END) AS billable_minutes,
+                SUM(CASE WHEN status = "approved" THEN duration_minutes ELSE 0 END) AS paid_minutes
+             FROM time_entries
+             WHERE started_at BETWEEN :start AND :end'
         );
-        $billableStmt->execute([
+        $timeStmt->execute([
             'start' => $startRange->format('Y-m-d H:i:s'),
             'end' => $endRange->format('Y-m-d H:i:s'),
         ]);
-        $billableMinutes = (float) ($billableStmt->fetchColumn() ?: 0);
-
-        $paidStmt = $pdo->prepare(
-            'SELECT SUM(duration_minutes) FROM time_entries WHERE started_at BETWEEN :start AND :end AND status = "approved"'
-        );
-        $paidStmt->execute([
-            'start' => $startRange->format('Y-m-d H:i:s'),
-            'end' => $endRange->format('Y-m-d H:i:s'),
-        ]);
-        $paidMinutes = (float) ($paidStmt->fetchColumn() ?: 0);
+        $timeRow = $timeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $billableMinutes = (float) ($timeRow['billable_minutes'] ?? 0);
+        $paidMinutes = (float) ($timeRow['paid_minutes'] ?? 0);
 
         // Calculate PTO hours from approved leave requests
         // Each day of leave is assumed to be 8 hours

@@ -16,8 +16,13 @@ INSERT INTO roles (name, description) VALUES
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 -- Core users
+-- Default local-dev passwords:
+--   admin@phparm.local    => Admin4123!
+--   manager@phparm.local  => admin123
+--   tech@phparm.local     => admin123
+-- Change these immediately for any non-development environment.
 INSERT INTO users (id, name, email, password, role, email_verified, active, created_at, updated_at) VALUES
-    (1, 'Admin User', 'admin@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'admin', 1, 1, NOW(), NOW()),
+    (1, 'Admin User', 'admin@phparm.local', '$2y$12$a1qBTgCDchCTuslb26FY7uEEKwne7PrkB5awq9FR9Q7khmSNTnksi', 'admin', 1, 1, NOW(), NOW()),
     (2, 'Shop Manager', 'manager@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'manager', 1, 1, NOW(), NOW()),
     (3, 'Terry Technician', 'tech@phparm.local', '$2y$12$zxd14vBpGjir9eta3bJUx.zwPVp3xoKXABPUaIQRotwg6dXsBcYcO', 'technician', 1, 1, NOW(), NOW())
 ON DUPLICATE KEY UPDATE

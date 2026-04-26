@@ -16,11 +16,49 @@ class InspectionCompletionService
 {
     private Connection $connection;
     private ?AuditLogger $audit;
+    private ?InspectionDeficiencyAutoService $autoService;
+    private ?InspectionEscalationService $escalationService;
+    private ?InspectionRiskScoringService $riskScoringService;
 
-    public function __construct(Connection $connection, ?AuditLogger $audit = null)
-    {
+    public function __construct(
+        Connection $connection,
+        ?AuditLogger $audit = null,
+        ?InspectionDeficiencyAutoService $autoService = null,
+        ?InspectionEscalationService $escalationService = null,
+        ?InspectionRiskScoringService $riskScoringService = null,
+    ) {
         $this->connection = $connection;
         $this->audit = $audit;
+        $this->autoService = $autoService;
+        $this->escalationService = $escalationService;
+        $this->riskScoringService = $riskScoringService;
+    }
+
+    /**
+     * Phase 8.2 — late-bound so the route wiring can construct the
+     * auto-service after the completion service (they can't both be
+     * constructor-injected in one pass without threading the object
+     * graph by hand).
+     */
+    public function setAutoService(?InspectionDeficiencyAutoService $autoService): void
+    {
+        $this->autoService = $autoService;
+    }
+
+    /**
+     * Phase 8.3 — same late-bound wiring for the escalation service.
+     */
+    public function setEscalationService(?InspectionEscalationService $escalationService): void
+    {
+        $this->escalationService = $escalationService;
+    }
+
+    /**
+     * Phase 8.4 — same late-bound wiring for the risk scoring service.
+     */
+    public function setRiskScoringService(?InspectionRiskScoringService $riskScoringService): void
+    {
+        $this->riskScoringService = $riskScoringService;
     }
 
     /**
@@ -31,8 +69,8 @@ class InspectionCompletionService
         $this->assertPayload($payload, false);
 
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO inspection_reports (template_id, customer_id, vehicle_id, estimate_id, appointment_id, status, summary, created_at, updated_at)
-            VALUES (:template_id, :customer_id, :vehicle_id, :estimate_id, :appointment_id, :status, :summary, NOW(), NOW())
+            INSERT INTO inspection_reports (template_id, customer_id, vehicle_id, estimate_id, appointment_id, site_asset_id, status, summary, created_at, updated_at)
+            VALUES (:template_id, :customer_id, :vehicle_id, :estimate_id, :appointment_id, :site_asset_id, :status, :summary, NOW(), NOW())
         SQL);
 
         // FIX: Cast values to int or null to prevent "Incorrect integer value" errors with empty strings
@@ -42,6 +80,7 @@ class InspectionCompletionService
             'vehicle_id' => !empty($payload['vehicle_id']) ? (int) $payload['vehicle_id'] : null,
             'estimate_id' => !empty($payload['estimate_id']) ? (int) $payload['estimate_id'] : null,
             'appointment_id' => !empty($payload['appointment_id']) ? (int) $payload['appointment_id'] : null,
+            'site_asset_id' => !empty($payload['site_asset_id']) ? (int) $payload['site_asset_id'] : null,
             'status' => 'draft',
             'summary' => $payload['summary'] ?? null,
         ]);
@@ -100,6 +139,26 @@ class InspectionCompletionService
             'before' => $report->toArray(),
             'after' => $updated?->toArray(),
         ]);
+
+        // Phase 8.2 — fire any configured auto-generation policies.
+        // Best-effort: runEvaluation's try/catch wraps the whole thing
+        // so a bad policy never blocks report completion.
+        if ($this->autoService !== null) {
+            $this->autoService->evaluateReportOnCompletion($reportId, $actorId);
+        }
+
+        // Phase 8.3 — fire any configured human-in-loop escalation
+        // rules. Same best-effort contract as the auto-service hook.
+        if ($this->escalationService !== null) {
+            $this->escalationService->evaluateReportOnCompletion($reportId, $actorId);
+        }
+
+        // Phase 8.4 — compute + persist the risk score snapshot.
+        // Same best-effort contract: a scoring bug cannot block
+        // completion.
+        if ($this->riskScoringService !== null) {
+            $this->riskScoringService->scoreReportOnCompletion($reportId, $actorId);
+        }
 
         return $updated;
     }
@@ -346,6 +405,7 @@ class InspectionCompletionService
             'vehicle_id' => $row['vehicle_id'] !== null ? (int) $row['vehicle_id'] : null,
             'estimate_id' => $row['estimate_id'] !== null ? (int) $row['estimate_id'] : null,
             'appointment_id' => $row['appointment_id'] !== null ? (int) $row['appointment_id'] : null,
+            'site_asset_id' => isset($row['site_asset_id']) && $row['site_asset_id'] !== null ? (int) $row['site_asset_id'] : null,
             'status' => (string) $row['status'],
             'summary' => $row['summary'],
             'pdf_path' => $row['pdf_path'] ?? null,

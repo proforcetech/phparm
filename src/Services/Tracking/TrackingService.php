@@ -56,7 +56,7 @@ class TrackingService
         SQL);
 
         $stmt->execute([
-            'token' => $token,
+            'token' => $this->hashToken($token),
             'job_id' => $jobId,
             'expires_at' => $expiresAt,
         ]);
@@ -70,8 +70,11 @@ class TrackingService
 
     public function revokeLink(string $token): bool
     {
-        $stmt = $this->connection->pdo()->prepare('DELETE FROM job_tracking_links WHERE token = :token');
-        $stmt->execute(['token' => $token]);
+        $stmt = $this->connection->pdo()->prepare('DELETE FROM job_tracking_links WHERE token = :token OR token = :token_hash');
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $this->hashToken($token),
+        ]);
 
         return $stmt->rowCount() > 0;
     }
@@ -230,11 +233,19 @@ class TrackingService
 
     private function fetchLink(string $token): ?array
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT * FROM job_tracking_links WHERE token = :token LIMIT 1');
-        $stmt->execute(['token' => $token]);
+        $stmt = $this->connection->pdo()->prepare('SELECT * FROM job_tracking_links WHERE token = :token OR token = :token_hash LIMIT 1');
+        $stmt->execute([
+            'token' => $token,
+            'token_hash' => $this->hashToken($token),
+        ]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
         return $row ?: null;
+    }
+
+    private function hashToken(string $token): string
+    {
+        return hash('sha256', $token);
     }
 
     private function fetchActiveLinkByJob(int $jobId): ?array

@@ -141,10 +141,6 @@ class TimeTrackingService
             $params['status'] = $filters['status'];
         }
 
-        $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
-        $countStmt->execute($params);
-        $total = (int) $countStmt->fetchColumn();
-
         $sql = 'SELECT te.*, e.is_mobile, u.name AS technician_name, ej.title AS job_title, e.number AS estimate_number, '
             . 'CONCAT(c.first_name, " ", c.last_name) AS customer_name, cv.vin AS vehicle_vin, ru.name AS reviewer_name, '
             . 'NULL AS efficiency_percentage ' . $baseSql . ' ORDER BY te.started_at DESC LIMIT :limit OFFSET :offset';
@@ -165,6 +161,14 @@ class TimeTrackingService
 
             return $row;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+        $rowCount = count($rows);
+        $total = $rowCount < $limit
+            ? $offset + $rowCount
+            : (function () use ($baseSql, $params): int {
+                $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
+                $countStmt->execute($params);
+                return (int) $countStmt->fetchColumn();
+            })();
         $entries = array_map(static fn (array $row) => new TimeEntry($row), $rows);
         $adjustments = $this->fetchAdjustments(array_map(static fn (TimeEntry $entry) => $entry->id, $entries));
 

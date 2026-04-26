@@ -54,10 +54,6 @@ class LaborTaskService
             $params['service_line_id'] = (int) $filters['service_line_id'];
         }
 
-        $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
-        $countStmt->execute($params);
-        $total = (int) $countStmt->fetchColumn();
-
         $sql = 'SELECT lt.*, st.name AS service_type_name ' . $baseSql . ' ORDER BY lt.display_order ASC, lt.name ASC LIMIT :limit OFFSET :offset';
 
         $stmt = $this->connection->pdo()->prepare($sql);
@@ -71,6 +67,14 @@ class LaborTaskService
         $stmt->execute();
 
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rowCount = count($rows);
+        $total = $rowCount < $limit
+            ? $offset + $rowCount
+            : (function () use ($baseSql, $params): int {
+                $countStmt = $this->connection->pdo()->prepare('SELECT COUNT(*) ' . $baseSql);
+                $countStmt->execute($params);
+                return (int) $countStmt->fetchColumn();
+            })();
         $data = array_map(static function (array $row) {
             $task = new LaborTask($row);
             $arr = $task->toArray();

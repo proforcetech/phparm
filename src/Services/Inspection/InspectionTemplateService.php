@@ -274,19 +274,67 @@ class InspectionTemplateService
      */
     private function insertItems(int $sectionId, array $items): void
     {
+        // Phase 8.1 adds per-item compliance columns. They're all
+        // nullable with safe defaults so existing template payloads
+        // (which don't carry these fields) continue to insert unchanged.
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO inspection_items (section_id, name, input_type, default_value, display_order) VALUES (:section_id, :name, :input_type, :default_value, :display_order)'
+            'INSERT INTO inspection_items
+                (section_id, name, input_type, default_value, display_order,
+                 severity, compliance_tag_id, compliance_reference,
+                 requires_photo, requires_measurement, measurement_unit, pass_condition)
+             VALUES
+                (:section_id, :name, :input_type, :default_value, :display_order,
+                 :severity, :compliance_tag_id, :compliance_reference,
+                 :requires_photo, :requires_measurement, :measurement_unit, :pass_condition)'
         );
 
         foreach ($items as $displayOrder => $item) {
+            $severity = $this->normalizeSeverity($item['severity'] ?? null);
             $stmt->execute([
                 'section_id' => $sectionId,
                 'name' => $item['name'],
                 'input_type' => $item['input_type'],
                 'default_value' => $item['default_value'] ?? null,
                 'display_order' => $displayOrder,
+                'severity' => $severity,
+                'compliance_tag_id' => isset($item['compliance_tag_id']) && $item['compliance_tag_id'] !== ''
+                    ? (int) $item['compliance_tag_id'] : null,
+                'compliance_reference' => $this->trimOrNull($item['compliance_reference'] ?? null, InspectionItem::COMPLIANCE_REFERENCE_MAX_LEN, 'compliance_reference'),
+                'requires_photo' => !empty($item['requires_photo']) ? 1 : 0,
+                'requires_measurement' => !empty($item['requires_measurement']) ? 1 : 0,
+                'measurement_unit' => $this->trimOrNull($item['measurement_unit'] ?? null, InspectionItem::MEASUREMENT_UNIT_MAX_LEN, 'measurement_unit'),
+                'pass_condition' => $this->trimOrNull($item['pass_condition'] ?? null, InspectionItem::PASS_CONDITION_MAX_LEN, 'pass_condition'),
             ]);
         }
+    }
+
+    private function normalizeSeverity(mixed $raw): ?string
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        $v = strtolower(trim((string) $raw));
+        if (!in_array($v, InspectionItem::ALLOWED_SEVERITIES, true)) {
+            throw new InvalidArgumentException(
+                'severity must be one of ' . implode(',', InspectionItem::ALLOWED_SEVERITIES)
+            );
+        }
+        return $v;
+    }
+
+    private function trimOrNull(mixed $raw, int $maxLen, string $field): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $v = trim((string) $raw);
+        if ($v === '') {
+            return null;
+        }
+        if (strlen($v) > $maxLen) {
+            throw new InvalidArgumentException("{$field} exceeds {$maxLen} chars");
+        }
+        return $v;
     }
 
     private function deleteSections(int $templateId): void
@@ -344,6 +392,14 @@ class InspectionTemplateService
                 'input_type' => (string) $itemRow['input_type'],
                 'default_value' => $itemRow['default_value'],
                 'display_order' => (int) $itemRow['display_order'],
+                'severity' => $itemRow['severity'] ?? null,
+                'compliance_tag_id' => isset($itemRow['compliance_tag_id']) && $itemRow['compliance_tag_id'] !== null
+                    ? (int) $itemRow['compliance_tag_id'] : null,
+                'compliance_reference' => $itemRow['compliance_reference'] ?? null,
+                'requires_photo' => (bool) ($itemRow['requires_photo'] ?? false),
+                'requires_measurement' => (bool) ($itemRow['requires_measurement'] ?? false),
+                'measurement_unit' => $itemRow['measurement_unit'] ?? null,
+                'pass_condition' => $itemRow['pass_condition'] ?? null,
             ];
         }
 

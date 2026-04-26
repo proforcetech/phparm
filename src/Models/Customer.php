@@ -24,6 +24,9 @@ class Customer extends BaseModel
     public bool $tax_exempt = false;
     public ?string $notes = null;
     public ?string $external_reference = null;
+    // Phase 1.1 of docs/expansion-plan.md: nullable FK to companies. NULL for
+    // legacy customers that haven't been promoted to the CRM model yet.
+    public ?int $company_id = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 
