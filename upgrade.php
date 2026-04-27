@@ -99,47 +99,13 @@ try {
             if ($sql === false) {
                 throw new RuntimeException("Unable to read migration file: {$migrationName}");
             }
-            
-// [NEW CODE START]
-            // 1. Check if the file uses a custom DELIMITER (e.g., //)
-            $delimiter = ';';
-            if (preg_match('/^DELIMITER\s+(\S+)/m', $sql, $match)) {
-                $delimiter = $match[1];
-            }
 
-            // 2. Remove "DELIMITER //" lines (MySQL doesn't understand them, they are for the parser)
-            $cleanSql = preg_replace('/^DELIMITER\s+\S+\s*$/m', '', $sql);
+            $statements = splitSqlStatements($sql);
 
-            $statements = [];
-
-            if ($delimiter === ';') {
-                // Standard Mode: Use your existing regex for semicolons (handles quotes correctly)
-                $pcreResult = preg_match_all('/((?:[^;\'"]+|(?:\'(?:\\\\.|[^\'])*\')|(?:"(?:\\\\.|[^"])*"))+)/', $cleanSql, $matches);
-                if ($pcreResult === false) {
-                    throw new RuntimeException("Unable to parse migration file (Regex Error): {$migrationName}");
-                }
-                $statements = $matches[0];
-            } else {
-                // Custom Delimiter Mode: Simple explode
-                // (Regex for dynamic delimiters is complex, simple explode usually suffices for migration files)
-                $statements = explode($delimiter, $cleanSql);
-            }
-            // [NEW CODE END]
-            
             foreach ($statements as $statement) {
-                // FIX 2: Strip comments before checking for empty statements.
-                // The previous logic skipped valid queries if they were preceded by a comment.
-                $statement = preg_replace('/^--.*$/m', '', $statement);
-                $statement = trim($statement);
-                
-                if (empty($statement)) {
-                    continue;
-                }
-                
-                // Prepare and execute
                 $stmt = $pdo->prepare($statement);
                 $stmt->execute();
-                $stmt->closeCursor(); 
+                $stmt->closeCursor();
             }
             
             // Record migration
@@ -150,7 +116,7 @@ try {
             echo " ✓\n";
             $runCount++;
             
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             echo " ✗\n";
             echo "  Error: " . $e->getMessage() . "\n\n";
             // Continue with next migration instead of stopping
@@ -171,4 +137,143 @@ try {
     echo "\n✗ Upgrade failed!\n";
     echo "Error: " . $e->getMessage() . "\n\n";
     exit(1);
+}
+
+/**
+ * Split a MySQL script into individual statements.
+ *
+ * Strips line and block comments first, then walks the SQL char-by-char
+ * tracking string and identifier quoting so that semicolons inside strings,
+ * comments, or backtick-quoted identifiers don't terminate a statement.
+ * Handles SQL's '' / "" doubled-quote escapes as well as backslash escapes.
+ * Honors `DELIMITER //` directives for stored-procedure-style files.
+ */
+function splitSqlStatements(string $sql): array
+{
+    // Strip /* ... */ block comments (non-greedy, dotall).
+    $sql = preg_replace('!/\*.*?\*/!s', '', $sql);
+    // Strip -- line comments to end of line.
+    $sql = preg_replace('/--[^\n]*/', '', $sql);
+    // Strip # line comments to end of line.
+    $sql = preg_replace('/#[^\n]*/', '', $sql);
+
+    $statements = [];
+    $current = '';
+    $delimiter = ';';
+    $delimLen = 1;
+    $len = strlen($sql);
+    $i = 0;
+    $state = 'NORMAL'; // NORMAL | SQ | DQ | BT
+
+    $pushStatement = function () use (&$current, &$statements) {
+        $stmt = trim($current);
+        if ($stmt !== '') {
+            $statements[] = $stmt;
+        }
+        $current = '';
+    };
+
+    while ($i < $len) {
+        $c = $sql[$i];
+
+        if ($state === 'NORMAL') {
+            // DELIMITER directive — only meaningful at the start of a logical line.
+            if (($i === 0 || $sql[$i - 1] === "\n") && stripos(substr($sql, $i, 10), 'DELIMITER ') === 0) {
+                $eol = strpos($sql, "\n", $i);
+                if ($eol === false) {
+                    $eol = $len;
+                }
+                $newDelim = trim(substr($sql, $i + 10, $eol - $i - 10));
+                if ($newDelim !== '') {
+                    $delimiter = $newDelim;
+                    $delimLen = strlen($delimiter);
+                }
+                $i = $eol + 1;
+                continue;
+            }
+
+            if ($c === "'") {
+                $state = 'SQ';
+                $current .= $c;
+                $i++;
+                continue;
+            }
+            if ($c === '"') {
+                $state = 'DQ';
+                $current .= $c;
+                $i++;
+                continue;
+            }
+            if ($c === '`') {
+                $state = 'BT';
+                $current .= $c;
+                $i++;
+                continue;
+            }
+            if (substr($sql, $i, $delimLen) === $delimiter) {
+                $pushStatement();
+                $i += $delimLen;
+                continue;
+            }
+            $current .= $c;
+            $i++;
+            continue;
+        }
+
+        if ($state === 'SQ') {
+            $current .= $c;
+            if ($c === '\\' && $i + 1 < $len) {
+                $current .= $sql[$i + 1];
+                $i += 2;
+                continue;
+            }
+            if ($c === "'") {
+                if ($i + 1 < $len && $sql[$i + 1] === "'") {
+                    $current .= $sql[$i + 1];
+                    $i += 2;
+                    continue;
+                }
+                $state = 'NORMAL';
+            }
+            $i++;
+            continue;
+        }
+
+        if ($state === 'DQ') {
+            $current .= $c;
+            if ($c === '\\' && $i + 1 < $len) {
+                $current .= $sql[$i + 1];
+                $i += 2;
+                continue;
+            }
+            if ($c === '"') {
+                if ($i + 1 < $len && $sql[$i + 1] === '"') {
+                    $current .= $sql[$i + 1];
+                    $i += 2;
+                    continue;
+                }
+                $state = 'NORMAL';
+            }
+            $i++;
+            continue;
+        }
+
+        if ($state === 'BT') {
+            $current .= $c;
+            if ($c === '`') {
+                if ($i + 1 < $len && $sql[$i + 1] === '`') {
+                    $current .= $sql[$i + 1];
+                    $i += 2;
+                    continue;
+                }
+                $state = 'NORMAL';
+            }
+            $i++;
+            continue;
+        }
+    }
+
+    $pushStatement();
+
+    return $statements;
 }
