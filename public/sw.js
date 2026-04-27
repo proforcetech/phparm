@@ -17,14 +17,15 @@
  * Update flow:
  *   - SW_VERSION below is the cache-bust key. Bumping it on each release
  *     installs a new SW; old caches are evicted in 'activate'.
- *   - On 'install' the new SW calls skipWaiting only if it received a
- *     SKIP_WAITING postMessage (so the active SW keeps serving the current
- *     session until the user accepts the update prompt in the UI).
+ *   - On 'install' the new SW calls skipWaiting unconditionally so cached
+ *     assets are evicted promptly. The PWAUpdatePrompt UI still renders,
+ *     but activation no longer waits on user click — that flow had stranded
+ *     sessions on stale precache from prior deploys.
  *   - When the new SW becomes 'installed' with an existing controller, every
  *     client gets a postMessage so the React shell can render the update toast.
  */
 
-const SW_VERSION = 'v1.0.0';
+const SW_VERSION = 'v1.0.1';
 const PRECACHE = `phparm-precache-${SW_VERSION}`;
 const RUNTIME_ASSETS = `phparm-runtime-assets-${SW_VERSION}`;
 const RUNTIME_PAGES = `phparm-runtime-pages-${SW_VERSION}`;
@@ -44,6 +45,11 @@ const PRECACHE_URLS = [
 ];
 
 self.addEventListener('install', (event) => {
+  // v1.0.1: auto-skip waiting on install to force-evict stale precache from
+  // earlier deploys whose hashed asset names no longer exist on the server.
+  // Older SWs returned cached /assets/main-*.js from before the cache was
+  // bumped, leaving sessions running months-old code with patched bugs back.
+  self.skipWaiting();
   event.waitUntil(
     (async () => {
       const cache = await caches.open(PRECACHE);
