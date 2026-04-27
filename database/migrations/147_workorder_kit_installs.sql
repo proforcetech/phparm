@@ -37,12 +37,12 @@
 -- on partially-set-up databases.
 
 CREATE TABLE IF NOT EXISTS workorder_kit_installs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    workorder_id INT NOT NULL,
-    workorder_job_id INT NULL,
-    bundle_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    workorder_id INT UNSIGNED NOT NULL,
+    workorder_job_id INT UNSIGNED NULL,
+    bundle_id INT UNSIGNED NULL,
     bundle_name_snapshot VARCHAR(160) NOT NULL,
-    installed_by_user_id INT NULL,
+    installed_by_user_id INT UNSIGNED NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'planned',
     planned_at DATETIME NULL,
     installed_at DATETIME NULL,
@@ -151,11 +151,11 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- Per-item snapshot table.
 CREATE TABLE IF NOT EXISTS workorder_kit_install_items (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    install_id INT NOT NULL,
-    workorder_item_id INT NULL,
-    bundle_item_id INT NULL,
-    inventory_item_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    install_id INT UNSIGNED NOT NULL,
+    workorder_item_id INT UNSIGNED NULL,
+    bundle_item_id INT UNSIGNED NULL,
+    inventory_item_id INT UNSIGNED NULL,
     type VARCHAR(40) NOT NULL,
     description VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL DEFAULT 1,

@@ -33,7 +33,7 @@
 --     received → processed → failed; failed rows can be retried.
 
 CREATE TABLE IF NOT EXISTS third_party_integrations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     provider_key VARCHAR(80) NOT NULL,
     name VARCHAR(160) NOT NULL,
     category VARCHAR(40) NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS third_party_integrations (
     last_sync_status VARCHAR(20) NULL,
     last_sync_error TEXT NULL,
     next_sync_at DATETIME NULL,
-    owner_user_id INT NULL,
+    owner_user_id INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -93,10 +93,10 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS integration_sync_logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    integration_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    integration_id INT UNSIGNED NOT NULL,
     triggered_by VARCHAR(20) NOT NULL DEFAULT 'manual',
-    user_id INT NULL,
+    user_id INT UNSIGNED NULL,
     direction VARCHAR(16) NOT NULL DEFAULT 'pull',
     status VARCHAR(20) NOT NULL DEFAULT 'running',
     records_in INT NULL,
@@ -150,8 +150,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS integration_webhook_events (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    integration_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    integration_id INT UNSIGNED NULL,
     provider_key VARCHAR(80) NOT NULL,
     event_type VARCHAR(120) NULL,
     external_id VARCHAR(160) NULL,

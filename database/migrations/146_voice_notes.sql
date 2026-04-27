@@ -32,11 +32,11 @@
 -- on partially-set-up databases.
 
 CREATE TABLE IF NOT EXISTS voice_notes (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    workorder_id INT NULL,
-    ticket_id INT NULL,
-    vehicle_id INT NULL,
-    author_user_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    workorder_id INT UNSIGNED NULL,
+    ticket_id INT UNSIGNED NULL,
+    vehicle_id INT UNSIGNED NULL,
+    author_user_id INT UNSIGNED NULL,
     audio_path VARCHAR(500) NOT NULL,
     audio_format VARCHAR(20) NOT NULL DEFAULT 'mp3',
     audio_size_bytes BIGINT NULL,
@@ -157,8 +157,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 -- ─────────────────────────────────────────── voice_note_tags ────
 
 CREATE TABLE IF NOT EXISTS voice_note_tags (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    voice_note_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    voice_note_id INT UNSIGNED NOT NULL,
     tag VARCHAR(80) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

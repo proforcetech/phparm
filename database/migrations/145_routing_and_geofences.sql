@@ -31,7 +31,7 @@
 -- ─────────────────────────────────────────────── geo_fences ────
 
 CREATE TABLE IF NOT EXISTS geo_fences (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(160) NOT NULL,
     shape_type VARCHAR(20) NOT NULL DEFAULT 'circle',
     center_latitude DECIMAL(10,7) NULL,
@@ -39,9 +39,9 @@ CREATE TABLE IF NOT EXISTS geo_fences (
     radius_meters INT NULL,
     polygon_geojson TEXT NULL,
     purpose VARCHAR(40) NOT NULL DEFAULT 'service_zone',
-    customer_id INT NULL,
-    workorder_id INT NULL,
-    asset_id INT NULL,
+    customer_id INT UNSIGNED NULL,
+    workorder_id INT UNSIGNED NULL,
+    asset_id INT UNSIGNED NULL,
     active TINYINT(1) NOT NULL DEFAULT 1,
     notes TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -107,10 +107,10 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 -- ───────────────────────────────────────── geo_fence_events ────
 
 CREATE TABLE IF NOT EXISTS geo_fence_events (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    geo_fence_id INT NOT NULL,
-    user_id INT NOT NULL,
-    workorder_id INT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    geo_fence_id INT UNSIGNED NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
+    workorder_id INT UNSIGNED NULL,
     event_type VARCHAR(20) NOT NULL DEFAULT 'entered',
     occurred_at DATETIME NOT NULL,
     latitude DECIMAL(10,7) NULL,
@@ -176,8 +176,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 -- ────────────────────────────────────────────── route_plans ────
 
 CREATE TABLE IF NOT EXISTS route_plans (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    planned_for_user_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    planned_for_user_id INT UNSIGNED NOT NULL,
     plan_date DATE NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'draft',
     origin_latitude DECIMAL(10,7) NULL,
@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS route_plans (
     activated_at DATETIME NULL,
     completed_at DATETIME NULL,
     cancelled_at DATETIME NULL,
-    created_by_user_id INT NULL,
+    created_by_user_id INT UNSIGNED NULL,
     notes TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -251,11 +251,11 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 -- ───────────────────────────────────────── route_plan_stops ────
 
 CREATE TABLE IF NOT EXISTS route_plan_stops (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    route_plan_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    route_plan_id INT UNSIGNED NOT NULL,
     sequence_order INT NOT NULL,
-    workorder_id INT NULL,
-    appointment_id INT NULL,
+    workorder_id INT UNSIGNED NULL,
+    appointment_id INT UNSIGNED NULL,
     stop_label VARCHAR(180) NOT NULL,
     latitude DECIMAL(10,7) NOT NULL,
     longitude DECIMAL(10,7) NOT NULL,

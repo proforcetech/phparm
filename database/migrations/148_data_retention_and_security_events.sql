@@ -40,7 +40,7 @@
 -- safe on partially-set-up databases.
 
 CREATE TABLE IF NOT EXISTS data_retention_policies (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     entity_type VARCHAR(80) NOT NULL,
     table_name VARCHAR(80) NOT NULL,
     timestamp_column VARCHAR(60) NOT NULL DEFAULT 'created_at',
@@ -81,8 +81,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS data_retention_runs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    policy_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    policy_id INT UNSIGNED NOT NULL,
     started_at DATETIME NOT NULL,
     completed_at DATETIME NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'running',
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS data_retention_runs (
     records_affected INT NULL,
     dry_run TINYINT(1) NOT NULL DEFAULT 0,
     error_message TEXT NULL,
-    triggered_by_user_id INT NULL,
+    triggered_by_user_id INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -144,8 +144,8 @@ CREATE TABLE IF NOT EXISTS security_events (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     event_type VARCHAR(80) NOT NULL,
     severity VARCHAR(20) NOT NULL DEFAULT 'info',
-    actor_user_id INT NULL,
-    target_user_id INT NULL,
+    actor_user_id INT UNSIGNED NULL,
+    target_user_id INT UNSIGNED NULL,
     ip_address VARCHAR(45) NULL,
     user_agent VARCHAR(500) NULL,
     request_path VARCHAR(500) NULL,

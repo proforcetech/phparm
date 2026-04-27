@@ -34,14 +34,14 @@
 -- guards on indexes and foreign keys.
 
 CREATE TABLE IF NOT EXISTS saved_reports (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     report_key VARCHAR(80) NOT NULL,
     name VARCHAR(160) NOT NULL,
     description TEXT NULL,
     parameters JSON NULL,
     columns_visible JSON NULL,
     drill_down JSON NULL,
-    owner_user_id INT NULL,
+    owner_user_id INT UNSIGNED NULL,
     is_shared TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -80,8 +80,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS scheduled_reports (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    saved_report_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    saved_report_id INT UNSIGNED NOT NULL,
     name VARCHAR(160) NOT NULL,
     cron_expression VARCHAR(80) NOT NULL,
     timezone VARCHAR(60) NOT NULL DEFAULT 'UTC',
@@ -139,12 +139,12 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS report_executions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     report_key VARCHAR(80) NOT NULL,
-    saved_report_id INT NULL,
-    scheduled_report_id INT NULL,
+    saved_report_id INT UNSIGNED NULL,
+    scheduled_report_id INT UNSIGNED NULL,
     triggered_by VARCHAR(20) NOT NULL DEFAULT 'manual',
-    user_id INT NULL,
+    user_id INT UNSIGNED NULL,
     parameters JSON NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'running',
     row_count INT NULL,

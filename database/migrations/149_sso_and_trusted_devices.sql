@@ -37,7 +37,7 @@
 -- and FKs are gated on information_schema lookups.
 
 CREATE TABLE IF NOT EXISTS sso_providers (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     slug VARCHAR(60) NOT NULL,
     name VARCHAR(120) NOT NULL,
     type VARCHAR(20) NOT NULL DEFAULT 'oidc',
@@ -80,9 +80,9 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS sso_user_links (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    provider_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    provider_id INT UNSIGNED NOT NULL,
     subject VARCHAR(255) NOT NULL,
     email VARCHAR(255) NULL,
     display_name VARCHAR(160) NULL,
@@ -138,8 +138,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS trusted_devices (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
     token_hash CHAR(64) NOT NULL,
     label VARCHAR(160) NULL,
     user_agent VARCHAR(500) NULL,
@@ -194,12 +194,12 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 
 CREATE TABLE IF NOT EXISTS sso_login_attempts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    provider_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    provider_id INT UNSIGNED NOT NULL,
     state VARCHAR(120) NOT NULL,
     nonce VARCHAR(120) NULL,
     redirect_uri VARCHAR(255) NULL,
-    user_id INT NULL,
+    user_id INT UNSIGNED NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     error_message TEXT NULL,
     completed_at DATETIME NULL,
