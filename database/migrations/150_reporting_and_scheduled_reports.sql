@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS scheduled_reports (
     next_run_at DATETIME NULL,
     last_status VARCHAR(20) NULL,
     last_error TEXT NULL,
-    created_by INT NULL,
+    created_by INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

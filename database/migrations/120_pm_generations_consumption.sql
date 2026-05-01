@@ -13,7 +13,7 @@
 
 ALTER TABLE pm_generations
     ADD COLUMN consumption_applied_at DATETIME NULL AFTER failure_reason,
-    ADD COLUMN consumption_entitlement_id BIGINT UNSIGNED NULL AFTER consumption_applied_at,
+    ADD COLUMN consumption_entitlement_id INT UNSIGNED NULL AFTER consumption_applied_at,
     ADD COLUMN consumption_amount DECIMAL(12, 2) NULL AFTER consumption_entitlement_id,
-    ADD COLUMN consumption_ledger_id BIGINT UNSIGNED NULL AFTER consumption_amount,
+    ADD COLUMN consumption_ledger_id INT UNSIGNED NULL AFTER consumption_amount,
     ADD INDEX idx_pm_generations_consumption_applied (consumption_applied_at);

@@ -11,9 +11,9 @@
 
 CREATE TABLE IF NOT EXISTS pm_generations (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    schedule_id BIGINT UNSIGNED NOT NULL,
-    plan_id BIGINT UNSIGNED NOT NULL,
-    ticket_id BIGINT UNSIGNED NULL,
+    schedule_id INT UNSIGNED NOT NULL,
+    plan_id INT UNSIGNED NOT NULL,
+    ticket_id INT UNSIGNED NULL,
     due_at DATE NOT NULL,
     generated_at DATETIME NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'generated',
