@@ -82,7 +82,10 @@ class WorkorderStatusNotificationService
         }
 
         $customer = $this->fetchCustomer($workorder['customer_id']);
-        $vehicle = $this->fetchVehicle($workorder['vehicle_id']);
+        // vehicle_id is NULL on non-automotive workorders (property, IT, etc.).
+        $vehicle = !empty($workorder['vehicle_id'])
+            ? $this->fetchVehicle((int) $workorder['vehicle_id'])
+            : null;
         $technician = $workorder['assigned_technician_id']
             ? $this->fetchUser($workorder['assigned_technician_id'])
             : null;

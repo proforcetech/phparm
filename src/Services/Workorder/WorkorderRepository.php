@@ -102,6 +102,16 @@ class WorkorderRepository
             $bindings['vehicle_id'] = (int) $filters['vehicle_id'];
         }
 
+        if (!empty($filters['site_asset_id'])) {
+            $clauses[] = 'site_asset_id = :site_asset_id';
+            $bindings['site_asset_id'] = (int) $filters['site_asset_id'];
+        }
+
+        if (!empty($filters['service_line_id'])) {
+            $clauses[] = 'service_line_id = :service_line_id';
+            $bindings['service_line_id'] = (int) $filters['service_line_id'];
+        }
+
         if (!empty($filters['technician_id'])) {
             $clauses[] = 'assigned_technician_id = :technician_id';
             $bindings['technician_id'] = (int) $filters['technician_id'];
@@ -715,7 +725,18 @@ class WorkorderRepository
             'number' => (string) $row['number'],
             'estimate_id' => (int) $row['estimate_id'],
             'customer_id' => (int) $row['customer_id'],
-            'vehicle_id' => (int) $row['vehicle_id'],
+            'vehicle_id' => isset($row['vehicle_id']) && $row['vehicle_id'] !== null
+                ? (int) $row['vehicle_id']
+                : null,
+            'site_asset_id' => isset($row['site_asset_id']) && $row['site_asset_id'] !== null
+                ? (int) $row['site_asset_id']
+                : null,
+            'fleet_unit_id' => isset($row['fleet_unit_id']) && $row['fleet_unit_id'] !== null
+                ? (int) $row['fleet_unit_id']
+                : null,
+            'branch_id' => isset($row['branch_id']) && $row['branch_id'] !== null
+                ? (int) $row['branch_id']
+                : null,
             'service_line_id' => isset($row['service_line_id']) && $row['service_line_id'] !== null
                 ? (int) $row['service_line_id']
                 : null,

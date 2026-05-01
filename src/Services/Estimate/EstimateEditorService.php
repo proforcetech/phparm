@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Models\Estimate;
 use App\Models\EstimateItem;
 use App\Models\EstimateJob;
+use App\Services\ServiceLine\SubjectResolver;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -16,12 +17,17 @@ class EstimateEditorService
 {
     private Connection $connection;
     private ?AuditLogger $audit;
+    private ?SubjectResolver $subjectResolver;
     private const ALLOWED_ITEM_STATUSES = ['pending', 'approved', 'rejected'];
 
-    public function __construct(Connection $connection, ?AuditLogger $audit = null)
-    {
+    public function __construct(
+        Connection $connection,
+        ?AuditLogger $audit = null,
+        ?SubjectResolver $subjectResolver = null
+    ) {
         $this->connection = $connection;
         $this->audit = $audit;
+        $this->subjectResolver = $subjectResolver;
     }
 
     /**
@@ -235,7 +241,11 @@ class EstimateEditorService
      */
     private function assertValidPayload(array $payload, bool $isUpdate = false): void
     {
-        $required = ['customer_id', 'vehicle_id', 'number', 'jobs'];
+        // vehicle_id is no longer universally required — its requirement is
+        // gated by the document's service line (auto_repair / fleet_management
+        // require it; property_management requires site_asset_id; etc.).
+        // SubjectResolver enforces the per-line rule below.
+        $required = ['customer_id', 'number', 'jobs'];
         foreach ($required as $field) {
             if ($isUpdate && $field === 'number') {
                 continue;
@@ -244,6 +254,13 @@ class EstimateEditorService
             if (!array_key_exists($field, $payload)) {
                 throw new InvalidArgumentException('Missing required estimate field: ' . $field);
             }
+        }
+
+        if ($this->subjectResolver !== null) {
+            $line = $this->subjectResolver->resolveLine(
+                isset($payload['service_line_id']) ? (int) $payload['service_line_id'] : null
+            );
+            $this->subjectResolver->validateSubject($line, $payload);
         }
 
         $expiration = $payload['expiration_date'] ?? null;
@@ -280,8 +297,8 @@ class EstimateEditorService
     private function insertEstimate(array $payload, string $status): int
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, shop_fee, hazmat_disposal_fee, subtotal, tax, grand_total, created_at, updated_at)
-            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, :shop_fee, :hazmat_disposal_fee, 0, 0, 0, NOW(), NOW())
+            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, site_asset_id, service_line_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, shop_fee, hazmat_disposal_fee, subtotal, tax, grand_total, created_at, updated_at)
+            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :site_asset_id, :service_line_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, :shop_fee, :hazmat_disposal_fee, 0, 0, 0, NOW(), NOW())
         SQL);
 
         $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
@@ -290,7 +307,9 @@ class EstimateEditorService
             'parent_id' => $payload['parent_id'] ?? null,
             'number' => $payload['number'] ?? $this->generateNumber(),
             'customer_id' => (int) $payload['customer_id'],
-            'vehicle_id' => (int) $payload['vehicle_id'],
+            'vehicle_id' => $this->normalizeOptionalId($payload['vehicle_id'] ?? null),
+            'site_asset_id' => $this->normalizeOptionalId($payload['site_asset_id'] ?? null),
+            'service_line_id' => $this->normalizeOptionalId($payload['service_line_id'] ?? null),
             'is_mobile' => (int) (!empty($payload['is_mobile'])),
             'technician_id' => $payload['technician_id'] ?? null,
             'expiration_date' => $expirationDate,
@@ -307,6 +326,15 @@ class EstimateEditorService
         return (int) $this->connection->pdo()->lastInsertId();
     }
 
+    private function normalizeOptionalId(mixed $value): ?int
+    {
+        if ($value === null || $value === '' || $value === 0 || $value === '0') {
+            return null;
+        }
+        $int = (int) $value;
+        return $int > 0 ? $int : null;
+    }
+
     /**
      * @param array<string, mixed> $payload
      */
@@ -317,6 +345,8 @@ class EstimateEditorService
                 parent_id = :parent_id,
                 customer_id = :customer_id,
                 vehicle_id = :vehicle_id,
+                site_asset_id = :site_asset_id,
+                service_line_id = :service_line_id,
                 is_mobile = :is_mobile,
                 technician_id = :technician_id,
                 expiration_date = :expiration_date,
@@ -338,7 +368,9 @@ class EstimateEditorService
         $stmt->execute([
             'parent_id' => $payload['parent_id'] ?? null,
             'customer_id' => (int) $payload['customer_id'],
-            'vehicle_id' => (int) $payload['vehicle_id'],
+            'vehicle_id' => $this->normalizeOptionalId($payload['vehicle_id'] ?? null),
+            'site_asset_id' => $this->normalizeOptionalId($payload['site_asset_id'] ?? null),
+            'service_line_id' => $this->normalizeOptionalId($payload['service_line_id'] ?? null),
             'is_mobile' => (int) (!empty($payload['is_mobile'])),
             'technician_id' => $payload['technician_id'] ?? null,
             'expiration_date' => $expirationDate,
@@ -527,7 +559,15 @@ class EstimateEditorService
             'parent_id' => $row['parent_id'] !== null ? (int) $row['parent_id'] : null,
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
-            'vehicle_id' => (int) $row['vehicle_id'],
+            'vehicle_id' => isset($row['vehicle_id']) && $row['vehicle_id'] !== null
+                ? (int) $row['vehicle_id']
+                : null,
+            'site_asset_id' => isset($row['site_asset_id']) && $row['site_asset_id'] !== null
+                ? (int) $row['site_asset_id']
+                : null,
+            'service_line_id' => isset($row['service_line_id']) && $row['service_line_id'] !== null
+                ? (int) $row['service_line_id']
+                : null,
             'is_mobile' => (bool) $row['is_mobile'],
             'status' => (string) $row['status'],
             'technician_id' => $row['technician_id'] !== null ? (int) $row['technician_id'] : null,

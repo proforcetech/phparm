@@ -5,6 +5,7 @@ namespace App\Services\Appointment;
 use App\Database\Connection;
 use App\Models\Appointment;
 use App\Services\Leave\LeaveRequestService;
+use App\Services\ServiceLine\SubjectResolver;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use App\Support\Webhooks\WebhookDispatcher;
@@ -20,6 +21,7 @@ class AppointmentService
     private ?WebhookDispatcher $webhooks;
     private ?MessagingNotificationService $messagingNotifications;
     private ?LeaveRequestService $leaveRequests;
+    private ?SubjectResolver $subjectResolver;
     /**
      * @param array<string, mixed> $config
      */
@@ -28,7 +30,8 @@ class AppointmentService
         ?AuditLogger $audit = null,
         ?WebhookDispatcher $webhooks = null,
         ?MessagingNotificationService $messagingNotifications = null,
-        ?LeaveRequestService $leaveRequests = null
+        ?LeaveRequestService $leaveRequests = null,
+        ?SubjectResolver $subjectResolver = null
     )
     {
         $this->connection = $connection;
@@ -36,6 +39,7 @@ class AppointmentService
         $this->webhooks = $webhooks;
         $this->messagingNotifications = $messagingNotifications;
         $this->leaveRequests = $leaveRequests;
+        $this->subjectResolver = $subjectResolver;
     }
 
     /**
@@ -56,13 +60,27 @@ class AppointmentService
 
         $this->assertTechnicianAvailability($technicianId, $start, $end);
 
+        $vehicleId = $this->normalizeOptionalId($payload['vehicle_id'] ?? null);
+        $siteAssetId = $this->normalizeOptionalId($payload['site_asset_id'] ?? null);
+        $serviceLineId = $this->normalizeOptionalId($payload['service_line_id'] ?? null);
+
+        if ($this->subjectResolver !== null) {
+            $line = $this->subjectResolver->resolveLine($serviceLineId);
+            $this->subjectResolver->validateSubject($line, [
+                'vehicle_id' => $vehicleId,
+                'site_asset_id' => $siteAssetId,
+            ]);
+        }
+
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO appointments (customer_id, vehicle_id, technician_id, status, start_time, end_time, estimate_id, notes) ' .
-            'VALUES (:customer_id, :vehicle_id, :technician_id, :status, :start_time, :end_time, :estimate_id, :notes)'
+            'INSERT INTO appointments (customer_id, vehicle_id, site_asset_id, service_line_id, technician_id, status, start_time, end_time, estimate_id, notes) ' .
+            'VALUES (:customer_id, :vehicle_id, :site_asset_id, :service_line_id, :technician_id, :status, :start_time, :end_time, :estimate_id, :notes)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'] ?? null,
-            'vehicle_id' => $payload['vehicle_id'] ?? null,
+            'vehicle_id' => $vehicleId,
+            'site_asset_id' => $siteAssetId,
+            'service_line_id' => $serviceLineId,
             'technician_id' => $technicianId,
             'status' => $payload['status'],
             'start_time' => $start->format('Y-m-d H:i:s'),
@@ -176,6 +194,21 @@ class AppointmentService
         if (!empty($filters['technician_id'])) {
             $clauses[] = 'a.technician_id = :technician_id';
             $params['technician_id'] = $filters['technician_id'];
+        }
+
+        if (!empty($filters['vehicle_id'])) {
+            $clauses[] = 'a.vehicle_id = :vehicle_id';
+            $params['vehicle_id'] = (int) $filters['vehicle_id'];
+        }
+
+        if (!empty($filters['site_asset_id'])) {
+            $clauses[] = 'a.site_asset_id = :site_asset_id';
+            $params['site_asset_id'] = (int) $filters['site_asset_id'];
+        }
+
+        if (!empty($filters['service_line_id'])) {
+            $clauses[] = 'a.service_line_id = :service_line_id';
+            $params['service_line_id'] = (int) $filters['service_line_id'];
         }
 
         if (!empty($filters['date'])) {
@@ -337,5 +370,14 @@ class AppointmentService
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row ?: null;
+    }
+
+    private function normalizeOptionalId(mixed $value): ?int
+    {
+        if ($value === null || $value === '' || $value === 0 || $value === '0') {
+            return null;
+        }
+        $int = (int) $value;
+        return $int > 0 ? $int : null;
     }
 }

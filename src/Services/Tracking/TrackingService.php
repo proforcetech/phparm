@@ -98,7 +98,10 @@ class TrackingService
         $job = $this->fetchJob((int) $link['job_id']);
         $workorder = $this->fetchWorkorder((int) $job['workorder_id']);
         $customer = $this->fetchCustomer((int) $workorder['customer_id']);
-        $vehicle = $this->fetchVehicle((int) $workorder['vehicle_id']);
+        // vehicle_id is NULL on non-automotive workorders (property, IT, etc.).
+        $vehicle = !empty($workorder['vehicle_id'])
+            ? $this->fetchVehicle((int) $workorder['vehicle_id'])
+            : [];
 
         return [
             'job' => $job,

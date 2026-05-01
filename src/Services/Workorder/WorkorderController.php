@@ -681,6 +681,8 @@ class WorkorderController
             'status' => $status,
             'customer_id' => $params['customer_id'] ?? null,
             'vehicle_id' => $params['vehicle_id'] ?? null,
+            'site_asset_id' => $params['site_asset_id'] ?? null,
+            'service_line_id' => $params['service_line_id'] ?? null,
             'technician_id' => $params['technician_id'] ?? null,
             'priority' => $params['priority'] ?? null,
             'term' => $params['term'] ?? null,

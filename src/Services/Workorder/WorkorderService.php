@@ -100,15 +100,20 @@ class WorkorderService
             // Calculate totals from approved jobs only
             $totals = $this->calculateApprovedTotals($estimateId);
 
-            // Create workorder
+            // Create workorder. service_line_id, vehicle_id and site_asset_id
+            // are inherited from the source estimate so the WO carries the
+            // same vertical context — required for non-automotive flows where
+            // vehicle_id may be NULL but site_asset_id is set.
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO workorders (
-                    number, estimate_id, customer_id, vehicle_id, branch_id, status, priority,
+                    number, estimate_id, customer_id, vehicle_id, site_asset_id, service_line_id,
+                    branch_id, status, priority,
                     assigned_technician_id, subtotal, tax, call_out_fee, mileage_total,
                     discounts, shop_fee, hazmat_disposal_fee, grand_total,
                     internal_notes, customer_notes, created_at, updated_at
                 ) VALUES (
-                    :number, :estimate_id, :customer_id, :vehicle_id, :branch_id, :status, :priority,
+                    :number, :estimate_id, :customer_id, :vehicle_id, :site_asset_id, :service_line_id,
+                    :branch_id, :status, :priority,
                     :technician_id, :subtotal, :tax, :call_out_fee, :mileage_total,
                     :discounts, :shop_fee, :hazmat_disposal_fee, :grand_total,
                     :internal_notes, :customer_notes, NOW(), NOW()
@@ -120,6 +125,8 @@ class WorkorderService
                 'estimate_id' => $estimateId,
                 'customer_id' => $estimate->customer_id,
                 'vehicle_id' => $estimate->vehicle_id,
+                'site_asset_id' => $estimate->site_asset_id,
+                'service_line_id' => $estimate->service_line_id,
                 'branch_id' => $branchId,
                 'status' => Workorder::STATUS_PENDING,
                 'priority' => Workorder::PRIORITY_NORMAL,
@@ -265,15 +272,18 @@ class WorkorderService
         try {
             $invoiceNumber = $this->generateInvoiceNumber($workorder->number);
 
-            // Create invoice
+            // Create invoice. Subject FKs and service_line_id propagate from
+            // the workorder so the invoice stays in the same vertical context.
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO invoices (
-                    number, customer_id, vehicle_id, estimate_id, workorder_id, branch_id,
+                    number, customer_id, vehicle_id, site_asset_id, service_line_id,
+                    estimate_id, workorder_id, branch_id,
                     status, issue_date, due_date, subtotal, tax, total,
                     shop_fee, hazmat_disposal_fee, amount_paid, balance_due,
                     public_token, public_token_expires_at, created_at, updated_at
                 ) VALUES (
-                    :number, :customer_id, :vehicle_id, :estimate_id, :workorder_id, :branch_id,
+                    :number, :customer_id, :vehicle_id, :site_asset_id, :service_line_id,
+                    :estimate_id, :workorder_id, :branch_id,
                     :status, :issue_date, :due_date, :subtotal, :tax, :total,
                     :shop_fee, :hazmat_disposal_fee, 0, :balance_due,
                     :public_token, :public_token_expires_at, NOW(), NOW()
@@ -289,6 +299,8 @@ class WorkorderService
                 'number' => $invoiceNumber,
                 'customer_id' => $workorder->customer_id,
                 'vehicle_id' => $workorder->vehicle_id,
+                'site_asset_id' => $workorder->site_asset_id,
+                'service_line_id' => $workorder->service_line_id,
                 'estimate_id' => $workorder->estimate_id,
                 'workorder_id' => $workorderId,
                 'branch_id' => $workorder->branch_id,
@@ -415,17 +427,18 @@ class WorkorderService
             // Generate sub-estimate number
             $subEstimateNumber = $this->generateSubEstimateNumber($parentEstimate->number);
 
-            // Create sub-estimate
+            // Create sub-estimate. Inherits subject FKs + service_line_id from
+            // the parent workorder so the sub-estimate is in the same vertical.
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO estimates (
                     number, parent_id, parent_estimate_id, workorder_id, estimate_type,
-                    customer_id, vehicle_id, status, technician_id,
+                    customer_id, vehicle_id, site_asset_id, service_line_id, status, technician_id,
                     subtotal, tax, call_out_fee, mileage_total, discounts,
                     shop_fee, hazmat_disposal_fee, grand_total,
                     internal_notes, customer_notes, created_at, updated_at
                 ) VALUES (
                     :number, :parent_id, :parent_estimate_id, :workorder_id, 'sub_estimate',
-                    :customer_id, :vehicle_id, 'pending', :technician_id,
+                    :customer_id, :vehicle_id, :site_asset_id, :service_line_id, 'pending', :technician_id,
                     0, 0, 0, 0, 0, 0, 0, 0,
                     :internal_notes, :customer_notes, NOW(), NOW()
                 )
@@ -438,6 +451,8 @@ class WorkorderService
                 'workorder_id' => $workorderId,
                 'customer_id' => $workorder->customer_id,
                 'vehicle_id' => $workorder->vehicle_id,
+                'site_asset_id' => $workorder->site_asset_id,
+                'service_line_id' => $workorder->service_line_id,
                 'technician_id' => $workorder->assigned_technician_id,
                 'internal_notes' => $payload['internal_notes'] ?? null,
                 'customer_notes' => $payload['customer_notes'] ?? null,

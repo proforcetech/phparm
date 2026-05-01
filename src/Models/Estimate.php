@@ -20,7 +20,10 @@ class Estimate extends BaseModel
     public ?int $workorder_id = null;
     public string $number;
     public int $customer_id;
-    public int $vehicle_id;
+    // Subject FKs — see Workorder for the discriminator-based rule.
+    public ?int $vehicle_id = null;
+    public ?int $site_asset_id = null;
+    public ?int $service_line_id = null;
     public bool $is_mobile = false;
     public string $status;
     public string $estimate_type = self::TYPE_STANDARD;

@@ -202,7 +202,7 @@ class EstimateController
     private function extractFilters(array $params, ?User $user = null): array
     {
         $filters = [];
-        foreach (['status', 'customer_id', 'vehicle_id', 'service_type_id', 'term', 'created_from', 'created_to'] as $key) {
+        foreach (['status', 'customer_id', 'vehicle_id', 'site_asset_id', 'service_line_id', 'service_type_id', 'term', 'created_from', 'created_to'] as $key) {
             if (isset($params[$key]) && $params[$key] !== '') {
                 $filters[$key] = $params[$key];
             }

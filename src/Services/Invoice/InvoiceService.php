@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\ServiceType;
 use App\Services\Financial\FinancialEntryService;
 use App\Services\Inventory\CoreReturnService;
+use App\Services\ServiceLine\SubjectResolver;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -22,6 +23,7 @@ class InvoiceService
     private Connection $connection;
     private ?AuditLogger $audit;
     private CoreReturnService $coreReturns;
+    private ?SubjectResolver $subjectResolver;
 
     /**
      * @var string[]
@@ -29,11 +31,16 @@ class InvoiceService
     private array $allowedStatuses = ['pending', 'sent', 'partial', 'paid', 'void', 'uncollectible'];
     private int $publicTtlDays = 30;
 
-    public function __construct(Connection $connection, CoreReturnService $coreReturns, ?AuditLogger $audit = null)
-    {
+    public function __construct(
+        Connection $connection,
+        CoreReturnService $coreReturns,
+        ?AuditLogger $audit = null,
+        ?SubjectResolver $subjectResolver = null
+    ) {
         $this->connection = $connection;
         $this->audit = $audit;
         $this->coreReturns = $coreReturns;
+        $this->subjectResolver = $subjectResolver;
     }
 
     public function createFromEstimate(int $estimateId, array $itemIds, int $actorId, ?int $branchId = null): ?Invoice
@@ -64,6 +71,8 @@ class InvoiceService
             $invoiceId = $this->insertInvoice([
                 'customer_id' => $estimate->customer_id,
                 'vehicle_id' => $estimate->vehicle_id,
+                'site_asset_id' => $estimate->site_asset_id,
+                'service_line_id' => $estimate->service_line_id,
                 'is_mobile' => $estimate->is_mobile,
                 'number' => $this->generateInvoiceNumber(),
                 'status' => 'pending',
@@ -118,9 +127,25 @@ class InvoiceService
             $splitBilling = !empty($payload['split_billing']);
             $customerId = $this->resolveCustomerId($payload);
             $vehicleId = $this->normalizeOptionalId($payload['vehicle_id'] ?? null);
+            $siteAssetId = $this->normalizeOptionalId($payload['site_asset_id'] ?? null);
+            $serviceLineId = $this->normalizeOptionalId($payload['service_line_id'] ?? null);
+
+            // Per-line subject validation runs only when the SubjectResolver
+            // is wired in (DI is optional so existing call sites that don't
+            // pass a service line keep working unchanged).
+            if ($this->subjectResolver !== null) {
+                $line = $this->subjectResolver->resolveLine($serviceLineId);
+                $this->subjectResolver->validateSubject($line, [
+                    'vehicle_id' => $vehicleId,
+                    'site_asset_id' => $siteAssetId,
+                ]);
+            }
+
             $invoiceId = $this->insertInvoice([
                 'customer_id' => $customerId,
                 'vehicle_id' => $vehicleId,
+                'site_asset_id' => $siteAssetId,
+                'service_line_id' => $serviceLineId,
                 'is_mobile' => !empty($payload['is_mobile']),
                 'number' => $payload['number'],
                 'status' => 'pending',
@@ -247,6 +272,21 @@ class InvoiceService
         if (!empty($filters['customer_id'])) {
             $clauses[] = 'invoices.customer_id = :customer_id';
             $bindings['customer_id'] = (int) $filters['customer_id'];
+        }
+
+        if (!empty($filters['vehicle_id'])) {
+            $clauses[] = 'invoices.vehicle_id = :vehicle_id';
+            $bindings['vehicle_id'] = (int) $filters['vehicle_id'];
+        }
+
+        if (!empty($filters['site_asset_id'])) {
+            $clauses[] = 'invoices.site_asset_id = :site_asset_id';
+            $bindings['site_asset_id'] = (int) $filters['site_asset_id'];
+        }
+
+        if (!empty($filters['service_line_id'])) {
+            $clauses[] = 'invoices.service_line_id = :service_line_id';
+            $bindings['service_line_id'] = (int) $filters['service_line_id'];
         }
 
         if (array_key_exists('branch_id', $filters) && $filters['branch_id'] !== '' && $filters['branch_id'] !== null) {
@@ -705,12 +745,14 @@ class InvoiceService
     private function insertInvoice(array $payload): int
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO invoices (customer_id, vehicle_id, is_mobile, number, status, estimate_id, original_invoice_id, is_credit_memo, branch_id, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
-            . 'VALUES (:customer_id, :vehicle_id, :is_mobile, :number, :status, :estimate_id, :original_invoice_id, :is_credit_memo, :branch_id, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
+            'INSERT INTO invoices (customer_id, vehicle_id, site_asset_id, service_line_id, is_mobile, number, status, estimate_id, original_invoice_id, is_credit_memo, branch_id, issue_date, due_date, notes, split_billing, subtotal, tax, total, amount_paid, balance_due, public_token, public_token_expires_at) '
+            . 'VALUES (:customer_id, :vehicle_id, :site_asset_id, :service_line_id, :is_mobile, :number, :status, :estimate_id, :original_invoice_id, :is_credit_memo, :branch_id, :issue_date, :due_date, :notes, :split_billing, 0, 0, 0, 0, 0, :public_token, :public_token_expires_at)'
         );
         $stmt->execute([
             'customer_id' => $payload['customer_id'],
-            'vehicle_id' => $payload['vehicle_id'] ?? null,
+            'vehicle_id' => $this->normalizeOptionalId($payload['vehicle_id'] ?? null),
+            'site_asset_id' => $this->normalizeOptionalId($payload['site_asset_id'] ?? null),
+            'service_line_id' => $this->normalizeOptionalId($payload['service_line_id'] ?? null),
             'is_mobile' => !empty($payload['is_mobile']) ? 1 : 0,
             'number' => $payload['number'],
             'status' => $payload['status'],

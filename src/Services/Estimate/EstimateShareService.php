@@ -108,7 +108,8 @@ class EstimateShareService
     private function buildTemplateVariables($estimate, string $linkUrl): array
     {
         $customer = $this->fetchCustomer($estimate->customer_id);
-        $vehicle = $this->fetchVehicle($estimate->vehicle_id);
+        // vehicle_id is NULL on non-automotive estimates (property, IT, etc.).
+        $vehicle = $estimate->vehicle_id ? $this->fetchVehicle($estimate->vehicle_id) : null;
 
         $vehicleDescription = '';
         if ($vehicle) {

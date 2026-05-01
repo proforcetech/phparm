@@ -69,7 +69,13 @@ class Workorder extends BaseModel
     public string $number;
     public int $estimate_id;
     public int $customer_id;
-    public int $vehicle_id;
+    // Subject FKs — exactly one is populated based on service_line_id; the
+    // others are NULL. SubjectResolver enforces the per-line "must have a
+    // subject" rule. Auto-repair lines require vehicle_id; property lines
+    // require site_asset_id; future verticals add their own column here.
+    public ?int $vehicle_id = null;
+    public ?int $site_asset_id = null;
+    public ?int $fleet_unit_id = null;
     public ?int $branch_id = null;
     public ?int $service_line_id = null;
     public string $status = self::STATUS_PENDING;

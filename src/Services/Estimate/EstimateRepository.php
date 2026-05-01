@@ -72,6 +72,16 @@ class EstimateRepository
             $bindings['vehicle_id'] = (int) $filters['vehicle_id'];
         }
 
+        if (!empty($filters['site_asset_id'])) {
+            $clauses[] = 'site_asset_id = :site_asset_id';
+            $bindings['site_asset_id'] = (int) $filters['site_asset_id'];
+        }
+
+        if (!empty($filters['service_line_id'])) {
+            $clauses[] = 'service_line_id = :service_line_id';
+            $bindings['service_line_id'] = (int) $filters['service_line_id'];
+        }
+
         if (!empty($filters['service_type_id'])) {
             $clauses[] = 'id IN (SELECT estimate_id FROM estimate_jobs WHERE service_type_id = :service_type_id)';
             $bindings['service_type_id'] = (int) $filters['service_type_id'];
@@ -175,8 +185,8 @@ class EstimateRepository
             $serviceTypeId = $this->determinePrimaryServiceTypeId($estimateId);
 
             $insert = $pdo->prepare(<<<SQL
-                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, is_mobile, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
-                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :is_mobile, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
+                INSERT INTO invoices (number, customer_id, service_type_id, vehicle_id, site_asset_id, service_line_id, is_mobile, estimate_id, status, issue_date, due_date, subtotal, tax, total, amount_paid, balance_due, created_at, updated_at)
+                VALUES (:number, :customer_id, :service_type_id, :vehicle_id, :site_asset_id, :service_line_id, :is_mobile, :estimate_id, :status, :issue_date, :due_date, :subtotal, :tax, :total, :amount_paid, :balance_due, NOW(), NOW())
             SQL);
 
             $total = $estimate->grand_total;
@@ -185,6 +195,8 @@ class EstimateRepository
                 'customer_id' => $estimate->customer_id,
                 'service_type_id' => $serviceTypeId,
                 'vehicle_id' => $estimate->vehicle_id,
+                'site_asset_id' => $estimate->site_asset_id,
+                'service_line_id' => $estimate->service_line_id,
                 'is_mobile' => $estimate->is_mobile ? 1 : 0,
                 'estimate_id' => $estimate->id,
                 'status' => 'pending',
@@ -206,6 +218,8 @@ class EstimateRepository
                 'customer_id' => $estimate->customer_id,
                 'service_type_id' => $serviceTypeId,
                 'vehicle_id' => $estimate->vehicle_id,
+                'site_asset_id' => $estimate->site_asset_id,
+                'service_line_id' => $estimate->service_line_id,
                 'estimate_id' => $estimate->id,
                 'status' => 'pending',
                 'issue_date' => $issueDate,
@@ -293,7 +307,9 @@ class EstimateRepository
             'parent_id' => $row['parent_id'] !== null ? (int) $row['parent_id'] : null,
             'number' => (string) $row['number'],
             'customer_id' => (int) $row['customer_id'],
-            'vehicle_id' => (int) $row['vehicle_id'],
+            'vehicle_id' => isset($row['vehicle_id']) && $row['vehicle_id'] !== null ? (int) $row['vehicle_id'] : null,
+            'site_asset_id' => isset($row['site_asset_id']) && $row['site_asset_id'] !== null ? (int) $row['site_asset_id'] : null,
+            'service_line_id' => isset($row['service_line_id']) && $row['service_line_id'] !== null ? (int) $row['service_line_id'] : null,
             'is_mobile' => (bool) ($row['is_mobile'] ?? false),
             'status' => (string) $row['status'],
             'technician_id' => $row['technician_id'] !== null ? (int) $row['technician_id'] : null,

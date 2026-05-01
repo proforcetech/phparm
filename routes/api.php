@@ -3528,9 +3528,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         );
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $coreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-        $invoiceService = new \App\Services\Invoice\InvoiceService($connection, $coreReturnService, $auditLogger);
+        $invoiceService = new \App\Services\Invoice\InvoiceService($connection, $coreReturnService, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $estimateController = new \App\Services\Estimate\EstimateController(
             $estimateRepository,
             $gate,
@@ -3760,7 +3760,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
 
             $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
             $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
             $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications, $messagingNotifications);
@@ -3788,7 +3788,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
 
             $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
             $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
             $shareService = new \App\Services\Estimate\EstimateShareService($connection, $estimateRepository, $linkService, $notifications, $messagingNotifications);
@@ -3877,7 +3877,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     $publicGatewayFactory = new \App\Services\Payment\PaymentGatewayFactory($paymentConfig);
     $publicCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
     $publicInvoiceController = new \App\Services\Invoice\InvoicePublicController(
-        new \App\Services\Invoice\InvoiceService($connection, $publicCoreReturnService, $auditLogger),
+        new \App\Services\Invoice\InvoiceService($connection, $publicCoreReturnService, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection))),
         new \App\Services\Invoice\PaymentProcessingService($connection, $publicGatewayFactory),
         new \App\Services\Invoice\InvoicePublicPaymentTokenService($connection),
         new \App\Support\Pdf\InvoicePdfGenerator($connection)
@@ -3955,7 +3955,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
         $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
@@ -4020,7 +4020,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
         $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
@@ -4052,7 +4052,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
         $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
@@ -4084,7 +4084,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
-        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger);
+        $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
         $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
@@ -4238,7 +4238,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         );
         $invoiceCoreReturnService = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
         $invoiceController = new \App\Services\Invoice\InvoiceController(
-            new \App\Services\Invoice\InvoiceService($connection, $invoiceCoreReturnService, $auditLogger),
+            new \App\Services\Invoice\InvoiceService($connection, $invoiceCoreReturnService, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection))),
             new \App\Services\Invoice\PaymentProcessingService($connection, $gatewayFactory),
             $gate,
             new \App\Support\Pdf\InvoicePdfGenerator($connection),
@@ -4254,6 +4254,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'status' => $request->queryParam('status'),
                 'customer_id' => $request->queryParam('customer_id'),
+                'vehicle_id' => $request->queryParam('vehicle_id'),
+                'site_asset_id' => $request->queryParam('site_asset_id'),
+                'service_line_id' => $request->queryParam('service_line_id'),
                 'branch_id' => $request->queryParam('branch_id'),
                 'limit' => $request->queryParam('limit'),
                 'offset' => $request->queryParam('offset'),
@@ -4709,13 +4712,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         new \App\Services\Messaging\MessagingService($connection)
     );
     $leaveRequestService = new \App\Services\Leave\LeaveRequestService($connection);
+    $subjectResolver = new \App\Services\ServiceLine\SubjectResolver(
+        new \App\Services\ServiceLine\ServiceLineRepository($connection)
+    );
     $appointmentController = new \App\Services\Appointment\AppointmentController(
         new \App\Services\Appointment\AppointmentService(
             $connection,
             $appointmentAudit,
             $appointmentWebhooks,
             $appointmentMessagingNotifications,
-            $leaveRequestService
+            $leaveRequestService,
+            $subjectResolver
         ),
         new \App\Services\Appointment\AvailabilityService($connection, $leaveRequestService),
         $gate
@@ -4808,6 +4815,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'status' => $request->queryParam('status'),
                 'customer_id' => $request->queryParam('customer_id'),
                 'technician_id' => $request->queryParam('technician_id'),
+                'vehicle_id' => $request->queryParam('vehicle_id'),
+                'site_asset_id' => $request->queryParam('site_asset_id'),
+                'service_line_id' => $request->queryParam('service_line_id'),
                 'date' => $request->queryParam('date'),
                 'branch_id' => $request->queryParam('branch_id'),
             ];
