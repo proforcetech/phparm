@@ -435,6 +435,36 @@ class WorkorderRepository
         return new Workorder($payload);
     }
 
+    public function updateType(int $id, string $type, ?int $actorId = null): ?Workorder
+    {
+        if (!in_array($type, Workorder::ALLOWED_TYPES, true)) {
+            throw new InvalidArgumentException('Invalid workorder type.');
+        }
+
+        $workorder = $this->find($id);
+        if ($workorder === null) {
+            return null;
+        }
+
+        $previousType = $workorder->type;
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE workorders SET type = :type, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute(['type' => $type, 'id' => $id]);
+
+        $this->log('workorder.type_changed', $id, $actorId, [
+            'previous_type' => $previousType,
+            'new_type' => $type,
+        ]);
+
+        $payload = $workorder->toArray();
+        $payload['type'] = $type;
+        $payload['updated_at'] = date('Y-m-d H:i:s');
+
+        return new Workorder($payload);
+    }
+
     /**
      * @return array<int, WorkorderJob>
      */

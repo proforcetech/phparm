@@ -4546,6 +4546,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
+        $router->patch('/api/workorders/{id}/type', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->updateType($user, $id, $request->body());
+            return Response::json($data);
+        });
+
         $router->post('/api/workorders/{id}/to-invoice', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
@@ -7592,6 +7599,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'search' => $request->queryParam('search'),
                 'is_active' => $request->queryParam('is_active'),
                 'service_type_id' => $request->queryParam('service_type_id'),
+                'service_line_id' => $request->queryParam('service_line_id'),
                 'page' => $request->queryParam('page', 1),
                 'per_page' => $request->queryParam('per_page', 100),
             ];
@@ -7601,7 +7609,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->get('/api/labor-tasks/active', function (Request $request) use ($laborTaskController) {
             $user = $request->getAttribute('user');
-            $data = $laborTaskController->active($user);
+            $filters = [
+                'service_line_id' => $request->queryParam('service_line_id'),
+            ];
+            $data = $laborTaskController->active($user, $filters);
             return Response::json($data);
         });
 

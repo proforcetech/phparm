@@ -40,12 +40,16 @@ class LaborTaskController
     /**
      * Get active tasks for technician selection (dropdown).
      *
+     * @param array<string, mixed> $filters
      * @return array<int, array<string, mixed>>
      */
-    public function active(User $user): array
+    public function active(User $user, array $filters = []): array
     {
         // All authenticated users can see active tasks for selection
-        return $this->service->getActiveTasks();
+        $serviceLineId = isset($filters['service_line_id']) && $filters['service_line_id'] !== ''
+            ? (int) $filters['service_line_id']
+            : null;
+        return $this->service->getActiveTasks($serviceLineId);
     }
 
     /**

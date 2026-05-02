@@ -48,6 +48,48 @@ export const serviceLineService = {
       primary_id: payload.primary_id ?? null,
     }
   },
+
+  // Admin: manage another user's service-line memberships. All require
+  // settings.service_lines.manage on the backend (admin-only).
+  async listForUser(userId) {
+    const response = await api.get(`/users/${userId}/service-lines`)
+    const payload = response.data?.data ?? response.data ?? {}
+    return {
+      service_lines: payload.service_lines ?? [],
+      primary_id: payload.primary_id ?? null,
+    }
+  },
+
+  async addMembershipForUser(userId, serviceLineId) {
+    const response = await api.post(`/users/${userId}/service-lines`, {
+      service_line_id: serviceLineId,
+    })
+    const payload = response.data?.data ?? response.data ?? {}
+    return {
+      service_lines: payload.service_lines ?? [],
+      primary_id: payload.primary_id ?? null,
+    }
+  },
+
+  async removeMembershipForUser(userId, serviceLineId) {
+    const response = await api.delete(`/users/${userId}/service-lines/${serviceLineId}`)
+    const payload = response.data?.data ?? response.data ?? {}
+    return {
+      service_lines: payload.service_lines ?? [],
+      primary_id: payload.primary_id ?? null,
+    }
+  },
+
+  async setPrimaryForUser(userId, serviceLineId) {
+    const response = await api.put(`/users/${userId}/service-lines/primary`, {
+      service_line_id: serviceLineId,
+    })
+    const payload = response.data?.data ?? response.data ?? {}
+    return {
+      service_lines: payload.service_lines ?? [],
+      primary_id: payload.primary_id ?? null,
+    }
+  },
 }
 
 export default serviceLineService

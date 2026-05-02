@@ -95,13 +95,30 @@ class LaborTaskService
     /**
      * Get active tasks for technician selection dropdown.
      *
+     * Optionally narrowed to a single service line. Tasks with a NULL
+     * service_line_id are treated as cross-trade and always included so
+     * legacy library entries remain selectable until they are tagged.
+     *
      * @return array<int, array<string, mixed>>
      */
-    public function getActiveTasks(): array
+    public function getActiveTasks(?int $serviceLineId = null): array
     {
-        $stmt = $this->connection->pdo()->query(
-            'SELECT id, name, description, flat_rate_minutes, service_type_id FROM labor_tasks WHERE is_active = 1 ORDER BY display_order ASC, name ASC'
-        );
+        $sql = 'SELECT id, name, description, flat_rate_minutes, service_type_id, service_line_id '
+            . 'FROM labor_tasks WHERE is_active = 1';
+        $params = [];
+
+        if ($serviceLineId !== null) {
+            $sql .= ' AND (service_line_id = :service_line_id OR service_line_id IS NULL)';
+            $params['service_line_id'] = $serviceLineId;
+        }
+
+        $sql .= ' ORDER BY display_order ASC, name ASC';
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value, PDO::PARAM_INT);
+        }
+        $stmt->execute();
 
         return array_map(static fn (array $row) => (new LaborTask($row))->toArray(), $stmt->fetchAll(PDO::FETCH_ASSOC));
     }

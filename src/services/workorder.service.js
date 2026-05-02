@@ -149,6 +149,17 @@ export default {
   },
 
   /**
+   * Update workorder type (corrective, preventive, inspection, install,
+   * project, recurring_visit, change_request).
+   * @param {number} id - Workorder ID
+   * @param {string} type - Workorder type
+   * @returns {Promise}
+   */
+  updateType(id, type) {
+    return api.patch(`/workorders/${id}/type`, { type })
+  },
+
+  /**
    * Convert completed workorder to invoice
    * @param {number} id - Workorder ID
    * @param {string} dueDate - Optional due date

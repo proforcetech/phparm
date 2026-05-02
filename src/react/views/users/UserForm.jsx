@@ -10,6 +10,7 @@ import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import userService from '../../../services/user.service'
 import roleService from '../../../services/role.service'
+import serviceLineService from '../../../services/serviceLine.service'
 import { useToast } from '../../stores/toast.jsx'
 import { useAuthStore } from '../../stores/auth.jsx'
 
@@ -109,6 +110,12 @@ export default function UserForm() {
   })
   const [roleOptions, setRoleOptions] = useState([])
   const [roleInfo, setRoleInfo] = useState({})
+
+  const [allServiceLines, setAllServiceLines] = useState([])
+  const [memberships, setMemberships] = useState([])
+  const [primaryServiceLineId, setPrimaryServiceLineId] = useState(null)
+  const [serviceLinesLoading, setServiceLinesLoading] = useState(false)
+  const [pendingServiceLineId, setPendingServiceLineId] = useState(null)
 
   const isEditMode = useMemo(() => id && id !== 'create', [id])
 
@@ -270,6 +277,69 @@ export default function UserForm() {
     }
   }
 
+  const loadServiceLines = async () => {
+    if (!isAdmin || !isEditMode) return
+    setServiceLinesLoading(true)
+    try {
+      const [membership, all] = await Promise.all([
+        serviceLineService.listForUser(id),
+        serviceLineService.list(),
+      ])
+      setMemberships(membership.service_lines)
+      setPrimaryServiceLineId(membership.primary_id ?? null)
+      setAllServiceLines(all)
+    } catch (error) {
+      console.error('Failed to load service lines:', error)
+      toast.error('Failed to load service lines')
+    } finally {
+      setServiceLinesLoading(false)
+    }
+  }
+
+  const handleAddMembership = async () => {
+    if (!pendingServiceLineId) return
+    setServiceLinesLoading(true)
+    try {
+      const result = await serviceLineService.addMembershipForUser(id, Number(pendingServiceLineId))
+      setMemberships(result.service_lines)
+      setPrimaryServiceLineId(result.primary_id ?? null)
+      setPendingServiceLineId(null)
+    } catch (error) {
+      console.error('Failed to assign service line:', error)
+      toast.error(error.response?.data?.message || 'Failed to assign service line')
+    } finally {
+      setServiceLinesLoading(false)
+    }
+  }
+
+  const handleRemoveMembership = async (lineId) => {
+    setServiceLinesLoading(true)
+    try {
+      const result = await serviceLineService.removeMembershipForUser(id, lineId)
+      setMemberships(result.service_lines)
+      setPrimaryServiceLineId(result.primary_id ?? null)
+    } catch (error) {
+      console.error('Failed to revoke service line:', error)
+      toast.error(error.response?.data?.message || 'Failed to revoke service line')
+    } finally {
+      setServiceLinesLoading(false)
+    }
+  }
+
+  const handleSetPrimary = async (lineId) => {
+    setServiceLinesLoading(true)
+    try {
+      const result = await serviceLineService.setPrimaryForUser(id, lineId)
+      setMemberships(result.service_lines)
+      setPrimaryServiceLineId(result.primary_id ?? null)
+    } catch (error) {
+      console.error('Failed to set primary service line:', error)
+      toast.error(error.response?.data?.message || 'Failed to set primary service line')
+    } finally {
+      setServiceLinesLoading(false)
+    }
+  }
+
   useEffect(() => {
     const loadRoles = async () => {
       try {
@@ -295,6 +365,7 @@ export default function UserForm() {
 
     if (isEditMode) {
       loadUser()
+      loadServiceLines()
     }
   }, [isEditMode])
 
@@ -513,6 +584,89 @@ export default function UserForm() {
                       <Badge key={permission} size="sm" variant="primary">{permission}</Badge>
                     ))}
                   </div>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
+          {isAdmin && isEditMode ? (
+            <Card>
+              <h3 className="text-lg font-medium text-gray-900">Service Lines</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Trades this user can switch into. Admins always see every active line; assigning
+                explicit memberships is required for technicians and other non-admin roles.
+              </p>
+
+              <div className="mt-6 space-y-4">
+                {memberships.length === 0 ? (
+                  <p className="text-sm text-gray-500">No service lines assigned yet.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-200 rounded-md border border-gray-200">
+                    {memberships.map((line) => {
+                      const isPrimary = line.id === primaryServiceLineId
+                      return (
+                        <li
+                          key={line.id}
+                          className="flex items-center justify-between gap-3 px-4 py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">{line.name}</span>
+                            <span className="text-xs text-gray-500">{line.slug}</span>
+                            {isPrimary ? (
+                              <Badge size="sm" variant="success">Primary</Badge>
+                            ) : null}
+                          </div>
+                          <div className="flex gap-2">
+                            {!isPrimary ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={serviceLinesLoading}
+                                onClick={() => handleSetPrimary(line.id)}
+                              >
+                                Make Primary
+                              </Button>
+                            ) : null}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={serviceLinesLoading}
+                              onClick={() => handleRemoveMembership(line.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Add a service line
+                    </label>
+                    <Select
+                      modelValue={pendingServiceLineId ?? ''}
+                      options={[
+                        { label: 'Select a service line...', value: '' },
+                        ...allServiceLines
+                          .filter((line) => line.is_active)
+                          .filter((line) => !memberships.some((m) => m.id === line.id))
+                          .map((line) => ({ label: line.name, value: line.id })),
+                      ]}
+                      onUpdateModelValue={(value) =>
+                        setPendingServiceLineId(value === '' ? null : Number(value))
+                      }
+                    />
+                  </div>
+                  <Button
+                    disabled={!pendingServiceLineId || serviceLinesLoading}
+                    onClick={handleAddMembership}
+                  >
+                    Assign
+                  </Button>
                 </div>
               </div>
             </Card>

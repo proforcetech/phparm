@@ -6,8 +6,8 @@ export default {
     return response.data
   },
 
-  async getActiveTasks() {
-    const response = await api.get('/labor-tasks/active')
+  async getActiveTasks(params = {}) {
+    const response = await api.get('/labor-tasks/active', { params })
     return response.data
   },
 

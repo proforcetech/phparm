@@ -79,5 +79,54 @@ return function (Router $router, RouteContext $ctx): void {
                 ),
             ]);
         });
+
+        // Admin endpoints — manage another user's service-line memberships.
+        // All gated on settings.service_lines.manage at the controller level.
+        // Replaces the SQL-only ops gap documented in
+        // docs/woms/phase-11-service-lines.md §6.3.
+        $router->get('/api/users/{id}/service-lines', function (Request $request) use ($controller) {
+            return Response::json([
+                'data' => $controller->showForUser(
+                    $request->getAttribute('user'),
+                    (int) $request->getAttribute('id')
+                ),
+            ]);
+        });
+
+        $router->post('/api/users/{id}/service-lines', function (Request $request) use ($controller) {
+            return Response::json([
+                'data' => $controller->addMembership(
+                    $request->getAttribute('user'),
+                    (int) $request->getAttribute('id'),
+                    $request->body()
+                ),
+            ]);
+        });
+
+        $router->delete(
+            '/api/users/{id}/service-lines/{serviceLineId}',
+            function (Request $request) use ($controller) {
+                return Response::json([
+                    'data' => $controller->removeMembership(
+                        $request->getAttribute('user'),
+                        (int) $request->getAttribute('id'),
+                        (int) $request->getAttribute('serviceLineId')
+                    ),
+                ]);
+            }
+        );
+
+        $router->put(
+            '/api/users/{id}/service-lines/primary',
+            function (Request $request) use ($controller) {
+                return Response::json([
+                    'data' => $controller->setPrimaryForUser(
+                        $request->getAttribute('user'),
+                        (int) $request->getAttribute('id'),
+                        $request->body()
+                    ),
+                ]);
+            }
+        );
     });
 };

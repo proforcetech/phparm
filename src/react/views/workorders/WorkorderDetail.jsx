@@ -46,6 +46,16 @@ const priorityOptions = [
   { value: 'low', label: 'Low' },
 ]
 
+const typeOptions = [
+  { value: 'corrective', label: 'Corrective (Repair)' },
+  { value: 'preventive', label: 'Preventive Maintenance' },
+  { value: 'inspection', label: 'Inspection' },
+  { value: 'install', label: 'Install' },
+  { value: 'project', label: 'Project' },
+  { value: 'recurring_visit', label: 'Recurring Visit' },
+  { value: 'change_request', label: 'Change Request' },
+]
+
 const goaBillingOptions = [
   { value: 'customer', label: 'Customer' },
   { value: 'motor_club', label: 'Motor Club' },
@@ -184,6 +194,7 @@ export default function WorkorderDetail() {
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showJobAssign, setShowJobAssign] = useState(false)
   const [showPriorityModal, setShowPriorityModal] = useState(false)
+  const [showTypeModal, setShowTypeModal] = useState(false)
   const [showSubEstimateModal, setShowSubEstimateModal] = useState(false)
   const [showPullRequestModal, setShowPullRequestModal] = useState(false)
   const [showGoaModal, setShowGoaModal] = useState(false)
@@ -192,6 +203,7 @@ export default function WorkorderDetail() {
   const [converting, setConverting] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [updatingPriority, setUpdatingPriority] = useState(false)
+  const [updatingType, setUpdatingType] = useState(false)
   const [creatingSubEstimate, setCreatingSubEstimate] = useState(false)
   const [creatingPullRequest, setCreatingPullRequest] = useState(false)
   const [markingGoa, setMarkingGoa] = useState(false)
@@ -200,6 +212,7 @@ export default function WorkorderDetail() {
   const [assignForm, setAssignForm] = useState({ technician_id: '' })
   const [jobAssignForm, setJobAssignForm] = useState({ technician_id: '' })
   const [priorityForm, setPriorityForm] = useState({ priority: '' })
+  const [typeForm, setTypeForm] = useState({ type: '' })
   const [pullRequestForm, setPullRequestForm] = useState({
     selectedItem: null,
     inventory_item_id: null,
@@ -430,6 +443,26 @@ export default function WorkorderDetail() {
       toastError(priorityError.response?.data?.error || 'Failed to update priority')
     } finally {
       setUpdatingPriority(false)
+    }
+  }
+
+  const confirmType = async () => {
+    if (!workorder) return
+    if (!typeForm.type) {
+      toastError('Please select a type')
+      return
+    }
+    setUpdatingType(true)
+    try {
+      await workorderService.updateType(workorder.id, typeForm.type)
+      success('Type updated')
+      setShowTypeModal(false)
+      loadWorkorder()
+    } catch (typeError) {
+      console.error('Failed to update type:', typeError)
+      toastError(typeError.response?.data?.error || 'Failed to update type')
+    } finally {
+      setUpdatingType(false)
     }
   }
 
@@ -886,6 +919,17 @@ export default function WorkorderDetail() {
           {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
             <Button variant="outline" onClick={() => setShowPriorityModal(true)}>
               Change Priority
+            </Button>
+          ) : null}
+          {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTypeForm({ type: workorder.type || '' })
+                setShowTypeModal(true)
+              }}
+            >
+              Change Type
             </Button>
           ) : null}
         </div>
@@ -1417,6 +1461,34 @@ export default function WorkorderDetail() {
             <Button variant="outline" onClick={() => setShowPriorityModal(false)}>Cancel</Button>
             <Button onClick={confirmPriority} disabled={updatingPriority} loading={updatingPriority}>
               {updatingPriority ? 'Updating...' : 'Update Priority'}
+            </Button>
+          </div>
+        )}
+      />
+
+      <Modal
+        open={showTypeModal}
+        onClose={() => setShowTypeModal(false)}
+        title="Change Type"
+        content={(
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Type</label>
+            <Select
+              value={typeForm.type}
+              options={typeOptions}
+              className="mt-1"
+              onChange={(event) => setTypeForm({ type: event.target.value })}
+            />
+            <p className="mt-2 text-xs text-gray-500">
+              Categorizes the workorder for reporting and recurring/preventive scheduling.
+            </p>
+          </div>
+        )}
+        footer={(
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowTypeModal(false)}>Cancel</Button>
+            <Button onClick={confirmType} disabled={updatingType} loading={updatingType}>
+              {updatingType ? 'Updating...' : 'Update Type'}
             </Button>
           </div>
         )}

@@ -156,6 +156,93 @@ class ServiceLineController
     }
 
     /**
+     * Admin view of another user's effective service lines + primary. Visibility
+     * applies the same role-based fallback as {@see mine()} so admins see what
+     * the target user would actually see in their sidebar — not the raw
+     * membership rows. Use the explicit memberships endpoint
+     * ({@see listMemberships()}) when you need the raw join-table view.
+     *
+     * @return array{service_lines: array<int, array<string, mixed>>, primary_id: ?int}
+     */
+    public function showForUser(User $admin, int $targetUserId): array
+    {
+        $this->gate->assert($admin, 'settings.service_lines.manage');
+
+        $effective = $this->service->getEffectiveLinesForUser($targetUserId);
+
+        return [
+            'service_lines' => array_map([self::class, 'toArray'], $effective['lines']),
+            'primary_id' => $effective['primary_id'],
+        ];
+    }
+
+    /**
+     * Add a single service-line membership for the given user. Idempotent:
+     * a re-add is a no-op (driven by INSERT IGNORE in the repository).
+     *
+     * @param array<string, mixed> $body
+     * @return array{service_lines: array<int, array<string, mixed>>, primary_id: ?int}
+     */
+    public function addMembership(User $admin, int $targetUserId, array $body): array
+    {
+        $this->gate->assert($admin, 'settings.service_lines.manage');
+
+        $serviceLineId = (int) ($body['service_line_id'] ?? 0);
+        if ($serviceLineId <= 0) {
+            throw new InvalidArgumentException('service_line_id is required');
+        }
+
+        $line = $this->repository->findById($serviceLineId);
+        if ($line === null) {
+            throw new InvalidArgumentException("Service line {$serviceLineId} not found");
+        }
+
+        $this->repository->assignUser($targetUserId, $serviceLineId);
+
+        return $this->showForUser($admin, $targetUserId);
+    }
+
+    /**
+     * Remove a single service-line membership. If the removed line was the
+     * user's primary, the repository clears it (see ServiceLineRepository::unassignUser).
+     *
+     * @return array{service_lines: array<int, array<string, mixed>>, primary_id: ?int}
+     */
+    public function removeMembership(User $admin, int $targetUserId, int $serviceLineId): array
+    {
+        $this->gate->assert($admin, 'settings.service_lines.manage');
+
+        $this->repository->unassignUser($targetUserId, $serviceLineId);
+
+        return $this->showForUser($admin, $targetUserId);
+    }
+
+    /**
+     * Admin override for setting another user's primary service line. Falls
+     * through to the same service-layer assignment used by self-service so
+     * the primary-implies-membership invariant is preserved.
+     *
+     * @param array<string, mixed> $body
+     * @return array{service_lines: array<int, array<string, mixed>>, primary_id: ?int}
+     */
+    public function setPrimaryForUser(User $admin, int $targetUserId, array $body): array
+    {
+        $this->gate->assert($admin, 'settings.service_lines.manage');
+
+        $serviceLineId = (int) ($body['service_line_id'] ?? 0);
+        if ($serviceLineId <= 0) {
+            throw new InvalidArgumentException('service_line_id is required');
+        }
+
+        // Backfill membership so admins can always pick a line for any user
+        // without manual two-step (assign then promote).
+        $this->repository->assignUser($targetUserId, $serviceLineId);
+        $this->service->setPrimary($targetUserId, $serviceLineId);
+
+        return $this->showForUser($admin, $targetUserId);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private static function toArray(ServiceLine $line): array

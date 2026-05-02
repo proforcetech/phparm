@@ -8,6 +8,7 @@ import Table from '../../components/ui/Table'
 import timeTrackingService from '../../../services/time-tracking.service'
 import laborTasksService from '../../../services/labor-tasks.service'
 import payrollExportService from '../../../services/payroll-export.service'
+import { useAuthStore } from '../../stores/auth'
 
 const perPage = 25
 
@@ -51,6 +52,7 @@ const efficiencyVariant = (percentage) => {
 }
 
 export default function TimeLogs() {
+  const { currentServiceLineId } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [entries, setEntries] = useState([])
   const [total, setTotal] = useState(0)
@@ -215,8 +217,9 @@ export default function TimeLogs() {
   }, [refresh])
 
   useEffect(() => {
-    laborTasksService.getActiveTasks().then(setLaborTasks).catch(() => {})
-  }, [])
+    const params = currentServiceLineId ? { service_line_id: currentServiceLineId } : {}
+    laborTasksService.getActiveTasks(params).then(setLaborTasks).catch(() => {})
+  }, [currentServiceLineId])
 
   const loadExportHistory = useCallback(async () => {
     setExportHistoryLoading(true)

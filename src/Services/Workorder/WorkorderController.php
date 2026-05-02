@@ -296,6 +296,46 @@ class WorkorderController
     }
 
     /**
+     * PATCH /api/workorders/{id}/type
+     *
+     * Surfaces the trade-aware WO types added in Phase 11
+     * (corrective / preventive / inspection / install / project /
+     * recurring_visit / change_request). Validation lives in the model
+     * via Workorder::ALLOWED_TYPES.
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function updateType(User $user, int $id, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $type = $payload['type'] ?? null;
+
+        if (!$type) {
+            throw new InvalidArgumentException('type is required');
+        }
+
+        if (!in_array($type, Workorder::ALLOWED_TYPES, true)) {
+            throw new InvalidArgumentException(
+                'Invalid workorder type. Allowed values: ' . implode(', ', Workorder::ALLOWED_TYPES)
+            );
+        }
+
+        $existing = $this->repository->find($id);
+        if ($existing !== null) {
+            $this->assertBranchAccess($user, $existing->branch_id);
+        }
+
+        $workorder = $this->repository->updateType($id, $type, $user->id);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found');
+        }
+
+        return $this->enrichWorkorder($workorder);
+    }
+
+    /**
      * POST /api/workorders/{id}/to-invoice
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
