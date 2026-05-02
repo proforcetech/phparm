@@ -234,12 +234,23 @@ const essMenuItems = [
   { path: '/ess/profile', label: 'Profile Updates', icon: Cog6ToothIcon },
 ]
 
+// Phase 12 of docs/woms-expansion-plan.md — tenant portal slice. Backed by
+// /api/tenant/* endpoints and gated server-side via Tenant.portal_user_id.
+const tenantMenuItems = [
+  { path: '/tenant', label: 'My Units', icon: HomeIcon },
+  { path: '/tenant/requests', label: 'Maintenance Requests', icon: ClipboardDocumentListIcon },
+  { path: '/tenant/requests/new', label: 'New Request', icon: ClipboardDocumentCheckIcon },
+]
+
 const isActiveRoute = (currentPath, targetPath) => {
   if (targetPath === '/cp/dashboard' || targetPath === '/portal') {
     return currentPath === targetPath
   }
   if (targetPath === '/ess') {
     return currentPath === '/ess'
+  }
+  if (targetPath === '/tenant') {
+    return currentPath === '/tenant'
   }
   if (targetPath === '/cp/inventory') {
     return currentPath === '/cp/inventory'
@@ -292,6 +303,10 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
 
     if (type === 'ess') {
       return essMenuItems
+    }
+
+    if (type === 'tenant') {
+      return tenantMenuItems
     }
 
     if (user?.role?.toLowerCase() === 'technician') {

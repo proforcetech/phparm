@@ -123,6 +123,9 @@ import EssSchedule from '../views/ess/Schedule'
 import EssPayHistory from '../views/ess/PayHistory'
 import EssProfile from '../views/ess/Profile'
 import EssLeaveRequests from '../views/ess/LeaveRequests'
+import TenantMyUnits from '../views/tenant/MyUnits'
+import TenantMyRequests from '../views/tenant/MyRequests'
+import TenantNewRequest from '../views/tenant/NewRequest'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
@@ -131,6 +134,7 @@ import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
 import CustomerLayout from '../components/layout/CustomerLayout'
 import EssLayout from '../components/layout/EssLayout'
+import TenantLayout from '../components/layout/TenantLayout'
 import NotFound from '../views/NotFound'
 import PlaceholderPage from '../views/PlaceholderPage'
 
@@ -402,6 +406,9 @@ const protectedRoutes = [
   { path: '/ess/pay-history', name: 'EssPayHistory', auth: 'requiresAuth', element: <EssPayHistory /> },
   { path: '/ess/leave-requests', name: 'EssLeaveRequests', auth: 'requiresAuth', element: <EssLeaveRequests /> },
   { path: '/ess/profile', name: 'EssProfile', auth: 'requiresAuth', element: <EssProfile /> },
+  { path: '/tenant', name: 'TenantMyUnits', auth: 'requiresAuth', element: <TenantMyUnits /> },
+  { path: '/tenant/requests', name: 'TenantMyRequests', auth: 'requiresAuth', element: <TenantMyRequests /> },
+  { path: '/tenant/requests/new', name: 'TenantNewRequest', auth: 'requiresAuth', element: <TenantNewRequest /> },
 ]
 
 const settingsRoutes = [
@@ -433,6 +440,7 @@ const publicChildren = [...guestRoutes, ...publicRoutes].map(withAuthLoader)
 const adminRoutes = protectedRoutes.filter((route) => route.path.startsWith('/cp'))
 const customerRoutes = protectedRoutes.filter((route) => route.path.startsWith('/portal'))
 const essRoutes = protectedRoutes.filter((route) => route.path.startsWith('/ess'))
+const tenantRoutes = protectedRoutes.filter((route) => route.path.startsWith('/tenant'))
 
 const toChildRoute = (route, basePath) => {
   const suffix = route.path.replace(basePath, '')
@@ -446,6 +454,7 @@ const toChildRoute = (route, basePath) => {
 const adminChildren = adminRoutes.map((route) => toChildRoute(route, '/cp'))
 const customerChildren = customerRoutes.map((route) => toChildRoute(route, '/portal'))
 const essChildren = essRoutes.map((route) => toChildRoute(route, '/ess'))
+const tenantChildren = tenantRoutes.map((route) => toChildRoute(route, '/tenant'))
 
 adminChildren.push({
   path: 'settings',
@@ -484,6 +493,11 @@ essChildren.push({
   element: <NotFound />,
 })
 
+tenantChildren.push({
+  path: '*',
+  element: <NotFound />,
+})
+
 export const reactRouteSubset = [
   ...guestRoutes,
   ...publicRoutes,
@@ -517,5 +531,11 @@ export const router = createBrowserRouter([
     loader: requireAuth,
     element: <EssLayout />,
     children: essChildren,
+  },
+  {
+    path: '/tenant',
+    loader: requireAuth,
+    element: <TenantLayout />,
+    children: tenantChildren,
   },
 ], { basename: reactBasename })

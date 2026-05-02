@@ -100,8 +100,71 @@ export const tenantLeaseService = {
   },
 }
 
+/**
+ * Staff-side maintenance request queue (gated server-side on
+ * property.units.view / property.units.manage).
+ */
+export const maintenanceRequestService = {
+  async list(params = {}) {
+    const response = await api.get('/maintenance-requests', { params })
+    const payload = unwrap(response)
+    return {
+      requests: payload.requests ?? [],
+      total: payload.total ?? 0,
+    }
+  },
+
+  async triage(id) {
+    const response = await api.post(`/maintenance-requests/${id}/triage`)
+    return unwrap(response)
+  },
+
+  async decline(id, reason) {
+    const response = await api.post(`/maintenance-requests/${id}/decline`, { reason })
+    return unwrap(response)
+  },
+
+  async convertToWorkorder(id, body = {}) {
+    const response = await api.post(`/maintenance-requests/${id}/convert-to-workorder`, body)
+    return unwrap(response)
+  },
+}
+
+/**
+ * Tenant-portal API. Authenticated via the standard JWT but resolves the
+ * caller's tenant identity server-side via Tenant.portal_user_id, so no
+ * tenant ID needs to be passed by the client.
+ */
+export const tenantPortalService = {
+  async me() {
+    const response = await api.get('/tenant/me')
+    return unwrap(response)
+  },
+
+  async listRequests(params = {}) {
+    const response = await api.get('/tenant/maintenance-requests', { params })
+    const payload = unwrap(response)
+    return {
+      requests: payload.requests ?? [],
+      total: payload.total ?? 0,
+    }
+  },
+
+  async createRequest(payload) {
+    const response = await api.post('/tenant/maintenance-requests', payload)
+    return unwrap(response)
+  },
+
+  async cancelRequest(id) {
+    const response = await api.post(`/tenant/maintenance-requests/${id}/cancel`)
+    return unwrap(response)
+  },
+}
+
 export default {
   units: unitService,
   tenants: tenantService,
   leases: tenantLeaseService,
+  maintenanceRequests: maintenanceRequestService,
+  tenantPortal: tenantPortalService,
 }

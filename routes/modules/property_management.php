@@ -1,11 +1,15 @@
 <?php
 
+use App\Services\PropertyManagement\TenantBillingResolver;
 use App\Services\PropertyManagement\TenantController;
 use App\Services\PropertyManagement\TenantLeaseController;
 use App\Services\PropertyManagement\TenantLeaseRepository;
+use App\Services\PropertyManagement\TenantMaintenanceRequestController;
+use App\Services\PropertyManagement\TenantMaintenanceRequestRepository;
 use App\Services\PropertyManagement\TenantRepository;
 use App\Services\PropertyManagement\UnitController;
 use App\Services\PropertyManagement\UnitRepository;
+use App\Services\Workorder\WorkorderRepository;
 use App\Support\Http\Middleware;
 use App\Support\Http\Request;
 use App\Support\Http\Response;
@@ -29,15 +33,29 @@ return function (Router $router, RouteContext $ctx): void {
     $unitRepository = new UnitRepository($ctx->connection);
     $tenantRepository = new TenantRepository($ctx->connection);
     $leaseRepository = new TenantLeaseRepository($ctx->connection);
+    $maintenanceRequestRepository = new TenantMaintenanceRequestRepository($ctx->connection);
+    $billingResolver = new TenantBillingResolver($leaseRepository);
+    $workorderRepository = new WorkorderRepository($ctx->connection, $ctx->auditLogger);
 
     $unitController = new UnitController($unitRepository, $ctx->gate);
     $tenantController = new TenantController($tenantRepository, $ctx->gate);
     $leaseController = new TenantLeaseController($leaseRepository, $ctx->gate);
+    $maintenanceRequestController = new TenantMaintenanceRequestController(
+        $maintenanceRequestRepository,
+        $tenantRepository,
+        $leaseRepository,
+        $unitRepository,
+        $billingResolver,
+        $workorderRepository,
+        $ctx->connection,
+        $ctx->gate,
+    );
 
     $router->group([Middleware::auth()], function (Router $router) use (
         $unitController,
         $tenantController,
-        $leaseController
+        $leaseController,
+        $maintenanceRequestController
     ) {
         // -------------------- units --------------------
         $router->get('/api/units', function (Request $request) use ($unitController) {
@@ -187,6 +205,99 @@ return function (Router $router, RouteContext $ctx): void {
         $router->put('/api/tenant-leases/{id}', function (Request $request) use ($leaseController) {
             return Response::json([
                 'data' => $leaseController->update(
+                    $request->getAttribute('user'),
+                    (int) $request->getAttribute('id'),
+                    $request->body()
+                ),
+            ]);
+        });
+
+        // -------------------- tenant portal: maintenance requests --------------------
+        // These endpoints authenticate via the standard JWT but resolve the
+        // user's tenant identity via Tenant.portal_user_id. No role gate is
+        // required — being a linked tenant is the gate.
+
+        $router->get('/api/tenant/me', function (Request $request) use ($maintenanceRequestController) {
+            return Response::json([
+                'data' => $maintenanceRequestController->me(
+                    $request->getAttribute('user')
+                ),
+            ]);
+        });
+
+        $router->get('/api/tenant/maintenance-requests', function (Request $request) use ($maintenanceRequestController) {
+            $page = (int) $request->queryParam('page', 1);
+            $perPage = (int) $request->queryParam('per_page', 50);
+            return Response::json([
+                'data' => $maintenanceRequestController->listMine(
+                    $request->getAttribute('user'),
+                    $page,
+                    $perPage
+                ),
+            ]);
+        });
+
+        $router->post('/api/tenant/maintenance-requests', function (Request $request) use ($maintenanceRequestController) {
+            return Response::created([
+                'data' => $maintenanceRequestController->create(
+                    $request->getAttribute('user'),
+                    $request->body()
+                ),
+            ]);
+        });
+
+        $router->post('/api/tenant/maintenance-requests/{id}/cancel', function (Request $request) use ($maintenanceRequestController) {
+            return Response::json([
+                'data' => $maintenanceRequestController->cancelMine(
+                    $request->getAttribute('user'),
+                    (int) $request->getAttribute('id')
+                ),
+            ]);
+        });
+
+        // -------------------- staff queue: maintenance requests --------------------
+        // Gated on property.units.view (read) / property.units.manage (write).
+
+        $router->get('/api/maintenance-requests', function (Request $request) use ($maintenanceRequestController) {
+            $filters = [
+                'status' => $request->queryParam('status'),
+                'unit_id' => $request->queryParam('unit_id'),
+                'tenant_id' => $request->queryParam('tenant_id'),
+            ];
+            $page = (int) $request->queryParam('page', 1);
+            $perPage = (int) $request->queryParam('per_page', 50);
+            return Response::json([
+                'data' => $maintenanceRequestController->staffList(
+                    $request->getAttribute('user'),
+                    array_filter($filters, static fn ($v) => $v !== null && $v !== ''),
+                    $page,
+                    $perPage
+                ),
+            ]);
+        });
+
+        $router->post('/api/maintenance-requests/{id}/triage', function (Request $request) use ($maintenanceRequestController) {
+            return Response::json([
+                'data' => $maintenanceRequestController->triage(
+                    $request->getAttribute('user'),
+                    (int) $request->getAttribute('id')
+                ),
+            ]);
+        });
+
+        $router->post('/api/maintenance-requests/{id}/decline', function (Request $request) use ($maintenanceRequestController) {
+            return Response::json([
+                'data' => $maintenanceRequestController->decline(
+                    $request->getAttribute('user'),
+                    (int) $request->getAttribute('id'),
+                    $request->body()
+                ),
+            ]);
+        });
+
+        $router->post('/api/maintenance-requests/{id}/convert-to-workorder', function (Request $request) use ($maintenanceRequestController) {
+            return Response::json([
+                'data' => $maintenanceRequestController->convertToWorkorder(
                     $request->getAttribute('user'),
                     (int) $request->getAttribute('id'),
                     $request->body()
