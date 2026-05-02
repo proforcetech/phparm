@@ -69,6 +69,17 @@ class RolePermissions
             // explicit listing here documents the gate for the static
             // defaults used by tests.
             'settings.service_lines.manage',
+
+            // Phase 12 of docs/woms-expansion-plan.md: Property Management
+            // vertical (units / tenants / leases). Manage permissions are
+            // admin-only by default; managers get view-only so they can run
+            // dispatch boards over property-mgmt customer requests without
+            // editing the tenant catalog. Other roles get nothing by default;
+            // a property-mgmt customer's portal user inherits view via a
+            // future tenant-portal policy (Phase 12 frontend cut).
+            'property.units.view', 'property.units.manage',
+            'property.tenants.view', 'property.tenants.manage',
+            'property.leases.view', 'property.leases.manage',
         ],
         
         self::ROLE_MANAGER => [
@@ -86,6 +97,12 @@ class RolePermissions
             'view_reports',
             'view_users',
             'view_documents', 'manage_documents',
+
+            // Phase 12: managers may browse the property-mgmt catalog
+            // (dispatch context) but not edit it.
+            'property.units.view',
+            'property.tenants.view',
+            'property.leases.view',
         ],
 
         self::ROLE_ADVISOR => [

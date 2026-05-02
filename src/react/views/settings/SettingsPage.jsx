@@ -106,6 +106,11 @@ const settingsLinks = [
     description: 'Configure VIN decoding services, caching, rate limits, and fallback strategies.',
     to: '/cp/settings/vin-decoder',
   },
+  {
+    title: 'Property Management',
+    description: 'Manage units, tenants, and tenant leases for property-management customers.',
+    to: '/cp/settings/property-management',
+  },
 ]
 
 export default function SettingsPage() {

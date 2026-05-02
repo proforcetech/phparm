@@ -82,6 +82,7 @@ import SettingsIntegrations from '../views/settings/SettingsIntegrations'
 import ServiceTypes from '../views/settings/ServiceTypes'
 import SettingsDispatch from '../views/settings/SettingsDispatch'
 import SettingsVinDecoder from '../views/settings/SettingsVinDecoder'
+import PropertyManagement from '../views/settings/PropertyManagement'
 import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
 import UserGroups from '../views/users/UserGroups'
@@ -418,6 +419,7 @@ const settingsRoutes = [
   { path: '/cp/settings/modules', name: 'ModuleSettings', element: <ModuleSettings /> },
   { path: '/cp/settings/dispatch', name: 'SettingsDispatch', element: <SettingsDispatch /> },
   { path: '/cp/settings/vin-decoder', name: 'SettingsVinDecoder', element: <SettingsVinDecoder /> },
+  { path: '/cp/settings/property-management', name: 'PropertyManagement', element: <PropertyManagement /> },
 ]
 
 const withAuthLoader = (route) => ({
@@ -463,6 +465,7 @@ adminChildren.push({
     { path: 'modules', element: <ModuleSettings /> },
     { path: 'dispatch', element: <SettingsDispatch /> },
     { path: 'vin-decoder', element: <SettingsVinDecoder /> },
+    { path: 'property-management', element: <PropertyManagement /> },
   ],
 })
 
