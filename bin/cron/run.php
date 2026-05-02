@@ -133,6 +133,12 @@ $jobs = [
         'schedule' => '*/5 * * * *', // Every 5 minutes
         'description' => 'Pulls data from connected third-party integrations on their cadence',
     ],
+    'lease-expiry-alerts' => [
+        'name' => 'Asset Lease Expiry Alerts',
+        'script' => __DIR__ . '/lease-expiry-alerts.php',
+        'schedule' => '0 8 * * *', // Daily at 8 AM
+        'description' => 'Sends 90/60/30/0-day notices for active asset leases approaching end_date',
+    ],
 ];
 
 if (isset($options['list'])) {

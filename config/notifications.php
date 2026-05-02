@@ -183,6 +183,21 @@ TEMPLATE,
         'reminder.campaign' => '{{body}}',
         'reminder.campaign.sms' => '{{body}}',
 
+        // Asset lease expiry templates (Phase 13 M3 of woms-expansion-plan).
+        // Single template — milestone (90/60/30/0) is conveyed via
+        // {{milestone_label}} and {{days_left}}.
+        'lease.expiring' => <<<'TEMPLATE'
+Asset Lease Expiry — {{milestone_label}}
+
+Lessor: {{lessor_name}}
+Lease number: {{lease_number}}
+End date: {{end_date}} ({{days_left}} day(s) remaining)
+Site asset id: {{site_asset_id}}
+
+Please record an end-of-lease decision (renew / buyout / return / replace)
+in the admin panel. Lease id: {{lease_id}}.
+TEMPLATE,
+
         // Inventory templates
         'inventory.low_stock_alert' => <<<'TEMPLATE'
 Daily Low Stock Summary
