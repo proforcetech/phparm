@@ -48,6 +48,9 @@ return [
                 'crm.companies.view', 'crm.sites.view', 'crm.contacts.view',
                 // Phase 2.1: dispatchers see assets so they can route based on equipment.
                 'assets.view', 'asset_types.view',
+                // Phase 13 (M3): dispatchers see lease info so routing
+                // accounts for end-of-lease equipment going off-fleet.
+                'asset_leases.view',
                 // Phase 3.1 of docs/expansion-plan.md: dispatch sees tickets so
                 // they can triage/route incoming requests.
                 'tickets.view', 'tickets.manage', 'tickets.assign',
@@ -150,6 +153,10 @@ return [
                 // Phase 2.1 of docs/expansion-plan.md: installed-asset model.
                 'assets.view', 'assets.manage',
                 'asset_types.view', 'asset_types.manage',
+                // Phase 13 of docs/woms-expansion-plan.md (Must M3): asset
+                // leases. Managers author lease records and capture end-of-
+                // lease decisions (renew / buyout / return / replace).
+                'asset_leases.view', 'asset_leases.manage',
                 // Phase 3.1 of docs/expansion-plan.md: support-desk tickets.
                 'tickets.view', 'tickets.manage', 'tickets.assign',
                 'ticket_categories.view', 'ticket_categories.manage',
@@ -253,6 +260,10 @@ return [
                 // Phase 2.1: technicians read + manage installed assets, read the catalog.
                 'assets.view', 'assets.manage',
                 'asset_types.view',
+                // Phase 13 (M3): technicians read lease info on assets they
+                // service so the in-cab UI can warn before exceeding mileage
+                // caps. Editing stays with managers.
+                'asset_leases.view',
                 // Phase 3.1 of docs/expansion-plan.md: technicians can read
                 // and update their own tickets; reassignment gated on assign.
                 'tickets.view', 'tickets.manage',
