@@ -160,6 +160,21 @@ export default {
   },
 
   /**
+   * Pin a property-management workorder to a unit and snapshot the billing
+   * routing decision from the unit's active lease (Phase 12 of
+   * docs/woms-expansion-plan.md). Pass unitId=null to clear and detach.
+   * `category` is consulted only when the lease's billing_responsibility is
+   * 'split'; ignored otherwise.
+   * @param {number} id - Workorder ID
+   * @param {number|null} unitId - Unit ID, or null to clear
+   * @param {string|null} category - Optional maintenance category for split leases
+   * @returns {Promise}
+   */
+  updateUnit(id, unitId, category = null) {
+    return api.patch(`/workorders/${id}/unit`, { unit_id: unitId, category })
+  },
+
+  /**
    * Convert completed workorder to invoice
    * @param {number} id - Workorder ID
    * @param {string} dueDate - Optional due date

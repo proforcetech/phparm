@@ -18,6 +18,7 @@ import userService from '../../../services/user.service'
 import pullRequestService from '../../../services/pull-request.service'
 import inventoryService from '../../../services/inventory.service'
 import bundleService from '../../../services/bundle.service'
+import { unitService } from '../../../services/propertyManagement.service'
 import PartsCart from '../inventory/PartsCart'
 import { useToast } from '../../stores/toast'
 
@@ -195,6 +196,7 @@ export default function WorkorderDetail() {
   const [showJobAssign, setShowJobAssign] = useState(false)
   const [showPriorityModal, setShowPriorityModal] = useState(false)
   const [showTypeModal, setShowTypeModal] = useState(false)
+  const [showUnitModal, setShowUnitModal] = useState(false)
   const [showSubEstimateModal, setShowSubEstimateModal] = useState(false)
   const [showPullRequestModal, setShowPullRequestModal] = useState(false)
   const [showGoaModal, setShowGoaModal] = useState(false)
@@ -204,6 +206,9 @@ export default function WorkorderDetail() {
   const [assigning, setAssigning] = useState(false)
   const [updatingPriority, setUpdatingPriority] = useState(false)
   const [updatingType, setUpdatingType] = useState(false)
+  const [updatingUnit, setUpdatingUnit] = useState(false)
+  const [unitOptions, setUnitOptions] = useState([])
+  const [unitOptionsLoading, setUnitOptionsLoading] = useState(false)
   const [creatingSubEstimate, setCreatingSubEstimate] = useState(false)
   const [creatingPullRequest, setCreatingPullRequest] = useState(false)
   const [markingGoa, setMarkingGoa] = useState(false)
@@ -213,6 +218,7 @@ export default function WorkorderDetail() {
   const [jobAssignForm, setJobAssignForm] = useState({ technician_id: '' })
   const [priorityForm, setPriorityForm] = useState({ priority: '' })
   const [typeForm, setTypeForm] = useState({ type: '' })
+  const [unitForm, setUnitForm] = useState({ unit_id: '', category: '' })
   const [pullRequestForm, setPullRequestForm] = useState({
     selectedItem: null,
     inventory_item_id: null,
@@ -463,6 +469,45 @@ export default function WorkorderDetail() {
       toastError(typeError.response?.data?.error || 'Failed to update type')
     } finally {
       setUpdatingType(false)
+    }
+  }
+
+  const openUnitModal = async () => {
+    if (!workorder) return
+    setUnitForm({
+      unit_id: workorder.unit_id ? String(workorder.unit_id) : '',
+      category: '',
+    })
+    setShowUnitModal(true)
+    if (unitOptions.length === 0) {
+      setUnitOptionsLoading(true)
+      try {
+        const { units } = await unitService.list({ limit: 200 })
+        setUnitOptions(units)
+      } catch (unitError) {
+        console.error('Failed to load units:', unitError)
+        toastError('Failed to load units')
+      } finally {
+        setUnitOptionsLoading(false)
+      }
+    }
+  }
+
+  const confirmUnit = async () => {
+    if (!workorder) return
+    setUpdatingUnit(true)
+    try {
+      const unitId = unitForm.unit_id === '' ? null : Number(unitForm.unit_id)
+      const category = unitForm.category.trim() === '' ? null : unitForm.category.trim()
+      await workorderService.updateUnit(workorder.id, unitId, category)
+      success(unitId === null ? 'Unit cleared' : 'Unit updated and billing party snapshotted')
+      setShowUnitModal(false)
+      loadWorkorder()
+    } catch (unitError) {
+      console.error('Failed to update unit:', unitError)
+      toastError(unitError.response?.data?.error || 'Failed to update unit')
+    } finally {
+      setUpdatingUnit(false)
     }
   }
 
@@ -932,6 +977,11 @@ export default function WorkorderDetail() {
               Change Type
             </Button>
           ) : null}
+          {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
+            <Button variant="outline" onClick={openUnitModal}>
+              {workorder.unit_id ? 'Change Unit' : 'Assign Unit'}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -986,6 +1036,41 @@ export default function WorkorderDetail() {
                 </p>
               </div>
             </div>
+            {workorder.unit_id ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Unit</label>
+                  <p className="mt-1 text-sm text-gray-900">
+                    <Link
+                      to={`/cp/settings/property-management?unit=${workorder.unit_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      Unit #{workorder.unit_id}
+                    </Link>
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Bill To</label>
+                  <p className="mt-1 text-sm text-gray-900">
+                    {workorder.tenant_billable_party ? (
+                      <Badge
+                        variant={
+                          workorder.tenant_billable_party === 'tenant' ? 'info'
+                            : workorder.tenant_billable_party === 'landlord' ? 'success'
+                            : 'warning'
+                        }
+                      >
+                        {workorder.tenant_billable_party === 'tenant' ? 'Tenant'
+                          : workorder.tenant_billable_party === 'landlord' ? 'Landlord'
+                          : 'Split'}
+                      </Badge>
+                    ) : (
+                      <span className="text-gray-400 italic">Vacant — landlord implicit</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             {workorder.started_at || workorder.completed_at ? (
               <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
                 {workorder.started_at ? (
@@ -1489,6 +1574,59 @@ export default function WorkorderDetail() {
             <Button variant="outline" onClick={() => setShowTypeModal(false)}>Cancel</Button>
             <Button onClick={confirmType} disabled={updatingType} loading={updatingType}>
               {updatingType ? 'Updating...' : 'Update Type'}
+            </Button>
+          </div>
+        )}
+      />
+
+      <Modal
+        open={showUnitModal}
+        onClose={() => setShowUnitModal(false)}
+        title={workorder?.unit_id ? 'Change Unit' : 'Assign Unit'}
+        content={(
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Unit</label>
+              <Select
+                value={unitForm.unit_id}
+                className="mt-1"
+                onChange={(event) => setUnitForm((prev) => ({ ...prev, unit_id: event.target.value }))}
+                disabled={unitOptionsLoading}
+                options={[
+                  { value: '', label: unitOptionsLoading ? 'Loading…' : '— Clear / detach —' },
+                  ...unitOptions.map((unit) => {
+                    const label = [unit.code, unit.name].filter(Boolean).join(' — ')
+                    return { value: String(unit.id), label: label || `Unit #${unit.id}` }
+                  }),
+                ]}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Maintenance Category (optional)</label>
+              <Input
+                type="text"
+                value={unitForm.category}
+                placeholder="e.g. plumbing, hvac, appliance"
+                className="mt-1"
+                onChange={(event) => setUnitForm((prev) => ({ ...prev, category: event.target.value }))}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Used only when the lease's billing responsibility is "split" — the
+                resolver looks up this category in the lease's maintenance terms.
+              </p>
+            </div>
+            <Alert variant="info">
+              The billing party is snapshotted from the unit's active lease at this
+              moment. A later lease change will not retroactively re-route this
+              workorder or any invoice generated from it.
+            </Alert>
+          </div>
+        )}
+        footer={(
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowUnitModal(false)}>Cancel</Button>
+            <Button onClick={confirmUnit} disabled={updatingUnit} loading={updatingUnit}>
+              {updatingUnit ? 'Saving…' : 'Save Unit'}
             </Button>
           </div>
         )}

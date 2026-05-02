@@ -274,15 +274,20 @@ class WorkorderService
 
             // Create invoice. Subject FKs and service_line_id propagate from
             // the workorder so the invoice stays in the same vertical context.
+            // unit_id + tenant_billable_party (Phase 12) snapshot the property-
+            // mgmt billing-routing decision onto the invoice so a later lease
+            // change cannot retroactively re-route a paid bill.
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO invoices (
                     number, customer_id, vehicle_id, site_asset_id, service_line_id,
+                    unit_id, tenant_billable_party,
                     estimate_id, workorder_id, branch_id,
                     status, issue_date, due_date, subtotal, tax, total,
                     shop_fee, hazmat_disposal_fee, amount_paid, balance_due,
                     public_token, public_token_expires_at, created_at, updated_at
                 ) VALUES (
                     :number, :customer_id, :vehicle_id, :site_asset_id, :service_line_id,
+                    :unit_id, :tenant_billable_party,
                     :estimate_id, :workorder_id, :branch_id,
                     :status, :issue_date, :due_date, :subtotal, :tax, :total,
                     :shop_fee, :hazmat_disposal_fee, 0, :balance_due,
@@ -301,6 +306,8 @@ class WorkorderService
                 'vehicle_id' => $workorder->vehicle_id,
                 'site_asset_id' => $workorder->site_asset_id,
                 'service_line_id' => $workorder->service_line_id,
+                'unit_id' => $workorder->unit_id,
+                'tenant_billable_party' => $workorder->tenant_billable_party,
                 'estimate_id' => $workorder->estimate_id,
                 'workorder_id' => $workorderId,
                 'branch_id' => $workorder->branch_id,

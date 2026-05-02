@@ -13,6 +13,12 @@ class Invoice extends BaseModel
     public ?int $vehicle_id = null;
     public ?int $site_asset_id = null;
     public ?int $service_line_id = null;
+    // Phase 12 of docs/woms-expansion-plan.md — property-management vertical.
+    // unit_id pins the invoice to the leasable space; NULL outside PM. The
+    // tenant_billable_party value is snapshotted at conversion time so a later
+    // lease change cannot retroactively re-route a paid bill.
+    public ?int $unit_id = null;
+    public ?string $tenant_billable_party = null;
     public ?int $estimate_id = null;
     public ?int $workorder_id = null;
     public bool $is_mobile = false;

@@ -4405,15 +4405,26 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $workorderTimeline = new \App\Services\Workorder\WorkorderTimelineService($connection);
         $dispatchAuditService = new \App\Services\Dispatch\DispatchAuditService($connection);
         
+        // Phase 12 of docs/woms-expansion-plan.md — property-mgmt deps for the
+        // unit picker / billing snapshot. Constructed inline because the full
+        // WO controller still lives in this monolithic loader; a later split
+        // can move them into a dedicated module.
+        $workorderUnitRepository = new \App\Services\PropertyManagement\UnitRepository($connection);
+        $workorderTenantLeaseRepository = new \App\Services\PropertyManagement\TenantLeaseRepository($connection);
+        $workorderTenantBillingResolver = new \App\Services\PropertyManagement\TenantBillingResolver($workorderTenantLeaseRepository);
+
         $workorderController = new \App\Services\Workorder\WorkorderController(
-            $workorderRepository, 
-            $workorderService, 
-            $workorderEvidence, 
-            $workorderTimeline, 
-            $gate, 
-            $workorderMessagingNotifications, 
-            $dispatchAuditService, 
-            $pushNotifications
+            $workorderRepository,
+            $workorderService,
+            $workorderEvidence,
+            $workorderTimeline,
+            $gate,
+            $workorderMessagingNotifications,
+            $dispatchAuditService,
+            $pushNotifications,
+            $workorderTenantBillingResolver,
+            $workorderTenantLeaseRepository,
+            $workorderUnitRepository
         );
 
         // Status-driven notification service
@@ -4550,6 +4561,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $data = $workorderController->updateType($user, $id, $request->body());
+            return Response::json($data);
+        });
+
+        $router->patch('/api/workorders/{id}/unit', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->updateUnit($user, $id, $request->body());
             return Response::json($data);
         });
 

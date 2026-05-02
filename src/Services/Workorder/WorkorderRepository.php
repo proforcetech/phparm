@@ -466,6 +466,50 @@ class WorkorderRepository
     }
 
     /**
+     * Phase 12 of docs/woms-expansion-plan.md — pin a WO to a property-mgmt
+     * unit and snapshot the billing-routing decision.
+     *
+     * Both columns are written together so they stay consistent: passing a
+     * unit always overwrites the prior billing party (even if the new unit is
+     * vacant, in which case the resolver returns NULL and the WO falls back
+     * to landlord-implicit billing). Passing NULL clears both — used when
+     * detaching a WO from the property-mgmt vertical.
+     */
+    public function updateUnit(int $id, ?int $unitId, ?string $billableParty, ?int $actorId = null): ?Workorder
+    {
+        $workorder = $this->find($id);
+        if ($workorder === null) {
+            return null;
+        }
+
+        $previousUnitId = $workorder->unit_id;
+        $previousBillingParty = $workorder->tenant_billable_party;
+
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE workorders SET unit_id = :unit_id, tenant_billable_party = :party, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute([
+            'unit_id' => $unitId,
+            'party' => $billableParty,
+            'id' => $id,
+        ]);
+
+        $this->log('workorder.unit_changed', $id, $actorId, [
+            'previous_unit_id' => $previousUnitId,
+            'new_unit_id' => $unitId,
+            'previous_billing_party' => $previousBillingParty,
+            'new_billing_party' => $billableParty,
+        ]);
+
+        $payload = $workorder->toArray();
+        $payload['unit_id'] = $unitId;
+        $payload['tenant_billable_party'] = $billableParty;
+        $payload['updated_at'] = date('Y-m-d H:i:s');
+
+        return new Workorder($payload);
+    }
+
+    /**
      * @return array<int, WorkorderJob>
      */
     public function getJobs(int $workorderId): array
@@ -770,6 +814,10 @@ class WorkorderRepository
             'service_line_id' => isset($row['service_line_id']) && $row['service_line_id'] !== null
                 ? (int) $row['service_line_id']
                 : null,
+            'unit_id' => isset($row['unit_id']) && $row['unit_id'] !== null
+                ? (int) $row['unit_id']
+                : null,
+            'tenant_billable_party' => $row['tenant_billable_party'] ?? null,
             'status' => (string) $row['status'],
             'type' => (string) ($row['type'] ?? Workorder::TYPE_CORRECTIVE),
             'priority' => (string) ($row['priority'] ?? 'normal'),

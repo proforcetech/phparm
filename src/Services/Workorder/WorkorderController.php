@@ -2,11 +2,15 @@
 
 namespace App\Services\Workorder;
 
+use App\Models\TenantLease;
 use App\Models\User;
 use App\Models\Workorder;
 use App\Services\Dispatch\DispatchAuditService;
 use App\Services\Messaging\MessagingNotificationService;
 use App\Services\Notification\PushNotificationService;
+use App\Services\PropertyManagement\TenantBillingResolver;
+use App\Services\PropertyManagement\TenantLeaseRepository;
+use App\Services\PropertyManagement\UnitRepository;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 use InvalidArgumentException;
@@ -21,6 +25,9 @@ class WorkorderController
     private ?MessagingNotificationService $messagingNotifications;
     private ?DispatchAuditService $dispatchAudit;
     private ?PushNotificationService $pushNotifications;
+    private ?TenantBillingResolver $billingResolver;
+    private ?TenantLeaseRepository $leaseRepository;
+    private ?UnitRepository $unitRepository;
 
     public function __construct(
         WorkorderRepository $repository,
@@ -30,7 +37,10 @@ class WorkorderController
         AccessGate $gate,
         ?MessagingNotificationService $messagingNotifications = null,
         ?DispatchAuditService $dispatchAudit = null,
-        ?PushNotificationService $pushNotifications = null
+        ?PushNotificationService $pushNotifications = null,
+        ?TenantBillingResolver $billingResolver = null,
+        ?TenantLeaseRepository $leaseRepository = null,
+        ?UnitRepository $unitRepository = null
     ) {
         $this->repository = $repository;
         $this->service = $service;
@@ -40,6 +50,9 @@ class WorkorderController
         $this->messagingNotifications = $messagingNotifications;
         $this->dispatchAudit = $dispatchAudit;
         $this->pushNotifications = $pushNotifications;
+        $this->billingResolver = $billingResolver;
+        $this->leaseRepository = $leaseRepository;
+        $this->unitRepository = $unitRepository;
     }
 
     /**
@@ -328,6 +341,77 @@ class WorkorderController
         }
 
         $workorder = $this->repository->updateType($id, $type, $user->id);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found');
+        }
+
+        return $this->enrichWorkorder($workorder);
+    }
+
+    /**
+     * PATCH /api/workorders/{id}/unit
+     *
+     * Phase 12 of docs/woms-expansion-plan.md — pin a property-mgmt WO to a
+     * unit and snapshot the billing-routing decision from the unit's active
+     * lease. The snapshot is intentionally captured here (not at invoice
+     * time) so a later lease change cannot retroactively re-route prior
+     * invoices.
+     *
+     * Payload:
+     *   { "unit_id": <int|null>, "category": <string|null> }
+     *
+     * - unit_id == null clears both unit_id and tenant_billable_party
+     *   (used when detaching a WO from the property-mgmt vertical).
+     * - `category` is consulted only when the lease's billing_responsibility
+     *   is 'split'; the resolver looks it up in maintenance_terms.
+     *
+     * Authorization: WO manage gate plus property.units.view (so a dispatcher
+     * without property-mgmt access cannot attach random unit IDs).
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function updateUnit(User $user, int $id, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        if ($this->billingResolver === null || $this->leaseRepository === null || $this->unitRepository === null) {
+            throw new InvalidArgumentException('Property-management dependencies are not wired.');
+        }
+
+        $this->gate->assert($user, 'property.units.view');
+
+        $existing = $this->repository->find($id);
+        if ($existing === null) {
+            throw new InvalidArgumentException('Workorder not found');
+        }
+        $this->assertBranchAccess($user, $existing->branch_id);
+
+        $rawUnitId = $payload['unit_id'] ?? null;
+        $unitId = $rawUnitId === null || $rawUnitId === '' ? null : (int) $rawUnitId;
+        $category = isset($payload['category']) && $payload['category'] !== ''
+            ? (string) $payload['category']
+            : null;
+
+        $billingParty = null;
+        if ($unitId !== null) {
+            $unit = $this->unitRepository->findById($unitId);
+            if ($unit === null) {
+                throw new InvalidArgumentException('Unit not found.');
+            }
+
+            $referenceDate = $existing->started_at ?: ($existing->created_at ?: null);
+            $referenceDate = $referenceDate ? substr($referenceDate, 0, 10) : null;
+            $lease = $this->leaseRepository->findActiveForUnit($unitId, $referenceDate);
+            if ($lease !== null) {
+                $billingParty = $this->billingResolver->resolveForLease($lease, $category);
+            }
+            // Vacant unit (no active lease): leave billingParty NULL so callers
+            // can distinguish "vacant — landlord implicit" from "explicitly
+            // landlord per lease". Matches resolveForWorkorder's NULL contract.
+        }
+
+        $workorder = $this->repository->updateUnit($id, $unitId, $billingParty, $user->id);
         if ($workorder === null) {
             throw new InvalidArgumentException('Workorder not found');
         }

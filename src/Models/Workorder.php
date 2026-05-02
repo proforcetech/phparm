@@ -78,6 +78,13 @@ class Workorder extends BaseModel
     public ?int $fleet_unit_id = null;
     public ?int $branch_id = null;
     public ?int $service_line_id = null;
+    // Phase 12 of docs/woms-expansion-plan.md — property-management vertical.
+    // unit_id pins the WO to a specific leasable space within a site; NULL for
+    // any WO outside the property-mgmt vertical. tenant_billable_party is
+    // snapshotted at unit-assignment time from the unit's active lease so a
+    // later lease change cannot retroactively re-route prior invoices.
+    public ?int $unit_id = null;
+    public ?string $tenant_billable_party = null;
     public string $status = self::STATUS_PENDING;
     public string $type = self::TYPE_CORRECTIVE;
     public string $priority = self::PRIORITY_NORMAL;
