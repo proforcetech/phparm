@@ -121,6 +121,29 @@ return function (Router $router, RouteContext $ctx): void {
             ));
         });
 
+        // Cross-site asset search — used by the SubjectPicker on transactional
+        // forms. Filters mirror listAssetsForSite but site_id is optional.
+        $router->get('/api/assets', function (Request $request) use ($controller) {
+            return Response::json($controller->searchAssets(
+                $request->getAttribute('user'),
+                [
+                    'site_id' => $request->queryParam('site_id'),
+                    'asset_type_id' => $request->queryParam('asset_type_id'),
+                    'status' => $request->queryParam('status'),
+                    'query' => $request->queryParam('query'),
+                    'building' => $request->queryParam('building'),
+                    'floor' => $request->queryParam('floor'),
+                    'room' => $request->queryParam('room'),
+                    'rack' => $request->queryParam('rack'),
+                    'ip_address' => $request->queryParam('ip_address'),
+                    'mac_address' => $request->queryParam('mac_address'),
+                    'vlan' => $request->queryParam('vlan'),
+                    'limit' => $request->queryParam('limit', 25),
+                    'offset' => $request->queryParam('offset', 0),
+                ]
+            ));
+        });
+
         $router->get('/api/assets/{id}', function (Request $request) use ($controller) {
             return Response::json($controller->getAsset(
                 $request->getAttribute('user'),

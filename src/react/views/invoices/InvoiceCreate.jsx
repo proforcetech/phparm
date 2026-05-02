@@ -8,15 +8,18 @@ import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
+import SubjectPicker from '../../components/domain/SubjectPicker'
 import api from '../../../services/api'
 import customerService from '../../../services/customer.service'
 import invoiceService from '../../../services/invoice.service'
+import { useAuthStore } from '../../stores/auth'
 import { useToast } from '../../stores/toast.jsx'
 
 export default function InvoiceCreate() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { success, error } = useToast()
+  const { currentServiceLineId } = useAuthStore()
 
   const [customers, setCustomers] = useState([])
   const [loadingCustomers, setLoadingCustomers] = useState(true)
@@ -28,6 +31,9 @@ export default function InvoiceCreate() {
 
   const [formData, setFormData] = useState({
     customer_id: searchParams.get('customer') || '',
+    vehicle_id: null,
+    site_asset_id: null,
+    service_line_id: currentServiceLineId ?? null,
     issue_date: new Date().toISOString().split('T')[0],
     due_date: '',
     notes: '',
@@ -167,6 +173,9 @@ export default function InvoiceCreate() {
       const validItems = lineItems.filter((item) => item.description.trim())
       await invoiceService.create({
         ...formData,
+        vehicle_id: formData.vehicle_id ? parseInt(formData.vehicle_id, 10) : null,
+        site_asset_id: formData.site_asset_id ? parseInt(formData.site_asset_id, 10) : null,
+        service_line_id: formData.service_line_id ? parseInt(formData.service_line_id, 10) : null,
         split_billing: splitBilling,
         payer_allocations: splitBilling
           ? payerAllocations.map((allocation) => ({
@@ -257,6 +266,21 @@ export default function InvoiceCreate() {
                   onUpdateModelValue={updateField('due_date')}
                 />
               </div>
+            </div>
+
+            <div className="mb-6">
+              <SubjectPicker
+                serviceLineId={formData.service_line_id}
+                vehicleId={formData.vehicle_id}
+                siteAssetId={formData.site_asset_id}
+                customerId={formData.customer_id ? parseInt(formData.customer_id, 10) : null}
+                onChange={(next) => setFormData((prev) => ({
+                  ...prev,
+                  service_line_id: next.service_line_id,
+                  vehicle_id: next.vehicle_id,
+                  site_asset_id: next.site_asset_id,
+                }))}
+              />
             </div>
 
             <div className="mb-6">

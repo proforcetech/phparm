@@ -8,12 +8,14 @@ import Input from '../../components/ui/Input'
 import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
+import SubjectPicker from '../../components/domain/SubjectPicker'
 import estimateService from '../../../services/estimate.service'
 import customerService from '../../../services/customer.service'
 import technicianService from '../../../services/technician.service'
 import bundleService from '../../../services/bundle.service'
 import inventoryService from '../../../services/inventory.service'
 import api from '../../../services/api'
+import { useAuthStore } from '../../stores/auth'
 import { useToast } from '../../stores/toast'
 
 const statusOptions = [
@@ -38,6 +40,7 @@ export default function EstimateForm() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { success, error } = useToast()
+  const { currentServiceLineId } = useAuthStore()
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -45,8 +48,6 @@ export default function EstimateForm() {
   const [bundleLoading, setBundleLoading] = useState(false)
   const [bundleSelection, setBundleSelection] = useState('')
   const [addingBundle, setAddingBundle] = useState(false)
-  const [customerVehicles, setCustomerVehicles] = useState([])
-  const [vehiclesLoading, setVehiclesLoading] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [pricingSettings, setPricingSettings] = useState({
     laborRate: null,
@@ -56,6 +57,8 @@ export default function EstimateForm() {
   const [form, setForm] = useState({
     customer_id: null,
     vehicle_id: null,
+    site_asset_id: null,
+    service_line_id: currentServiceLineId ?? null,
     is_mobile: false,
     technician_id: null,
     expiration_date: buildDefaultExpirationDate(),
@@ -130,6 +133,8 @@ export default function EstimateForm() {
         ...data,
         customer_id: customerId,
         vehicle_id: vehicleId,
+        site_asset_id: data.site_asset_id ?? null,
+        service_line_id: data.service_line_id ?? prev.service_line_id ?? null,
         is_mobile: Boolean(data.is_mobile),
         line_items: data.line_items?.length
           ? data.line_items.map((item) => ({
@@ -200,31 +205,6 @@ export default function EstimateForm() {
       setForm((prev) => ({ ...prev, line_items: [createEmptyLineItem()] }))
     }
   }, [isEditing, form.line_items.length, createEmptyLineItem, pricingSettings.laborRate])
-
-  const loadCustomerVehicles = useCallback(async (customerId) => {
-    if (!customerId) {
-      setCustomerVehicles([])
-      return
-    }
-    setVehiclesLoading(true)
-    try {
-      const vehicles = await customerService.getCustomerVehicles(customerId)
-      setCustomerVehicles(Array.isArray(vehicles) ? vehicles : [])
-    } catch (vehicleError) {
-      console.error('Failed to load customer vehicles:', vehicleError)
-      setCustomerVehicles([])
-    } finally {
-      setVehiclesLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (form.customer_id) {
-      loadCustomerVehicles(form.customer_id)
-    } else {
-      setCustomerVehicles([])
-    }
-  }, [form.customer_id, loadCustomerVehicles])
 
   const addLineItem = () => {
     setForm((prev) => ({
@@ -342,6 +322,8 @@ export default function EstimateForm() {
       const payload = {
         customer_id: form.customer_id ? parseInt(form.customer_id, 10) : null,
         vehicle_id: form.vehicle_id ? parseInt(form.vehicle_id, 10) : null,
+        site_asset_id: form.site_asset_id ? parseInt(form.site_asset_id, 10) : null,
+        service_line_id: form.service_line_id ? parseInt(form.service_line_id, 10) : null,
         is_mobile: Boolean(form.is_mobile),
         technician_id: form.technician_id ? parseInt(form.technician_id, 10) : null,
         expiration_date: form.expiration_date || null,
@@ -451,16 +433,8 @@ export default function EstimateForm() {
       ...prev,
       customer_id: customer?.id || null,
       vehicle_id: null,
+      site_asset_id: null,
     }))
-  }
-
-  const formatVehicleLabel = (vehicle) => {
-    const parts = []
-    if (vehicle.year) parts.push(vehicle.year)
-    if (vehicle.make) parts.push(vehicle.make)
-    if (vehicle.model) parts.push(vehicle.model)
-    if (parts.length === 0) return `Vehicle #${vehicle.id}`
-    return parts.join(' ')
   }
 
   const getUnitPriceLabel = (item) => {
@@ -513,27 +487,24 @@ export default function EstimateForm() {
                       itemLabel={(item) => item.name || `Customer #${item.id}`}
                       itemSubtext={(item) => `${item.email || ''} ${item.phone ? '• ' + item.phone : ''}`}
                       required
-                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value, vehicle_id: null }))}
+                      onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value, vehicle_id: null, site_asset_id: null }))}
                       onSelect={handleCustomerSelect}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Vehicle *</label>
-                    <Select
-                      value={form.vehicle_id ?? ''}
-                      placeholder={vehiclesLoading ? 'Loading vehicles...' : (form.customer_id ? 'Select a vehicle' : 'Select a customer first')}
-                      options={customerVehicles.map((vehicle) => ({
-                        value: vehicle.id,
-                        label: formatVehicleLabel(vehicle) + (vehicle.license_plate ? ` (${vehicle.license_plate})` : ''),
+                    <SubjectPicker
+                      serviceLineId={form.service_line_id}
+                      vehicleId={form.vehicle_id}
+                      siteAssetId={form.site_asset_id}
+                      customerId={form.customer_id}
+                      onChange={(next) => setForm((prev) => ({
+                        ...prev,
+                        service_line_id: next.service_line_id,
+                        vehicle_id: next.vehicle_id,
+                        site_asset_id: next.site_asset_id,
                       }))}
-                      disabled={!form.customer_id || vehiclesLoading}
-                      required
-                      onChange={(event) => setForm((prev) => ({ ...prev, vehicle_id: event.target.value ? Number(event.target.value) : null }))}
                     />
-                    {form.customer_id && !vehiclesLoading && customerVehicles.length === 0 ? (
-                      <p className="mt-1 text-xs text-amber-600">No vehicles found for this customer.</p>
-                    ) : null}
                   </div>
 
                   <div>

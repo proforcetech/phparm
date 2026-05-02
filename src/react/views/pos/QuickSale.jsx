@@ -33,7 +33,7 @@ const createQuickSaleNumber = () => {
 export default function QuickSale() {
   const navigate = useNavigate()
   const { success, error } = useToast()
-  const { user } = useAuthStore()
+  const { user, currentServiceLineId } = useAuthStore()
 
   const [walkInCustomer, setWalkInCustomer] = useState(null)
   const [loadingCustomer, setLoadingCustomer] = useState(true)
@@ -203,6 +203,12 @@ export default function QuickSale() {
       }
       if (customerId) {
         payload.customer_id = customerId
+      }
+      // Walk-in counter sales don't have a subject (vehicle / asset) but we
+      // still tag the invoice with the active service line so it appears in
+      // the right vertical's filtered views.
+      if (currentServiceLineId) {
+        payload.service_line_id = currentServiceLineId
       }
 
       const created = await invoiceService.create(payload)

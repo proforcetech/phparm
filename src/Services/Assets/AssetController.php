@@ -151,6 +151,25 @@ class AssetController
     }
 
     /**
+     * Cross-site asset lookup used by the SubjectPicker on transactional forms
+     * (estimate / workorder / invoice / appointment). Mirrors listAssetsForSite
+     * but does not require a site_id, so the picker can search by name / code
+     * / serial without forcing the user to drill site→asset.
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function searchAssets(User $user, array $filters): array
+    {
+        $this->gate->assert($user, 'assets.view');
+        $result = $this->assets->search($filters);
+        return [
+            'data' => array_map(static fn(SiteAsset $a) => $a->toArray(), $result['data']),
+            'meta' => ['total' => $result['total']],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function getAsset(User $user, int $id): array

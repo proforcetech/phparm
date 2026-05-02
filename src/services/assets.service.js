@@ -23,6 +23,10 @@ export default {
   listForSite(siteId, params = {}) {
     return api.get(`/sites/${siteId}/assets`, { params }).then((res) => res.data)
   },
+  // Cross-site search — used by the SubjectPicker on transactional forms.
+  search(params = {}) {
+    return api.get('/assets', { params }).then((res) => res.data)
+  },
   lifecycleForSite(siteId) {
     return api.get(`/sites/${siteId}/assets/lifecycle`).then((res) => res.data)
   },

@@ -8,9 +8,11 @@ import Input from '../../components/ui/Input'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import Autocomplete from '../../components/ui/Autocomplete'
+import SubjectPicker from '../../components/domain/SubjectPicker'
 import appointmentService from '../../../services/appointment.service'
 import technicianService from '../../../services/technician.service'
 import customerService from '../../../services/customer.service'
+import { useAuthStore } from '../../stores/auth'
 
 const statusOptions = [
   { label: 'Scheduled', value: 'scheduled' },
@@ -25,6 +27,8 @@ const defaultFormState = {
   technician_id: null,
   customer_id: null,
   vehicle_id: null,
+  site_asset_id: null,
+  service_line_id: null,
   status: 'scheduled',
   notes: '',
 }
@@ -32,12 +36,14 @@ const defaultFormState = {
 export default function AppointmentBook() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { currentServiceLineId } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [loadingVehicles, setLoadingVehicles] = useState(false)
   const [availability, setAvailability] = useState({ slots: [], closed: false, reason: '' })
-  const [vehicleOptions, setVehicleOptions] = useState([])
-  const [form, setForm] = useState(defaultFormState)
+  const [form, setForm] = useState(() => ({
+    ...defaultFormState,
+    service_line_id: currentServiceLineId ?? null,
+  }))
   const [selectedSlot, setSelectedSlot] = useState(null)
   const selectedSlotRef = useRef(selectedSlot)
 
@@ -87,6 +93,8 @@ export default function AppointmentBook() {
         technician_id: form.technician_id || null,
         customer_id: form.customer_id || null,
         vehicle_id: form.vehicle_id || null,
+        site_asset_id: form.site_asset_id || null,
+        service_line_id: form.service_line_id || null,
         status: form.status,
         notes: form.notes,
       })
@@ -95,40 +103,6 @@ export default function AppointmentBook() {
     } finally {
       setSaving(false)
     }
-  }
-
-  const loadCustomerVehicles = useCallback(async (customerId) => {
-    if (!customerId) {
-      setVehicleOptions([])
-      return
-    }
-
-    setLoadingVehicles(true)
-    try {
-      const vehicles = await customerService.getCustomerVehicles(customerId)
-      const options = vehicles.map((vehicle) => ({
-        value: vehicle.id,
-        label: `${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''} ${
-          vehicle.vin ? `(${vehicle.vin.substring(0, 8)}...)` : ''
-        }`.trim(),
-      }))
-      setVehicleOptions(options)
-      setForm((prev) => {
-        if (prev.vehicle_id && !options.find((option) => option.value === prev.vehicle_id)) {
-          return { ...prev, vehicle_id: null }
-        }
-        return prev
-      })
-    } catch (error) {
-      console.error('Failed to load vehicles:', error)
-      setVehicleOptions([])
-    } finally {
-      setLoadingVehicles(false)
-    }
-  }, [])
-
-  const onCustomerSelect = async (customer) => {
-    await loadCustomerVehicles(customer.id)
   }
 
   const onTechnicianSelect = (technician) => {
@@ -173,6 +147,8 @@ export default function AppointmentBook() {
         technician_id: existing.technician_id || null,
         customer_id: existing.customer_id || null,
         vehicle_id: existing.vehicle_id || null,
+        site_asset_id: existing.site_asset_id || null,
+        service_line_id: existing.service_line_id || prev.service_line_id || null,
         status: existing.status,
         notes: existing.notes || '',
       }))
@@ -181,15 +157,6 @@ export default function AppointmentBook() {
 
     preloadFromClone()
   }, [loadAvailability, searchParams])
-
-  useEffect(() => {
-    if (form.customer_id) {
-      loadCustomerVehicles(form.customer_id)
-    } else {
-      setVehicleOptions([])
-      setForm((prev) => ({ ...prev, vehicle_id: null }))
-    }
-  }, [form.customer_id, loadCustomerVehicles])
 
   const slotClasses = useMemo(
     () =>
@@ -262,26 +229,31 @@ export default function AppointmentBook() {
                 itemLabel={(item) => item.name}
                 itemSubtext={(item) => `${item.email || ''} ${item.phone ? `• ${item.phone}` : ''}`}
                 required
-                onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, customer_id: value }))}
-                onSelect={onCustomerSelect}
+                onUpdateModelValue={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    customer_id: value,
+                    vehicle_id: null,
+                    site_asset_id: null,
+                  }))
+                }
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Vehicle *</label>
-              <Select
-                modelValue={form.vehicle_id}
-                options={vehicleOptions}
-                disabled={!form.customer_id || loadingVehicles}
-                required
-                className="mt-1"
-                onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, vehicle_id: value }))}
+              <SubjectPicker
+                serviceLineId={form.service_line_id}
+                vehicleId={form.vehicle_id}
+                siteAssetId={form.site_asset_id}
+                customerId={form.customer_id}
+                onChange={(next) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    service_line_id: next.service_line_id ?? prev.service_line_id,
+                    vehicle_id: next.vehicle_id ?? null,
+                    site_asset_id: next.site_asset_id ?? null,
+                  }))
+                }
               />
-              {loadingVehicles ? (
-                <p className="mt-1 text-xs text-gray-500">Loading vehicles...</p>
-              ) : null}
-              {!loadingVehicles && form.customer_id && vehicleOptions.length === 0 ? (
-                <p className="mt-1 text-xs text-amber-600">No vehicles found for this customer</p>
-              ) : null}
             </div>
           </div>
 
