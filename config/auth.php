@@ -51,6 +51,9 @@ return [
                 // Phase 13 (M3): dispatchers see lease info so routing
                 // accounts for end-of-lease equipment going off-fleet.
                 'asset_leases.view',
+                // Phase 13 (M4): dispatchers see acquisitions so they
+                // can plan resource availability around incoming installs.
+                'asset_acquisitions.view',
                 // Phase 3.1 of docs/expansion-plan.md: dispatch sees tickets so
                 // they can triage/route incoming requests.
                 'tickets.view', 'tickets.manage', 'tickets.assign',
@@ -157,6 +160,11 @@ return [
                 // leases. Managers author lease records and capture end-of-
                 // lease decisions (renew / buyout / return / replace).
                 'asset_leases.view', 'asset_leases.manage',
+                // Phase 13 (M4): managers drive the acquisition workflow
+                // through quote → approve → PO → receive → install. The
+                // final activation (CMDB linkage) is admin-only and lives
+                // under .activate; managers don't get it here.
+                'asset_acquisitions.view', 'asset_acquisitions.manage',
                 // Phase 3.1 of docs/expansion-plan.md: support-desk tickets.
                 'tickets.view', 'tickets.manage', 'tickets.assign',
                 'ticket_categories.view', 'ticket_categories.manage',
