@@ -23,8 +23,19 @@ class AuditLogger
 
     public function log(AuditEntry $entry): void
     {
+        $this->logAndGetId($entry);
+    }
+
+    /**
+     * Same write as {@see log()} but returns the new audit_logs.id (or null
+     * when audit logging is disabled). Use this when a caller needs to link
+     * the audit row from another table — e.g. asset_decommissions.audit_log_id
+     * on the formal audit transition.
+     */
+    public function logAndGetId(AuditEntry $entry): ?int
+    {
         if (!$this->enabled()) {
-            return;
+            return null;
         }
 
         $table = $this->config['table'] ?? 'audit_logs';
@@ -46,6 +57,9 @@ class AuditLogger
             'context' => json_encode($payload, JSON_THROW_ON_ERROR),
             'created_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
         ]);
+
+        $id = (int) $this->connection->pdo()->lastInsertId();
+        return $id > 0 ? $id : null;
     }
 
     private function redactContext(array $context): array
