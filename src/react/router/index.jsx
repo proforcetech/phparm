@@ -51,6 +51,13 @@ import InventoryAlerts from '../views/inventory/InventoryAlerts'
 import InventoryStockOrders from '../views/inventory/InventoryStockOrders'
 import InventoryPullRequests from '../views/inventory/PullRequestList'
 import WarrantyClaims from '../views/warranty/WarrantyClaims'
+import AssetLeases from '../views/assets/AssetLeases'
+import AssetAcquisitions from '../views/assets/AssetAcquisitions'
+import AssetDecommissions from '../views/assets/AssetDecommissions'
+import SoftwareInventory from '../views/software-inventory/SoftwareInventory'
+import ChangeManagement from '../views/change-management/ChangeManagement'
+import ServiceRoutes from '../views/service-routes/ServiceRoutes'
+import MyRoutes from '../views/service-routes/MyRoutes'
 import ImpoundIntake from '../views/storage/ImpoundIntake'
 import StorageFeeLedger from '../views/storage/StorageFeeLedger'
 import NoticeGeneration from '../views/storage/NoticeGeneration'
@@ -117,6 +124,7 @@ import CustomerVehicles from '../views/customer-portal/Vehicles'
 import CustomerProfile from '../views/customer-portal/Profile'
 import CustomerWorkorders from '../views/customer-portal/Workorders'
 import CustomerWorkorderTimeline from '../views/customer-portal/WorkorderTimeline'
+import CustomerRequestWizard from '../views/customer-portal/RequestWizard'
 import EssDashboard from '../views/ess/Dashboard'
 import EssTimeClock from '../views/ess/TimeClock'
 import EssSchedule from '../views/ess/Schedule'
@@ -338,7 +346,16 @@ const protectedRoutes = [
   // Assets
   { path: '/cp/assets', name: 'AssetsList', auth: 'requiresAuth', element: stub('Installed Assets', 'Per-site asset registry with QR labels, documents, and links.') },
   { path: '/cp/assets/types', name: 'AssetTypes', auth: 'requiresAuth', element: stub('Asset Types', 'Catalog of asset categories per division.') },
+  { path: '/cp/assets/leases', name: 'AssetLeases', auth: 'requiresAuth', element: <AssetLeases /> },
+  { path: '/cp/assets/acquisitions', name: 'AssetAcquisitions', auth: 'requiresAuth', element: <AssetAcquisitions /> },
+  { path: '/cp/assets/decommissions', name: 'AssetDecommissions', auth: 'requiresAuth', element: <AssetDecommissions /> },
   { path: '/cp/assets/:id', name: 'AssetDetail', auth: 'requiresAuth', element: stub('Asset Detail', 'Lifecycle, documents, links, and QR for one installed asset.') },
+
+  // Software CMDB (Phase 14 / M9)
+  { path: '/cp/it/software', name: 'SoftwareInventory', auth: 'requiresAuth', element: <SoftwareInventory /> },
+
+  // Change management — RFC + CAB (Phase 14 / S3)
+  { path: '/cp/it/change-management', name: 'ChangeManagement', auth: 'requiresAuth', element: <ChangeManagement /> },
 
   // Fleet
   { path: '/cp/fleet/units', name: 'FleetUnits', auth: 'requiresAuth', element: stub('Fleet Units', 'Vehicles, trailers, and equipment with readings, assignments, and downtime.') },
@@ -347,6 +364,8 @@ const protectedRoutes = [
   { path: '/cp/fleet/reports', name: 'FleetReports', auth: 'requiresAuth', element: stub('Fleet Reports', 'Cost-per-mile, cost-per-hour, and utilization rollups.') },
 
   // Routing
+  { path: '/cp/routing/service-routes', name: 'ServiceRoutes', auth: 'requiresAuth', element: <ServiceRoutes /> },
+  { path: '/cp/my-routes', name: 'MyRoutes', auth: 'requiresAuth', element: <MyRoutes /> },
   { path: '/cp/routing/route-plans', name: 'RoutePlans', auth: 'requiresAuth', element: stub('Route Plans', 'Multi-stop dispatch routes with optimization and stop lifecycle.') },
   { path: '/cp/routing/route-plans/:id', name: 'RoutePlanDetail', auth: 'requiresAuth', element: stub('Route Plan Detail', 'Stops, assignments, and live progress.') },
   { path: '/cp/routing/geo-fences', name: 'GeoFences', auth: 'requiresAuth', element: stub('Geo-Fences', 'Boundaries that emit events as units enter/exit.') },
@@ -400,6 +419,7 @@ const protectedRoutes = [
   { path: '/portal/profile', name: 'CustomerProfile', auth: 'requiresAuth', element: <CustomerProfile /> },
   { path: '/portal/workorders', name: 'CustomerWorkorders', auth: 'requiresAuth', element: <CustomerWorkorders /> },
   { path: '/portal/workorders/:id', name: 'CustomerWorkorderTimeline', auth: 'requiresAuth', element: <CustomerWorkorderTimeline /> },
+  { path: '/portal/request', name: 'CustomerRequestWizard', auth: 'requiresAuth', element: <CustomerRequestWizard /> },
   { path: '/ess', name: 'EssDashboard', auth: 'requiresAuth', element: <EssDashboard /> },
   { path: '/ess/time-clock', name: 'EssTimeClock', auth: 'requiresAuth', element: <EssTimeClock /> },
   { path: '/ess/schedule', name: 'EssSchedule', auth: 'requiresAuth', element: <EssSchedule /> },

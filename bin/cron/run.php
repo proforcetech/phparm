@@ -139,6 +139,12 @@ $jobs = [
         'schedule' => '0 8 * * *', // Daily at 8 AM
         'description' => 'Sends 90/60/30/0-day notices for active asset leases approaching end_date',
     ],
+    'route-visit-generator' => [
+        'name' => 'Recurring Route Visit Generator + Overdue Sweep',
+        'script' => __DIR__ . '/route-visit-generator.php',
+        'schedule' => '*/5 * * * *', // Every 5 minutes
+        'description' => 'Materializes route_visits forward through generation_horizon_days and marks overdue planned visits as missed',
+    ],
 ];
 
 if (isset($options['list'])) {

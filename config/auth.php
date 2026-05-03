@@ -54,6 +54,10 @@ return [
                 // Phase 13 (M4): dispatchers see acquisitions so they
                 // can plan resource availability around incoming installs.
                 'asset_acquisitions.view',
+                // Phase 13 (M5): dispatchers see decommissions so they
+                // can plan around equipment going off-fleet (don't
+                // schedule jobs against an asset mid-retirement).
+                'asset_decommissions.view',
                 // Phase 3.1 of docs/expansion-plan.md: dispatch sees tickets so
                 // they can triage/route incoming requests.
                 'tickets.view', 'tickets.manage', 'tickets.assign',
@@ -128,6 +132,22 @@ return [
                 // user reports trouble. Read-only — manage stays with
                 // managers/admins.
                 'security_events.view',
+                // Phase 14 (M9): dispatchers see the software CMDB so they
+                // can triage IT helpdesk tickets that involve software
+                // entitlement (e.g. "user needs Office, do we have a
+                // seat?"). Read-only — pool/assignment writes stay with
+                // managers and admins.
+                'software_inventory.view',
+                // Phase 14 (S3): dispatchers read the change calendar so
+                // scheduled change windows show up alongside dispatched
+                // work — they don't author or approve RFCs.
+                'change_management.view',
+                // Phase 15 (M7) of docs/woms-expansion-plan.md: dispatchers
+                // own the recurring-route board — read everything, manage
+                // route + stop definitions, reassign visits between techs.
+                // Execute (state transitions, photos) is field-side and
+                // stays with the technician role.
+                'service_routes.view', 'service_routes.manage',
             ],
         ],
         'manager' => [
@@ -165,6 +185,11 @@ return [
                 // final activation (CMDB linkage) is admin-only and lives
                 // under .activate; managers don't get it here.
                 'asset_acquisitions.view', 'asset_acquisitions.manage',
+                // Phase 13 (M5): managers drive the decommission workflow
+                // through wipe → recovery → entitlement → audit. The
+                // terminal retire step (which also flips the underlying
+                // site_asset to retired) is admin-only via .retire.
+                'asset_decommissions.view', 'asset_decommissions.manage',
                 // Phase 3.1 of docs/expansion-plan.md: support-desk tickets.
                 'tickets.view', 'tickets.manage', 'tickets.assign',
                 'ticket_categories.view', 'ticket_categories.manage',
@@ -251,6 +276,25 @@ return [
                 // (QuickBooks/Xero/mapping/IoT/telecom/access control).
                 // Managers can view + manage connections.
                 'integrations.view', 'integrations.manage',
+                // Phase 14 (M9) of docs/woms-expansion-plan.md: software
+                // CMDB. Managers maintain the customer software catalog,
+                // license pools, assignments, and act on the over-
+                // allocation compliance feed.
+                'software_inventory.view', 'software_inventory.manage',
+                // Phase 14 (S3) of docs/woms-expansion-plan.md: change
+                // management (RFC + CAB). Managers author RFCs, drive
+                // them through the state machine, and (when serving on
+                // CAB) cast votes. Approve/reject auto-resolves once
+                // quorum + threshold are met.
+                'change_management.view', 'change_management.manage',
+                // Phase 15 (M7) of docs/woms-expansion-plan.md: recurring
+                // service routes. Managers author route + stop
+                // definitions, drive cadence rules, and cover dispatch on
+                // visit reassignment. Manage also covers manually firing
+                // the generator for a route after editing recurrence.
+                // Execute is granted too so a manager can complete a
+                // visit on a tech's behalf when the field side is offline.
+                'service_routes.view', 'service_routes.manage', 'service_routes.execute',
                 // Full CMS access (matches admin for CMS operations)
                 'cms.*'
             ],
@@ -340,6 +384,13 @@ return [
                 // historical install records aren't erased by the tech.
                 'workorder_kits.view', 'workorder_kits.install',
                 'workorder_kits.cancel',
+                // Phase 15 (M7) of docs/woms-expansion-plan.md: techs read
+                // their day's recurring-route visits and execute the field
+                // workflow — scan QR on arrival, transition through
+                // en_route/arrived/completed/skipped, upload verification
+                // photos. Authoring routes + reassigning visits stays with
+                // dispatch/manager.
+                'service_routes.view', 'service_routes.execute',
                 // CMS content editing (no administrative settings)
                 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete',
                 'cms.categories.view', 'cms.categories.create', 'cms.categories.update', 'cms.categories.delete',
