@@ -8,6 +8,7 @@ use App\Models\TicketCategory;
 use App\Models\User;
 use App\Services\Assets\SiteAssetRepository;
 use App\Services\Crm\SiteRepository;
+use App\Services\Tickets\ItHelpdeskService;
 use App\Services\Tickets\TicketCategoryRepository;
 use App\Services\Tickets\TicketEventRepository;
 use App\Services\Tickets\TicketRepository;
@@ -54,6 +55,7 @@ class PortalRequestWizardService
         private readonly SiteRepository $sites,
         private readonly SiteAssetRepository $assets,
         private readonly AuditLogger $audit,
+        private readonly ItHelpdeskService $itHelpdesk,
     ) {
     }
 
@@ -218,7 +220,7 @@ class PortalRequestWizardService
                 : 'p3_normal';
         }
 
-        $ticket = $this->tickets->create([
+        $createPayload = [
             'company_id' => $account->company_id,
             'site_id' => $siteId,
             'asset_id' => $assetId,
@@ -233,7 +235,24 @@ class PortalRequestWizardService
             'reporter_email' => $user->email,
             'source' => 'portal',
             'source_ref' => 'portal_account:' . $account->id,
-        ]);
+        ];
+
+        // IT-helpdesk overlay: when the request is an IT incident/request/
+        // question/outage, accept the IT-specific narrative fields and let
+        // ItHelpdeskService validate + auto-derive severity. Non-IT requests
+        // see no behavioral change (the call is a no-op when there's no
+        // it_request_kind on the input).
+        $itPayload = [];
+        foreach (['it_request_kind', 'severity', 'affected_users_count', 'business_impact'] as $field) {
+            if (array_key_exists($field, $input)) {
+                $itPayload[$field] = $input[$field];
+            }
+        }
+        if ($itPayload !== []) {
+            $createPayload = array_merge($createPayload, $this->itHelpdesk->applyRules($itPayload));
+        }
+
+        $ticket = $this->tickets->create($createPayload);
 
         $this->events->create([
             'ticket_id' => $ticket->id,

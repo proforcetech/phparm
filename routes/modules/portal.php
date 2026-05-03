@@ -1,5 +1,9 @@
 <?php
 
+use App\Services\Assets\AssetAcquisitionRepository;
+use App\Services\Assets\AssetAcquisitionService;
+use App\Services\Assets\AssetDecommissionRepository;
+use App\Services\Assets\AssetLeaseRepository;
 use App\Services\Assets\SiteAssetRepository;
 use App\Services\Contracts\ContractAmendmentRepository;
 use App\Services\Contracts\ContractRepository;
@@ -24,11 +28,14 @@ use App\Services\Portal\PortalController;
 use App\Services\Portal\PortalEtaPromiseController;
 use App\Services\Portal\PortalEtaPromiseRepository;
 use App\Services\Portal\PortalEtaPromiseService;
+use App\Services\Portal\PortalLifecycleController;
+use App\Services\Portal\PortalLifecycleService;
 use App\Services\Portal\PortalMessagingController;
 use App\Services\Portal\PortalMessagingService;
 use App\Services\Portal\PortalPaymentMethodRepository;
 use App\Services\Portal\PortalRequestController;
 use App\Services\Portal\PortalRequestWizardService;
+use App\Services\Tickets\ItHelpdeskService;
 use App\Services\Portal\PortalThemeController;
 use App\Services\Portal\PortalThemeRepository;
 use App\Services\Portal\PortalThemeService;
@@ -103,6 +110,7 @@ return function (Router $router, RouteContext $ctx): void {
         new SiteRepository($ctx->connection),
         $siteAssetRepo,
         $ctx->auditLogger,
+        new ItHelpdeskService(),
     );
     $wizardController = new PortalRequestController($wizardService);
 
@@ -191,6 +199,26 @@ return function (Router $router, RouteContext $ctx): void {
     );
     $themeController = new PortalThemeController($themeService);
 
+    // Phase 13 (#123) — portal-facing lease/acquisition/decommission view.
+    // Reuses the staff acquisition service for approve/reject so the
+    // matrix + audit rules stay single-sourced; lease decisions go
+    // through the repo helper. Decommissions are read-only on the portal.
+    $lifecycleAcqRepo = new AssetAcquisitionRepository($ctx->connection);
+    $lifecycleAcqService = new AssetAcquisitionService(
+        $lifecycleAcqRepo,
+        $ctx->gate,
+        $ctx->auditLogger,
+    );
+    $lifecycleService = new PortalLifecycleService(
+        new AssetLeaseRepository($ctx->connection),
+        $lifecycleAcqRepo,
+        $lifecycleAcqService,
+        new AssetDecommissionRepository($ctx->connection),
+        $portalCustomerRepo,
+        $ctx->auditLogger,
+    );
+    $lifecycleController = new PortalLifecycleController($lifecycleService);
+
     // --- Public login endpoint (no auth, strict throttle) ---
     $router->group([Middleware::throttleStrict(10, 60)], function (Router $router) use ($controller, $themeController) {
         $router->post('/api/portal/auth/login', function (Request $request) use ($controller) {
@@ -216,7 +244,7 @@ return function (Router $router, RouteContext $ctx): void {
     $router->group([Middleware::portalAuth($portalAuth)], function (Router $router) use (
         $controller, $wizardController, $approvalController, $assetController,
         $billingController, $messagingController, $uploadController, $uploadService,
-        $etaController, $themeController,
+        $etaController, $themeController, $lifecycleController,
     ) {
         $router->get('/api/portal/auth/me', function (Request $request) use ($controller) {
             $account = $request->getAttribute('portal_account');
@@ -563,6 +591,84 @@ return function (Router $router, RouteContext $ctx): void {
             return Response::json($themeController->readForPortal(
                 $request->getAttribute('user'),
                 $request->getAttribute('portal_account'),
+            ));
+        });
+
+        // Phase 13 (#123) — leases (read + end-of-lease decision)
+        $router->get('/api/portal/leases', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->listLeases(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
+            ));
+        });
+
+        $router->get('/api/portal/leases/{id}', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->getLease(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+            ));
+        });
+
+        $router->post('/api/portal/leases/{id}/decision', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->recordLeaseDecision(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+                $request->body(),
+            ));
+        });
+
+        // Phase 13 (#123) — acquisitions (read + customer approve/reject)
+        $router->get('/api/portal/acquisitions', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->listAcquisitions(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
+            ));
+        });
+
+        $router->get('/api/portal/acquisitions/{id}', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->getAcquisition(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+            ));
+        });
+
+        $router->post('/api/portal/acquisitions/{id}/approve', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->approveAcquisition(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+                $request->body(),
+            ));
+        });
+
+        $router->post('/api/portal/acquisitions/{id}/reject', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->rejectAcquisition(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+                $request->body(),
+            ));
+        });
+
+        // Phase 13 (#123) — decommissions (read-only on the portal)
+        $router->get('/api/portal/decommissions', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->listDecommissions(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
+            ));
+        });
+
+        $router->get('/api/portal/decommissions/{id}', function (Request $request) use ($lifecycleController) {
+            return Response::json($lifecycleController->getDecommission(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
             ));
         });
     });

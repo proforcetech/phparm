@@ -86,6 +86,9 @@ class TicketEscalationService
         if ($rule->match_priority !== null && $rule->match_priority !== $ticket->priority) {
             return false;
         }
+        if ($rule->match_severity !== null && $rule->match_severity !== $ticket->severity) {
+            return false;
+        }
         if ($rule->match_status !== null && $rule->match_status !== $ticket->status) {
             return false;
         }

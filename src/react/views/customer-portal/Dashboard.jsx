@@ -4,6 +4,21 @@ import Card from '../../components/ui/Card'
 
 const portalCards = [
   {
+    title: 'Submit a Request',
+    description: 'Open a service ticket or report an IT issue',
+    to: '/portal/request',
+    icon: (
+      <svg className="mx-auto h-12 w-12 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75l-7-12a2 2 0 00-3.7 0l-7 12A2 2 0 005 19z"
+        />
+      </svg>
+    ),
+  },
+  {
     title: 'My Invoices',
     description: 'View and pay invoices',
     to: '/portal/invoices',

@@ -30,6 +30,7 @@ function esc_rule(array $o = []): TicketEscalationRule
     $r->trigger_seconds = $o['trigger_seconds'] ?? null;
     $r->trigger_sla_kind = $o['trigger_sla_kind'] ?? null;
     $r->match_priority = $o['match_priority'] ?? null;
+    $r->match_severity = $o['match_severity'] ?? null;
     $r->match_status = $o['match_status'] ?? null;
     $r->action_raise_priority_to = $o['action_raise_priority_to'] ?? null;
     $r->action_reassign_queue_id = $o['action_reassign_queue_id'] ?? null;
@@ -44,6 +45,7 @@ function esc_ticket(array $o = []): Ticket
     $t->id = $o['id'] ?? 1;
     $t->status = $o['status'] ?? 'new';
     $t->priority = $o['priority'] ?? 'p3_normal';
+    $t->severity = $o['severity'] ?? null;
     $t->updated_at = $o['updated_at'] ?? date('Y-m-d H:i:s', time() - 3600); // default 1 hr ago
     return $t;
 }
@@ -202,5 +204,22 @@ $sla = new FakeSla([
 ]);
 $svc = new TicketEscalationService($tickets, $rules, new FakeEscEventsRepo(), new FakeTimelineRepo(), $sla);
 eq(0, $svc->runOnce()['fired'], 'sla_breach_imminent outside threshold → no fire');
+
+// Case 9: match_severity scope gates (Phase 14 / M8).
+$tickets = new FakeTicketsRepo([
+    esc_ticket(['id' => 1, 'severity' => 'P3', 'updated_at' => date('Y-m-d H:i:s', time() - 3600)]),
+]);
+$rules = new FakeEscRulesRepo([
+    esc_rule(['trigger_kind' => 'stale', 'trigger_minutes' => 30, 'match_severity' => 'P1']),
+]);
+$svc = new TicketEscalationService($tickets, $rules, new FakeEscEventsRepo(), new FakeTimelineRepo(), new FakeSla([]));
+eq(0, $svc->runOnce()['fired'], 'match_severity scope excludes non-matching ticket');
+
+// Case 10: match_severity matches when severity equals.
+$tickets = new FakeTicketsRepo([
+    esc_ticket(['id' => 1, 'severity' => 'P1', 'updated_at' => date('Y-m-d H:i:s', time() - 3600)]),
+]);
+$svc = new TicketEscalationService($tickets, $rules, new FakeEscEventsRepo(), new FakeTimelineRepo(), new FakeSla([]));
+eq(1, $svc->runOnce()['fired'], 'match_severity scope fires when severity equals');
 
 echo "\nAll TicketEscalationService tests passed.\n";

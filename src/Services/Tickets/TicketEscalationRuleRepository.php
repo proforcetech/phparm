@@ -15,7 +15,7 @@ class TicketEscalationRuleRepository
 {
     private const COLUMNS = 'id, name, description, is_active,
         trigger_kind, trigger_minutes, trigger_seconds, trigger_sla_kind,
-        match_division_id, match_queue_id, match_priority, match_status,
+        match_division_id, match_queue_id, match_priority, match_severity, match_status,
         action_reassign_queue_id, action_raise_priority_to, action_notify_user_id,
         cooldown_minutes, created_at, updated_at';
 
@@ -58,12 +58,12 @@ class TicketEscalationRuleRepository
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO ticket_escalation_rules (name, description, is_active,
                 trigger_kind, trigger_minutes, trigger_seconds, trigger_sla_kind,
-                match_division_id, match_queue_id, match_priority, match_status,
+                match_division_id, match_queue_id, match_priority, match_severity, match_status,
                 action_reassign_queue_id, action_raise_priority_to, action_notify_user_id,
                 cooldown_minutes)
              VALUES (:name, :description, :is_active,
                 :trigger_kind, :trigger_minutes, :trigger_seconds, :trigger_sla_kind,
-                :match_division_id, :match_queue_id, :match_priority, :match_status,
+                :match_division_id, :match_queue_id, :match_priority, :match_severity, :match_status,
                 :action_reassign_queue_id, :action_raise_priority_to, :action_notify_user_id,
                 :cooldown_minutes)'
         );
@@ -78,6 +78,7 @@ class TicketEscalationRuleRepository
             'match_division_id' => $data['match_division_id'] ?? null,
             'match_queue_id' => $data['match_queue_id'] ?? null,
             'match_priority' => $data['match_priority'] ?? null,
+            'match_severity' => $data['match_severity'] ?? null,
             'match_status' => $data['match_status'] ?? null,
             'action_reassign_queue_id' => $data['action_reassign_queue_id'] ?? null,
             'action_raise_priority_to' => $data['action_raise_priority_to'] ?? null,
@@ -100,7 +101,7 @@ class TicketEscalationRuleRepository
         $writable = [
             'name', 'description',
             'trigger_kind', 'trigger_minutes', 'trigger_seconds', 'trigger_sla_kind',
-            'match_division_id', 'match_queue_id', 'match_priority', 'match_status',
+            'match_division_id', 'match_queue_id', 'match_priority', 'match_severity', 'match_status',
             'action_reassign_queue_id', 'action_raise_priority_to', 'action_notify_user_id',
             'cooldown_minutes',
         ];

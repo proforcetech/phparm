@@ -277,6 +277,7 @@ function wizMakeEnv(): array
     $audit = new WizFakeAudit();
     $svc = new PortalRequestWizardService(
         $categories, $tickets, $events, $routingSvc, $portalAuth, $sites, $assets, $audit,
+        new \App\Services\Tickets\ItHelpdeskService(),
     );
     return compact('categories', 'tickets', 'events', 'rulesRepo', 'sites', 'assets', 'portalAuth', 'audit', 'svc');
 }

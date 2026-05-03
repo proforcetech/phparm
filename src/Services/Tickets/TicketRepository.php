@@ -17,8 +17,10 @@ use RuntimeException;
  */
 class TicketRepository
 {
-    private const COLUMNS = 'id, ticket_number, company_id, site_id, division_id, asset_id,
-        parent_ticket_id, category_id, subcategory_id, priority, status, title, description,
+    private const COLUMNS = 'id, ticket_number, company_id, site_id, division_id, service_line_id, asset_id,
+        parent_ticket_id, category_id, subcategory_id, priority,
+        severity, affected_users_count, business_impact, it_request_kind,
+        status, title, description,
         reported_by_contact_id, reported_by_user_id, reporter_name, reporter_email, reporter_phone,
         assigned_to_user_id, queue_id, source, source_ref,
         close_reason, resolution_code, failure_code,
@@ -154,16 +156,18 @@ class TicketRepository
             try {
                 $stmt = $this->connection->pdo()->prepare(
                     'INSERT INTO tickets (
-                        ticket_number, company_id, site_id, division_id, asset_id,
+                        ticket_number, company_id, site_id, division_id, service_line_id, asset_id,
                         parent_ticket_id, category_id, subcategory_id,
-                        priority, status, title, description,
+                        priority, severity, affected_users_count, business_impact, it_request_kind,
+                        status, title, description,
                         reported_by_contact_id, reported_by_user_id,
                         reporter_name, reporter_email, reporter_phone,
                         assigned_to_user_id, queue_id, source, source_ref
                     ) VALUES (
-                        :ticket_number, :company_id, :site_id, :division_id, :asset_id,
+                        :ticket_number, :company_id, :site_id, :division_id, :service_line_id, :asset_id,
                         :parent_ticket_id, :category_id, :subcategory_id,
-                        :priority, :status, :title, :description,
+                        :priority, :severity, :affected_users_count, :business_impact, :it_request_kind,
+                        :status, :title, :description,
                         :reported_by_contact_id, :reported_by_user_id,
                         :reporter_name, :reporter_email, :reporter_phone,
                         :assigned_to_user_id, :queue_id, :source, :source_ref
@@ -174,11 +178,16 @@ class TicketRepository
                     'company_id' => $data['company_id'] ?? null,
                     'site_id' => $data['site_id'] ?? null,
                     'division_id' => $data['division_id'] ?? null,
+                    'service_line_id' => $data['service_line_id'] ?? null,
                     'asset_id' => $data['asset_id'] ?? null,
                     'parent_ticket_id' => $data['parent_ticket_id'] ?? null,
                     'category_id' => $data['category_id'] ?? null,
                     'subcategory_id' => $data['subcategory_id'] ?? null,
                     'priority' => $data['priority'] ?? 'p3_normal',
+                    'severity' => $data['severity'] ?? null,
+                    'affected_users_count' => $data['affected_users_count'] ?? null,
+                    'business_impact' => $data['business_impact'] ?? null,
+                    'it_request_kind' => $data['it_request_kind'] ?? null,
                     'status' => $data['status'] ?? 'new',
                     'title' => $data['title'],
                     'description' => $data['description'] ?? null,
@@ -215,9 +224,10 @@ class TicketRepository
     public function update(int $id, array $data): Ticket
     {
         $writable = [
-            'company_id', 'site_id', 'division_id', 'asset_id',
+            'company_id', 'site_id', 'division_id', 'service_line_id', 'asset_id',
             'parent_ticket_id', 'category_id', 'subcategory_id',
-            'priority', 'status', 'title', 'description',
+            'priority', 'severity', 'affected_users_count', 'business_impact', 'it_request_kind',
+            'status', 'title', 'description',
             'reporter_name', 'reporter_email', 'reporter_phone',
             'assigned_to_user_id', 'queue_id',
             'close_reason', 'resolution_code', 'failure_code',

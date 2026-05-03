@@ -15,6 +15,7 @@ class TicketEscalationRule extends BaseModel
     public ?int $match_division_id = null;
     public ?int $match_queue_id = null;
     public ?string $match_priority = null;
+    public ?string $match_severity = null;
     public ?string $match_status = null;
     public ?int $action_reassign_queue_id = null;
     public ?string $action_raise_priority_to = null;

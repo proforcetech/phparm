@@ -8,6 +8,7 @@ use App\Services\Crm\SiteRepository;
 use App\Services\Tickets\SlaClockService;
 use App\Services\Tickets\TicketCategoryRepository;
 use App\Services\Tickets\TicketCloseReasonRepository;
+use App\Services\Tickets\ItHelpdeskService;
 use App\Services\Tickets\TicketController;
 use App\Services\Tickets\TicketEscalationRuleRepository;
 use App\Services\Tickets\TicketEventRepository;
@@ -69,7 +70,8 @@ return function (Router $router, RouteContext $ctx): void {
         $workorderLinksRepo,
         $closeReasonsRepo,
         $resolutionCodesRepo,
-        $failureCodesRepo
+        $failureCodesRepo,
+        new ItHelpdeskService()
     );
 
     $router->group([Middleware::auth()], function (Router $router) use ($controller) {

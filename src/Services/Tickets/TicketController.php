@@ -68,6 +68,7 @@ class TicketController
         private readonly TicketCloseReasonRepository $closeReasons,
         private readonly TicketResolutionCodeRepository $resolutionCodes,
         private readonly TicketFailureCodeRepository $failureCodes,
+        private readonly ItHelpdeskService $itHelpdesk,
     ) {
     }
 
@@ -212,6 +213,10 @@ class TicketController
             }
         }
 
+        // IT-helpdesk overlay (no-op for non-IT tickets). May enrich severity
+        // and validate business_impact / it_request_kind / affected count.
+        $body = $this->itHelpdesk->applyRules($body, existing: null);
+
         $ticket = $this->tickets->create($body + ['reported_by_user_id' => $user->id ?? null]);
         $this->events->create([
             'ticket_id' => $ticket->id,
@@ -355,6 +360,10 @@ class TicketController
         // before it's stripped so we can persist it as a timeline event.
         $closeNote = isset($body['close_note']) ? trim((string) $body['close_note']) : '';
         $this->enforceCloseCatalog($body, $existing, $newStatus);
+
+        // IT-helpdesk overlay — re-evaluate severity/business_impact against
+        // the merged (existing + body) view.
+        $body = $this->itHelpdesk->applyRules($body, existing: $existing);
 
         $ticket = $this->tickets->update($id, $body);
 
@@ -801,6 +810,11 @@ class TicketController
                     "{$key} must be one of: " . implode(', ', self::PRIORITIES)
                 );
             }
+        }
+        if (!empty($body['match_severity']) && !in_array($body['match_severity'], Ticket::SEVERITIES, true)) {
+            throw new InvalidArgumentException(
+                'match_severity must be one of: ' . implode(', ', Ticket::SEVERITIES)
+            );
         }
         if (!empty($body['match_status']) && !in_array($body['match_status'], self::STATUSES, true)) {
             throw new InvalidArgumentException(
