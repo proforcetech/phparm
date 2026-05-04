@@ -50,13 +50,13 @@ class DivisionController
     {
         $this->gate->assert($user, 'settings.divisions.manage');
 
-        $code = trim((string) ($body['code'] ?? ''));
+        $code = strtoupper(trim((string) ($body['code'] ?? '')));
         $name = trim((string) ($body['name'] ?? ''));
         if ($code === '' || $name === '') {
             throw new InvalidArgumentException('code and name are required');
         }
-        if (!preg_match('/^[a-z0-9_]+$/', $code)) {
-            throw new InvalidArgumentException('code must be lowercase alphanumeric with underscores');
+        if (!preg_match('/^[A-Z0-9_]+$/', $code)) {
+            throw new InvalidArgumentException('code must contain only letters, digits, and underscores');
         }
         if ($this->repository->findByCode($code) !== null) {
             throw new InvalidArgumentException("Division code '{$code}' already exists");
