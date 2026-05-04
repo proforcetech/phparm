@@ -88,7 +88,7 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 CREATE TABLE IF NOT EXISTS asset_import_rows (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     import_id BIGINT UNSIGNED NOT NULL,
-    row_number INT UNSIGNED NOT NULL,
+    `row_number` INT UNSIGNED NOT NULL,
     -- raw_data is the as-uploaded {csv_column: value} dict so we can re-validate
     -- after the operator changes the mapping without re-uploading the CSV.
     raw_data JSON NOT NULL,
@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS asset_import_rows (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     error_message VARCHAR(500) NULL,
     created_asset_id INT UNSIGNED NULL,
-    INDEX idx_asset_import_rows_import (import_id, row_number),
+    INDEX idx_asset_import_rows_import (import_id, `row_number`),
     INDEX idx_asset_import_rows_status (import_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

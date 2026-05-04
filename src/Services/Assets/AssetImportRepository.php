@@ -22,7 +22,7 @@ class AssetImportRepository
         total_rows, valid_rows, error_rows, created_rows,
         started_by_user_id, started_at, validated_at, applied_at, notes';
 
-    private const ROW_COLUMNS = 'id, import_id, row_number, raw_data, parsed_data,
+    private const ROW_COLUMNS = 'id, import_id, `row_number`, raw_data, parsed_data,
         status, error_message, created_asset_id';
 
     public function __construct(private readonly Connection $connection)
@@ -167,7 +167,7 @@ class AssetImportRepository
         if ($rows === []) {
             return;
         }
-        $sql = 'INSERT INTO asset_import_rows (import_id, row_number, raw_data, status)
+        $sql = 'INSERT INTO asset_import_rows (import_id, `row_number`, raw_data, status)
                 VALUES (:import_id, :row_number, :raw_data, :status)';
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($rows as $row) {
@@ -197,7 +197,7 @@ class AssetImportRepository
         $stmt = $this->connection->pdo()->prepare(
             'SELECT ' . self::ROW_COLUMNS . " FROM asset_import_rows
              WHERE {$whereSql}
-             ORDER BY row_number ASC LIMIT {$limit} OFFSET {$offset}"
+             ORDER BY `row_number` ASC LIMIT {$limit} OFFSET {$offset}"
         );
         $stmt->execute($params);
         return array_map(
