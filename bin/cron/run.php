@@ -145,6 +145,18 @@ $jobs = [
         'schedule' => '*/5 * * * *', // Every 5 minutes
         'description' => 'Materializes route_visits forward through generation_horizon_days and marks overdue planned visits as missed',
     ],
+    'pos-stale-sweeper' => [
+        'name' => 'POS Terminal Stale-Heartbeat Sweeper',
+        'script' => __DIR__ . '/pos-stale-sweeper.php',
+        'schedule' => '* * * * *', // Every minute
+        'description' => 'Opens alert tickets for POS terminals whose last_seen_at exceeded their stale_after_seconds threshold',
+    ],
+    'consolidated-monthly-billing' => [
+        'name' => 'Consolidated Monthly Billing',
+        'script' => __DIR__ . '/consolidated-monthly-billing.php',
+        'schedule' => '0 2 1 * *', // 1st of every month at 2 AM
+        'description' => 'Generates one bundled monthly statement per opted-in chain customer for the prior calendar month',
+    ],
 ];
 
 if (isset($options['list'])) {

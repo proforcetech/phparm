@@ -42,6 +42,12 @@ return [
                 'dispatch.*',
                 'roadside.*',
                 'messages.*',
+                // Phase 17 (M10) of docs/woms-expansion-plan.md: dispatchers
+                // run the multi-trade planning board alongside managers.
+                'dispatch_board.view', 'dispatch_board.assign',
+                // Phase 17 (S11): dispatchers read the skill matrix so they
+                // can understand suggested-tech rationale on the board.
+                'skills.view',
                 'truck_checklists.view',
                 'driver_shifts.view',
                 'branches.dashboard.view',
@@ -148,6 +154,11 @@ return [
                 // Execute (state transitions, photos) is field-side and
                 // stays with the technician role.
                 'service_routes.view', 'service_routes.manage',
+                // Phase 16 (S1) of docs/woms-expansion-plan.md: dispatchers
+                // see the security credential register so they can answer
+                // "who has access where?" when triaging an after-hours
+                // alarm. Manage stays with managers/admins.
+                'security_credentials.view',
             ],
         ],
         'manager' => [
@@ -220,6 +231,11 @@ return [
                 // management — managers maintain the master list, assign subs
                 // to work orders, and rate performance.
                 'subcontractors.view', 'subcontractors.manage',
+                // Phase 18 (S5) of docs/woms-expansion-plan.md: procurement —
+                // managers maintain the vendor master, author POs, and can
+                // receive shipments. Receive is a separate gate so parts
+                // staff get receive without manage.
+                'procurement.view', 'procurement.manage', 'procurement.receive',
                 // Phase 10.2 of docs/expansion-plan.md: change-order workflow.
                 // Managers compose, edit, submit, AND approve/reject change
                 // orders. Approve is a separate gate so we can split duties
@@ -295,6 +311,44 @@ return [
                 // Execute is granted too so a manager can complete a
                 // visit on a tech's behalf when the field side is offline.
                 'service_routes.view', 'service_routes.manage', 'service_routes.execute',
+                // Phase 16 (S1) of docs/woms-expansion-plan.md: managers own
+                // the security credential register, door grants, access
+                // schedules, and the programming-log audit feed. Manage
+                // covers issue/suspend/revoke + grant/revoke door access.
+                'security_credentials.view', 'security_credentials.manage',
+                // Phase 16 (S2) of docs/woms-expansion-plan.md: managers own
+                // the POS terminal registry — register devices, rotate the
+                // shared HMAC secret, view heartbeat history, and read the
+                // per-terminal programming log. Webhook ingestion itself is
+                // unauthenticated (HMAC-verified).
+                'pos_terminals.view', 'pos_terminals.manage',
+                // Phase 17 (S11) of docs/woms-expansion-plan.md: managers own
+                // the technician skill matrix — maintain the skills catalog
+                // per service line and grant/revoke per-technician
+                // proficiency tags + cert dates that the dispatch board uses
+                // to suggest qualified assignees.
+                'skills.view', 'skills.manage',
+                // Phase 17 (M10) of docs/woms-expansion-plan.md: managers
+                // run the multi-trade dispatch board — view the planning
+                // grid and drop workorders onto qualified technicians. The
+                // board enforces service-line membership + required-skill
+                // checks server-side; assign covers the drag gesture.
+                'dispatch_board.view', 'dispatch_board.assign',
+                // Phase 17 (M11) of docs/woms-expansion-plan.md: managers
+                // generate, send, and cancel consolidated monthly statements
+                // for chain customers; view covers list/detail, manage covers
+                // generate/run-batch/mark-sent/cancel/detach.
+                'consolidated_billing.view', 'consolidated_billing.manage',
+                // Phase 17 (S4) of docs/woms-expansion-plan.md: managers see
+                // the multi-site chain rollup dashboard — operations summary,
+                // SLA-by-site, spend-by-site, asset/contract counts. Read-only
+                // surface, no manage permission.
+                'chain_rollup.view',
+                // Phase 17 (S10) of docs/woms-expansion-plan.md: managers see
+                // trade-specific KPI dashboards — MTBF/MTTR, first-call
+                // resolution %, route completion %, install-on-time % scoped
+                // by service line. Read-only.
+                'trade_kpis.view',
                 // Full CMS access (matches admin for CMS operations)
                 'cms.*'
             ],
@@ -391,6 +445,11 @@ return [
                 // photos. Authoring routes + reassigning visits stays with
                 // dispatch/manager.
                 'service_routes.view', 'service_routes.execute',
+                // Phase 17 (S11) of docs/woms-expansion-plan.md: technicians
+                // read the skill matrix so they can see what they're tagged
+                // with and which competencies the dispatch board uses to
+                // route work to them. Editing stays with manager.
+                'skills.view',
                 // CMS content editing (no administrative settings)
                 'cms.pages.view', 'cms.pages.create', 'cms.pages.update', 'cms.pages.delete',
                 'cms.categories.view', 'cms.categories.create', 'cms.categories.update', 'cms.categories.delete',
@@ -419,6 +478,10 @@ return [
                 // WO line items) at the parts counter. No manage — they
                 // shouldn't be able to nuke install history.
                 'workorder_kits.view', 'workorder_kits.install',
+                // Phase 18 (S5) of docs/woms-expansion-plan.md: parts staff
+                // see the PO list and process incoming shipments at the
+                // counter. Authoring/cancelling POs stays with manager.
+                'procurement.view', 'procurement.receive',
             ],
         ],
         'roadside' => [
@@ -504,6 +567,10 @@ return [
                 // Phase 10.1: accounting reads subcontractor master + assignments
                 // for cost reconciliation against vendor invoices.
                 'subcontractors.view',
+                // Phase 18 (S5) of docs/woms-expansion-plan.md: accounting
+                // reads vendors + POs to reconcile vendor invoices against
+                // received quantities. No manage — they can't author POs.
+                'procurement.view',
                 // Phase 10.2: accounting reads change orders for invoicing
                 // reconciliation — approved CO totals roll into the WO bill.
                 'workorder_change_orders.view',

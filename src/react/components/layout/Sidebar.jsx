@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
+import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, ArrowUpTrayIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, BuildingStorefrontIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, ShoppingCartIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 import ServiceLineSwitcher from './ServiceLineSwitcher'
@@ -53,6 +53,9 @@ const adminMenuItems = [
     ],
   },
   { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
+  { path: '/cp/procurement/purchase-orders', label: 'Purchase Orders', icon: ShoppingCartIcon, moduleKey: 'inventory' },
+  { path: '/cp/procurement/vendors', label: 'Vendors', icon: BuildingStorefrontIcon, moduleKey: 'inventory' },
+  { path: '/cp/vendor-portal-tokens', label: 'Vendor Portal Tokens', icon: BuildingStorefrontIcon, moduleKey: 'inventory' },
 
   sec('Assets & Fleet'),
   { path: '/cp/assets', label: 'Installed Assets', icon: WrenchScrewdriverIcon, moduleKey: 'assets' },
@@ -60,6 +63,7 @@ const adminMenuItems = [
   { path: '/cp/assets/leases', label: 'Asset Leases', icon: DocumentDuplicateIcon, moduleKey: 'assets' },
   { path: '/cp/assets/acquisitions', label: 'Asset Acquisitions', icon: ClipboardDocumentListIcon, moduleKey: 'assets' },
   { path: '/cp/assets/decommissions', label: 'Asset Decommissions', icon: TrashIcon, moduleKey: 'assets' },
+  { path: '/cp/assets/import', label: 'Bulk Asset Import', icon: ArrowUpTrayIcon, moduleKey: 'assets' },
   { path: '/cp/fleet/units', label: 'Fleet Units', icon: TruckIcon, moduleKey: 'fleet' },
   { path: '/cp/fleet/external-repairs', label: 'External Repairs', icon: LifebuoyIcon, moduleKey: 'fleet' },
   { path: '/cp/fleet/reports', label: 'Fleet Reports', icon: ChartBarIcon, moduleKey: 'fleet' },
@@ -116,6 +120,7 @@ const adminMenuItems = [
   { path: '/cp/document-vault', label: 'Document Vault', icon: DocumentDuplicateIcon, moduleKey: 'documents' },
   { path: '/cp/voice-notes', label: 'Voice Notes', icon: MicrophoneIcon, moduleKey: 'voice_notes' },
   { path: '/cp/subcontractors', label: 'Subcontractors', icon: BuildingOfficeIcon, moduleKey: 'subcontractors' },
+  { path: '/cp/sub-portal-tokens', label: 'Sub Portal Tokens', icon: BuildingOfficeIcon, moduleKey: 'subcontractors' },
 
   sec('Finance'),
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
@@ -185,6 +190,13 @@ const adminMenuItems = [
   { path: '/cp/integrations', label: 'Integrations', icon: PuzzlePieceIcon, moduleKey: 'integrations' },
   { path: '/cp/sso/providers', label: 'SSO Providers', icon: KeyIcon, moduleKey: 'sso' },
   { path: '/cp/security-events', label: 'Security Events', icon: FingerPrintIcon, moduleKey: 'security' },
+  { path: '/cp/security/credentials', label: 'Security Credentials', icon: KeyIcon, moduleKey: 'security' },
+  { path: '/cp/pos/terminals', label: 'POS Terminals', icon: CreditCardIcon, moduleKey: 'pos' },
+  { path: '/cp/skills/matrix', label: 'Skill Matrix', icon: UsersIcon, moduleKey: 'workforce' },
+  { path: '/cp/dispatch-board', label: 'Dispatch Board', icon: RectangleGroupIcon, moduleKey: 'dispatch' },
+  { path: '/cp/billing/consolidated', label: 'Consolidated Statements', icon: DocumentDuplicateIcon, moduleKey: 'invoices' },
+  { path: '/cp/chain-rollup', label: 'Chain Rollup', icon: BuildingOffice2Icon, moduleKey: 'crm' },
+  { path: '/cp/trade-kpis', label: 'Trade KPIs', icon: ChartPieIcon, moduleKey: 'reports' },
   { path: '/cp/retention/policies', label: 'Retention Policies', icon: TrashIcon, moduleKey: 'retention' },
   { path: '/cp/custom-fields', label: 'Custom Fields', icon: AdjustmentsHorizontalIcon, moduleKey: 'custom_fields' },
   { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },

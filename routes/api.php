@@ -10201,7 +10201,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
         policies: $policyRegistry,
     );
 
-    foreach (['customer_retention', 'modules_and_user_groups', 'divisions', 'service_lines', 'property_management', 'custom_fields', 'branch_dashboards', 'crm', 'assets', 'asset_leases', 'asset_acquisitions', 'asset_decommissions', 'tickets', 'contracts', 'pm', 'portal', 'eta', 'fleet', 'capital_plan', 'subcontractors', 'workorder_change_orders', 'workorder_tech_requests', 'workorder_reassignments', 'ticket_triage', 'routing', 'voice_notes', 'workorder_kit_installs', 'retention', 'security_events', 'sso', 'trusted_devices', 'reporting', 'integrations', 'software_inventory', 'change_management', 'service_routes'] as $routeModule) {
+    foreach (['customer_retention', 'modules_and_user_groups', 'divisions', 'service_lines', 'property_management', 'custom_fields', 'branch_dashboards', 'crm', 'assets', 'asset_imports', 'asset_leases', 'asset_acquisitions', 'asset_decommissions', 'tickets', 'contracts', 'pm', 'portal', 'eta', 'fleet', 'capital_plan', 'subcontractors', 'subcontractor_portal', 'procurement', 'vendor_portal', 'workorder_change_orders', 'workorder_tech_requests', 'workorder_reassignments', 'ticket_triage', 'routing', 'voice_notes', 'workorder_kit_installs', 'retention', 'security_events', 'sso', 'trusted_devices', 'reporting', 'integrations', 'software_inventory', 'change_management', 'service_routes', 'security_credentials', 'pos_terminals', 'skills', 'dispatch_board', 'consolidated_billing', 'chain_rollup', 'trade_kpis'] as $routeModule) {
         $moduleLoader = require __DIR__ . '/modules/' . $routeModule . '.php';
         $moduleLoader($router, $routeContext);
     }

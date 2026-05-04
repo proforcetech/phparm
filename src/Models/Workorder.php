@@ -78,6 +78,13 @@ class Workorder extends BaseModel
     public ?int $fleet_unit_id = null;
     public ?int $branch_id = null;
     public ?int $service_line_id = null;
+    // Phase 17 / M10 of docs/woms-expansion-plan.md — multi-trade dispatch
+    // board. required_skill_id pins the WO to a specific competency from the
+    // skills catalog (NULL = no constraint, anyone in the line is a
+    // candidate). min_proficiency_level lets a manager require expert-level
+    // only for trickier WOs; values match App\Models\UserSkill::PROFICIENCY_*.
+    public ?int $required_skill_id = null;
+    public ?string $min_proficiency_level = null;
     // Phase 12 of docs/woms-expansion-plan.md — property-management vertical.
     // unit_id pins the WO to a specific leasable space within a site; NULL for
     // any WO outside the property-mgmt vertical. tenant_billable_party is

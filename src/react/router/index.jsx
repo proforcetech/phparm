@@ -54,10 +54,21 @@ import WarrantyClaims from '../views/warranty/WarrantyClaims'
 import AssetLeases from '../views/assets/AssetLeases'
 import AssetAcquisitions from '../views/assets/AssetAcquisitions'
 import AssetDecommissions from '../views/assets/AssetDecommissions'
+import AssetImport from '../views/assets/AssetImport'
+import Vendors from '../views/procurement/Vendors'
+import PurchaseOrders from '../views/procurement/PurchaseOrders'
+import PurchaseOrderDetail from '../views/procurement/PurchaseOrderDetail'
 import SoftwareInventory from '../views/software-inventory/SoftwareInventory'
 import ChangeManagement from '../views/change-management/ChangeManagement'
 import ServiceRoutes from '../views/service-routes/ServiceRoutes'
 import MyRoutes from '../views/service-routes/MyRoutes'
+import CredentialRegister from '../views/security/CredentialRegister'
+import PosTerminals from '../views/pos/PosTerminals'
+import SkillMatrix from '../views/skills/SkillMatrix'
+import DispatchBoard from '../views/dispatch-board/DispatchBoard'
+import ConsolidatedStatements from '../views/invoices/ConsolidatedStatements'
+import ChainRollup from '../views/chain-rollup/ChainRollup'
+import TradeKpis from '../views/trade-kpis/TradeKpis'
 import ImpoundIntake from '../views/storage/ImpoundIntake'
 import StorageFeeLedger from '../views/storage/StorageFeeLedger'
 import NoticeGeneration from '../views/storage/NoticeGeneration'
@@ -137,6 +148,10 @@ import TenantNewRequest from '../views/tenant/NewRequest'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
+import SubPortal from '../views/sub-portal/SubPortal'
+import SubPortalTokens from '../views/sub-portal/SubPortalTokens'
+import VendorPortal from '../views/vendor-portal/VendorPortal'
+import VendorPortalTokens from '../views/vendor-portal/VendorPortalTokens'
 import TrackingView from '../views/tracking/TrackingView'
 import CMSPage from '../views/public/CMSPage'
 import AdminLayout from '../components/layout/AdminLayout'
@@ -212,6 +227,10 @@ const publicRoutes = [
   { path: '/customers/:id', name: 'CustomerPublicDetail', auth: 'public', element: <CustomerPublicDetail /> },
   { path: '/vehicles/:id', name: 'VehiclePublicDetail', auth: 'public', element: <VehiclePublicDetail /> },
   { path: '/vehicles/:id/edit', name: 'VehiclePublicEdit', auth: 'public', element: <VehiclePublicEdit /> },
+  { path: '/sub-portal/:token', name: 'SubPortalToken', auth: 'public', element: <SubPortal /> },
+  { path: '/sub-portal', name: 'SubPortal', auth: 'public', element: <SubPortal /> },
+  { path: '/vendor-portal/:token', name: 'VendorPortalToken', auth: 'public', element: <VendorPortal /> },
+  { path: '/vendor-portal', name: 'VendorPortal', auth: 'public', element: <VendorPortal /> },
   { path: '/', name: 'Home', auth: 'public', element: <CMSPage /> },
   { path: '/*', name: 'CMSPage', auth: 'public', element: <CMSPage /> },
 ]
@@ -349,6 +368,10 @@ const protectedRoutes = [
   { path: '/cp/assets/leases', name: 'AssetLeases', auth: 'requiresAuth', element: <AssetLeases /> },
   { path: '/cp/assets/acquisitions', name: 'AssetAcquisitions', auth: 'requiresAuth', element: <AssetAcquisitions /> },
   { path: '/cp/assets/decommissions', name: 'AssetDecommissions', auth: 'requiresAuth', element: <AssetDecommissions /> },
+  { path: '/cp/assets/import', name: 'AssetImport', auth: 'requiresAuth', element: <AssetImport /> },
+  { path: '/cp/procurement/vendors', name: 'Vendors', auth: 'requiresAuth', element: <Vendors /> },
+  { path: '/cp/procurement/purchase-orders', name: 'PurchaseOrders', auth: 'requiresAuth', element: <PurchaseOrders /> },
+  { path: '/cp/procurement/purchase-orders/:id', name: 'PurchaseOrderDetail', auth: 'requiresAuth', element: <PurchaseOrderDetail /> },
   { path: '/cp/assets/:id', name: 'AssetDetail', auth: 'requiresAuth', element: stub('Asset Detail', 'Lifecycle, documents, links, and QR for one installed asset.') },
 
   // Software CMDB (Phase 14 / M9)
@@ -356,6 +379,20 @@ const protectedRoutes = [
 
   // Change management — RFC + CAB (Phase 14 / S3)
   { path: '/cp/it/change-management', name: 'ChangeManagement', auth: 'requiresAuth', element: <ChangeManagement /> },
+
+  // Security credential register (Phase 16 / S1)
+  { path: '/cp/security/credentials', name: 'SecurityCredentials', auth: 'requiresAuth', element: <CredentialRegister /> },
+  { path: '/cp/pos/terminals', name: 'PosTerminals', auth: 'requiresAuth', element: <PosTerminals /> },
+  // Technician skill matrix (Phase 17 / S11)
+  { path: '/cp/skills/matrix', name: 'SkillMatrix', auth: 'requiresAuth', element: <SkillMatrix /> },
+  // Multi-trade dispatch board (Phase 17 / M10)
+  { path: '/cp/dispatch-board', name: 'DispatchBoard', auth: 'requiresAuth', element: <DispatchBoard /> },
+  // Consolidated monthly statements (Phase 17 / M11)
+  { path: '/cp/billing/consolidated', name: 'ConsolidatedStatements', auth: 'requiresAuth', element: <ConsolidatedStatements /> },
+  // Multi-site chain rollup (Phase 17 / S4)
+  { path: '/cp/chain-rollup', name: 'ChainRollup', auth: 'requiresAuth', element: <ChainRollup /> },
+  // Trade-specific KPI dashboard (Phase 17 / S10)
+  { path: '/cp/trade-kpis', name: 'TradeKpis', auth: 'requiresAuth', element: <TradeKpis /> },
 
   // Fleet
   { path: '/cp/fleet/units', name: 'FleetUnits', auth: 'requiresAuth', element: stub('Fleet Units', 'Vehicles, trailers, and equipment with readings, assignments, and downtime.') },
@@ -384,6 +421,8 @@ const protectedRoutes = [
   // Subcontractors
   { path: '/cp/subcontractors', name: 'Subcontractors', auth: 'requiresAuth', element: stub('Subcontractors', 'External vendors that perform work on our behalf.') },
   { path: '/cp/subcontractors/:id', name: 'SubcontractorDetail', auth: 'requiresAuth', element: stub('Subcontractor Detail', 'Contacts, assignments, and performance.') },
+  { path: '/cp/sub-portal-tokens', name: 'SubPortalTokens', auth: 'requiresAuth', element: <SubPortalTokens /> },
+  { path: '/cp/vendor-portal-tokens', name: 'VendorPortalTokens', auth: 'requiresAuth', element: <VendorPortalTokens /> },
 
   // Voice notes
   { path: '/cp/voice-notes', name: 'VoiceNotes', auth: 'requiresAuth', element: stub('Voice Notes', 'Audio attachments on tickets and workorders, with transcription.') },
