@@ -292,7 +292,7 @@ class DashboardService
             SELECT workorder_id, to_status, MAX(created_at) AS last_status_at
             FROM workorder_status_history
             GROUP BY workorder_id, to_status
-        ) wsh ON wsh.workorder_id = w.id AND wsh.to_status = w.status';
+        ) wsh ON wsh.workorder_id = w.id AND wsh.to_status = w.status ';
         $ageExpression = 'TIMESTAMPDIFF(DAY, COALESCE(wsh.last_status_at, w.updated_at, w.created_at), NOW())';
 
         $technicianFilter = '';

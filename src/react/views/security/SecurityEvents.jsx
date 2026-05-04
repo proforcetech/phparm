@@ -97,7 +97,11 @@ export default function SecurityEvents() {
     setLoading(true)
     securityEventsService
       .list(queryParams)
-      .then((res) => setEvents(res?.data ?? res ?? []))
+      .then((res) => {
+        const payload = res?.data ?? res ?? {}
+        const list = Array.isArray(payload) ? payload : (payload?.events ?? [])
+        setEvents(Array.isArray(list) ? list : [])
+      })
       .catch((e) => setError(e?.response?.data?.message || e?.message || 'Failed to load events'))
       .finally(() => setLoading(false))
   }, [queryParams])
@@ -118,7 +122,10 @@ export default function SecurityEvents() {
 
   const summaryStats = useMemo(() => {
     if (!summary || typeof summary !== 'object') return []
-    return Object.entries(summary)
+    const source = summary.by_severity && typeof summary.by_severity === 'object'
+      ? summary.by_severity
+      : summary
+    return Object.entries(source)
       .filter(([, v]) => typeof v === 'number')
       .map(([key, value]) => ({ key, value }))
   }, [summary])
