@@ -78,7 +78,8 @@ class EstimateController
     {
         $this->assertManageAccess($user);
 
-        $estimate = $this->editor->reject($estimateId, $reason ?? '', $user->id);
+        // Pass reason through untouched — the editor enforces non-empty/min-length.
+        $estimate = $this->editor->reject($estimateId, $reason, $user->id);
 
         return $estimate?->toArray();
     }

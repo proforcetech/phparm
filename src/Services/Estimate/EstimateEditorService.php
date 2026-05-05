@@ -19,6 +19,7 @@ class EstimateEditorService
     private ?AuditLogger $audit;
     private ?SubjectResolver $subjectResolver;
     private const ALLOWED_ITEM_STATUSES = ['pending', 'approved', 'rejected'];
+    private const REJECTION_REASON_MIN_LENGTH = 5;
 
     public function __construct(
         Connection $connection,
@@ -141,8 +142,27 @@ class EstimateEditorService
         return $count;
     }
 
-    public function reject(int $estimateId, string $reason, ?int $actorId = null): ?Estimate
+    /**
+     * Reject an estimate with a required, non-trivial reason.
+     *
+     * The reason becomes the audit trail for "why we walked away" and shows
+     * up in customer-facing decline emails / management dashboards. Allowing
+     * empty or single-character values (which the prior controller default
+     * would silently produce) destroys that signal, so the service is the
+     * one place that enforces a minimum.
+     */
+    public function reject(int $estimateId, ?string $reason, ?int $actorId = null): ?Estimate
     {
+        $cleanReason = $reason !== null ? trim($reason) : '';
+        if ($cleanReason === '') {
+            throw new InvalidArgumentException('A rejection reason is required.');
+        }
+        if (mb_strlen($cleanReason) < self::REJECTION_REASON_MIN_LENGTH) {
+            throw new InvalidArgumentException(
+                'Rejection reason must be at least ' . self::REJECTION_REASON_MIN_LENGTH . ' characters.'
+            );
+        }
+
         $estimate = $this->fetchEstimate($estimateId);
         if ($estimate === null) {
             return null;
@@ -157,13 +177,15 @@ class EstimateEditorService
             );
             $stmt->execute([
                 'status' => 'rejected',
-                'reason' => $reason,
+                'reason' => $cleanReason,
                 'id' => $estimateId,
             ]);
 
+            // Subquery form (vs UPDATE ... JOIN ...) so the same statement runs
+            // unchanged on MySQL/MariaDB and on the SQLite fixtures used in tests.
             $pdo->prepare(
-                'UPDATE estimate_items ei JOIN estimate_jobs ej ON ej.id = ei.estimate_job_id ' .
-                'SET ei.status = :status WHERE ej.estimate_id = :estimate_id'
+                'UPDATE estimate_items SET status = :status ' .
+                'WHERE estimate_job_id IN (SELECT id FROM estimate_jobs WHERE estimate_id = :estimate_id)'
             )->execute([
                 'status' => 'rejected',
                 'estimate_id' => $estimateId,
@@ -172,7 +194,7 @@ class EstimateEditorService
             $pdo->commit();
             $updated = $this->fetchEstimate($estimateId);
             $this->log('estimate.rejected', $estimateId, $actorId, [
-                'reason' => $reason,
+                'reason' => $cleanReason,
                 'after' => $updated?->toArray(),
             ]);
 
