@@ -364,7 +364,7 @@ export default function SubPortal() {
         </Card>
       </main>
 
-      <Modal isOpen={openId !== null} onClose={closeDetail} title={
+      <Modal open={openId !== null} onClose={closeDetail} title={
         openAssignment ? `WO #${openAssignment.workorder_id} · Assignment #${openAssignment.id}` : 'Assignment'
       }>
         {openLoading || !openAssignment ? (
@@ -501,7 +501,7 @@ export default function SubPortal() {
       </Modal>
 
       <Modal
-        isOpen={completeOpen}
+        open={completeOpen}
         onClose={() => setCompleteOpen(false)}
         title="Mark assignment complete"
       >

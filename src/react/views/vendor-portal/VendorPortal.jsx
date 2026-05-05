@@ -365,7 +365,7 @@ export default function VendorPortal() {
       </main>
 
       <Modal
-        isOpen={openId !== null}
+        open={openId !== null}
         onClose={closeDetail}
         title={detail?.po ? `PO ${detail.po.po_number}` : 'Purchase order'}
         size="xl"

@@ -179,7 +179,7 @@ export default function VendorPortalTokens() {
         )}
       </Card>
 
-      <Modal isOpen={issueOpen} onClose={() => setIssueOpen(false)} title="Issue portal token">
+      <Modal open={issueOpen} onClose={() => setIssueOpen(false)} title="Issue portal token">
         <div className="space-y-3">
           <Input
             label="Label (optional)"
@@ -207,7 +207,7 @@ export default function VendorPortalTokens() {
       </Modal>
 
       <Modal
-        isOpen={issuedSecret !== null}
+        open={issuedSecret !== null}
         onClose={() => setIssuedSecret(null)}
         title="Token issued"
       >

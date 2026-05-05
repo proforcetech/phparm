@@ -275,7 +275,7 @@ function CellEditModal({ user, skill, existing, onClose, onSaved, onError }) {
 
   return (
     <Modal
-      isOpen
+      open
       onClose={onClose}
       title={`${skill.name} — ${user.name}`}
       footer={(
@@ -479,7 +479,7 @@ function SkillFormModal({ skill, onClose, onSaved, onError }) {
 
   return (
     <Modal
-      isOpen
+      open
       onClose={onClose}
       title={isEdit ? `Edit "${skill.name}"` : 'New skill'}
       footer={(

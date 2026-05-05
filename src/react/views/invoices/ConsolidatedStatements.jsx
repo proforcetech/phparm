@@ -301,7 +301,7 @@ function DetailModal({ statementId, onClose, onChanged, onError, onInfo }) {
 
   return (
     <Modal
-      isOpen
+      open
       onClose={onClose}
       title={statement ? `Statement ${statement.number}` : 'Statement'}
       size="lg"
@@ -445,7 +445,7 @@ function GenerateModal({ onClose, onDone, onError }) {
 
   return (
     <Modal
-      isOpen
+      open
       onClose={onClose}
       title="Generate consolidated statement"
       footer={
@@ -514,7 +514,7 @@ function BatchModal({ onClose, onDone, onError }) {
 
   return (
     <Modal
-      isOpen
+      open
       onClose={onClose}
       title="Run monthly batch"
       footer={

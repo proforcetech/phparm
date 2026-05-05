@@ -581,7 +581,7 @@ export default function CMSMediaLibrary() {
       )}
 
       <Modal
-        isOpen={showBulkModal}
+        open={showBulkModal}
         onClose={() => setShowBulkModal(false)}
         title="Bulk update media"
         maxWidth="lg"
@@ -639,7 +639,7 @@ export default function CMSMediaLibrary() {
       </Modal>
 
       <Modal
-        isOpen={showFolderModal}
+        open={showFolderModal}
         onClose={() => setShowFolderModal(false)}
         title="Manage folders"
         maxWidth="xl"
@@ -692,7 +692,7 @@ export default function CMSMediaLibrary() {
       </Modal>
 
       <Modal
-        isOpen={showUploadModal}
+        open={showUploadModal}
         onClose={() => {
           if (!uploading) {
             setShowUploadModal(false)

@@ -241,7 +241,7 @@ function AssignModal({ workorder, candidates, skill, currentTechnician, onClose,
 
   return (
     <Modal
-      isOpen
+      open
       onClose={onClose}
       title={`Assign #${workorder.number}`}
       footer={(
