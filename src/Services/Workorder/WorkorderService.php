@@ -18,6 +18,7 @@ use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
 use PDO;
+use PDOException;
 use Throwable;
 
 class WorkorderService
@@ -452,6 +453,19 @@ class WorkorderService
             throw new InvalidArgumentException('An invoice already exists for this workorder.');
         }
 
+        return $this->createInvoiceFromWorkorder($workorder, $dueDate, $actorId);
+    }
+
+    /**
+     * Insert the invoice + line items + fees for a workorder. Caller is
+     * responsible for status validation and exists-checks; this helper just
+     * does the DB work in a single transaction so both the explicit
+     * convertToInvoice path and the auto-invoice-on-completion path share
+     * the same insert/copy logic.
+     */
+    private function createInvoiceFromWorkorder(Workorder $workorder, ?string $dueDate, ?int $actorId): Invoice
+    {
+        $workorderId = $workorder->id;
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
 
@@ -512,18 +526,16 @@ class WorkorderService
 
             $invoiceId = (int) $pdo->lastInsertId();
 
-            // Copy workorder items to invoice
             if (!$isGoa) {
-            $this->copyWorkorderItemsToInvoice(
-                $invoiceId,
-                $workorderId,
-                (int) $workorder->customer_id,
-                $actorId,
-                $workorder->branch_id
-            );
+                $this->copyWorkorderItemsToInvoice(
+                    $invoiceId,
+                    $workorderId,
+                    (int) $workorder->customer_id,
+                    $actorId,
+                    $workorder->branch_id
+                );
             }
 
-            // Add extra fees as line items
             if ($isGoa) {
                 $this->addGoaFeeToInvoice($invoiceId, $workorder);
             } else {
@@ -543,6 +555,90 @@ class WorkorderService
         } catch (Throwable $exception) {
             $pdo->rollBack();
             throw $exception;
+        }
+    }
+
+    /**
+     * Apply a workorder status change and trigger any side effects bound to
+     * the destination status. Today the only side effect is auto-invoicing
+     * on COMPLETED — but every status mutation should funnel through here
+     * so future hooks (notifications, SLA timers, etc.) live in one place.
+     *
+     * Repo idempotency (status_history.client_event_id de-dup, no-op when
+     * status is already $newStatus) is honored upstream, so calling this
+     * twice with the same client_event_id returns the same workorder
+     * without double-firing the COMPLETED hook.
+     *
+     * @param array{latitude: float, longitude: float, accuracy?: float}|null $location
+     */
+    public function transition(
+        int $workorderId,
+        string $newStatus,
+        ?int $actorId = null,
+        ?string $notes = null,
+        ?string $clientEventId = null,
+        ?array $location = null,
+        ?string $invoiceDueDate = null
+    ): Workorder {
+        $previous = $this->repository->find($workorderId);
+        $workorder = $this->repository->updateStatus(
+            $workorderId,
+            $newStatus,
+            $actorId,
+            $notes,
+            $clientEventId,
+            $location
+        );
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found.');
+        }
+
+        // Only fire on the actual edge into COMPLETED. If we were already
+        // COMPLETED before this call (or the repo no-op'd a duplicate event),
+        // skip — autoInvoiceForCompletion is itself idempotent, but not
+        // re-running it keeps the audit log clean.
+        $crossedIntoCompleted = $newStatus === Workorder::STATUS_COMPLETED
+            && ($previous === null || $previous->status !== Workorder::STATUS_COMPLETED);
+        if ($crossedIntoCompleted) {
+            $this->autoInvoiceForCompletion($workorder, $actorId, $invoiceDueDate);
+        }
+
+        return $workorder;
+    }
+
+    /**
+     * Idempotently create an invoice for a just-completed workorder.
+     *
+     * Returns the existing invoice (or null) without raising if one is
+     * already in flight — important because two near-simultaneous completers
+     * (manual PATCH + job auto-roll-up) can both pass the existence check
+     * before either INSERT lands. The DB-level UNIQUE on
+     * invoices.workorder_id (migration 175) makes the loser hit SQLSTATE
+     * 23000, which we swallow and resolve by reading the winner's row.
+     */
+    private function autoInvoiceForCompletion(Workorder $workorder, ?int $actorId, ?string $dueDate): ?Invoice
+    {
+        if ($this->findInvoiceByWorkorderId($workorder->id) !== null) {
+            return null;
+        }
+        // If QC gating is enabled and the WO didn't pass, skip auto-invoice
+        // rather than blowing up the COMPLETED transition. The user can
+        // still hit convertToInvoice manually once QC passes.
+        try {
+            $this->validateQCForInvoicing($workorder->id);
+        } catch (InvalidArgumentException $e) {
+            $this->log('workorder.auto_invoice_skipped_qc', $workorder->id, $actorId, ['reason' => $e->getMessage()]);
+            return null;
+        }
+        try {
+            return $this->createInvoiceFromWorkorder($workorder, $dueDate, $actorId);
+        } catch (PDOException $e) {
+            // 23000 = integrity constraint violation. Treat as "concurrent
+            // completer beat us"; return the winning invoice.
+            if ($e->getCode() === '23000') {
+                return $this->findInvoiceByWorkorderId($workorder->id);
+            }
+            throw $e;
         }
     }
 

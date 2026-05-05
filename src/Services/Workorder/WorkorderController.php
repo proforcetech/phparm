@@ -210,12 +210,18 @@ class WorkorderController
         if ($before !== null) {
             $this->assertBranchAccess($user, $before->branch_id);
         }
-        $workorder = $this->repository->updateStatus($id, $status, $user->id, $notes, $clientEventId, $location);
-        if ($workorder === null) {
-            throw new InvalidArgumentException('Workorder not found');
-        }
+        // Funnel through service->transition so the COMPLETED edge can
+        // auto-invoice. GOA still routes through markGoneOnArrival below for
+        // its fee/ledger flow.
+        $workorder = $this->service->transition(
+            $id,
+            $status,
+            $user->id,
+            $notes,
+            $clientEventId,
+            $location
+        );
 
-        // Handle GOA-specific logic (fee calculation, ledger entry) after status is updated
         if ($status === Workorder::STATUS_GOA) {
             $workorder = $this->service->markGoneOnArrival($id, $payload, $user->id);
         }
@@ -914,13 +920,20 @@ class WorkorderController
             return;
         }
 
-        // Auto-transition workorder status based on job statuses
+        // Auto-transition workorder status based on job statuses. The COMPLETED
+        // edge routes through service->transition so the auto-invoice hook
+        // fires; GOA keeps its dedicated path for the fee/ledger flow.
         if ($allGoa && $workorder->status !== Workorder::STATUS_GOA) {
             $this->service->markGoneOnArrival($workorderId, ['notes' => 'All jobs marked GOA'], $actorId);
         } elseif ($allCompleted && $workorder->status !== Workorder::STATUS_COMPLETED) {
-            $this->repository->updateStatus($workorderId, Workorder::STATUS_COMPLETED, $actorId, 'All jobs completed', null);
+            $this->service->transition(
+                $workorderId,
+                Workorder::STATUS_COMPLETED,
+                $actorId,
+                'All jobs completed'
+            );
         } elseif ($anyInProgress && $workorder->status === Workorder::STATUS_PENDING) {
-            $this->repository->updateStatus(
+            $this->service->transition(
                 $workorderId,
                 Workorder::STATUS_IN_PROGRESS,
                 $actorId,

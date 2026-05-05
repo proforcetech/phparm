@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     UNIQUE KEY idx_invoice_public_token (public_token),
     INDEX idx_invoice_customer (customer_id),
     INDEX idx_invoices_service_type (service_type_id),
-    INDEX idx_invoice_workorder (workorder_id),
+    UNIQUE KEY idx_invoice_workorder (workorder_id),
     INDEX idx_invoices_branch (branch_id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_invoice_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),

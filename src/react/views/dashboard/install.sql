@@ -317,6 +317,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     public_token VARCHAR(64) NULL,
     public_token_expires_at DATETIME NULL,
     UNIQUE KEY idx_invoice_public_token (public_token),
+    UNIQUE KEY idx_invoice_workorder (workorder_id),
     INDEX idx_invoice_customer (customer_id),
     INDEX idx_invoices_service_type (service_type_id),
     INDEX idx_invoices_branch (branch_id),
