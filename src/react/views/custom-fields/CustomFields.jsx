@@ -12,39 +12,44 @@ import Textarea from '../../components/ui/Textarea'
 import customFieldsService from '../../../services/custom-fields.service'
 import { useToast } from '../../stores/toast.jsx'
 
-const ENTITY_KINDS = [
+// Must mirror CustomFieldService::SUPPORTED_ENTITIES on the backend.
+const ENTITY_TYPES = [
   { value: 'customer', label: 'customer' },
   { value: 'site', label: 'site' },
   { value: 'site_asset', label: 'site_asset' },
   { value: 'workorder', label: 'workorder' },
   { value: 'ticket', label: 'ticket' },
-  { value: 'vehicle', label: 'vehicle' },
-  { value: 'vendor', label: 'vendor' },
+  { value: 'estimate', label: 'estimate' },
   { value: 'invoice', label: 'invoice' },
+  { value: 'appointment', label: 'appointment' },
+  { value: 'vehicle', label: 'vehicle' },
+  { value: 'user', label: 'user' },
+  { value: 'inventory_item', label: 'inventory_item' },
+  { value: 'contract', label: 'contract' },
 ]
 
-const ENTITY_FILTER_OPTIONS = [{ value: '', label: 'All entity kinds' }, ...ENTITY_KINDS]
-
-const DATA_TYPES = [
+// Must mirror CustomFieldService::FIELD_TYPES on the backend.
+const FIELD_TYPES = [
   { value: 'text', label: 'text' },
   { value: 'number', label: 'number' },
   { value: 'date', label: 'date' },
   { value: 'select', label: 'select' },
+  { value: 'multiselect', label: 'multiselect' },
   { value: 'boolean', label: 'boolean' },
+  { value: 'asset_ref', label: 'asset_ref' },
 ]
 
 const KEY_PATTERN = /^[a-z][a-z0-9_]*$/
 
 const emptyForm = () => ({
   id: null,
-  entity_kind: ENTITY_KINDS[0].value,
-  key: '',
+  entity_type: ENTITY_TYPES[0].value,
+  field_key: '',
   label: '',
-  data_type: 'text',
-  required: false,
+  field_type: 'text',
+  is_required: false,
   sort_order: 0,
   options: '',
-  help_text: '',
   is_active: true,
 })
 
@@ -79,8 +84,7 @@ function renderValue(raw) {
 export default function CustomFields() {
   const { success, error } = useToast()
 
-  // --- definitions section -------------------------------------------------
-  const [filterEntity, setFilterEntity] = useState('')
+  const [filterEntity, setFilterEntity] = useState(ENTITY_TYPES[0].value)
   const [definitions, setDefinitions] = useState([])
   const [defsLoading, setDefsLoading] = useState(true)
   const [defsError, setDefsError] = useState('')
@@ -94,23 +98,22 @@ export default function CustomFields() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
-  // --- values inspector section -------------------------------------------
-  const [inspectKind, setInspectKind] = useState(ENTITY_KINDS[0].value)
+  const [inspectKind, setInspectKind] = useState(ENTITY_TYPES[0].value)
   const [inspectId, setInspectId] = useState('')
   const [inspectLoading, setInspectLoading] = useState(false)
   const [inspectError, setInspectError] = useState('')
   const [inspectValues, setInspectValues] = useState(null)
 
   const loadDefinitions = useCallback(() => {
+    if (!filterEntity) return
     setDefsLoading(true)
     setDefsError('')
-    const params = filterEntity ? { entity_kind: filterEntity } : {}
     customFieldsService
-      .listDefinitions(params)
+      .listDefinitions({ entity_type: filterEntity, include_inactive: true })
       .then((res) => setDefinitions(unwrapList(res)))
       .catch((e) => {
         setDefinitions([])
-        setDefsError(e?.response?.data?.message || e?.message || 'Failed to load field definitions')
+        setDefsError(e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Failed to load field definitions')
       })
       .finally(() => setDefsLoading(false))
   }, [filterEntity])
@@ -118,17 +121,12 @@ export default function CustomFields() {
   useEffect(() => { loadDefinitions() }, [loadDefinitions])
 
   const sortedDefinitions = useMemo(() => {
-    return [...definitions].sort((a, b) => {
-      const ak = String(a.entity_kind || '')
-      const bk = String(b.entity_kind || '')
-      if (ak !== bk) return ak.localeCompare(bk)
-      return (a.sort_order ?? 0) - (b.sort_order ?? 0)
-    })
+    return [...definitions].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   }, [definitions])
 
   const openCreate = () => {
     setEditorMode('create')
-    setForm({ ...emptyForm(), entity_kind: filterEntity || ENTITY_KINDS[0].value })
+    setForm({ ...emptyForm(), entity_type: filterEntity || ENTITY_TYPES[0].value })
     setEditorErrors({})
     setEditorOpen(true)
   }
@@ -143,14 +141,13 @@ export default function CustomFields() {
     }
     setForm({
       id: def.id,
-      entity_kind: def.entity_kind || ENTITY_KINDS[0].value,
-      key: def.key || '',
+      entity_type: def.entity_type || ENTITY_TYPES[0].value,
+      field_key: def.field_key || '',
       label: def.label || '',
-      data_type: def.data_type || 'text',
-      required: !!def.required,
+      field_type: def.field_type || 'text',
+      is_required: !!def.is_required,
       sort_order: Number(def.sort_order ?? 0),
       options: optionsText,
-      help_text: def.help_text || '',
       is_active: def.is_active !== false,
     })
     setEditorErrors({})
@@ -159,12 +156,12 @@ export default function CustomFields() {
 
   const validateForm = () => {
     const errs = {}
-    if (!form.entity_kind) errs.entity_kind = 'Required'
-    if (!form.key) errs.key = 'Required'
-    else if (!KEY_PATTERN.test(form.key)) errs.key = 'snake_case, starts with a letter'
+    if (!form.entity_type) errs.entity_type = 'Required'
+    if (!form.field_key) errs.field_key = 'Required'
+    else if (!KEY_PATTERN.test(form.field_key)) errs.field_key = 'snake_case, starts with a letter'
     if (!form.label) errs.label = 'Required'
-    if (!DATA_TYPES.find((t) => t.value === form.data_type)) errs.data_type = 'Invalid type'
-    if (form.data_type === 'select') {
+    if (!FIELD_TYPES.find((t) => t.value === form.field_type)) errs.field_type = 'Invalid type'
+    if (form.field_type === 'select' || form.field_type === 'multiselect') {
       const trimmed = form.options.trim()
       if (!trimmed) {
         errs.options = 'Provide a JSON array of options'
@@ -186,20 +183,17 @@ export default function CustomFields() {
     setEditorBusy(true)
     try {
       const payload = {
-        entity_kind: form.entity_kind,
-        key: form.key,
+        entity_type: form.entity_type,
+        field_key: form.field_key,
         label: form.label,
-        data_type: form.data_type,
-        required: !!form.required,
+        field_type: form.field_type,
+        is_required: !!form.is_required,
         sort_order: Number(form.sort_order) || 0,
-        help_text: form.help_text || '',
         is_active: !!form.is_active,
       }
-      if (form.data_type === 'select') {
+      if (form.field_type === 'select' || form.field_type === 'multiselect') {
         payload.options = JSON.parse(form.options.trim())
       } else if (form.options.trim()) {
-        // Pass through any author-provided options metadata for non-select
-        // types verbatim if it parses; otherwise omit.
         try { payload.options = JSON.parse(form.options.trim()) } catch { /* ignore */ }
       }
 
@@ -213,7 +207,7 @@ export default function CustomFields() {
       setEditorOpen(false)
       loadDefinitions()
     } catch (e) {
-      error(e?.response?.data?.message || 'Failed to save field definition')
+      error(e?.response?.data?.error || e?.response?.data?.message || 'Failed to save field definition')
     } finally {
       setEditorBusy(false)
     }
@@ -228,7 +222,7 @@ export default function CustomFields() {
       setDeleteTarget(null)
       loadDefinitions()
     } catch (e) {
-      error(e?.response?.data?.message || 'Failed to delete field definition')
+      error(e?.response?.data?.error || e?.response?.data?.message || 'Failed to delete field definition')
     } finally {
       setDeleting(false)
     }
@@ -236,7 +230,7 @@ export default function CustomFields() {
 
   const loadInspectValues = async () => {
     if (!inspectKind || !inspectId.trim()) {
-      setInspectError('Both entity kind and id are required.')
+      setInspectError('Both entity type and id are required.')
       return
     }
     setInspectLoading(true)
@@ -244,13 +238,13 @@ export default function CustomFields() {
     setInspectValues(null)
     try {
       const res = await customFieldsService.listValues({
-        entity_kind: inspectKind,
+        entity_type: inspectKind,
         entity_id: inspectId.trim(),
       })
       const list = unwrapList(res)
       setInspectValues(list)
     } catch (e) {
-      setInspectError(e?.response?.data?.message || e?.message || 'Failed to load values')
+      setInspectError(e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Failed to load values')
     } finally {
       setInspectLoading(false)
     }
@@ -261,7 +255,7 @@ export default function CustomFields() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Custom Fields</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Define custom fields per entity kind and inspect saved values for any record.
+          Define custom fields per entity type and inspect saved values for any record.
         </p>
       </div>
 
@@ -273,9 +267,9 @@ export default function CustomFields() {
           </div>
           <div className="flex items-end gap-2">
             <Select
-              label="Filter by entity kind"
+              label="Entity type"
               value={filterEntity}
-              options={ENTITY_FILTER_OPTIONS}
+              options={ENTITY_TYPES}
               placeholder=""
               onChange={(e) => setFilterEntity(e.target.value)}
             />
@@ -292,13 +286,12 @@ export default function CustomFields() {
           {defsLoading ? (
             <div className="py-10 flex justify-center"><Loading text="Loading..." /></div>
           ) : sortedDefinitions.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">No definitions configured.</div>
+            <div className="text-center py-12 text-gray-500">No definitions configured for this entity.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Entity</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Key</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Label</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
@@ -311,11 +304,10 @@ export default function CustomFields() {
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {sortedDefinitions.map((def) => (
                     <tr key={def.id} className="hover:bg-gray-50">
-                      <td className="px-3 py-2"><Badge size="sm" variant="info">{def.entity_kind}</Badge></td>
-                      <td className="px-3 py-2 text-sm font-mono text-gray-900">{def.key}</td>
+                      <td className="px-3 py-2 text-sm font-mono text-gray-900">{def.field_key}</td>
                       <td className="px-3 py-2 text-sm text-gray-700">{def.label}</td>
-                      <td className="px-3 py-2 text-sm text-gray-500">{def.data_type}</td>
-                      <td className="px-3 py-2 text-sm text-gray-500">{def.required ? 'Yes' : 'No'}</td>
+                      <td className="px-3 py-2 text-sm text-gray-500">{def.field_type}</td>
+                      <td className="px-3 py-2 text-sm text-gray-500">{def.is_required ? 'Yes' : 'No'}</td>
                       <td className="px-3 py-2 text-sm text-gray-500">{def.sort_order ?? 0}</td>
                       <td className="px-3 py-2">
                         {def.is_active === false
@@ -357,9 +349,9 @@ export default function CustomFields() {
         <div className="p-4 space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <Select
-              label="Entity kind"
+              label="Entity type"
               value={inspectKind}
-              options={ENTITY_KINDS}
+              options={ENTITY_TYPES}
               placeholder=""
               onChange={(e) => setInspectKind(e.target.value)}
             />
@@ -381,7 +373,7 @@ export default function CustomFields() {
           {inspectLoading ? (
             <div className="py-6 flex justify-center"><Loading /></div>
           ) : inspectValues === null ? (
-            <p className="text-sm text-gray-500">Provide an entity kind and id, then click Load.</p>
+            <p className="text-sm text-gray-500">Provide an entity type and id, then click Load.</p>
           ) : inspectValues.length === 0 ? (
             <p className="text-sm text-gray-500">No custom field values stored for this record.</p>
           ) : (
@@ -396,12 +388,12 @@ export default function CustomFields() {
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {inspectValues.map((row, idx) => (
-                    <tr key={`${row.key || row.field_key || idx}-${idx}`} className="hover:bg-gray-50">
+                    <tr key={`${row.field_key || row.key || idx}-${idx}`} className="hover:bg-gray-50">
                       <td className="px-3 py-2 text-sm font-mono text-gray-900">
-                        {row.key || row.field_key || row.definition_key || '—'}
+                        {row.field_key || row.key || '—'}
                       </td>
                       <td className="px-3 py-2 text-sm text-gray-700">
-                        {renderValue(row.value ?? row.field_value)}
+                        {renderValue(row.value)}
                       </td>
                       <td className="px-3 py-2 text-sm text-gray-500">
                         {formatDate(row.updated_at || row.modified_at)}
@@ -424,26 +416,27 @@ export default function CustomFields() {
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Select
-              label="Entity kind"
-              value={form.entity_kind}
-              options={ENTITY_KINDS}
+              label="Entity type"
+              value={form.entity_type}
+              options={ENTITY_TYPES}
               placeholder=""
-              error={editorErrors.entity_kind}
-              onChange={(e) => setForm({ ...form, entity_kind: e.target.value })}
+              error={editorErrors.entity_type}
+              onChange={(e) => setForm({ ...form, entity_type: e.target.value })}
+              disabled={editorMode === 'edit'}
             />
             <Select
-              label="Data type"
-              value={form.data_type}
-              options={DATA_TYPES}
+              label="Field type"
+              value={form.field_type}
+              options={FIELD_TYPES}
               placeholder=""
-              error={editorErrors.data_type}
-              onChange={(e) => setForm({ ...form, data_type: e.target.value })}
+              error={editorErrors.field_type}
+              onChange={(e) => setForm({ ...form, field_type: e.target.value })}
             />
             <Input
-              label="Key"
-              value={form.key}
-              error={editorErrors.key}
-              onChange={(e) => setForm({ ...form, key: e.target.value })}
+              label="Field key"
+              value={form.field_key}
+              error={editorErrors.field_key}
+              onChange={(e) => setForm({ ...form, field_key: e.target.value })}
               placeholder="snake_case_key"
               disabled={editorMode === 'edit'}
               helperText={editorMode === 'edit' ? 'Key cannot be changed after creation' : 'Lowercase letters, digits, underscores'}
@@ -465,8 +458,8 @@ export default function CustomFields() {
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={form.required}
-                  onChange={(e) => setForm({ ...form, required: e.target.checked })}
+                  checked={form.is_required}
+                  onChange={(e) => setForm({ ...form, is_required: e.target.checked })}
                 />
                 Required
               </label>
@@ -482,20 +475,12 @@ export default function CustomFields() {
           </div>
 
           <Textarea
-            label={`Options${form.data_type === 'select' ? ' (JSON array, required for select)' : ' (optional JSON)'}`}
+            label={`Options${form.field_type === 'select' || form.field_type === 'multiselect' ? ' (JSON array, required)' : ' (optional, only used for select/multiselect)'}`}
             value={form.options}
             error={editorErrors.options}
             onChange={(e) => setForm({ ...form, options: e.target.value })}
             placeholder='["red", "green", "blue"]'
             rows={4}
-          />
-
-          <Textarea
-            label="Help text"
-            value={form.help_text}
-            onChange={(e) => setForm({ ...form, help_text: e.target.value })}
-            placeholder="Shown beneath the field on entity forms"
-            rows={2}
           />
 
           <div className="flex justify-end gap-2 pt-2 border-t">
@@ -513,7 +498,7 @@ export default function CustomFields() {
         title="Delete field definition"
       >
         <p className="text-sm text-gray-600 mb-4">
-          Delete <strong>{deleteTarget?.label || deleteTarget?.key || 'this definition'}</strong>?
+          Delete <strong>{deleteTarget?.label || deleteTarget?.field_key || 'this definition'}</strong>?
           Existing stored values may become inaccessible. This cannot be undone.
         </p>
         <div className="flex justify-end gap-2">
