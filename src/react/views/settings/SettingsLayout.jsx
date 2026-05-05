@@ -22,6 +22,7 @@ export default function SettingsLayout() {
           { label: 'Payments', to: '/cp/settings/payments' },
           { label: 'Integrations', to: '/cp/settings/integrations' },
           { label: 'Services', to: '/cp/settings/services' },
+          { label: 'Service lines', to: '/cp/settings/service-lines' },
           { label: 'Modules', to: '/cp/settings/modules' },
           { label: 'Dispatch', to: '/cp/settings/dispatch' },
           { label: 'VIN Decoder', to: '/cp/settings/vin-decoder' },

@@ -63,6 +63,9 @@ function bootstrapDirectWoSchema(): PDO
         icon TEXT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         is_active INTEGER NOT NULL DEFAULT 1,
+        subject_column TEXT NULL,
+        subject_required INTEGER NOT NULL DEFAULT 0,
+        subject_label TEXT NULL,
         created_at TEXT NULL,
         updated_at TEXT NULL
     )');
@@ -239,10 +242,13 @@ function buildDirectWoFixture(array $opts = []): array
     $pdo = bootstrapDirectWoSchema();
     $connection = new DirectWoMemoryConnection($pdo);
 
+    // Seed subject_column/required to mirror migration 176's backfill — keeps
+    // SubjectResolver behavior identical to the pre-refactor static map for
+    // these two slugs.
     $pdo->prepare(
-        "INSERT INTO service_lines (slug, name, sort_order, is_active) VALUES
-         ('auto_repair', 'Auto Repair', 10, 1),
-         ('it_support',  'IT Support',  60, 1)"
+        "INSERT INTO service_lines (slug, name, sort_order, is_active, subject_column, subject_required, subject_label) VALUES
+         ('auto_repair', 'Auto Repair', 10, 1, 'vehicle_id',    1, 'Vehicle'),
+         ('it_support',  'IT Support',  60, 1, 'site_asset_id', 0, 'Device / Asset')"
     )->execute();
     $autoRepairId = (int) $pdo->query("SELECT id FROM service_lines WHERE slug='auto_repair'")->fetchColumn();
     $itSupportId  = (int) $pdo->query("SELECT id FROM service_lines WHERE slug='it_support'")->fetchColumn();

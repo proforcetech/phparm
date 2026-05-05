@@ -8,6 +8,8 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import customerService from '../../../services/customer.service'
 import { useToast } from '../../stores/toast.jsx'
+import { useAuthStore } from '../../stores/auth'
+import DirectWorkorderModal from './DirectWorkorderModal'
 
 export default function CustomerDetail() {
   const { id } = useParams()
@@ -19,6 +21,10 @@ export default function CustomerDetail() {
   const [loading, setLoading] = useState(true)
   const [deleteModal, setDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showDirectWoModal, setShowDirectWoModal] = useState(false)
+  const { hasPermission } = useAuthStore()
+  const isB2B = !!customer?.company_id
+  const canCreateDirect = hasPermission('workorders.create_direct')
 
   const loadCustomer = useCallback(async () => {
     setLoading(true)
@@ -91,6 +97,11 @@ export default function CustomerDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          {isB2B && canCreateDirect ? (
+            <Button onClick={() => setShowDirectWoModal(true)}>
+              Create direct WO
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => navigate(`/cp/customers/${id}/edit`)}>
             Edit
           </Button>
@@ -213,6 +224,12 @@ export default function CustomerDetail() {
           </div>
         )}
       </Card>
+
+      <DirectWorkorderModal
+        open={showDirectWoModal}
+        customer={customer}
+        onClose={() => setShowDirectWoModal(false)}
+      />
 
       <Modal
         open={deleteModal}

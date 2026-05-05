@@ -1295,6 +1295,12 @@ return function (Router $router, array $config, $connection) {
                     'slug' => $line->slug,
                     'name' => $line->name,
                     'icon' => $line->icon,
+                    // Subject FK rules — SubjectPicker on the frontend reads
+                    // these to render the right picker without an extra
+                    // round-trip per service-line switch.
+                    'subject_column' => $line->subject_column,
+                    'subject_required' => $line->subject_required,
+                    'subject_label' => $line->subject_label,
                 ];
             }, $effective['lines']);
             $userData['primary_service_line_id'] = $effective['primary_id'];

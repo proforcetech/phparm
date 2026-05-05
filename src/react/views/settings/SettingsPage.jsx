@@ -97,6 +97,11 @@ const settingsLinks = [
     to: '/cp/settings/services',
   },
   {
+    title: 'Service lines',
+    description: 'Manage trade verticals and the subject FK each line uses (vehicle, asset, or none).',
+    to: '/cp/settings/service-lines',
+  },
+  {
     title: 'Dispatch',
     description: 'Configure load balancing, driver selection strategy, and fair distribution.',
     to: '/cp/settings/dispatch',

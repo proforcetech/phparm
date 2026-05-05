@@ -6,23 +6,18 @@ import assetsService from '../../../services/assets.service'
 import { getCustomerVehicles } from '../../../services/customer-vehicle.service'
 import { useAuthStore } from '../../stores/auth'
 
-// Mirrors src/Services/ServiceLine/SubjectResolver.php — kept in sync by hand
-// because the frontend needs to know which control to render before any
-// network round-trip. If a slug is added on the backend, add it here too.
-const SUBJECT_RULES = {
-  auto_repair:         { column: 'vehicle_id',    required: true,  label: 'Vehicle' },
-  fleet_management:    { column: 'vehicle_id',    required: true,  label: 'Vehicle' },
-  building_repair:     { column: 'site_asset_id', required: false, label: 'Building / Asset' },
-  property_management: { column: 'site_asset_id', required: true,  label: 'Property / Asset' },
-  equipment_repair:    { column: 'site_asset_id', required: true,  label: 'Equipment' },
-  it_support:          { column: 'site_asset_id', required: false, label: 'Device / Asset' },
-  security_systems:    { column: 'site_asset_id', required: false, label: 'System / Asset' },
-  pos_support:         { column: 'site_asset_id', required: false, label: 'POS Device' },
-  commercial_cleaning: { column: null,            required: false, label: null },
-}
-
-function getRuleForSlug(slug) {
-  return SUBJECT_RULES[slug] ?? { column: null, required: false, label: null }
+// Subject FK rules used to be hardcoded here as a slug→rule map. Migration
+// 176 moved them onto each service_lines row, and /api/auth/me now ships
+// subject_column / subject_required / subject_label alongside the trimmed
+// service-line list — so this component just reads the active line.
+function getRuleForLine(line) {
+  if (!line) {
+    return { column: null, required: false, label: null }
+  }
+  const column = line.subject_column ?? null
+  const required = column ? Boolean(line.subject_required) : false
+  const label = column ? (line.subject_label || (column === 'vehicle_id' ? 'Vehicle' : 'Asset')) : null
+  return { column, required, label }
 }
 
 function formatVehicleLabel(vehicle) {
@@ -78,7 +73,7 @@ export default function SubjectPicker({
     () => serviceLines.find((l) => l.id === effectiveServiceLineId) ?? null,
     [serviceLines, effectiveServiceLineId]
   )
-  const rule = getRuleForSlug(activeLine?.slug)
+  const rule = getRuleForLine(activeLine)
   const isRequired = requiredProp ?? rule.required
 
   const [customerVehicles, setCustomerVehicles] = useState([])

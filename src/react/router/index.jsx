@@ -98,6 +98,7 @@ import SettingsNotifications from '../views/settings/SettingsNotifications'
 import SettingsPayments from '../views/settings/SettingsPayments'
 import SettingsIntegrations from '../views/settings/SettingsIntegrations'
 import ServiceTypes from '../views/settings/ServiceTypes'
+import SettingsServiceLines from '../views/settings/SettingsServiceLines'
 import SettingsDispatch from '../views/settings/SettingsDispatch'
 import SettingsVinDecoder from '../views/settings/SettingsVinDecoder'
 import PropertyManagement from '../views/settings/PropertyManagement'
@@ -552,6 +553,7 @@ const settingsRoutes = [
   { path: '/cp/settings/payments', name: 'SettingsPayments', element: <SettingsPayments /> },
   { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: <SettingsIntegrations /> },
   { path: '/cp/settings/services', name: 'ServiceTypes', element: <ServiceTypes /> },
+  { path: '/cp/settings/service-lines', name: 'SettingsServiceLines', element: <SettingsServiceLines /> },
   { path: '/cp/settings/modules', name: 'ModuleSettings', element: <ModuleSettings /> },
   { path: '/cp/settings/dispatch', name: 'SettingsDispatch', element: <SettingsDispatch /> },
   { path: '/cp/settings/vin-decoder', name: 'SettingsVinDecoder', element: <SettingsVinDecoder /> },
@@ -600,6 +602,7 @@ adminChildren.push({
     { path: 'payments', element: <SettingsPayments /> },
     { path: 'integrations', element: <SettingsIntegrations /> },
     { path: 'services', element: <ServiceTypes /> },
+    { path: 'service-lines', element: <SettingsServiceLines /> },
     { path: 'modules', element: <ModuleSettings /> },
     { path: 'dispatch', element: <SettingsDispatch /> },
     { path: 'vin-decoder', element: <SettingsVinDecoder /> },

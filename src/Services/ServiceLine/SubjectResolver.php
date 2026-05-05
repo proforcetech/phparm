@@ -12,62 +12,45 @@ use InvalidArgumentException;
  * for property/building work it is a site_asset (site_asset_id); future verticals
  * add their own column under the same pattern.
  *
- * The rules are intentionally a static PHP map rather than a `service_line_rules`
- * DB table: the WO type vocabulary on Workorder::ALLOWED_TYPES is treated the
- * same way (Phase 11), and adding a vertical is a code change that ships with
- * supporting service-layer behavior anyway. Keeping rules in code keeps them
- * versioned with the validators that depend on them.
+ * The rules used to live in a static PHP map here (see migration 152 / commit
+ * history). Migration 176 moved them to columns on `service_lines` so admins
+ * can adjust them in the CP without a code change. The application still
+ * whitelists the allowed FK column names in
+ * {@see ServiceLineRepository::ALLOWED_SUBJECT_COLUMNS} so a typo in the admin
+ * UI can't make documents impossible to validate.
  *
- * Rule shape per slug: `column` is the FK column the document write must
- * populate; `required` is whether that column may be NULL after validation.
- * NULL `column` means "no subject FK is required for this line" — used by
- * lines like commercial_cleaning where the route, not a single asset, is the
- * subject (route binding lives on a different table).
+ * Defaulting behavior:
+ *   resolveLine(null)  => null   ("no service line set" => generic; no subject required)
+ *   resolveLine($id)   => row from the service_lines table, or null if not found
+ *
+ * Returning null from resolveLine makes validateSubject() a no-op, which is
+ * the intended path for legacy/auto callers that don't carry a service_line_id.
  */
 class SubjectResolver
 {
-    public const DEFAULT_LINE_SLUG = 'auto_repair';
-
-    /**
-     * @var array<string, array{column: ?string, required: bool}>
-     */
-    private const RULES = [
-        'auto_repair'         => ['column' => 'vehicle_id',    'required' => true],
-        'fleet_management'    => ['column' => 'vehicle_id',    'required' => true],
-        'building_repair'     => ['column' => 'site_asset_id', 'required' => false],
-        'property_management' => ['column' => 'site_asset_id', 'required' => true],
-        'equipment_repair'    => ['column' => 'site_asset_id', 'required' => true],
-        'it_support'          => ['column' => 'site_asset_id', 'required' => false],
-        'security_systems'    => ['column' => 'site_asset_id', 'required' => false],
-        'pos_support'         => ['column' => 'site_asset_id', 'required' => false],
-        'commercial_cleaning' => ['column' => null,            'required' => false],
-    ];
-
     public function __construct(private readonly ServiceLineRepository $serviceLines)
     {
     }
 
     /**
      * Resolve a payload's `service_line_id` (or absence of one) to a ServiceLine
-     * row, defaulting to auto_repair so legacy automotive callers don't have to
-     * pass anything new. Returns null only if even the default line is missing,
-     * which would mean migration 152 hasn't run.
+     * row. A missing/empty service_line_id deliberately returns null — see the
+     * class docblock — so legacy callers and admin-driven generic estimates
+     * skip subject validation entirely.
      */
     public function resolveLine(?int $serviceLineId): ?ServiceLine
     {
-        if ($serviceLineId !== null) {
-            return $this->serviceLines->findById($serviceLineId);
+        if ($serviceLineId === null || $serviceLineId <= 0) {
+            return null;
         }
-
-        return $this->serviceLines->findBySlug(self::DEFAULT_LINE_SLUG);
+        return $this->serviceLines->findById($serviceLineId);
     }
 
     /**
      * Validate that the document payload carries the subject FK its service line
      * requires. Throws InvalidArgumentException with a human-actionable message
-     * if not. A line we don't recognize is treated as "no subject required" so
-     * adding a service_lines row from the admin UI doesn't immediately break
-     * every create call until code ships.
+     * if not. Lines with no subject_column (or with subject_required = false)
+     * pass through untouched.
      *
      * @param array<string, mixed> $payload
      */
@@ -77,17 +60,18 @@ class SubjectResolver
             return;
         }
 
-        $rule = self::RULES[$line->slug] ?? null;
-        if ($rule === null || $rule['column'] === null || !$rule['required']) {
+        $column = $line->subject_column;
+        if ($column === null || $column === '' || !$line->subject_required) {
             return;
         }
 
-        $value = $payload[$rule['column']] ?? null;
+        $value = $payload[$column] ?? null;
         if ($value === null || $value === '' || (int) $value <= 0) {
+            $label = $line->subject_label ?? str_replace('_id', '', $column);
             throw new InvalidArgumentException(sprintf(
                 "Service line '%s' requires a %s.",
                 $line->slug,
-                str_replace('_id', '', $rule['column'])
+                $label
             ));
         }
     }
@@ -113,10 +97,9 @@ class SubjectResolver
     }
 
     /**
-     * Inverse of extractSubjectColumns: which columns does the *current* row
-     * have, regardless of which line it claims? Used by repositories when
-     * deciding which subject relation to eager-load. Order matches RULES so
-     * the line's "primary" column comes first.
+     * Which subject FK columns does the given line care about? At most one
+     * today (the line's `subject_column`) — kept as an array so the shape
+     * survives if a vertical later spans multiple FKs.
      *
      * @return array<int, string>
      */
@@ -125,29 +108,24 @@ class SubjectResolver
         if ($line === null) {
             return [];
         }
-        $rule = self::RULES[$line->slug] ?? null;
-        if ($rule === null || $rule['column'] === null) {
+        $column = $line->subject_column;
+        if ($column === null || $column === '') {
             return [];
         }
-        return [$rule['column']];
+        return [$column];
     }
 
     /**
      * The complete set of subject FK columns the application currently supports
      * across all lines. Repositories use this to pre-declare which optional
-     * columns to read; new vertical FKs are added here as they're rolled out.
+     * columns to read; backed by a DISTINCT query against service_lines so it
+     * grows automatically as admins enable verticals.
      *
      * @return array<int, string>
      */
-    public static function allSubjectColumns(): array
+    public function allSubjectColumns(): array
     {
-        $cols = [];
-        foreach (self::RULES as $rule) {
-            if ($rule['column'] !== null && !in_array($rule['column'], $cols, true)) {
-                $cols[] = $rule['column'];
-            }
-        }
-        return $cols;
+        return $this->serviceLines->distinctSubjectColumns();
     }
 
     private function normalizeId(mixed $value): ?int

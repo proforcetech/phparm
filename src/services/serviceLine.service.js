@@ -14,10 +14,28 @@ export const serviceLineService = {
    * List all service lines (full DTOs).
    * Returns the array directly.
    */
-  async list() {
-    const response = await api.get('/service-lines')
+  async list({ includeInactive = false } = {}) {
+    const params = includeInactive ? { include_inactive: 1 } : {}
+    const response = await api.get('/service-lines', { params })
     const payload = response.data?.data ?? response.data ?? {}
     return payload.service_lines ?? []
+  },
+
+  /**
+   * Create a new service line. Admin only — gated server-side on
+   * settings.service_lines.manage.
+   */
+  async create(payload) {
+    const response = await api.post('/service-lines', payload)
+    return response.data?.data ?? response.data ?? null
+  },
+
+  /**
+   * Partial update of an existing service line.
+   */
+  async update(id, payload) {
+    const response = await api.put(`/service-lines/${id}`, payload)
+    return response.data?.data ?? response.data ?? null
   },
 
   /**

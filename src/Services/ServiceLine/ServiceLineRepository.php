@@ -17,6 +17,19 @@ use RuntimeException;
  */
 class ServiceLineRepository
 {
+    /**
+     * Whitelist of values allowed in service_lines.subject_column. Mirrors the
+     * subject FK columns the application actually understands (see
+     * SubjectResolver::allSubjectColumns). NULL is also allowed and means
+     * "no subject FK required for this line."
+     */
+    public const ALLOWED_SUBJECT_COLUMNS = ['vehicle_id', 'site_asset_id'];
+
+    /** Column list shared by every SELECT so adding a column is a one-line edit. */
+    private const COLUMNS = 'id, slug, name, description, icon, sort_order, is_active,
+                            subject_column, subject_required, subject_label,
+                            created_at, updated_at';
+
     public function __construct(private readonly Connection $connection)
     {
     }
@@ -26,7 +39,7 @@ class ServiceLineRepository
      */
     public function listActive(): array
     {
-        $sql = 'SELECT id, slug, name, description, icon, sort_order, is_active, created_at, updated_at
+        $sql = 'SELECT ' . self::COLUMNS . '
                 FROM service_lines
                 WHERE is_active = 1
                 ORDER BY sort_order, name';
@@ -47,7 +60,7 @@ class ServiceLineRepository
      */
     public function listAll(): array
     {
-        $sql = 'SELECT id, slug, name, description, icon, sort_order, is_active, created_at, updated_at
+        $sql = 'SELECT ' . self::COLUMNS . '
                 FROM service_lines
                 ORDER BY sort_order, name';
 
@@ -65,7 +78,7 @@ class ServiceLineRepository
     public function findById(int $id): ?ServiceLine
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, slug, name, description, icon, sort_order, is_active, created_at, updated_at
+            'SELECT ' . self::COLUMNS . '
              FROM service_lines WHERE id = :id LIMIT 1'
         );
         $stmt->execute(['id' => $id]);
@@ -77,7 +90,7 @@ class ServiceLineRepository
     public function findBySlug(string $slug): ?ServiceLine
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id, slug, name, description, icon, sort_order, is_active, created_at, updated_at
+            'SELECT ' . self::COLUMNS . '
              FROM service_lines WHERE slug = :slug LIMIT 1'
         );
         $stmt->execute(['slug' => $slug]);
@@ -93,7 +106,10 @@ class ServiceLineRepository
      *     description?: ?string,
      *     icon?: ?string,
      *     sort_order?: int,
-     *     is_active?: bool
+     *     is_active?: bool,
+     *     subject_column?: ?string,
+     *     subject_required?: bool,
+     *     subject_label?: ?string
      * } $data
      */
     public function create(array $data): ServiceLine
@@ -102,10 +118,14 @@ class ServiceLineRepository
             throw new InvalidArgumentException("Service line slug '{$data['slug']}' already exists");
         }
 
+        $subjectColumn = $this->normalizeSubjectColumn($data['subject_column'] ?? null);
+
         try {
             $stmt = $this->connection->pdo()->prepare(
-                'INSERT INTO service_lines (slug, name, description, icon, sort_order, is_active)
-                 VALUES (:slug, :name, :description, :icon, :sort_order, :is_active)'
+                'INSERT INTO service_lines (slug, name, description, icon, sort_order, is_active,
+                                            subject_column, subject_required, subject_label)
+                 VALUES (:slug, :name, :description, :icon, :sort_order, :is_active,
+                         :subject_column, :subject_required, :subject_label)'
             );
             $stmt->execute([
                 'slug' => $data['slug'],
@@ -114,6 +134,9 @@ class ServiceLineRepository
                 'icon' => $data['icon'] ?? null,
                 'sort_order' => (int) ($data['sort_order'] ?? 0),
                 'is_active' => (int) ($data['is_active'] ?? true),
+                'subject_column' => $subjectColumn,
+                'subject_required' => (int) (bool) ($data['subject_required'] ?? false),
+                'subject_label' => $this->normalizeSubjectLabel($data['subject_label'] ?? null),
             ]);
         } catch (PDOException $e) {
             // 23000 covers MySQL's duplicate-key error on the unique slug index.
@@ -146,7 +169,10 @@ class ServiceLineRepository
      *     description?: ?string,
      *     icon?: ?string,
      *     sort_order?: int,
-     *     is_active?: bool
+     *     is_active?: bool,
+     *     subject_column?: ?string,
+     *     subject_required?: bool,
+     *     subject_label?: ?string
      * } $data
      */
     public function update(int $id, array $data): ServiceLine
@@ -173,6 +199,18 @@ class ServiceLineRepository
             $fields[] = 'is_active = :is_active';
             $params['is_active'] = (int) $data['is_active'];
         }
+        if (array_key_exists('subject_column', $data)) {
+            $fields[] = 'subject_column = :subject_column';
+            $params['subject_column'] = $this->normalizeSubjectColumn($data['subject_column']);
+        }
+        if (array_key_exists('subject_required', $data)) {
+            $fields[] = 'subject_required = :subject_required';
+            $params['subject_required'] = (int) (bool) $data['subject_required'];
+        }
+        if (array_key_exists('subject_label', $data)) {
+            $fields[] = 'subject_label = :subject_label';
+            $params['subject_label'] = $this->normalizeSubjectLabel($data['subject_label']);
+        }
 
         if ($fields !== []) {
             $stmt = $this->connection->pdo()->prepare(
@@ -190,6 +228,31 @@ class ServiceLineRepository
     }
 
     /**
+     * Distinct non-null subject_column values currently in use across all
+     * service lines. Used by SubjectResolver::allSubjectColumns so repositories
+     * know which optional FK columns to read on a row.
+     *
+     * @return array<int, string>
+     */
+    public function distinctSubjectColumns(): array
+    {
+        $stmt = $this->connection->pdo()->query(
+            'SELECT DISTINCT subject_column FROM service_lines
+             WHERE subject_column IS NOT NULL AND subject_column != ""'
+        );
+        if ($stmt === false) {
+            return [];
+        }
+        $cols = [];
+        while (($val = $stmt->fetchColumn()) !== false) {
+            if (is_string($val) && $val !== '') {
+                $cols[] = $val;
+            }
+        }
+        return $cols;
+    }
+
+    /**
      * Service lines a user has explicit membership in via user_service_lines.
      *
      * @return array<int, ServiceLine>
@@ -198,7 +261,8 @@ class ServiceLineRepository
     {
         $stmt = $this->connection->pdo()->prepare(
             'SELECT sl.id, sl.slug, sl.name, sl.description, sl.icon, sl.sort_order,
-                    sl.is_active, sl.created_at, sl.updated_at
+                    sl.is_active, sl.subject_column, sl.subject_required,
+                    sl.subject_label, sl.created_at, sl.updated_at
              FROM service_lines sl
              INNER JOIN user_service_lines usl ON usl.service_line_id = sl.id
              WHERE usl.user_id = :user_id
@@ -216,7 +280,8 @@ class ServiceLineRepository
     {
         $stmt = $this->connection->pdo()->prepare(
             'SELECT sl.id, sl.slug, sl.name, sl.description, sl.icon, sl.sort_order,
-                    sl.is_active, sl.created_at, sl.updated_at
+                    sl.is_active, sl.subject_column, sl.subject_required,
+                    sl.subject_label, sl.created_at, sl.updated_at
              FROM service_lines sl
              INNER JOIN users u ON u.primary_service_line_id = sl.id
              WHERE u.id = :user_id
@@ -298,5 +363,38 @@ class ServiceLineRepository
             'user_id' => $userId,
             'service_line_id' => $serviceLineId,
         ]);
+    }
+
+    /**
+     * Coerce empty strings to null and reject any non-whitelisted value before
+     * it hits the DB. The DB column is loose VARCHAR (so a future column can
+     * be added without a schema change), so the application enforces the
+     * vocabulary instead.
+     */
+    private function normalizeSubjectColumn(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        if (!in_array($trimmed, self::ALLOWED_SUBJECT_COLUMNS, true)) {
+            throw new InvalidArgumentException(
+                "Invalid subject_column '{$trimmed}' — allowed: "
+                . implode(', ', self::ALLOWED_SUBJECT_COLUMNS) . ', or null.'
+            );
+        }
+        return $trimmed;
+    }
+
+    private function normalizeSubjectLabel(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+        return $trimmed === '' ? null : $trimmed;
     }
 }

@@ -74,6 +74,10 @@ export default function EstimateDetail() {
     issue_date: new Date().toISOString().split('T')[0],
     due_date: '',
   })
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejecting, setRejecting] = useState(false)
+  const [rejectError, setRejectError] = useState(null)
 
   const loadEstimate = useCallback(async () => {
     if (!id) return
@@ -106,17 +110,34 @@ export default function EstimateDetail() {
     }
   }
 
-  const declineEstimate = async () => {
-    if (!estimate) return
-    if (!window.confirm('Are you sure you want to reject this estimate?')) return
+  const openRejectModal = () => {
+    setRejectReason('')
+    setRejectError(null)
+    setShowRejectModal(true)
+  }
 
+  const submitReject = async () => {
+    if (!estimate) return
+    const reason = rejectReason.trim()
+    if (reason.length < 5) {
+      setRejectError('Rejection reason must be at least 5 characters.')
+      return
+    }
+
+    setRejecting(true)
+    setRejectError(null)
     try {
-      await estimateService.declineEstimate(estimate.id)
+      await estimateService.declineEstimate(estimate.id, reason)
       success('Estimate rejected')
+      setShowRejectModal(false)
       loadEstimate()
     } catch (declineError) {
       console.error('Failed to reject estimate:', declineError)
-      error(declineError.response?.data?.message || 'Failed to reject estimate')
+      const message = declineError.response?.data?.message || 'Failed to reject estimate'
+      setRejectError(message)
+      error(message)
+    } finally {
+      setRejecting(false)
     }
   }
 
@@ -219,7 +240,7 @@ export default function EstimateDetail() {
             <Button variant="primary" onClick={approveEstimate}>Approve</Button>
           ) : null}
           {isPendingOrSent ? (
-            <Button variant="danger" onClick={declineEstimate}>Reject</Button>
+            <Button variant="danger" onClick={openRejectModal}>Reject</Button>
           ) : null}
           {estimate.status === 'approved' ? (
             <Button onClick={() => setShowConvertModal(true)}>Convert to Invoice</Button>
@@ -356,6 +377,58 @@ export default function EstimateDetail() {
           </Card>
         </div>
       </div>
+
+      <Modal
+        open={showRejectModal}
+        onClose={() => (rejecting ? null : setShowRejectModal(false))}
+        title="Reject Estimate"
+        content={(
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Provide a reason for rejecting estimate #{estimate?.number}. This is recorded
+              on the estimate and visible to staff.
+            </p>
+            <div>
+              <label htmlFor="reject-reason" className="block text-sm font-medium text-gray-700">
+                Reason <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                id="reject-reason"
+                value={rejectReason}
+                onChange={(event) => setRejectReason(event.target.value)}
+                rows={4}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                placeholder="e.g. Customer chose to defer the work"
+                disabled={rejecting}
+                autoFocus
+              />
+              <p className="mt-1 text-xs text-gray-500">Minimum 5 characters.</p>
+            </div>
+            {rejectError ? (
+              <Alert variant="danger">{rejectError}</Alert>
+            ) : null}
+          </div>
+        )}
+        footer={(
+          <div className="flex gap-3 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setShowRejectModal(false)}
+              disabled={rejecting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={submitReject}
+              disabled={rejecting || rejectReason.trim().length < 5}
+              loading={rejecting}
+            >
+              {rejecting ? 'Rejecting...' : 'Reject Estimate'}
+            </Button>
+          </div>
+        )}
+      />
 
       <Modal
         open={showConvertModal}

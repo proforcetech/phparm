@@ -18,6 +18,12 @@ class ServiceLine extends BaseModel
     public ?string $icon = null;
     public int $sort_order = 0;
     public bool $is_active = true;
+    // Subject FK rules — moved from SubjectResolver::RULES into the table in
+    // migration 176 so they're admin-adjustable. NULL subject_column means
+    // "no subject FK required" (route-based or generic line).
+    public ?string $subject_column = null;
+    public bool $subject_required = false;
+    public ?string $subject_label = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 

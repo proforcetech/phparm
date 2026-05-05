@@ -79,6 +79,13 @@ class ServiceLineController
             'icon' => isset($body['icon']) ? (string) $body['icon'] : null,
             'sort_order' => (int) ($body['sort_order'] ?? 0),
             'is_active' => (bool) ($body['is_active'] ?? true),
+            'subject_column' => array_key_exists('subject_column', $body)
+                ? ($body['subject_column'] === null ? null : (string) $body['subject_column'])
+                : null,
+            'subject_required' => (bool) ($body['subject_required'] ?? false),
+            'subject_label' => array_key_exists('subject_label', $body)
+                ? ($body['subject_label'] === null ? null : (string) $body['subject_label'])
+                : null,
         ]);
 
         return self::toArray($line);
@@ -112,6 +119,19 @@ class ServiceLineController
         }
         if (isset($body['is_active'])) {
             $updates['is_active'] = (bool) $body['is_active'];
+        }
+        if (array_key_exists('subject_column', $body)) {
+            $updates['subject_column'] = $body['subject_column'] === null
+                ? null
+                : (string) $body['subject_column'];
+        }
+        if (array_key_exists('subject_required', $body)) {
+            $updates['subject_required'] = (bool) $body['subject_required'];
+        }
+        if (array_key_exists('subject_label', $body)) {
+            $updates['subject_label'] = $body['subject_label'] === null
+                ? null
+                : (string) $body['subject_label'];
         }
 
         // slug is intentionally NOT updatable — it's a stable external key,
@@ -255,6 +275,9 @@ class ServiceLineController
             'icon' => $line->icon,
             'sort_order' => $line->sort_order,
             'is_active' => $line->is_active,
+            'subject_column' => $line->subject_column,
+            'subject_required' => $line->subject_required,
+            'subject_label' => $line->subject_label,
             'created_at' => $line->created_at,
             'updated_at' => $line->updated_at,
         ];
