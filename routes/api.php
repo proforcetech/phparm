@@ -4389,7 +4389,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $InventoryPullRequestService,
             $inventoryStockOrders,
             $auditLogger,
-            $messagingNotifications
+            $messagingNotifications,
+            new \App\Services\Customer\CustomerRepository($connection),
+            new \App\Services\ServiceLine\SubjectResolver(
+                new \App\Services\ServiceLine\ServiceLineRepository($connection)
+            )
         );
 
         // 6. Support Services
@@ -4520,6 +4524,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->post('/api/workorders/from-estimate', function (Request $request) use ($workorderController) {
             $user = $request->getAttribute('user');
             $data = $workorderController->createFromEstimate($user, $request->body());
+            return Response::created($data);
+        });
+
+        $router->post('/api/workorders/direct', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $data = $workorderController->createDirect($user, $request->body());
             return Response::created($data);
         });
 

@@ -797,7 +797,9 @@ class WorkorderRepository
         return new Workorder([
             'id' => (int) $row['id'],
             'number' => (string) $row['number'],
-            'estimate_id' => (int) $row['estimate_id'],
+            'estimate_id' => isset($row['estimate_id']) && $row['estimate_id'] !== null
+                ? (int) $row['estimate_id']
+                : null,
             'customer_id' => (int) $row['customer_id'],
             'vehicle_id' => isset($row['vehicle_id']) && $row['vehicle_id'] !== null
                 ? (int) $row['vehicle_id']
@@ -834,6 +836,12 @@ class WorkorderRepository
             'hazmat_disposal_fee' => (float) ($row['hazmat_disposal_fee'] ?? 0),
             'goa_fee' => (float) ($row['goa_fee'] ?? 0),
             'goa_billing_party' => $row['goa_billing_party'] ?? null,
+            'mileage_in' => isset($row['mileage_in']) && $row['mileage_in'] !== null
+                ? (int) $row['mileage_in']
+                : null,
+            'mileage_out' => isset($row['mileage_out']) && $row['mileage_out'] !== null
+                ? (int) $row['mileage_out']
+                : null,
             'grand_total' => (float) ($row['grand_total'] ?? 0),
             'internal_notes' => $row['internal_notes'] ?? null,
             'customer_notes' => $row['customer_notes'] ?? null,

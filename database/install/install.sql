@@ -1251,7 +1251,7 @@ CREATE TABLE IF NOT EXISTS financial_categories (
 CREATE TABLE IF NOT EXISTS workorders (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL UNIQUE,
-    estimate_id INT UNSIGNED NOT NULL,
+    estimate_id INT UNSIGNED NULL,
     customer_id INT UNSIGNED NOT NULL,
     vehicle_id INT UNSIGNED NOT NULL,
     branch_id INT UNSIGNED NULL,
@@ -1270,6 +1270,8 @@ CREATE TABLE IF NOT EXISTS workorders (
     hazmat_disposal_fee DECIMAL(12,2) DEFAULT 0,
     goa_fee DECIMAL(12,2) DEFAULT 0,
     goa_billing_party VARCHAR(40) NULL,
+    mileage_in INT UNSIGNED NULL,
+    mileage_out INT UNSIGNED NULL,
     grand_total DECIMAL(12,2) DEFAULT 0,
     internal_notes TEXT NULL,
     customer_notes TEXT NULL,
@@ -1281,7 +1283,7 @@ CREATE TABLE IF NOT EXISTS workorders (
     INDEX idx_workorder_status (status),
     INDEX idx_workorder_branch (branch_id),
     INDEX idx_workorder_technician (assigned_technician_id),
-    CONSTRAINT fk_workorder_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id),
+    CONSTRAINT fk_workorder_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id) ON DELETE SET NULL,
     CONSTRAINT fk_workorder_customer FOREIGN KEY (customer_id) REFERENCES customers (id),
     CONSTRAINT fk_workorder_vehicle FOREIGN KEY (vehicle_id) REFERENCES customer_vehicles (id),
     CONSTRAINT fk_workorder_technician FOREIGN KEY (assigned_technician_id) REFERENCES users (id)

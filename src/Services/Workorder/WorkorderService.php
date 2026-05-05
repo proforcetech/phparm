@@ -7,11 +7,13 @@ use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Workorder;
 use App\Models\WorkorderJob;
+use App\Services\Customer\CustomerRepository;
 use App\Services\Inventory\CoreReturnService;
 use App\Services\Inventory\InventoryPullRequestService;
 use App\Services\Inventory\InventoryStockOrderService;
 use App\Services\Messaging\MessagingNotificationService;
 use App\Services\Financial\FinancialEntryService;
+use App\Services\ServiceLine\SubjectResolver;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -27,6 +29,8 @@ class WorkorderService
     private InventoryPullRequestService $inventoryPullRequests;
     private InventoryStockOrderService $inventoryStockOrders;
     private ?MessagingNotificationService $messagingNotifications;
+    private ?CustomerRepository $customers;
+    private ?SubjectResolver $subjectResolver;
 
     public function __construct(
         Connection $connection,
@@ -35,7 +39,9 @@ class WorkorderService
         InventoryPullRequestService $inventoryPullRequests,
         InventoryStockOrderService $inventoryStockOrders,
         ?AuditLogger $audit = null,
-        ?MessagingNotificationService $messagingNotifications = null
+        ?MessagingNotificationService $messagingNotifications = null,
+        ?CustomerRepository $customers = null,
+        ?SubjectResolver $subjectResolver = null
     ) {
         $this->connection = $connection;
         $this->repository = $repository;
@@ -44,6 +50,8 @@ class WorkorderService
         $this->inventoryPullRequests = $inventoryPullRequests;
         $this->inventoryStockOrders = $inventoryStockOrders;
         $this->messagingNotifications = $messagingNotifications;
+        $this->customers = $customers;
+        $this->subjectResolver = $subjectResolver;
     }
 
     /**
@@ -163,6 +171,184 @@ class WorkorderService
                 'estimate_number' => $estimate->number,
                 'jobs_count' => count($approvedJobs),
                 'totals' => $totals,
+            ]);
+
+            return $workorder;
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    /**
+     * Create a workorder directly, bypassing the estimate stage. Restricted to
+     * customers whose company holds an active contract for the requested
+     * service line — the eligibility check is the product gate, not the
+     * schema (estimate_id is just NULL in the row, see migration 174).
+     *
+     * Payload shape:
+     *   customer_id (int, required)
+     *   service_line_id (int, required) — drives both the contract check and
+     *     the subject-FK validation via SubjectResolver
+     *   vehicle_id / site_asset_id (int|null) — at least one must be set if
+     *     the service line declares a required subject column
+     *   branch_id, priority, type, assigned_technician_id (optional)
+     *   mileage_in (int|null) — per-visit odometer at arrival, only meaningful
+     *     for vehicle subjects (Phase 174)
+     *   call_out_fee, mileage_total, discounts, shop_fee, hazmat_disposal_fee
+     *     (floats, default 0)
+     *   internal_notes, customer_notes (string|null)
+     *   tax_rate (float, default 0) — applied to taxable items per job
+     *   jobs (array, required, min 1) — each: title, notes, reference,
+     *     service_type_id, items[] (type/sku/inventory_item_id/description/
+     *     quantity/unit_price/list_price/taxable)
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function createDirect(array $payload, ?int $actorId = null): Workorder
+    {
+        if ($this->customers === null || $this->subjectResolver === null) {
+            // Fail closed: without these deps we can't enforce the contract
+            // gate or the per-line subject validation, and silently allowing
+            // creation would defeat the entire policy.
+            throw new InvalidArgumentException(
+                'Direct workorder creation requires CustomerRepository and SubjectResolver to be wired.'
+            );
+        }
+
+        $customerId = isset($payload['customer_id']) ? (int) $payload['customer_id'] : 0;
+        if ($customerId <= 0) {
+            throw new InvalidArgumentException('customer_id is required.');
+        }
+
+        $serviceLineId = isset($payload['service_line_id']) ? (int) $payload['service_line_id'] : 0;
+        if ($serviceLineId <= 0) {
+            throw new InvalidArgumentException('service_line_id is required for direct workorders.');
+        }
+
+        $jobs = $payload['jobs'] ?? null;
+        if (!is_array($jobs) || $jobs === []) {
+            throw new InvalidArgumentException('At least one job is required.');
+        }
+
+        $serviceLine = $this->subjectResolver->resolveLine($serviceLineId);
+        if ($serviceLine === null) {
+            throw new InvalidArgumentException("Service line {$serviceLineId} not found.");
+        }
+        $this->subjectResolver->validateSubject($serviceLine, $payload);
+
+        $customer = $this->customers->find($customerId);
+        if ($customer === null) {
+            throw new InvalidArgumentException("Customer {$customerId} not found.");
+        }
+        if ($customer->company_id === null) {
+            throw new InvalidArgumentException(
+                'Direct workorders require a B2B customer linked to a company.'
+            );
+        }
+        if (!$this->customers->hasActiveContractForServiceLine($customerId, $serviceLineId)) {
+            throw new InvalidArgumentException(
+                'Direct workorders require an active contract covering this service line for the customer\'s company.'
+            );
+        }
+
+        $type = $payload['type'] ?? Workorder::TYPE_CORRECTIVE;
+        if (!Workorder::isValidType((string) $type)) {
+            throw new InvalidArgumentException("Invalid workorder type: {$type}");
+        }
+
+        $priority = $payload['priority'] ?? Workorder::PRIORITY_NORMAL;
+        if (!in_array($priority, Workorder::ALLOWED_PRIORITIES, true)) {
+            throw new InvalidArgumentException("Invalid priority: {$priority}");
+        }
+
+        $branchId = isset($payload['branch_id']) && $payload['branch_id'] !== ''
+            ? (int) $payload['branch_id']
+            : null;
+        $technicianId = isset($payload['assigned_technician_id']) && $payload['assigned_technician_id'] !== ''
+            ? (int) $payload['assigned_technician_id']
+            : null;
+        $mileageIn = isset($payload['mileage_in']) && $payload['mileage_in'] !== ''
+            ? (int) $payload['mileage_in']
+            : null;
+
+        $subjectColumns = $this->subjectResolver->extractSubjectColumns($serviceLine, $payload);
+        $vehicleId = $subjectColumns['vehicle_id'] ?? null;
+        $siteAssetId = $subjectColumns['site_asset_id'] ?? null;
+
+        $callOutFee = (float) ($payload['call_out_fee'] ?? 0);
+        $mileageTotal = (float) ($payload['mileage_total'] ?? 0);
+        $discounts = (float) ($payload['discounts'] ?? 0);
+        $shopFee = (float) ($payload['shop_fee'] ?? 0);
+        $hazmatFee = (float) ($payload['hazmat_disposal_fee'] ?? 0);
+        $taxRate = (float) ($payload['tax_rate'] ?? 0);
+
+        $pdo = $this->connection->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $workorderNumber = $this->generateDirectWorkorderNumber();
+
+            $stmt = $pdo->prepare(<<<SQL
+                INSERT INTO workorders (
+                    number, estimate_id, customer_id, vehicle_id, site_asset_id, service_line_id,
+                    branch_id, status, type, priority,
+                    assigned_technician_id, subtotal, tax, call_out_fee, mileage_total,
+                    discounts, shop_fee, hazmat_disposal_fee, grand_total,
+                    mileage_in, internal_notes, customer_notes, created_at, updated_at
+                ) VALUES (
+                    :number, NULL, :customer_id, :vehicle_id, :site_asset_id, :service_line_id,
+                    :branch_id, :status, :type, :priority,
+                    :technician_id, 0, 0, :call_out_fee, :mileage_total,
+                    :discounts, :shop_fee, :hazmat_disposal_fee, 0,
+                    :mileage_in, :internal_notes, :customer_notes, NOW(), NOW()
+                )
+            SQL);
+
+            $stmt->execute([
+                'number' => $workorderNumber,
+                'customer_id' => $customerId,
+                'vehicle_id' => $vehicleId,
+                'site_asset_id' => $siteAssetId,
+                'service_line_id' => $serviceLineId,
+                'branch_id' => $branchId,
+                'status' => Workorder::STATUS_PENDING,
+                'type' => $type,
+                'priority' => $priority,
+                'technician_id' => $technicianId,
+                'call_out_fee' => $callOutFee,
+                'mileage_total' => $mileageTotal,
+                'discounts' => $discounts,
+                'shop_fee' => $shopFee,
+                'hazmat_disposal_fee' => $hazmatFee,
+                'mileage_in' => $mileageIn,
+                'internal_notes' => $payload['internal_notes'] ?? null,
+                'customer_notes' => $payload['customer_notes'] ?? null,
+            ]);
+
+            $workorderId = (int) $pdo->lastInsertId();
+
+            $this->createWorkorderJobsInline($workorderId, $jobs, $technicianId, $branchId, $taxRate);
+            $this->recalculateWorkorderTotals($workorderId);
+            $this->createInventoryRequestsForWorkorderParts($workorderId, $actorId, $branchId);
+
+            $this->recordStatusHistory(
+                $workorderId,
+                null,
+                Workorder::STATUS_PENDING,
+                $actorId,
+                'Workorder created directly under contract.'
+            );
+
+            $pdo->commit();
+
+            $workorder = $this->repository->find($workorderId);
+            $this->log('workorder.created_direct', $workorderId, $actorId, [
+                'customer_id' => $customerId,
+                'company_id' => $customer->company_id,
+                'service_line_id' => $serviceLineId,
+                'service_line_slug' => $serviceLine->slug,
+                'jobs_count' => count($jobs),
             ]);
 
             return $workorder;
@@ -1237,6 +1423,137 @@ class WorkorderService
         }
 
         return $candidate;
+    }
+
+    /**
+     * Mint a number for a direct (no-estimate) workorder. Pattern is
+     * WO-D-YYYYMM-NNNN, mirroring the per-month counter used by contracts so
+     * the "D" segment makes the source visible at a glance in lists/reports.
+     * Counter probes the highest existing suffix for the current month, then
+     * loops on collision so concurrent inserts are still safe.
+     */
+    private function generateDirectWorkorderNumber(): string
+    {
+        $prefix = 'WO-D-' . date('Ym') . '-';
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT number FROM workorders
+             WHERE number LIKE :prefix
+             ORDER BY number DESC LIMIT 1'
+        );
+        $stmt->execute(['prefix' => $prefix . '%']);
+        $last = $stmt->fetchColumn();
+
+        $next = 1;
+        if (is_string($last) && preg_match('/-(\d+)$/', $last, $m)) {
+            $next = (int) $m[1] + 1;
+        }
+
+        do {
+            $candidate = $prefix . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
+            $next++;
+        } while ($this->workorderNumberExists($candidate));
+
+        return $candidate;
+    }
+
+    /**
+     * Insert workorder jobs + items from an inline payload (used by
+     * createDirect, where there's no source estimate to copy from). Mirrors
+     * createEstimateJobs but writes to workorder_jobs / workorder_items and
+     * applies $taxRate per item when the item is taxable. Returns nothing —
+     * totals are recomputed by recalculateWorkorderTotals after the call.
+     *
+     * @param array<int, array<string, mixed>> $jobs
+     */
+    private function createWorkorderJobsInline(
+        int $workorderId,
+        array $jobs,
+        ?int $technicianId,
+        ?int $branchId,
+        float $taxRate
+    ): void {
+        $pdo = $this->connection->pdo();
+        $position = 0;
+
+        foreach ($jobs as $job) {
+            $jobSubtotal = 0.0;
+            $jobTax = 0.0;
+
+            $items = isset($job['items']) && is_array($job['items']) ? $job['items'] : [];
+            foreach ($items as $item) {
+                $lineTotal = (float) ($item['quantity'] ?? 0) * (float) ($item['unit_price'] ?? 0);
+                $jobSubtotal += $lineTotal;
+                if (!empty($item['taxable'])) {
+                    $jobTax += $lineTotal * $taxRate;
+                }
+            }
+            $jobTotal = $jobSubtotal + $jobTax;
+
+            $stmt = $pdo->prepare(<<<SQL
+                INSERT INTO workorder_jobs (
+                    workorder_id, branch_id, service_type_id, title, notes, reference,
+                    status, assigned_technician_id, subtotal, tax, total, position, created_at, updated_at
+                ) VALUES (
+                    :workorder_id, :branch_id, :service_type_id, :title, :notes, :reference,
+                    :status, :technician_id, :subtotal, :tax, :total, :position, NOW(), NOW()
+                )
+            SQL);
+
+            $stmt->execute([
+                'workorder_id' => $workorderId,
+                'branch_id' => $branchId,
+                'service_type_id' => $job['service_type_id'] ?? null,
+                'title' => (string) ($job['title'] ?? 'Untitled Job'),
+                'notes' => $job['notes'] ?? null,
+                'reference' => $job['reference'] ?? null,
+                'status' => WorkorderJob::STATUS_PENDING,
+                'technician_id' => $technicianId,
+                'subtotal' => $jobSubtotal,
+                'tax' => $jobTax,
+                'total' => $jobTotal,
+                'position' => $position,
+            ]);
+
+            $workorderJobId = (int) $pdo->lastInsertId();
+
+            $itemPosition = 0;
+            foreach ($items as $item) {
+                $quantity = (float) ($item['quantity'] ?? 0);
+                $unitPrice = (float) ($item['unit_price'] ?? 0);
+                $lineTotal = $quantity * $unitPrice;
+
+                $itemStmt = $pdo->prepare(<<<SQL
+                    INSERT INTO workorder_items (
+                        workorder_job_id, branch_id, type, sku, inventory_item_id, description,
+                        quantity, unit_price, list_price, taxable, line_total, position
+                    ) VALUES (
+                        :workorder_job_id, :branch_id, :type, :sku, :inventory_item_id, :description,
+                        :quantity, :unit_price, :list_price, :taxable, :line_total, :position
+                    )
+                SQL);
+
+                $itemStmt->execute([
+                    'workorder_job_id' => $workorderJobId,
+                    'branch_id' => $branchId,
+                    'type' => (string) ($item['type'] ?? 'LABOR'),
+                    'sku' => $item['sku'] ?? null,
+                    'inventory_item_id' => isset($item['inventory_item_id']) && $item['inventory_item_id'] !== ''
+                        ? (int) $item['inventory_item_id']
+                        : null,
+                    'description' => (string) ($item['description'] ?? ''),
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'list_price' => isset($item['list_price']) ? (float) $item['list_price'] : null,
+                    'taxable' => !empty($item['taxable']) ? 1 : 0,
+                    'line_total' => $lineTotal,
+                    'position' => $itemPosition,
+                ]);
+
+                $itemPosition++;
+            }
+
+            $position++;
+        }
     }
 
     private function generateSubEstimateNumber(string $parentNumber): string

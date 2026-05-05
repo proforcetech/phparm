@@ -105,6 +105,39 @@ class ContractRepository
     }
 
     /**
+     * Direct-WO eligibility check (Phase: estimate/WO restructuring). Returns
+     * the active contract, if any, that covers the given company on the given
+     * service line as of $onDate. A NULL service_line_id on the contract is
+     * treated as "covers any line for this company" so legacy contracts written
+     * before migration 152 don't lose their B2B coverage. Order is most-
+     * recently-ending first so callers get the canonical active contract when
+     * multiple overlap.
+     */
+    public function findActiveForCompanyAndLine(
+        int $companyId,
+        int $serviceLineId,
+        string $onDate
+    ): ?Contract {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT ' . self::COLUMNS . ' FROM contracts
+             WHERE company_id = :company_id
+               AND status = "active"
+               AND start_date <= :on_date
+               AND end_date >= :on_date
+               AND (service_line_id IS NULL OR service_line_id = :service_line_id)
+             ORDER BY end_date DESC, id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'company_id' => $companyId,
+            'service_line_id' => $serviceLineId,
+            'on_date' => $onDate,
+        ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? new Contract($row) : null;
+    }
+
+    /**
      * Active contracts whose end_date is on or before $cutoffDate — input for
      * the auto-renew cron and the expiring-soon report.
      *

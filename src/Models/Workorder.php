@@ -67,7 +67,7 @@ class Workorder extends BaseModel
 
     public int $id;
     public string $number;
-    public int $estimate_id;
+    public ?int $estimate_id = null;
     public int $customer_id;
     // Subject FKs — exactly one is populated based on service_line_id; the
     // others are NULL. SubjectResolver enforces the per-line "must have a
@@ -108,6 +108,8 @@ class Workorder extends BaseModel
     public float $hazmat_disposal_fee = 0.0;
     public float $goa_fee = 0.0;
     public ?string $goa_billing_party = null;
+    public ?int $mileage_in = null;
+    public ?int $mileage_out = null;
     public float $grand_total = 0.0;
     public ?string $internal_notes = null;
     public ?string $customer_notes = null;

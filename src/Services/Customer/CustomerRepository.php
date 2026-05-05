@@ -49,6 +49,46 @@ class CustomerRepository
     }
 
     /**
+     * Direct-WO eligibility check (Phase: estimate/WO restructuring). A
+     * customer can have a workorder created without an estimate only when
+     * they belong to a company that holds an active contract covering the
+     * requested service line. Individual (non-company) customers always
+     * return false — direct WO creation is B2B-only by product policy.
+     *
+     * The check inlines the SQL rather than depending on ContractRepository
+     * to keep CustomerRepository's constructor unchanged (it's instantiated
+     * in 6+ callers). Mirrors ContractRepository::findActiveForCompanyAndLine
+     * — a NULL service_line_id on the contract counts as "covers any line".
+     */
+    public function hasActiveContractForServiceLine(
+        int $customerId,
+        int $serviceLineId,
+        ?string $onDate = null
+    ): bool {
+        $customer = $this->find($customerId);
+        if ($customer === null || $customer->company_id === null) {
+            return false;
+        }
+
+        $onDate ??= (new DateTimeImmutable())->format('Y-m-d');
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT 1 FROM contracts
+             WHERE company_id = :company_id
+               AND status = "active"
+               AND start_date <= :on_date
+               AND end_date >= :on_date
+               AND (service_line_id IS NULL OR service_line_id = :service_line_id)
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'company_id' => $customer->company_id,
+            'service_line_id' => $serviceLineId,
+            'on_date' => $onDate,
+        ]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /**
      * Phase 6.4 of docs/expansion-plan.md — portal billing queue needs the set
      * of customer IDs owned by a company_id (the estimates/invoices legacy
      * schema uses customer_id, not company_id, so portal scoping resolves via

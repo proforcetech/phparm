@@ -155,6 +155,34 @@ class WorkorderController
     }
 
     /**
+     * POST /api/workorders/direct
+     *
+     * Creates a workorder for a B2B customer under contract, bypassing the
+     * estimate stage. The contract gate lives in WorkorderService::createDirect
+     * — this method just enforces the role/branch checks and forwards.
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function createDirect(User $user, array $payload): array
+    {
+        // Intentionally not requiring workorders.manage — direct creation is
+        // its own gate so dispatchers (and other narrow roles) can be granted
+        // it without inheriting the rest of WO management.
+        $this->gate->assert($user, 'workorders.create_direct');
+
+        $payload['branch_id'] = $payload['branch_id'] ?? $this->resolveBranchFilter($user);
+
+        $workorder = $this->service->createDirect($payload, $user->id);
+        $this->assertBranchAccess($user, $workorder->branch_id);
+
+        $data = $this->enrichWorkorder($workorder, true);
+        $data['jobs'] = $this->repository->getJobsWithItems($workorder->id);
+
+        return $data;
+    }
+
+    /**
      * PATCH /api/workorders/{id}/status
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
