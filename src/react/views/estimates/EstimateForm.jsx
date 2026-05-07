@@ -319,6 +319,27 @@ export default function EstimateForm() {
     }
 
     try {
+      const items = form.line_items.map((item) => ({
+        type: item.type || 'LABOR',
+        sku: item.sku || null,
+        description: item.description,
+        quantity: Number(item.quantity) || 0,
+        unit_price: Number(item.unit_price) || 0,
+        list_price: item.list_price !== '' && item.list_price !== null ? Number(item.list_price) : 0,
+        taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
+        discount_type: item.discount_type || 'fixed',
+        notes: item.notes || null,
+      }))
+
+      // Backend recomputes tax as taxable_subtotal × tax_rate. Derive the
+      // rate from the dollar amount the user entered so the persisted total
+      // matches what the form is showing.
+      const taxableSubtotal = items
+        .filter((item) => item.taxable)
+        .reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+      const taxAmount = parseFloat(form.tax) || 0
+      const taxRate = taxableSubtotal > 0 ? taxAmount / taxableSubtotal : 0
+
       const payload = {
         customer_id: form.customer_id ? parseInt(form.customer_id, 10) : null,
         vehicle_id: form.vehicle_id ? parseInt(form.vehicle_id, 10) : null,
@@ -327,26 +348,19 @@ export default function EstimateForm() {
         is_mobile: Boolean(form.is_mobile),
         technician_id: form.technician_id ? parseInt(form.technician_id, 10) : null,
         expiration_date: form.expiration_date || null,
-        subtotal: parseFloat(form.subtotal),
-        tax: parseFloat(form.tax) || 0,
+        tax_rate: taxRate,
         call_out_fee: parseFloat(form.call_out_fee) || 0,
         mileage_total: parseFloat(form.mileage_total) || 0,
         discounts: parseFloat(form.discounts) || 0,
-        grand_total: parseFloat(form.grand_total),
         customer_notes: form.customer_notes || null,
         internal_notes: form.internal_notes || null,
         status: form.status || 'pending',
-        line_items: form.line_items.map((item) => ({
-          type: item.type || 'LABOR',
-          sku: item.sku || null,
-          description: item.description,
-          quantity: Number(item.quantity) || 0,
-          unit_price: Number(item.unit_price) || 0,
-          list_price: item.list_price !== '' && item.list_price !== null ? Number(item.list_price) : 0,
-          taxable: item.type === 'DISCOUNT' ? false : Boolean(item.taxable),
-          discount_type: item.discount_type || 'fixed',
-          notes: item.notes || null,
-        })),
+        jobs: [
+          {
+            title: 'Estimate',
+            items,
+          },
+        ],
       }
 
       let response

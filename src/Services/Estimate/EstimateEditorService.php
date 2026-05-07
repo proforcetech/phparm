@@ -267,12 +267,11 @@ class EstimateEditorService
         // gated by the document's service line (auto_repair / fleet_management
         // require it; property_management requires site_asset_id; etc.).
         // SubjectResolver enforces the per-line rule below.
-        $required = ['customer_id', 'number', 'jobs'];
+        //
+        // `number` is intentionally NOT required: insertEstimate auto-generates
+        // one when missing, and the React form omits it on create.
+        $required = ['customer_id', 'jobs'];
         foreach ($required as $field) {
-            if ($isUpdate && $field === 'number') {
-                continue;
-            }
-
             if (!array_key_exists($field, $payload)) {
                 throw new InvalidArgumentException('Missing required estimate field: ' . $field);
             }
