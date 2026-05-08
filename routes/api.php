@@ -3647,6 +3647,18 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 }
             }
 
+            // Enrich with service_line data so the detail view can decide
+            // whether to render vehicle/asset sections based on subject_column.
+            if (!empty($data['service_line_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, slug, name, icon, subject_column, subject_required, subject_label FROM service_lines WHERE id = :id');
+                $stmt->execute(['id' => $data['service_line_id']]);
+                $serviceLine = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($serviceLine) {
+                    $serviceLine['subject_required'] = (bool) $serviceLine['subject_required'];
+                    $data['service_line'] = $serviceLine;
+                }
+            }
+
             // Add estimate jobs and items
             $jobsStmt = $connection->pdo()->prepare('SELECT * FROM estimate_jobs WHERE estimate_id = :estimate_id ORDER BY display_order ASC');
             $jobsStmt->execute(['estimate_id' => $id]);
@@ -3747,6 +3759,33 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $data = $estimateController->mergeIntoInvoice($user, $id, $request->body());
             return Response::json($data);
+        });
+
+        // Issue a public link for sharing without sending it. Returns the
+        // shortened /e/{code} URL plus the longer secure_url, so the UI can
+        // render copy-to-clipboard / "share via..." actions without forcing
+        // the user to email or text it through us.
+        $router->post('/api/estimates/{id}/share/link', function (Request $request) use ($connection, $auditLogger) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
+            $estimate = $estimateRepository->find($id);
+            if ($estimate === null) {
+                return Response::notFound(['error' => 'Estimate not found']);
+            }
+
+            $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
+            $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
+            $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+
+            $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
+            $link = $linkService->issueLink($id, $baseUrl, $estimate->expiration_date, $user->id);
+
+            return Response::json([
+                'short_url' => $link['short_url'],
+                'secure_url' => $link['secure_url'],
+            ]);
         });
 
         // Share estimate via email

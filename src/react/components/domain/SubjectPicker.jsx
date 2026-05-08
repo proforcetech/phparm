@@ -149,17 +149,17 @@ export default function SubjectPicker({
     }
   }
 
-  const showLineSelector = Array.isArray(serviceLines) && serviceLines.length > 1
+  const hasServiceLines = Array.isArray(serviceLines) && serviceLines.length > 0
 
   return (
     <div className="space-y-3">
-      {showLineSelector ? (
+      {hasServiceLines ? (
         <div>
           <label className="block text-sm font-medium text-gray-700">Service Line</label>
           <Select
             value={effectiveServiceLineId ?? ''}
             onChange={handleServiceLineChange}
-            disabled={disabled}
+            disabled={disabled || serviceLines.length <= 1}
             options={serviceLines.map((line) => ({
               value: line.id,
               label: `${line.icon ? line.icon + ' ' : ''}${line.name}`,

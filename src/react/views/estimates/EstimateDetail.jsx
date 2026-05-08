@@ -10,6 +10,14 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import estimateService from '../../../services/estimate.service'
 import { useToast } from '../../stores/toast'
+import ShareEstimateModal from './ShareEstimateModal'
+
+const formatVehicleLabel = (vehicle) => {
+  if (!vehicle) return ''
+  const parts = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean)
+  const base = parts.join(' ').trim()
+  return base || `Vehicle #${vehicle.id}`
+}
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-US', {
@@ -78,6 +86,7 @@ export default function EstimateDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [rejecting, setRejecting] = useState(false)
   const [rejectError, setRejectError] = useState(null)
+  const [showShareModal, setShowShareModal] = useState(false)
 
   const loadEstimate = useCallback(async () => {
     if (!id) return
@@ -248,6 +257,12 @@ export default function EstimateDetail() {
           {isPendingOrSent ? (
             <Button variant="outline" onClick={expireEstimate}>Mark as Expired</Button>
           ) : null}
+          <Button variant="outline" onClick={() => setShowShareModal(true)}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+            Share
+          </Button>
           <Button
             variant="outline"
             onClick={() => navigate(`/cp/estimates/${estimate.id}/edit`)}
@@ -264,7 +279,7 @@ export default function EstimateDetail() {
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Customer & Vehicle</h3>
+              <h3 className="text-lg font-medium text-gray-900">Customer</h3>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -274,25 +289,31 @@ export default function EstimateDetail() {
                     to={`/cp/customers/${estimate.customer_id}`}
                     className="text-primary-600 hover:text-primary-800"
                   >
-                    Customer #{estimate.customer_id}
+                    {estimate.customer?.name || `Customer #${estimate.customer_id}`}
                   </Link>
                 </p>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Vehicle</label>
-                <p className="mt-1 text-sm text-gray-900">
-                  <Link
-                    to={`/cp/vehicles/${estimate.vehicle_id}`}
-                    className="text-primary-600 hover:text-primary-800"
-                  >
-                    Vehicle #{estimate.vehicle_id}
-                  </Link>
-                </p>
-              </div>
+              {estimate.service_line?.subject_column === 'vehicle_id' && estimate.vehicle_id ? (
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    {estimate.service_line?.subject_label || 'Vehicle'}
+                  </label>
+                  <p className="mt-1 text-sm text-gray-900">
+                    <Link
+                      to={`/cp/vehicles/${estimate.vehicle_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      {formatVehicleLabel(estimate.vehicle) || `Vehicle #${estimate.vehicle_id}`}
+                    </Link>
+                  </p>
+                </div>
+              ) : null}
               {estimate.technician_id ? (
                 <div>
                   <label className="text-sm font-medium text-gray-500">Technician</label>
-                  <p className="mt-1 text-sm text-gray-900">Technician #{estimate.technician_id}</p>
+                  <p className="mt-1 text-sm text-gray-900">
+                    {estimate.technician?.name || `Technician #${estimate.technician_id}`}
+                  </p>
                 </div>
               ) : null}
               {estimate.expiration_date ? (
@@ -472,6 +493,12 @@ export default function EstimateDetail() {
             </Button>
           </div>
         )}
+      />
+
+      <ShareEstimateModal
+        open={showShareModal}
+        estimate={estimate}
+        onClose={() => setShowShareModal(false)}
       />
     </div>
   )
