@@ -218,7 +218,11 @@ export default function Autocomplete({
             setLoading(false)
           }
         }
-      } else if (!modelValue) {
+      } else if (!modelValue && selectedItem) {
+        // Parent cleared the bound value — drop our selection too. Guarded on
+        // `selectedItem` so we don't clobber an in-progress search query when
+        // the parent re-renders with modelValue still null (e.g. typing on a
+        // form whose onUpdateModelValue spreads into a new state object).
         setSelectedItem(null)
         setSearchQuery('')
       }
@@ -229,7 +233,11 @@ export default function Autocomplete({
     return () => {
       isCancelled = true
     }
-  }, [modelValue, searchFn, itemValue, itemLabel, selectedItem])
+    // itemValue/itemLabel are intentionally omitted: they're inline arrow
+    // functions in most callers, so a new reference on every parent render
+    // would refire this effect and wipe the user's typed query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelValue, searchFn, selectedItem])
 
   return (
     <div className={`relative ${fullWidth ? 'w-full' : ''} ${className}`} {...rest}>
