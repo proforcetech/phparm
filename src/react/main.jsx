@@ -4,6 +4,7 @@ import '../assets/styles/main.css'
 
 import App from './App'
 import { AuthProvider } from './stores/auth.jsx'
+import { StepUpProvider } from './stores/stepUp.jsx'
 import { ToastProvider } from './stores/toast.jsx'
 import { UIProvider } from './stores/ui.jsx'
 import offlineSync from './services/offlineSync'
@@ -19,7 +20,9 @@ createRoot(container).render(
   <AuthProvider>
     <UIProvider>
       <ToastProvider>
-        <App />
+        <StepUpProvider>
+          <App />
+        </StepUpProvider>
       </ToastProvider>
     </UIProvider>
   </AuthProvider>

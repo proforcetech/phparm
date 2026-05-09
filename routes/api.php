@@ -14,6 +14,8 @@ use App\Models\WorkorderJob;
 use App\Support\Security\RecaptchaVerifier;
 use App\Support\Security\LoginRateLimiter;
 use App\Support\Auth\TotpService;
+use App\Support\Auth\StepUpService;
+use App\Support\Auth\StepUpRequiredException;
 use App\CMS\Controllers\CategoryController;
 use App\CMS\Controllers\MediaController;
 use App\CMS\Controllers\MenuController;
@@ -274,6 +276,7 @@ return function (Router $router, array $config, $connection) {
     };
 
     $totpService = new TotpService();
+    $stepUpService = new StepUpService($connection, $totpService);
 
     $securityConfig = require __DIR__ . '/../config/security.php';
     $auditConfig = require __DIR__ . '/../config/audit.php';
@@ -1584,6 +1587,64 @@ return function (Router $router, array $config, $connection) {
             'count' => $count,
             'enabled' => true,
             'warning' => $count <= 2 ? 'You have few recovery codes remaining. Consider regenerating them.' : null
+        ]);
+    })->middleware(Middleware::auth());
+
+    // Step-up: prove fresh possession of the TOTP device. Records a stamp
+    // valid for StepUpService::FRESHNESS_SECONDS so subsequent sensitive
+    // requests (credentials vault, etc.) succeed without re-prompting.
+    $router->post('/api/auth/step-up', function (Request $request) use ($stepUpService) {
+        $user = $request->getAttribute('user');
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        if (!$user->two_factor_enabled || empty($user->two_factor_secret)) {
+            return Response::json([
+                'error' => 'totp_not_enrolled',
+                'message' => 'TOTP must be enrolled before using step-up actions.',
+            ], 400);
+        }
+
+        $code = trim((string) $request->input('code', ''));
+        if ($code === '') {
+            return Response::json(['error' => 'missing_code', 'message' => 'TOTP code is required.'], 400);
+        }
+
+        $ip = LoginRateLimiter::clientIp($request);
+        $userAgent = $request->header('User-Agent');
+
+        try {
+            $verified = $stepUpService->verify($user, $code, $ip, $userAgent);
+        } catch (\InvalidArgumentException $e) {
+            return Response::json(['error' => 'totp_not_enrolled', 'message' => $e->getMessage()], 400);
+        }
+
+        if (!$verified) {
+            return Response::json(['error' => 'invalid_code', 'message' => 'Invalid TOTP code.'], 401);
+        }
+
+        return Response::json([
+            'success' => true,
+            'expires_in' => StepUpService::FRESHNESS_SECONDS,
+            'remaining_seconds' => $stepUpService->remainingSeconds($user->id),
+        ]);
+    })->middleware(Middleware::auth());
+
+    // Read-only check for the frontend to know whether step-up is currently
+    // fresh and how long is left. Avoids surprise prompts mid-flow.
+    $router->get('/api/auth/step-up/status', function (Request $request) use ($stepUpService) {
+        $user = $request->getAttribute('user');
+        if (!$user) {
+            return Response::unauthorized('Not authenticated');
+        }
+
+        $remaining = $stepUpService->remainingSeconds($user->id);
+        return Response::json([
+            'fresh' => $remaining > 0,
+            'remaining_seconds' => $remaining,
+            'window_seconds' => StepUpService::FRESHNESS_SECONDS,
+            'totp_enrolled' => (bool) ($user->two_factor_enabled && !empty($user->two_factor_secret)),
         ]);
     })->middleware(Middleware::auth());
 

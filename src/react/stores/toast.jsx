@@ -44,15 +44,16 @@ export function ToastProvider({ children, timeoutMs = defaultTimeoutMs }) {
     timeoutsRef.current.clear()
   }, [])
 
+  // Stable identities so components can put `error`/`success`/`info` in
+  // useCallback dep arrays without re-firing on every toast push. Each one
+  // is memoized on `push`, which itself is stable across messages updates.
+  const success = useCallback((message) => push(message, 'success'), [push])
+  const error = useCallback((message) => push(message, 'error'), [push])
+  const info = useCallback((message) => push(message, 'info'), [push])
+
   const value = useMemo(
-    () => ({
-      messages,
-      dismiss,
-      success: (message) => push(message, 'success'),
-      error: (message) => push(message, 'error'),
-      info: (message) => push(message, 'info'),
-    }),
-    [dismiss, messages, push]
+    () => ({ messages, dismiss, success, error, info }),
+    [messages, dismiss, success, error, info]
   )
 
   return <ToastContext.Provider value={value}>{children}</ToastContext.Provider>

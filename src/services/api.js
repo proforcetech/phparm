@@ -47,6 +47,13 @@ function shouldHandleSessionExpiration(error) {
     return false
   }
 
+  // Step-up TOTP is not a session expiration either — the user is
+  // authenticated but needs to re-prove possession of their TOTP device.
+  // The StepUpProvider handles the prompt + retry; we must not bounce.
+  if (responseData?.error === 'step_up_required') {
+    return false
+  }
+
   const path = normalizeRequestPath(error.config?.url || '')
   const authFlowPaths = new Set([
     '/auth/login',
@@ -124,6 +131,23 @@ async function getCsrfToken() {
  */
 export function clearCsrfToken() {
   cachedCsrfToken = null
+}
+
+// Registered by StepUpProvider on mount. When a request returns 403 with
+// `error: step_up_required`, the response interceptor calls this handler;
+// it must resolve once a successful step-up verification has been recorded
+// (the retry will then succeed) or reject if the user cancels.
+let stepUpPromptHandler = null
+let pendingStepUpPromise = null
+
+export function registerStepUpHandler(handler) {
+  stepUpPromptHandler = handler
+}
+
+export function unregisterStepUpHandler(handler) {
+  if (stepUpPromptHandler === handler) {
+    stepUpPromptHandler = null
+  }
 }
 
 /**
@@ -216,6 +240,31 @@ api.interceptors.response.use(
           errors: normalizedErrors,
           message: responseData?.message || 'Please check the highlighted fields.'
         }
+      }
+    }
+
+    // Handle step-up required: prompt for fresh TOTP, then retry the original
+    // request once. Concurrent requests share a single prompt promise so the
+    // user is asked one time even if many requests fire in parallel.
+    if (
+      status === 403 &&
+      responseData?.error === 'step_up_required' &&
+      stepUpPromptHandler &&
+      !error.config?._stepUpRetry
+    ) {
+      error.config._stepUpRetry = true
+      try {
+        if (!pendingStepUpPromise) {
+          pendingStepUpPromise = Promise.resolve(stepUpPromptHandler({
+            message: responseData?.message || null,
+          })).finally(() => {
+            pendingStepUpPromise = null
+          })
+        }
+        await pendingStepUpPromise
+        return api.request(error.config)
+      } catch (cancelErr) {
+        return Promise.reject(error)
       }
     }
 

@@ -50,7 +50,6 @@ export default function InventoryLookupManager() {
   const copy = labels[type] || labels.categories
 
   const [items, setItems] = useState([])
-  const [filteredItems, setFilteredItems] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -68,16 +67,15 @@ export default function InventoryLookupManager() {
     { key: 'description', label: 'Description' },
   ]), [])
 
-  const handleSearch = useCallback((term) => {
-    const lower = term.toLowerCase()
-    setFilteredItems(!lower
-      ? items
-      : items.filter((item) => {
-        const name = (item.name || '').toLowerCase()
-        const description = (item.description || '').toLowerCase()
-        return name.includes(lower) || description.includes(lower)
-      }))
-  }, [items])
+  const filteredItems = useMemo(() => {
+    const lower = search.trim().toLowerCase()
+    if (!lower) return items
+    return items.filter((item) => {
+      const name = (item.name || '').toLowerCase()
+      const description = (item.description || '').toLowerCase()
+      return name.includes(lower) || description.includes(lower)
+    })
+  }, [items, search])
 
   const resetForm = () => {
     setForm({ name: '', description: '', is_parts_supplier: false })
@@ -88,17 +86,13 @@ export default function InventoryLookupManager() {
     try {
       const data = await inventoryMetaService.list(type)
       setItems(data)
-      setFilteredItems(data)
-      if (search) {
-        handleSearch(search)
-      }
     } catch (err) {
       console.error(err)
       error(`Unable to load ${copy.plural.toLowerCase()}`)
     } finally {
       setLoading(false)
     }
-  }, [copy.plural, error, handleSearch, search, type])
+  }, [copy.plural, error, type])
 
   useEffect(() => {
     // Wait for user to be authenticated before making API calls
@@ -196,10 +190,7 @@ export default function InventoryLookupManager() {
               <Input
                 modelValue={search}
                 placeholder={`Search ${copy.plural.toLowerCase()}`}
-                onUpdateModelValue={(value) => {
-                  setSearch(value)
-                  handleSearch(value)
-                }}
+                onUpdateModelValue={setSearch}
               />
             </div>
           </div>
