@@ -4,6 +4,8 @@ namespace App\Services\Settings;
 
 use App\Models\User;
 use App\Support\Auth\AccessGate;
+use App\Support\Auth\SensitiveSettings;
+use App\Support\Auth\StepUpService;
 use App\Support\Auth\UnauthorizedException;
 use App\Support\SettingsRepository;
 use InvalidArgumentException;
@@ -12,11 +14,16 @@ class SettingsController
 {
     private SettingsRepository $settings;
     private AccessGate $gate;
+    private ?StepUpService $stepUp;
 
-    public function __construct(SettingsRepository $settings, AccessGate $gate)
-    {
+    public function __construct(
+        SettingsRepository $settings,
+        AccessGate $gate,
+        ?StepUpService $stepUp = null
+    ) {
         $this->settings = $settings;
         $this->gate = $gate;
+        $this->stepUp = $stepUp;
     }
 
     /**
@@ -61,6 +68,10 @@ class SettingsController
             throw new InvalidArgumentException('value is required');
         }
 
+        if (SensitiveSettings::isSensitive($key) && $this->stepUp !== null) {
+            $this->stepUp->assertFresh($user->id);
+        }
+
         $this->settings->set($key, $data['value']);
 
         return [
@@ -79,6 +90,15 @@ class SettingsController
     {
         if (!$this->gate->can($user, 'settings.update')) {
             throw new UnauthorizedException('Cannot update settings');
+        }
+
+        // One step-up check per bulk write rather than per-key — a single
+        // bulk save like "save Integrations" should only prompt once.
+        if (
+            $this->stepUp !== null
+            && SensitiveSettings::anyAreSensitive(array_keys($data))
+        ) {
+            $this->stepUp->assertFresh($user->id);
         }
 
         $updated = [];

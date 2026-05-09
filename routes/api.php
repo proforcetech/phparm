@@ -5466,7 +5466,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Advanced Dispatch Routes (Waterfall, Geofencing, ETA)
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $pushNotifications, $stepUpService) {
         $etaConfig = require __DIR__ . '/../config/dispatch.php';
         $etaService = new \App\Services\Dispatch\TrafficAwareEtaService($connection, $etaConfig['eta'] ?? []);
         $recommendationService = new \App\Services\Dispatch\DispatchRecommendationService($connection, $etaService);
@@ -5805,15 +5805,42 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->put('/api/settings/dispatch', function (Request $request) use ($connection, $gate) {
+        $router->put('/api/settings/dispatch', function (Request $request) use ($connection, $gate, $stepUpService) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'settings.dispatch.manage')) {
                 return Response::forbidden('Permission denied');
             }
 
             $body = $request->body();
+
+            // Step-up if the payload touches the ETA provider creds. The
+            // load-balancing knobs (workload, fairness, timeouts) are not
+            // sensitive on their own — only the keys live in
+            // SensitiveSettings::KEYS trigger the gate.
+            $touchedKeys = [];
+            if (isset($body['eta'])) {
+                if (array_key_exists('provider', $body['eta'])) {
+                    $touchedKeys[] = 'dispatch.eta.provider';
+                }
+                if (array_key_exists('api_key', $body['eta'])) {
+                    $touchedKeys[] = 'dispatch.eta.api_key';
+                }
+            }
+            if (\App\Support\Auth\SensitiveSettings::anyAreSensitive($touchedKeys)) {
+                $stepUpService->assertFresh($user->id);
+            }
+
             $settingsRepository = new \App\Support\SettingsRepository($connection);
             $settingsToSave = [];
+
+            if (isset($body['eta'])) {
+                if (array_key_exists('provider', $body['eta'])) {
+                    $settingsToSave['dispatch.eta.provider'] = $body['eta']['provider'];
+                }
+                if (array_key_exists('api_key', $body['eta'])) {
+                    $settingsToSave['dispatch.eta.api_key'] = $body['eta']['api_key'];
+                }
+            }
 
             // Map incoming settings to settings repository format
             if (isset($body['strategy'])) {
@@ -7816,11 +7843,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     });
 
     // Settings routes (Admin only)
-    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository, $auditLogger) {
+    $router->group([Middleware::auth(), Middleware::role('admin')], function (Router $router) use ($connection, $gate, $settingsRepository, $auditLogger, $stepUpService) {
 
         $settingsController = new \App\Services\Settings\SettingsController(
             $settingsRepository,
-            $gate
+            $gate,
+            $stepUpService
         );
         $bankFeedRepository = new \App\Services\BankFeeds\BankFeedRepository($connection);
         $bankFeedProviders = new \App\Services\BankFeeds\BankFeedProviderFactory();
@@ -7883,8 +7911,11 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->post('/api/bank-feeds/authorize', function (Request $request) use ($bankFeedController) {
+        $router->post('/api/bank-feeds/authorize', function (Request $request) use ($bankFeedController, $stepUpService) {
             $user = $request->getAttribute('user');
+            // Authorize stores a long-lived access token; same step-up gate
+            // as writing the credential directly via PUT /api/settings.
+            $stepUpService->assertFresh($user->id);
             $data = $bankFeedController->authorize($user, $request->body());
             return Response::json($data);
         });
@@ -9259,7 +9290,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::make($pdf, 200, ['Content-Type' => 'application/pdf']);
         });
 
-        $router->post('/api/settings/notifications/smtp/test-connection', function (Request $request) use ($notificationTests) {
+        // The four /test-* endpoints exercise stored credentials and surface
+        // whether they're valid — that's a credential-validity oracle, so
+        // gate them behind the same step-up that protects credential
+        // writes. StepUpRequiredException is caught by the Router and
+        // returns the shape the frontend interceptor recognises.
+        $router->post('/api/settings/notifications/smtp/test-connection', function (Request $request) use ($notificationTests, $stepUpService) {
+            $user = $request->getAttribute('user');
+            $stepUpService->assertFresh($user->id);
             try {
                 $data = $notificationTests->testSmtpConnection();
                 return Response::json($data);
@@ -9271,7 +9309,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
         });
 
-        $router->post('/api/settings/notifications/smtp/test-email', function (Request $request) use ($notificationTests) {
+        $router->post('/api/settings/notifications/smtp/test-email', function (Request $request) use ($notificationTests, $stepUpService) {
+            $user = $request->getAttribute('user');
+            $stepUpService->assertFresh($user->id);
             $recipient = trim((string) $request->input('recipient', ''));
 
             try {
@@ -9285,7 +9325,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
         });
 
-        $router->post('/api/settings/notifications/twilio/test-connection', function (Request $request) use ($notificationTests) {
+        $router->post('/api/settings/notifications/twilio/test-connection', function (Request $request) use ($notificationTests, $stepUpService) {
+            $user = $request->getAttribute('user');
+            $stepUpService->assertFresh($user->id);
             try {
                 $data = $notificationTests->testTwilioConnection();
                 return Response::json($data);
@@ -9297,7 +9339,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
         });
 
-        $router->post('/api/settings/notifications/twilio/test-sms', function (Request $request) use ($notificationTests) {
+        $router->post('/api/settings/notifications/twilio/test-sms', function (Request $request) use ($notificationTests, $stepUpService) {
+            $user = $request->getAttribute('user');
+            $stepUpService->assertFresh($user->id);
             $recipient = trim((string) $request->input('recipient', ''));
 
             try {

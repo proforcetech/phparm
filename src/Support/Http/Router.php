@@ -2,6 +2,7 @@
 
 namespace App\Support\Http;
 
+use App\Support\Auth\StepUpRequiredException;
 use App\Support\Auth\UnauthorizedException;
 use App\Services\NotFound\RedirectRepository;
 use App\Services\NotFound\NotFoundLogRepository;
@@ -223,6 +224,16 @@ class Router
             }
 
             return $response;
+        } catch (StepUpRequiredException $e) {
+            // Frontend api.js interceptor watches for this exact shape:
+            // 403 + body.error === 'step_up_required' triggers the TOTP modal
+            // and silently retries the original request once verified.
+            return Response::json([
+                'error' => 'step_up_required',
+                'message' => $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'This action requires fresh TOTP verification.',
+            ], 403);
         } catch (UnauthorizedException $e) {
             return Response::forbidden($e->getMessage());
         } catch (InvalidArgumentException $e) {

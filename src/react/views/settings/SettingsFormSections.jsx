@@ -507,6 +507,55 @@ export function IntegrationsForm({ form, updateField }) {
       </div>
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-200 pt-6">
         <div className="md:col-span-2">
+          <h3 className="text-base font-semibold text-gray-900">Maps & Dispatch ETA</h3>
+          <p className="text-sm text-gray-500">
+            API tokens for live ETA, traffic-aware routing, and dispatch maps. Saving credentials requires fresh TOTP verification.
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Mapbox Access Token</label>
+          <Input
+            value={form.integrations.mapboxAccessToken}
+            placeholder="pk.eyJ1Ijoi..."
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'mapboxAccessToken'], event.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Google Maps API Key</label>
+          <Input
+            value={form.integrations.googleMapsApiKey}
+            placeholder="AIza..."
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'googleMapsApiKey'], event.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Dispatch ETA Provider</label>
+          <select
+            value={form.integrations.dispatchEtaProvider}
+            onChange={(event) => updateField(['integrations', 'dispatchEtaProvider'], event.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+          >
+            <option value="">Estimation only (no live API)</option>
+            <option value="mapbox">Mapbox</option>
+            <option value="google">Google Maps</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500">Selects which provider TrafficAwareEtaService calls.</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Dispatch ETA API Key</label>
+          <Input
+            value={form.integrations.dispatchEtaApiKey}
+            placeholder="provider key"
+            className="mt-1"
+            onChange={(event) => updateField(['integrations', 'dispatchEtaApiKey'], event.target.value)}
+          />
+          <p className="mt-1 text-xs text-gray-500">May reuse the Mapbox or Google Maps key above; left blank disables live ETA.</p>
+        </div>
+      </div>
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-200 pt-6">
+        <div className="md:col-span-2">
           <h3 className="text-base font-semibold text-gray-900">Bank Feeds</h3>
           <p className="text-sm text-gray-500">
             Configure your bank feed provider credentials for transaction syncing.

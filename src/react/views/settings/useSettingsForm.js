@@ -50,6 +50,10 @@ const initialFormState = {
     bankFeedsClientId: '',
     bankFeedsClientSecret: '',
     bankFeedsAccessToken: '',
+    mapboxAccessToken: '',
+    googleMapsApiKey: '',
+    dispatchEtaProvider: '',
+    dispatchEtaApiKey: '',
   },
   rejectionReasons: '',
 }
@@ -166,6 +170,10 @@ export default function useSettingsForm() {
             bankFeedsClientId: getSetting(settings, 'integrations.bank_feeds.client_id', ''),
             bankFeedsClientSecret: getSetting(settings, 'integrations.bank_feeds.client_secret', ''),
             bankFeedsAccessToken: getSetting(settings, 'integrations.bank_feeds.access_token', ''),
+            mapboxAccessToken: getSetting(settings, 'integrations.mapbox.access_token', ''),
+            googleMapsApiKey: getSetting(settings, 'integrations.google_maps.api_key', ''),
+            dispatchEtaProvider: getSetting(settings, 'dispatch.eta.provider', ''),
+            dispatchEtaApiKey: getSetting(settings, 'dispatch.eta.api_key', ''),
           },
           rejectionReasons,
         }
@@ -256,6 +264,10 @@ export default function useSettingsForm() {
       'integrations.bank_feeds.client_id': form.integrations.bankFeedsClientId,
       'integrations.bank_feeds.client_secret': form.integrations.bankFeedsClientSecret,
       'integrations.bank_feeds.access_token': form.integrations.bankFeedsAccessToken,
+      'integrations.mapbox.access_token': form.integrations.mapboxAccessToken,
+      'integrations.google_maps.api_key': form.integrations.googleMapsApiKey,
+      'dispatch.eta.provider': form.integrations.dispatchEtaProvider,
+      'dispatch.eta.api_key': form.integrations.dispatchEtaApiKey,
     }
   }, [form])
 
