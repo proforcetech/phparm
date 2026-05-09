@@ -6,6 +6,7 @@ import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 import Textarea from '../../components/ui/Textarea'
 import bundleService from '../../../services/bundle.service'
+import { serviceLineService } from '../../../services/serviceLine.service'
 import api from '../../../services/api'
 
 export default function BundleForm() {
@@ -15,6 +16,7 @@ export default function BundleForm() {
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
   const [serviceTypes, setServiceTypes] = useState([])
+  const [serviceLines, setServiceLines] = useState([])
   const [pricingSettings, setPricingSettings] = useState({
     laborRate: null,
     laborTaxable: false,
@@ -24,6 +26,7 @@ export default function BundleForm() {
     name: '',
     description: '',
     service_type_id: null,
+    service_line_id: null,
     default_job_title: '',
     is_active: true,
     sort_order: 0,
@@ -55,6 +58,16 @@ export default function BundleForm() {
       }
     }
 
+    const loadServiceLines = async () => {
+      try {
+        const lines = await serviceLineService.list()
+        setServiceLines(Array.isArray(lines) ? lines : [])
+      } catch (err) {
+        console.error('Failed to load service lines', err)
+        setServiceLines([])
+      }
+    }
+
     const loadPricingSettings = async () => {
       try {
         const response = await api.get('/settings')
@@ -77,6 +90,7 @@ export default function BundleForm() {
           name: data.name,
           description: data.description || '',
           service_type_id: data.service_type_id,
+          service_line_id: data.service_line_id ?? null,
           default_job_title: data.default_job_title,
           is_active: Boolean(data.is_active),
           sort_order: data.sort_order || 0,
@@ -96,6 +110,7 @@ export default function BundleForm() {
     }
 
     loadServiceTypes()
+    loadServiceLines()
     loadPricingSettings()
     loadBundle()
   }, [id])
@@ -224,6 +239,23 @@ export default function BundleForm() {
                   <option key={type.id} value={type.id}>{type.name}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Service Line</label>
+              <select
+                value={form.service_line_id ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setForm((prev) => ({ ...prev, service_line_id: value ? Number(value) : null }))
+                }}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="">All service lines</option>
+                {serviceLines.map((line) => (
+                  <option key={line.id} value={line.id}>{line.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">Limit this bundle to one trade. Leave blank to keep it visible everywhere.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Sort Order</label>

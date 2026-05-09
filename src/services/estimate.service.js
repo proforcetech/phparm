@@ -110,6 +110,16 @@ export default {
   },
 
   /**
+   * Download estimate PDF as a binary blob.
+   * @param {number} id - Estimate ID
+   * @returns {Promise<Blob>}
+   */
+  async downloadPdf(id) {
+    const response = await api.get(`/estimates/${id}/pdf`, { responseType: 'blob' })
+    return response.data
+  },
+
+  /**
    * Issue a public sharing link for the estimate without sending it.
    * Returns { short_url, secure_url } — short_url is a /e/{code} redirect
    * suitable for SMS or copy-to-clipboard.

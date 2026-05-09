@@ -9,17 +9,20 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import Table from '../../components/ui/Table'
 import bundleService from '../../../services/bundle.service'
+import { serviceLineService } from '../../../services/serviceLine.service'
 
 export default function BundleList() {
   const navigate = useNavigate()
   const [bundles, setBundles] = useState([])
+  const [serviceLines, setServiceLines] = useState([])
   const [loading, setLoading] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [bundleToDelete, setBundleToDelete] = useState(null)
-  const [filters, setFilters] = useState({ query: '', activeOnly: true })
+  const [filters, setFilters] = useState({ query: '', activeOnly: true, serviceLineId: '' })
 
   const columns = useMemo(() => ([
     { key: 'name', label: 'Name' },
+    { key: 'service_line_name', label: 'Service Line' },
     { key: 'service_type_name', label: 'Service Type' },
     { key: 'item_count', label: 'Items' },
     { key: 'sort_order', label: 'Sort Order' },
@@ -32,6 +35,7 @@ export default function BundleList() {
       const params = {
         query: filters.query || undefined,
         active: filters.activeOnly ? 1 : undefined,
+        service_line_id: filters.serviceLineId || undefined,
       }
       const { data } = await bundleService.list(params)
       setBundles(data)
@@ -46,6 +50,16 @@ export default function BundleList() {
   useEffect(() => {
     loadBundles()
   }, [loadBundles])
+
+  useEffect(() => {
+    serviceLineService
+      .list()
+      .then((lines) => setServiceLines(Array.isArray(lines) ? lines : []))
+      .catch((err) => {
+        console.error('Failed to load service lines', err)
+        setServiceLines([])
+      })
+  }, [])
 
   const confirmDelete = (bundle) => {
     setBundleToDelete(bundle)
@@ -84,6 +98,16 @@ export default function BundleList() {
               className="w-full md:w-64"
               onUpdateModelValue={(value) => setFilters((prev) => ({ ...prev, query: value }))}
             />
+            <select
+              value={filters.serviceLineId}
+              onChange={(event) => setFilters((prev) => ({ ...prev, serviceLineId: event.target.value }))}
+              className="rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            >
+              <option value="">All service lines</option>
+              {serviceLines.map((line) => (
+                <option key={line.id} value={line.id}>{line.name}</option>
+              ))}
+            </select>
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input
                 checked={filters.activeOnly}
@@ -120,6 +144,7 @@ export default function BundleList() {
                       <div className="text-sm text-gray-500">{row.description || 'No description'}</div>
                     </div>
                   ),
+                  service_line_name: ({ value }) => <span className="text-sm text-gray-700">{value || 'All'}</span>,
                   service_type_name: ({ value }) => <span className="text-sm text-gray-700">{value || '—'}</span>,
                   item_count: ({ value }) => <span className="text-sm text-gray-700">{value ?? 0}</span>,
                   sort_order: ({ value }) => <span className="text-sm text-gray-700">{value}</span>,
@@ -151,6 +176,10 @@ export default function BundleList() {
                     <Badge variant={bundle.is_active ? 'success' : 'secondary'}>{bundle.is_active ? 'Active' : 'Inactive'}</Badge>
                   </div>
                   <dl className="mt-3 grid grid-cols-2 gap-3 text-sm text-gray-700">
+                    <div>
+                      <dt className="text-gray-500">Service Line</dt>
+                      <dd className="font-medium">{bundle.service_line_name || 'All'}</dd>
+                    </div>
                     <div>
                       <dt className="text-gray-500">Service Type</dt>
                       <dd className="font-medium">{bundle.service_type_name || '—'}</dd>

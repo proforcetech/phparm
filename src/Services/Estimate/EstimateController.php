@@ -6,7 +6,9 @@ use App\Models\User;
 use App\Services\Invoice\InvoiceService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
+use App\Support\Pdf\EstimatePdfGenerator;
 use InvalidArgumentException;
+use RuntimeException;
 
 class EstimateController
 {
@@ -14,18 +16,21 @@ class EstimateController
     private AccessGate $gate;
     private EstimateEditorService $editor;
     private InvoiceService $invoices;
+    private ?EstimatePdfGenerator $pdfGenerator;
 
     public function __construct(
         EstimateRepository $repository,
         AccessGate $gate,
         EstimateEditorService $editor,
-        InvoiceService $invoices
+        InvoiceService $invoices,
+        ?EstimatePdfGenerator $pdfGenerator = null
     )
     {
         $this->repository = $repository;
         $this->gate = $gate;
         $this->editor = $editor;
         $this->invoices = $invoices;
+        $this->pdfGenerator = $pdfGenerator;
     }
 
     /**
@@ -194,6 +199,32 @@ class EstimateController
         $this->assertManageAccess($user);
 
         return $this->repository->delete($estimateId, $user->id);
+    }
+
+    /**
+     * Render the estimate as PDF binary. Mirrors InvoiceController::downloadPdf
+     * so the route handler can stream it with the same shape.
+     *
+     * @param array<string, mixed> $settings
+     */
+    public function downloadPdf(User $user, int $estimateId, array $settings = []): string
+    {
+        $this->assertViewAccess($user);
+
+        $estimate = $this->repository->find($estimateId);
+        if ($estimate === null) {
+            throw new InvalidArgumentException('Estimate not found');
+        }
+
+        if ($user->role === 'customer' && $user->customer_id !== null && $estimate->customer_id !== $user->customer_id) {
+            throw new UnauthorizedException('Cannot view another customer\'s estimate.');
+        }
+
+        if ($this->pdfGenerator === null) {
+            throw new RuntimeException('PDF generation not available');
+        }
+
+        return $this->pdfGenerator->generate($estimate, $settings);
     }
 
     /**

@@ -37,6 +37,10 @@ class BundleController
             $params['active'] = $filters['active'];
         }
 
+        if (isset($filters['service_line_id']) && $filters['service_line_id'] !== '' && $filters['service_line_id'] !== null) {
+            $params['service_line_id'] = (int) $filters['service_line_id'];
+        }
+
         return $this->bundles->list($params, $limit, $offset);
     }
 

@@ -3602,7 +3602,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $estimateRepository,
             $gate,
             $estimateEditor,
-            $invoiceService
+            $invoiceService,
+            new \App\Support\Pdf\EstimatePdfGenerator($connection)
         );
 
         $router->get('/api/bundles', function (Request $request) use ($bundleController) {
@@ -3610,6 +3611,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $filters = [
                 'query' => $request->queryParam('query'),
                 'active' => $request->queryParam('active'),
+                'service_line_id' => $request->queryParam('service_line_id'),
                 'limit' => $request->queryParam('limit'),
                 'offset' => $request->queryParam('offset'),
             ];
@@ -3757,6 +3759,29 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
             $success = $estimateController->delete($user, $id);
             return $success ? Response::noContent() : Response::notFound(['error' => 'Estimate not found']);
+        });
+
+        $router->get('/api/estimates/{id}/pdf', function (Request $request) use ($estimateController, $config) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+
+            $settings = [
+                'shop_name' => $config['settings']['shop_name'] ?? 'Auto Repair Shop',
+                'shop_address' => $config['settings']['shop_address'] ?? '',
+                'shop_phone' => $config['settings']['shop_phone'] ?? '',
+                'shop_email' => $config['settings']['shop_email'] ?? '',
+                'estimate_terms' => $config['settings']['estimate_terms']
+                    ?? $config['settings']['invoice_terms']
+                    ?? '',
+            ];
+
+            $pdfContent = $estimateController->downloadPdf($user, $id, $settings);
+
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="estimate-' . $id . '.pdf"');
+            header('Content-Length: ' . strlen($pdfContent));
+            echo $pdfContent;
+            exit;
         });
 
         $router->post('/api/estimates/{id}/reject', function (Request $request) use ($estimateController) {

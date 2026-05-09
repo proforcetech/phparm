@@ -128,6 +128,14 @@ export default function EstimateForm() {
       const customerId = data.customer_id ?? data.customer?.id ?? null
       const vehicleId = data.vehicle_id ?? data.vehicle?.id ?? null
 
+      // Backend returns items grouped under jobs (see GET /api/estimates/{id}).
+      // The form is single-job for now, so flatten across all jobs to populate
+      // the editable list. data.line_items is checked as a fallback for any
+      // legacy/test fixtures that still use the flat shape.
+      const rawItems = Array.isArray(data.jobs) && data.jobs.length
+        ? data.jobs.flatMap((job) => (Array.isArray(job?.items) ? job.items : []))
+        : (data.line_items || [])
+
       setForm((prev) => ({
         ...prev,
         ...data,
@@ -136,19 +144,17 @@ export default function EstimateForm() {
         site_asset_id: data.site_asset_id ?? null,
         service_line_id: data.service_line_id ?? prev.service_line_id ?? null,
         is_mobile: Boolean(data.is_mobile),
-        line_items: data.line_items?.length
-          ? data.line_items.map((item) => ({
-              type: item.type || 'LABOR',
-              sku: item.sku || '',
-              description: item.description || '',
-              quantity: Number(item.quantity) || 1,
-              unit_price: Number(item.unit_price) || 0,
-              list_price: Number(item.list_price) || 0,
-              taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
-              discount_type: item.discount_type || 'fixed',
-              notes: item.notes || '',
-            }))
-          : [],
+        line_items: rawItems.map((item) => ({
+          type: item.type || 'LABOR',
+          sku: item.sku || '',
+          description: item.description || '',
+          quantity: Number(item.quantity) || 1,
+          unit_price: Number(item.unit_price) || 0,
+          list_price: Number(item.list_price) || 0,
+          taxable: item.taxable !== undefined && item.taxable !== null ? Boolean(Number(item.taxable)) : true,
+          discount_type: item.discount_type || 'fixed',
+          notes: item.notes || '',
+        })),
       }))
     } catch (loadError) {
       console.error('Failed to load estimate:', loadError)
@@ -162,7 +168,11 @@ export default function EstimateForm() {
   const loadBundles = useCallback(async () => {
     setBundleLoading(true)
     try {
-      const data = await bundleService.list({ active: 1 })
+      const params = { active: 1 }
+      if (currentServiceLineId) {
+        params.service_line_id = currentServiceLineId
+      }
+      const data = await bundleService.list(params)
       setBundles(Array.isArray(data) ? data : [])
     } catch (bundleError) {
       console.error('Failed to load bundles:', bundleError)
@@ -170,7 +180,7 @@ export default function EstimateForm() {
     } finally {
       setBundleLoading(false)
     }
-  }, [])
+  }, [currentServiceLineId])
 
   const loadPricingSettings = useCallback(async () => {
     try {

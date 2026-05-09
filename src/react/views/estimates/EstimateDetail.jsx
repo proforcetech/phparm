@@ -87,6 +87,7 @@ export default function EstimateDetail() {
   const [rejecting, setRejecting] = useState(false)
   const [rejectError, setRejectError] = useState(null)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
   const loadEstimate = useCallback(async () => {
     if (!id) return
@@ -161,6 +162,29 @@ export default function EstimateDetail() {
     } catch (expireError) {
       console.error('Failed to expire estimate:', expireError)
       error(expireError.response?.data?.message || 'Failed to expire estimate')
+    }
+  }
+
+  const downloadPdf = async () => {
+    if (!estimate || downloadingPdf) return
+    setDownloadingPdf(true)
+    try {
+      const blob = await estimateService.downloadPdf(estimate.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `estimate-${estimate.number || estimate.id}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      // Revoke after the click handler has had a chance to fire — Safari is
+      // strict about freeing the object URL too early.
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (pdfError) {
+      console.error('Failed to download estimate PDF:', pdfError)
+      error(pdfError.response?.data?.message || 'Failed to download PDF')
+    } finally {
+      setDownloadingPdf(false)
     }
   }
 
@@ -263,6 +287,12 @@ export default function EstimateDetail() {
             </svg>
             Share
           </Button>
+          <Button variant="outline" onClick={downloadPdf} loading={downloadingPdf}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            </svg>
+            Download PDF
+          </Button>
           <Button
             variant="outline"
             onClick={() => navigate(`/cp/estimates/${estimate.id}/edit`)}
@@ -333,6 +363,79 @@ export default function EstimateDetail() {
                 </div>
               ) : null}
             </div>
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">Line Items</h3>
+              {estimate.jobs?.length > 1 ? (
+                <span className="text-xs text-gray-500">{estimate.jobs.length} jobs</span>
+              ) : null}
+            </div>
+            {Array.isArray(estimate.jobs) && estimate.jobs.length > 0 ? (
+              <div className="space-y-6">
+                {estimate.jobs.map((job) => (
+                  <div key={job.id}>
+                    {estimate.jobs.length > 1 || (job.title && job.title !== 'Estimate') ? (
+                      <div className="mb-2 flex items-baseline justify-between">
+                        <h4 className="text-sm font-semibold text-gray-800">{job.title || `Job #${job.id}`}</h4>
+                        {job.customer_status ? (
+                          <Badge variant={getStatusVariant(job.customer_status)} size="sm">
+                            {formatStatus(job.customer_status)}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {Array.isArray(job.items) && job.items.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                          <thead>
+                            <tr className="text-left text-xs font-medium text-gray-500 uppercase">
+                              <th className="py-2 pr-4">Type</th>
+                              <th className="py-2 pr-4">Description</th>
+                              <th className="py-2 pr-4 text-right">Qty</th>
+                              <th className="py-2 pr-4 text-right">Unit</th>
+                              <th className="py-2 pr-4 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {job.items.map((item) => {
+                              const qty = Number(item.quantity) || 0
+                              const unit = Number(item.unit_price) || 0
+                              const total = item.line_total !== undefined && item.line_total !== null
+                                ? Number(item.line_total)
+                                : qty * unit
+                              return (
+                                <tr key={item.id} className="align-top">
+                                  <td className="py-2 pr-4 whitespace-nowrap">
+                                    <span className="inline-flex rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                                      {(item.type || 'LABOR')}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 pr-4">
+                                    <div className="text-gray-900">{item.description || '—'}</div>
+                                    {item.sku ? (
+                                      <div className="text-xs text-gray-500">SKU: {item.sku}</div>
+                                    ) : null}
+                                  </td>
+                                  <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{qty}</td>
+                                  <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{formatCurrency(unit)}</td>
+                                  <td className="py-2 pr-4 text-right tabular-nums font-medium text-gray-900">{formatCurrency(total)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No line items on this job.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">This estimate has no line items yet.</p>
+            )}
           </Card>
 
           {(estimate.customer_notes || estimate.internal_notes) ? (

@@ -33,7 +33,7 @@ class BundleService
 
         try {
             $stmt = $pdo->prepare(
-                'INSERT INTO bundles (name, description, internal_notes, discount_type, discount_value, service_type_id, default_job_title, is_active, sort_order, created_at, updated_at) VALUES (:name, :description, :internal_notes, :discount_type, :discount_value, :service_type_id, :job_title, :is_active, :sort_order, NOW(), NOW())'
+                'INSERT INTO bundles (name, description, internal_notes, discount_type, discount_value, service_type_id, service_line_id, default_job_title, is_active, sort_order, created_at, updated_at) VALUES (:name, :description, :internal_notes, :discount_type, :discount_value, :service_type_id, :service_line_id, :job_title, :is_active, :sort_order, NOW(), NOW())'
             );
             $stmt->execute([
                 'name' => $payload['name'],
@@ -42,6 +42,7 @@ class BundleService
                 'discount_type' => $payload['discount_type'] ?? null,
                 'discount_value' => $payload['discount_value'] ?? null,
                 'service_type_id' => $payload['service_type_id'] ?? null,
+                'service_line_id' => $payload['service_line_id'] ?? null,
                 'job_title' => $payload['default_job_title'],
                 'is_active' => isset($payload['is_active']) ? (int) (bool) $payload['is_active'] : 1,
                 'sort_order' => (int) ($payload['sort_order'] ?? 0),
@@ -74,7 +75,7 @@ class BundleService
 
         try {
             $stmt = $pdo->prepare(
-                'UPDATE bundles SET name = COALESCE(:name, name), description = COALESCE(:description, description), internal_notes = COALESCE(:internal_notes, internal_notes), discount_type = COALESCE(:discount_type, discount_type), discount_value = COALESCE(:discount_value, discount_value), service_type_id = COALESCE(:service_type_id, service_type_id), default_job_title = COALESCE(:job_title, default_job_title), is_active = COALESCE(:is_active, is_active), sort_order = COALESCE(:sort_order, sort_order), updated_at = NOW() WHERE id = :id'
+                'UPDATE bundles SET name = COALESCE(:name, name), description = COALESCE(:description, description), internal_notes = COALESCE(:internal_notes, internal_notes), discount_type = COALESCE(:discount_type, discount_type), discount_value = COALESCE(:discount_value, discount_value), service_type_id = COALESCE(:service_type_id, service_type_id), service_line_id = COALESCE(:service_line_id, service_line_id), default_job_title = COALESCE(:job_title, default_job_title), is_active = COALESCE(:is_active, is_active), sort_order = COALESCE(:sort_order, sort_order), updated_at = NOW() WHERE id = :id'
             );
             $stmt->execute([
                 'id' => $bundleId,
@@ -84,6 +85,7 @@ class BundleService
                 'discount_type' => $payload['discount_type'] ?? null,
                 'discount_value' => $payload['discount_value'] ?? null,
                 'service_type_id' => $payload['service_type_id'] ?? null,
+                'service_line_id' => $payload['service_line_id'] ?? null,
                 'job_title' => $payload['default_job_title'] ?? null,
                 'is_active' => array_key_exists('is_active', $payload) ? (int) (bool) $payload['is_active'] : null,
                 'sort_order' => $payload['sort_order'] ?? null,
@@ -144,17 +146,24 @@ class BundleService
         $params = [];
 
         if (!empty($filters['query'])) {
-            $conditions[] = '(name LIKE :query OR description LIKE :query)';
+            $conditions[] = '(b.name LIKE :query OR b.description LIKE :query)';
             $params['query'] = '%' . $filters['query'] . '%';
         }
 
         if (isset($filters['active'])) {
-            $conditions[] = 'is_active = :active';
+            $conditions[] = 'b.is_active = :active';
             $params['active'] = (int) (bool) $filters['active'];
         }
 
+        // service_line_id filter: NULL bundles always show (treated as
+        // global / unscoped), and any bundle scoped to the given line shows.
+        if (isset($filters['service_line_id']) && $filters['service_line_id'] !== '') {
+            $conditions[] = '(b.service_line_id IS NULL OR b.service_line_id = :service_line_id)';
+            $params['service_line_id'] = (int) $filters['service_line_id'];
+        }
+
         $where = count($conditions) > 0 ? 'WHERE ' . implode(' AND ', $conditions) : '';
-        $sql = "SELECT b.*, COUNT(i.id) AS item_count, st.name AS service_type_name FROM bundles b LEFT JOIN bundle_items i ON b.id = i.bundle_id LEFT JOIN service_types st ON b.service_type_id = st.id {$where} GROUP BY b.id ORDER BY b.sort_order ASC, b.name ASC LIMIT :limit OFFSET :offset";
+        $sql = "SELECT b.*, COUNT(i.id) AS item_count, st.name AS service_type_name, sl.name AS service_line_name FROM bundles b LEFT JOIN bundle_items i ON b.id = i.bundle_id LEFT JOIN service_types st ON b.service_type_id = st.id LEFT JOIN service_lines sl ON b.service_line_id = sl.id {$where} GROUP BY b.id ORDER BY b.sort_order ASC, b.name ASC LIMIT :limit OFFSET :offset";
         $stmt = $this->connection->pdo()->prepare($sql);
         foreach ($params as $key => $value) {
             $paramType = $key === 'query' ? PDO::PARAM_STR : PDO::PARAM_INT;
@@ -172,6 +181,7 @@ class BundleService
 
             $data = $bundle->toArray();
             $data['service_type_name'] = $row['service_type_name'] ?? null;
+            $data['service_line_name'] = $row['service_line_name'] ?? null;
 
             return $data;
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -191,6 +201,7 @@ class BundleService
 
         $data = $bundle->toArray();
         $data['service_type_name'] = $this->lookupServiceTypeName($bundle->service_type_id);
+        $data['service_line_name'] = $this->lookupServiceLineName($bundle->service_line_id);
 
         return array_merge($data, ['items' => $items]);
     }
@@ -212,6 +223,19 @@ class BundleService
 
         $stmt = $this->connection->pdo()->prepare('SELECT name FROM service_types WHERE id = :id');
         $stmt->execute(['id' => $serviceTypeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row['name'] ?? null;
+    }
+
+    private function lookupServiceLineName(?int $serviceLineId): ?string
+    {
+        if ($serviceLineId === null) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare('SELECT name FROM service_lines WHERE id = :id');
+        $stmt->execute(['id' => $serviceLineId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $row['name'] ?? null;
