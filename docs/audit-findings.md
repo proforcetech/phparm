@@ -968,7 +968,7 @@ original entries above with a `Re-verified:` line.
 
 #### AUD-068
 
-- Status: `open`
+- Status: `resolved`
 - Category: `security`
 - Severity: `medium`
 - Location: `src/Support/Auth/StepUpService.php:50`, `src/Support/Auth/TotpService.php:27`
@@ -976,13 +976,14 @@ original entries above with a `Re-verified:` line.
 - Evidence: `TotpService::verifyCode()` accepts the code if it matches *any* of `current ± window` slots without recording which slot was consumed. `StepUpService::verify()` then INSERTs a new `auth_step_up_verifications` row on every successful verification. There is no `last_used_counter` per user, no per-code dedupe, and no failed-attempt tracking on the `/api/auth/step-up` endpoint.
 - Impact: An attacker who shoulder-surfs or sniffs one TOTP code (e.g., from a screenshot, an over-the-shoulder glance, or a leaked screen recording) can submit it within the window to gain step-up freshness. Combined with AUD-069 below, the freshness then permits sensitive settings writes from the attacker's session.
 - Recommended fix: Track the consumed TOTP counter (`floor(time/period) ± window`) per user in the `users` row or in a small `totp_consumed_counters` table; reject any subsequent verify against a counter slot already consumed. Optionally add per-user/per-IP failed-attempt limits on `/api/auth/step-up` to bound brute-force across stolen sessions.
-- Actual fix:
-- Verification:
-- Residual risk:
+- Actual fix: Added `TotpService::matchCounter()` returning the matched counter slot (the bool `verifyCode()` API stays intact for the 6 login-flow callsites). `StepUpService::verify()` now persists that counter into a new nullable `auth_step_up_verifications.totp_counter` column, and migration 183 adds a UNIQUE `(user_id, totp_counter)` index so a replay of the same code surfaces as SQLSTATE 23000, which `verify()` translates into a returned `false`. Defense lives at the DB layer so a race between two parallel `/api/auth/step-up` calls with the same code can produce at most one accepted insert.
+- Verification: `php tests/StepUpReplayDefenseTest.php` — exercises first-use success, same-code replay rejection, no second row on replay, invalid-code rejection, second-user independence, freshness reflection, and the empty-secret throw. All assertions pass against an in-memory SQLite mirroring the post-migration schema.
+- Residual risk: Pre-migration rows have `totp_counter = NULL`; MySQL allows multiple NULLs in a UNIQUE index, so historical replays are not retroactively rejected (acceptable — no way to reconstruct what counter consumed each row). Brute-force limiting on `/api/auth/step-up` is out of scope for this fix.
+- Re-verified: 2026-05-10 (Phase 2 fix)
 
 #### AUD-069
 
-- Status: `open`
+- Status: `resolved`
 - Category: `security`
 - Severity: `medium`
 - Location: `src/Support/Auth/StepUpService.php:67`, `src/Support/Auth/StepUpService.php:50`
@@ -990,9 +991,10 @@ original entries above with a `Re-verified:` line.
 - Evidence: `verify()` records `ip_address` and `user_agent` columns but `isFresh()` only reads `verified_at` ordered by `verified_at DESC LIMIT 1`. There is no `WHERE ip = :ip` or `WHERE session_id = :sid`. The 5-minute `FRESHNESS_SECONDS` constant applies user-wide.
 - Impact: If an attacker obtains a valid session token (XSS, leaked JWT, hijacked cookie) within 5 minutes of a legitimate step-up by the real user, the attacker inherits the step-up freshness without producing a TOTP code. This is exactly the property step-up was introduced to *defeat* (a session-level compromise of a sensitive write path).
 - Recommended fix: Bind the step-up to the JWT/session identifier — record the JWT `jti` (or session id) on `verify()`, require an exact match on `isFresh()`. As a defense-in-depth secondary check, also bind to a stable client fingerprint (e.g., `sha256(ip + user_agent_family)`) and reject mismatches. Invalidate all step-ups for a user on logout, password change, and 2FA-secret rotation.
-- Actual fix:
-- Verification:
-- Residual risk:
+- Actual fix: Migration 184 adds a nullable `session_fingerprint VARCHAR(64)` column to `auth_step_up_verifications`. `Middleware::auth()` computes a stable fingerprint at auth time — `sess:sha256(session_id)` for PHP-session auth, `jwt:sha256(token)` for cookie or bearer JWT — and stamps it on the request as the `auth_session_id` attribute. `StepUpService::verify()` persists that fingerprint, and `isFresh()`/`assertFresh()`/`remainingSeconds()` filter on it (`WHERE user_id = :uid AND session_fingerprint = :fp`). The four route callsites (`/api/auth/step-up`, `/api/auth/step-up/status`, `/api/settings/dispatch`, `/api/bank-feeds/authorize`, the four `/api/settings/notifications/*` test endpoints) and `SettingsController::update`/`bulkUpdate` now thread the request attribute through.
+- Verification: `php tests/StepUpReplayDefenseTest.php` extended to cover the binding — proves `isFresh(uid, sessionA) === true` while `isFresh(uid, sessionB) === false` immediately after the same verify, that `assertFresh` throws `StepUpRequiredException` for a foreign session, and that `remainingSeconds` returns 0 for a foreign session. All assertions pass against an in-memory SQLite mirroring the post-migration schema.
+- Residual risk: Pre-migration rows have `session_fingerprint = NULL`; the freshness queries explicitly require an exact `=` match, so SQL three-valued logic excludes legacy rows from non-null lookups (i.e., the worst case is one extra TOTP prompt for a user mid-flow at upgrade time). The fingerprint changes when the access token rotates on `/api/auth/refresh` — that's intentional; refresh implies a logical session boundary even when the refresh token family is the same. Step-up does NOT survive logout (because logout invalidates the source token), but rows are not actively purged on logout/password-change/2FA-rotation; a future hardening could DELETE-where-fingerprint-matches on those events to bound the auth_step_up_verifications row count.
+- Re-verified: 2026-05-10 (Phase 2 fix)
 
 #### AUD-070
 

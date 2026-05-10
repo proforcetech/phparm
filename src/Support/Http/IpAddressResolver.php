@@ -21,11 +21,22 @@ final class IpAddressResolver
 
         $forwardedFor = self::headerValue($headers, $server, 'X-Forwarded-For');
         if ($forwardedFor !== null) {
-            foreach (explode(',', $forwardedFor) as $candidate) {
+            // Walk right-to-left, dropping any entry that itself matches a
+            // trusted-proxy CIDR. The first untrusted entry from the right
+            // is the real client. Standard proxy behavior is to *append*
+            // the connecting client to X-Forwarded-For, so left-to-right
+            // walking would trust whatever the original client sent in its
+            // own X-Forwarded-For header (spoofable).
+            $entries = array_reverse(explode(',', $forwardedFor));
+            foreach ($entries as $candidate) {
                 $ip = self::normalizeIp($candidate);
-                if ($ip !== null) {
-                    return $ip;
+                if ($ip === null) {
+                    continue;
                 }
+                if (self::isTrustedProxy($ip)) {
+                    continue;
+                }
+                return $ip;
             }
         }
 

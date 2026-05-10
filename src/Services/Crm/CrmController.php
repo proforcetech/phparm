@@ -193,25 +193,23 @@ class CrmController
             throw new InvalidArgumentException("Site {$id} not found");
         }
 
-        $alarm = $site->alarm_code_encrypted !== null
-            ? $this->tryDecrypt($site->alarm_code_encrypted)
-            : null;
-        $gate = $site->gate_code_encrypted !== null
-            ? $this->tryDecrypt($site->gate_code_encrypted)
-            : null;
+        $alarm = $this->decryptCodeField($site->alarm_code_encrypted, 'alarm_code', $id, $user);
+        $gate = $this->decryptCodeField($site->gate_code_encrypted, 'gate_code', $id, $user);
 
         $this->logEvent('site.codes.viewed', 'site', $id, $user, [
             'fields' => array_values(array_filter([
-                $alarm !== null ? 'alarm_code' : null,
-                $gate !== null ? 'gate_code' : null,
+                $alarm['value'] !== null ? 'alarm_code' : null,
+                $gate['value'] !== null ? 'gate_code' : null,
             ])),
         ]);
 
         return [
             'data' => [
                 'site_id' => $site->id,
-                'alarm_code' => $alarm,
-                'gate_code' => $gate,
+                'alarm_code' => $alarm['value'],
+                'alarm_code_status' => $alarm['status'],
+                'gate_code' => $gate['value'],
+                'gate_code_status' => $gate['status'],
             ],
         ];
     }
@@ -528,15 +526,40 @@ class CrmController
         return $body;
     }
 
-    private function tryDecrypt(string $ciphertext): ?string
-    {
+    /**
+     * Decrypt one of the alarm/gate code fields, distinguishing absent
+     * (NULL ciphertext) from present-but-undecryptable. The latter case
+     * emits a high-severity audit event so operators see tampering or
+     * key-rotation breakage instead of a silent "no code set" UI.
+     *
+     * @return array{value: ?string, status: string}
+     *   status is one of: absent | ok | key_unavailable | decrypt_failed
+     */
+    private function decryptCodeField(
+        ?string $ciphertext,
+        string $field,
+        int $siteId,
+        User $user,
+    ): array {
+        if ($ciphertext === null || $ciphertext === '') {
+            return ['value' => null, 'status' => 'absent'];
+        }
         if (!$this->fieldCipher->isAvailable()) {
-            return null;
+            $this->logEvent('site.codes.decrypt_failed', 'site', $siteId, $user, [
+                'field' => $field,
+                'reason' => 'key_unavailable',
+            ]);
+            return ['value' => null, 'status' => 'key_unavailable'];
         }
         try {
-            return $this->fieldCipher->decrypt($ciphertext);
-        } catch (\Throwable) {
-            return null;
+            return ['value' => $this->fieldCipher->decrypt($ciphertext), 'status' => 'ok'];
+        } catch (\Throwable $e) {
+            $this->logEvent('site.codes.decrypt_failed', 'site', $siteId, $user, [
+                'field' => $field,
+                'reason' => 'authentication_failed',
+                'error' => $e->getMessage(),
+            ]);
+            return ['value' => null, 'status' => 'decrypt_failed'];
         }
     }
 

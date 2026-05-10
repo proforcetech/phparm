@@ -53,12 +53,14 @@ class SettingsController
     }
 
     /**
-     * Update setting
+     * Update setting. $sessionFingerprint is the auth-middleware-stamped
+     * `auth_session_id` request attribute — passing it binds the step-up
+     * gate to the calling session per AUD-069.
      *
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    public function update(User $user, string $key, array $data): array
+    public function update(User $user, string $key, array $data, ?string $sessionFingerprint = null): array
     {
         if (!$this->gate->can($user, 'settings.update')) {
             throw new UnauthorizedException('Cannot update settings');
@@ -69,7 +71,7 @@ class SettingsController
         }
 
         if (SensitiveSettings::isSensitive($key) && $this->stepUp !== null) {
-            $this->stepUp->assertFresh($user->id);
+            $this->stepUp->assertFresh($user->id, $sessionFingerprint);
         }
 
         $this->settings->set($key, $data['value']);
@@ -81,12 +83,14 @@ class SettingsController
     }
 
     /**
-     * Bulk update settings
+     * Bulk update settings. $sessionFingerprint is the auth-middleware-stamped
+     * `auth_session_id` request attribute — passing it binds the step-up
+     * gate to the calling session per AUD-069.
      *
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    public function bulkUpdate(User $user, array $data): array
+    public function bulkUpdate(User $user, array $data, ?string $sessionFingerprint = null): array
     {
         if (!$this->gate->can($user, 'settings.update')) {
             throw new UnauthorizedException('Cannot update settings');
@@ -98,7 +102,7 @@ class SettingsController
             $this->stepUp !== null
             && SensitiveSettings::anyAreSensitive(array_keys($data))
         ) {
-            $this->stepUp->assertFresh($user->id);
+            $this->stepUp->assertFresh($user->id, $sessionFingerprint);
         }
 
         $updated = [];

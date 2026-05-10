@@ -43,6 +43,29 @@ $results[] = [
     ]) === '10.1.2.3',
 ];
 
+// Spoofing defense: a malicious client supplies its own X-Forwarded-For;
+// the trusted proxy *appends* the real client IP. Right-to-left walking
+// (skipping trusted-proxy entries) must return the real client, not the
+// leftmost spoofed value.
+$spoofedRequest = new Request('GET', '/demo', [], [], [], [
+    'REMOTE_ADDR' => '10.1.2.3',
+    'HTTP_X_FORWARDED_FOR' => '1.2.3.4, 203.0.113.77, 10.1.2.3',
+]);
+$results[] = [
+    'scenario' => 'rightmost-untrusted parsing rejects client-supplied spoofed XFF entries',
+    'passed' => $spoofedRequest->getClientIp() === '203.0.113.77',
+];
+
+// Multiple chained trusted proxies — the resolver must skip every trusted
+// hop and return the first untrusted entry from the right.
+$results[] = [
+    'scenario' => 'multiple trusted proxies are skipped right-to-left',
+    'passed' => IpAddressResolver::resolve([
+        'REMOTE_ADDR' => '10.1.2.3',
+        'HTTP_X_FORWARDED_FOR' => '203.0.113.77, 10.5.5.5, 10.1.2.3',
+    ]) === '203.0.113.77',
+];
+
 $failures = array_filter($results, static fn (array $row): bool => $row['passed'] === false);
 
 if ($failures) {

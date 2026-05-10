@@ -325,6 +325,11 @@ class Middleware
 
             $user = null;
             $isImpersonating = false;
+            // Stable identifier for the credential that authenticated this
+            // request. AUD-069 binds step-up freshness to it so a stolen
+            // session can't piggyback on a legitimate step-up performed
+            // from a different session/token.
+            $authSessionId = null;
 
             // Try session-based auth (only if session is valid)
             if ($sessionValid && isset($_SESSION['user_id'])) {
@@ -365,14 +370,21 @@ class Middleware
                 }
 
                 $user = $_SESSION['user'] ?? null;
+                if ($user !== null) {
+                    $authSessionId = 'sess:' . hash('sha256', (string) $sessionId);
+                }
             }
 
             // Try JWT from httpOnly cookie
             if ($user === null) {
                 $jwtService = self::getJwtService();
-                $cookieUser = $jwtService->validateTokenFromCookie();
-                if ($cookieUser !== null) {
-                    $user = $cookieUser;
+                $cookieToken = $jwtService->getAccessTokenFromCookie();
+                if ($cookieToken !== null) {
+                    $cookieUser = $jwtService->validateToken($cookieToken);
+                    if ($cookieUser !== null) {
+                        $user = $cookieUser;
+                        $authSessionId = 'jwt:' . hash('sha256', $cookieToken);
+                    }
                 }
             }
 
@@ -392,6 +404,7 @@ class Middleware
                                 'portal-scoped token cannot access staff routes'
                             );
                         }
+                        $authSessionId = 'jwt:' . hash('sha256', $token);
                     }
                 }
             }
@@ -411,6 +424,11 @@ class Middleware
 
             // Store impersonation status in request for access by handlers
             $request->setAttribute('is_impersonating', $isImpersonating);
+
+            // AUD-069: stamp the credential fingerprint so step-up gates can
+            // bind their freshness check to *this* session/token rather than
+            // any session for the user_id.
+            $request->setAttribute('auth_session_id', $authSessionId);
 
             if ($userModel instanceof User) {
                 self::recordUserActivity($userModel->id);

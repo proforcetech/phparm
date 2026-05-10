@@ -26,20 +26,32 @@ class TotpService
 
     public function verifyCode(string $secret, string $code, int $window = 1): bool
     {
-        $timestamp = time();
+        return $this->matchCounter($secret, $code, $window) !== null;
+    }
+
+    /**
+     * Returns the matched counter slot for the supplied code, or null if no
+     * slot in the ± window matches. Step-up callers persist this counter so
+     * a single captured code can't be replayed within the validity window
+     * (see auth_step_up_verifications.totp_counter / AUD-068).
+     */
+    public function matchCounter(string $secret, string $code, int $window = 1): ?int
+    {
         $normalizedCode = preg_replace('/\s+/', '', $code);
         if ($normalizedCode === null) {
-            return false;
+            return null;
         }
 
+        $timestamp = time();
         for ($i = -$window; $i <= $window; $i++) {
-            $expected = $this->generateCode($secret, $timestamp + ($i * $this->period));
+            $slotTime = $timestamp + ($i * $this->period);
+            $expected = $this->generateCode($secret, $slotTime);
             if (hash_equals($expected, $normalizedCode)) {
-                return true;
+                return (int) floor($slotTime / $this->period);
             }
         }
 
-        return false;
+        return null;
     }
 
     public function generateCode(string $secret, ?int $timestamp = null): string

@@ -1613,9 +1613,10 @@ return function (Router $router, array $config, $connection) {
 
         $ip = LoginRateLimiter::clientIp($request);
         $userAgent = $request->header('User-Agent');
+        $sessionFingerprint = $request->getAttribute('auth_session_id');
 
         try {
-            $verified = $stepUpService->verify($user, $code, $ip, $userAgent);
+            $verified = $stepUpService->verify($user, $code, $ip, $userAgent, $sessionFingerprint);
         } catch (\InvalidArgumentException $e) {
             return Response::json(['error' => 'totp_not_enrolled', 'message' => $e->getMessage()], 400);
         }
@@ -1627,7 +1628,7 @@ return function (Router $router, array $config, $connection) {
         return Response::json([
             'success' => true,
             'expires_in' => StepUpService::FRESHNESS_SECONDS,
-            'remaining_seconds' => $stepUpService->remainingSeconds($user->id),
+            'remaining_seconds' => $stepUpService->remainingSeconds($user->id, $sessionFingerprint),
         ]);
     })->middleware(Middleware::auth());
 
@@ -1639,7 +1640,8 @@ return function (Router $router, array $config, $connection) {
             return Response::unauthorized('Not authenticated');
         }
 
-        $remaining = $stepUpService->remainingSeconds($user->id);
+        $sessionFingerprint = $request->getAttribute('auth_session_id');
+        $remaining = $stepUpService->remainingSeconds($user->id, $sessionFingerprint);
         return Response::json([
             'fresh' => $remaining > 0,
             'remaining_seconds' => $remaining,
@@ -5839,7 +5841,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 }
             }
             if (\App\Support\Auth\SensitiveSettings::anyAreSensitive($touchedKeys)) {
-                $stepUpService->assertFresh($user->id);
+                $stepUpService->assertFresh($user->id, $request->getAttribute('auth_session_id'));
             }
 
             $settingsRepository = new \App\Support\SettingsRepository($connection);
@@ -7907,13 +7909,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->put('/api/settings/{key}', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
             $key = $request->getAttribute('key');
-            $data = $settingsController->update($user, (string) $key, $request->body());
+            $data = $settingsController->update(
+                $user,
+                (string) $key,
+                $request->body(),
+                $request->getAttribute('auth_session_id'),
+            );
             return Response::json($data);
         });
 
         $router->put('/api/settings', function (Request $request) use ($settingsController) {
             $user = $request->getAttribute('user');
-            $data = $settingsController->bulkUpdate($user, $request->body());
+            $data = $settingsController->bulkUpdate(
+                $user,
+                $request->body(),
+                $request->getAttribute('auth_session_id'),
+            );
             return Response::json($data);
         });
 
@@ -7927,7 +7938,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $user = $request->getAttribute('user');
             // Authorize stores a long-lived access token; same step-up gate
             // as writing the credential directly via PUT /api/settings.
-            $stepUpService->assertFresh($user->id);
+            $stepUpService->assertFresh($user->id, $request->getAttribute('auth_session_id'));
             $data = $bankFeedController->authorize($user, $request->body());
             return Response::json($data);
         });
@@ -9309,7 +9320,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         // returns the shape the frontend interceptor recognises.
         $router->post('/api/settings/notifications/smtp/test-connection', function (Request $request) use ($notificationTests, $stepUpService) {
             $user = $request->getAttribute('user');
-            $stepUpService->assertFresh($user->id);
+            $stepUpService->assertFresh($user->id, $request->getAttribute('auth_session_id'));
             try {
                 $data = $notificationTests->testSmtpConnection();
                 return Response::json($data);
@@ -9323,7 +9334,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->post('/api/settings/notifications/smtp/test-email', function (Request $request) use ($notificationTests, $stepUpService) {
             $user = $request->getAttribute('user');
-            $stepUpService->assertFresh($user->id);
+            $stepUpService->assertFresh($user->id, $request->getAttribute('auth_session_id'));
             $recipient = trim((string) $request->input('recipient', ''));
 
             try {
@@ -9339,7 +9350,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->post('/api/settings/notifications/twilio/test-connection', function (Request $request) use ($notificationTests, $stepUpService) {
             $user = $request->getAttribute('user');
-            $stepUpService->assertFresh($user->id);
+            $stepUpService->assertFresh($user->id, $request->getAttribute('auth_session_id'));
             try {
                 $data = $notificationTests->testTwilioConnection();
                 return Response::json($data);
@@ -9353,7 +9364,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         $router->post('/api/settings/notifications/twilio/test-sms', function (Request $request) use ($notificationTests, $stepUpService) {
             $user = $request->getAttribute('user');
-            $stepUpService->assertFresh($user->id);
+            $stepUpService->assertFresh($user->id, $request->getAttribute('auth_session_id'));
             $recipient = trim((string) $request->input('recipient', ''));
 
             try {
