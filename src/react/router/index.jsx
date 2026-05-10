@@ -149,6 +149,7 @@ import TenantNewRequest from '../views/tenant/NewRequest'
 import EstimateRequestPage from '../views/public/EstimateRequestPage'
 import PublicEstimateView from '../views/public/PublicEstimateView'
 import PublicPaymentPortal from '../views/public/PublicPaymentPortal'
+import PublicContractSign from '../views/public/PublicContractSign'
 import SubPortal from '../views/sub-portal/SubPortal'
 import SubPortalTokens from '../views/sub-portal/SubPortalTokens'
 import VendorPortal from '../views/vendor-portal/VendorPortal'
@@ -341,6 +342,8 @@ const publicRoutes = [
   { path: '/estimate/view', name: 'PublicEstimateView', auth: 'public', element: <PublicEstimateView /> },
   { path: '/track/:token', name: 'TrackingView', auth: 'public', element: <TrackingView /> },
   { path: '/pay/:token', name: 'PublicPaymentPortal', auth: 'public', element: <PublicPaymentPortal /> },
+  { path: '/c/:shortCode', name: 'PublicContractSignByCode', auth: 'public', element: <PublicContractSign /> },
+  { path: '/contract/view', name: 'PublicContractSignByToken', auth: 'public', element: <PublicContractSign /> },
   { path: '/customers/:id', name: 'CustomerPublicDetail', auth: 'public', element: <CustomerPublicDetail /> },
   { path: '/vehicles/:id', name: 'VehiclePublicDetail', auth: 'public', element: <VehiclePublicDetail /> },
   { path: '/vehicles/:id/edit', name: 'VehiclePublicEdit', auth: 'public', element: <VehiclePublicEdit /> },

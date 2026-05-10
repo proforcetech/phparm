@@ -148,6 +148,16 @@ export const portalService = {
     return response.data?.data ?? response.data ?? null
   },
 
+  async listContractSignatures(contractId) {
+    const response = await portalApi.get(`/portal/contracts/${contractId}/signatures`)
+    return response.data?.data ?? response.data ?? []
+  },
+
+  async signContract(contractId, payload) {
+    const response = await portalApi.post(`/portal/contracts/${contractId}/sign`, payload)
+    return response.data?.data ?? response.data
+  },
+
   // ── Work orders (Phase 2c, read-only) ────────────────────────────────
   async listWorkorders(params = {}) {
     const response = await portalApi.get('/portal/workorders', { params })

@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import Card from '../../components/ui/Card'
 import Alert from '../../components/ui/Alert'
 import Loading from '../../components/ui/Loading'
 import Button from '../../components/ui/Button'
+import Input from '../../components/ui/Input'
+import Textarea from '../../components/ui/Textarea'
+import SignaturePad from '../../components/ui/SignaturePad'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const formatMoney = (cents) => {
   if (cents == null || isNaN(Number(cents))) return '—'
@@ -13,6 +18,7 @@ const formatMoney = (cents) => {
 }
 
 const formatDate = (s) => (s ? new Date(s).toLocaleDateString() : '—')
+const formatDateTime = (s) => (s ? new Date(s).toLocaleString() : '—')
 
 const statusBadge = (status) => {
   switch (status) {
@@ -25,22 +31,99 @@ const statusBadge = (status) => {
   }
 }
 
+const CONSENT_TEXT =
+  'I agree that my electronic signature is the legal equivalent of my ' +
+  'handwritten signature, and that I have read and accept this contract.'
+
 export default function PortalContractDetail() {
   const { id } = useParams()
+  const { user, can } = usePortalAuth()
+  const canSign = can(PORTAL_PERMISSION.SIGN_CONTRACTS)
+
   const [contract, setContract] = useState(null)
+  const [signatures, setSignatures] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const [signerName, setSignerName] = useState('')
+  const [signerTitle, setSignerTitle] = useState('')
+  const [signatureData, setSignatureData] = useState('')
+  const [comment, setComment] = useState('')
+  const [legalConsent, setLegalConsent] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [submitSuccess, setSubmitSuccess] = useState('')
+
+  const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    portalService.getContract(id)
-      .then((c) => { if (!cancelled) setContract(c) })
-      .catch((err) => { if (!cancelled) setError(err.response?.data?.message || 'Unable to load contract.') })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [id])
+    try {
+      const c = await portalService.getContract(id)
+      setContract(c)
+      if (canSign) {
+        try {
+          const sigs = await portalService.listContractSignatures(id)
+          setSignatures(Array.isArray(sigs) ? sigs : [])
+        } catch {
+          setSignatures([])
+        }
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to load contract.')
+    } finally {
+      setLoading(false)
+    }
+  }, [id, canSign])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  // Pre-fill the signer name from the portal user once known.
+  useEffect(() => {
+    if (!signerName && user?.name) setSignerName(user.name)
+  }, [user, signerName])
+
+  const submit = async () => {
+    if (!signerName.trim()) {
+      setSubmitError('Please enter your name.')
+      return
+    }
+    if (!signatureData) {
+      setSubmitError('Please draw your signature.')
+      return
+    }
+    if (!legalConsent) {
+      setSubmitError('Please acknowledge the legal consent statement.')
+      return
+    }
+    setSubmitting(true)
+    setSubmitError('')
+    setSubmitSuccess('')
+    try {
+      await portalService.signContract(id, {
+        signer_name: signerName.trim(),
+        signer_title: signerTitle.trim() || null,
+        signature_data: signatureData,
+        comment: comment.trim() || null,
+        legal_consent: true,
+        consent_text: CONSENT_TEXT,
+      })
+      setSubmitSuccess('Signature recorded.')
+      setSignatureData('')
+      setComment('')
+      setLegalConsent(false)
+      load()
+    } catch (err) {
+      setSubmitError(
+        err.response?.data?.error
+          || err.response?.data?.message
+          || 'Unable to record your signature.',
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -51,6 +134,9 @@ export default function PortalContractDetail() {
   }
   if (error) return <Alert variant="error" closable={false}>{error}</Alert>
   if (!contract) return <Alert variant="warning" closable={false}>Contract not found.</Alert>
+
+  const signable = ['draft', 'pending_signature', 'active'].includes(contract.status)
+  const blocked = ['cancelled', 'renewed', 'expired'].includes(contract.status)
 
   return (
     <div className="space-y-6">
@@ -137,10 +223,101 @@ export default function PortalContractDetail() {
         </Card>
       )}
 
-      {(contract.status === 'draft' || contract.status === 'pending_signature') && (
+      {canSign && signable && !blocked && (
+        <Card>
+          <h2 className="text-lg font-semibold mb-1">Sign this contract</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Your signature will be captured along with a forensic hash of the
+            contract content and your IP address for audit purposes.
+          </p>
+          <div className="space-y-4">
+            {submitError && <Alert variant="error" closable={false}>{submitError}</Alert>}
+            {submitSuccess && <Alert variant="success" closable={false}>{submitSuccess}</Alert>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Full name"
+                modelValue={signerName}
+                onUpdateModelValue={setSignerName}
+                required
+                disabled={submitting}
+              />
+              <Input
+                label="Title (optional)"
+                modelValue={signerTitle}
+                onUpdateModelValue={setSignerTitle}
+                disabled={submitting}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Draw your signature
+              </label>
+              <SignaturePad onChange={setSignatureData} disabled={submitting} />
+            </div>
+            <Textarea
+              label="Comment (optional)"
+              modelValue={comment}
+              onUpdateModelValue={setComment}
+              rows={2}
+              disabled={submitting}
+            />
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={legalConsent}
+                onChange={(e) => setLegalConsent(e.target.checked)}
+                disabled={submitting}
+              />
+              <span>{CONSENT_TEXT}</span>
+            </label>
+            <div className="flex justify-end">
+              <Button
+                onClick={submit}
+                loading={submitting}
+                disabled={submitting || !signerName.trim() || !signatureData || !legalConsent}
+              >
+                Sign contract
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {canSign && signatures.length > 0 && (
+        <Card>
+          <h2 className="text-lg font-semibold mb-3">Signature history</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Signer</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Title</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Signed at</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Consent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {signatures.map((sig) => (
+                  <tr key={sig.id}>
+                    <td className="px-3 py-2 text-gray-900">{sig.signer_name || '—'}</td>
+                    <td className="px-3 py-2 text-gray-500">{sig.signer_title || '—'}</td>
+                    <td className="px-3 py-2 text-gray-500">{formatDateTime(sig.signed_at)}</td>
+                    <td className="px-3 py-2 text-gray-500">{sig.legal_consent ? 'Yes' : 'No'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {!canSign && (contract.status === 'draft' || contract.status === 'pending_signature') && (
         <Card>
           <p className="text-sm text-gray-700">
-            This contract is awaiting your signature. Use the Approvals screen to accept or reject.
+            This contract is awaiting signature. Your portal account does not have
+            the <span className="font-mono">sign.contracts</span> permission — please
+            ask a portal administrator on your team to grant access or sign on your behalf.
           </p>
           <div className="mt-3">
             <Link to="/p/approvals">
@@ -148,6 +325,12 @@ export default function PortalContractDetail() {
             </Link>
           </div>
         </Card>
+      )}
+
+      {blocked && (
+        <Alert variant="warning" closable={false}>
+          This contract is in &ldquo;{contract.status}&rdquo; status and cannot be signed.
+        </Alert>
       )}
     </div>
   )

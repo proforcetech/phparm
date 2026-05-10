@@ -7,6 +7,7 @@ use App\Services\Assets\AssetLeaseRepository;
 use App\Services\Assets\SiteAssetRepository;
 use App\Services\Contracts\ContractAmendmentRepository;
 use App\Services\Contracts\ContractRepository;
+use App\Services\Contracts\ContractSignatureRepository;
 use App\Services\Crm\CompanyRepository;
 use App\Services\Crm\SiteRepository;
 use App\Services\Customer\CustomerRepository;
@@ -31,6 +32,8 @@ use App\Services\Portal\PortalBillingController;
 use App\Services\Portal\PortalBillingService;
 use App\Services\Portal\PortalContractController;
 use App\Services\Portal\PortalContractService;
+use App\Services\Portal\PortalContractSigningController;
+use App\Services\Portal\PortalContractSigningService;
 use App\Services\Portal\PortalController;
 use App\Services\Portal\PortalCsatController;
 use App\Services\Portal\PortalCsatRepository;
@@ -255,6 +258,18 @@ return function (Router $router, RouteContext $ctx): void {
     $contractService = new PortalContractService(new ContractRepository($ctx->connection));
     $contractController = new PortalContractController($contractService);
 
+    // Portal-scoped contract e-signing. Authorizes by portal_account
+    // ownership (company_id) + SIGN_CONTRACTS permission instead of by
+    // a public link token; reuses the same signature audit + status
+    // transitions as the staff/public paths.
+    $contractSigningService = new PortalContractSigningService(
+        new ContractRepository($ctx->connection),
+        new ContractSignatureRepository($ctx->connection),
+        $portalPermissions,
+        $ctx->auditLogger,
+    );
+    $contractSigningController = new PortalContractSigningController($contractSigningService);
+
     // Phase 2c — read-only workorders surface (jobs + status history,
     // scoped via customers.company_id like invoices).
     $workorderService = new PortalWorkorderService($portalWorkorderRepo, $portalCustomerRepo);
@@ -388,7 +403,7 @@ return function (Router $router, RouteContext $ctx): void {
         $controller, $wizardController, $approvalController, $assetController,
         $billingController, $messagingController, $uploadController, $uploadService,
         $etaController, $themeController, $lifecycleController,
-        $contractController, $workorderController,
+        $contractController, $workorderController, $contractSigningController,
         $csatController, $notifController, $auditController, $apiTokenController,
     ) {
         $router->get('/api/portal/auth/me', function (Request $request) use ($controller) {
@@ -833,6 +848,34 @@ return function (Router $router, RouteContext $ctx): void {
                 (int) $request->getAttribute('id'),
             ));
         });
+
+        // Portal-scoped contract e-sign. Authorization is by portal_account
+        // ownership (company_id) + SIGN_CONTRACTS — no public-link
+        // round-trip needed for in-portal signers.
+        $router->get(
+            '/api/portal/contracts/{id}/signatures',
+            function (Request $request) use ($contractSigningController) {
+                return Response::json($contractSigningController->listSignatures(
+                    $request->getAttribute('user'),
+                    $request->getAttribute('portal_account'),
+                    (int) $request->getAttribute('id'),
+                ));
+            }
+        );
+
+        $router->post(
+            '/api/portal/contracts/{id}/sign',
+            function (Request $request) use ($contractSigningController) {
+                return Response::created($contractSigningController->sign(
+                    $request->getAttribute('user'),
+                    $request->getAttribute('portal_account'),
+                    (int) $request->getAttribute('id'),
+                    $request->body(),
+                    $request->getClientIp(),
+                    $request->header('User-Agent'),
+                ));
+            }
+        );
 
         // Phase 2c — workorders (read-only with jobs + status history)
         $router->get('/api/portal/workorders', function (Request $request) use ($workorderController) {

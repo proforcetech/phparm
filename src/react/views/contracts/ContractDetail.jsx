@@ -42,7 +42,15 @@ const TABS = [
   { key: 'sites', label: 'Sites Covered' },
   { key: 'entitlements', label: 'Entitlements' },
   { key: 'amendments', label: 'Amendments' },
+  { key: 'signing', label: 'Signing' },
 ]
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleString()
+}
 
 function statusLabel(s) {
   if (!s) return '—'
@@ -115,6 +123,16 @@ export default function ContractDetail() {
     changes: '',
   })
 
+  // Signing — links + signature audit
+  const [links, setLinks] = useState([])
+  const [linksLoading, setLinksLoading] = useState(false)
+  const [issueLinkOpen, setIssueLinkOpen] = useState(false)
+  const [issueLinkBusy, setIssueLinkBusy] = useState(false)
+  const [issueLinkExpires, setIssueLinkExpires] = useState('')
+  const [issuedLink, setIssuedLink] = useState(null)
+  const [signatures, setSignatures] = useState([])
+  const [signaturesLoading, setSignaturesLoading] = useState(false)
+
   const loadContract = useCallback(async () => {
     setLoading(true)
     try {
@@ -171,11 +189,41 @@ export default function ContractDetail() {
     }
   }, [id, error])
 
+  const loadLinks = useCallback(async () => {
+    setLinksLoading(true)
+    try {
+      const res = await contractsService.listLinks(id)
+      setLinks(unwrap(res))
+    } catch {
+      error('Failed to load signing links')
+      setLinks([])
+    } finally {
+      setLinksLoading(false)
+    }
+  }, [id, error])
+
+  const loadSignatures = useCallback(async () => {
+    setSignaturesLoading(true)
+    try {
+      const res = await contractsService.listSignatures(id)
+      setSignatures(unwrap(res))
+    } catch {
+      error('Failed to load signatures')
+      setSignatures([])
+    } finally {
+      setSignaturesLoading(false)
+    }
+  }, [id, error])
+
   useEffect(() => {
     if (tab === 'sites') loadSites()
     if (tab === 'entitlements') loadEntitlements()
     if (tab === 'amendments') loadAmendments()
-  }, [tab, loadSites, loadEntitlements, loadAmendments])
+    if (tab === 'signing') {
+      loadLinks()
+      loadSignatures()
+    }
+  }, [tab, loadSites, loadEntitlements, loadAmendments, loadLinks, loadSignatures])
 
   // Load company sites for "Add Site" picker once contract + tab known
   useEffect(() => {
@@ -252,6 +300,47 @@ export default function ContractDetail() {
       error(e?.response?.data?.message || 'Failed to add entitlement')
     } finally {
       setAddEntBusy(false)
+    }
+  }
+
+  const handleIssueLink = async () => {
+    setIssueLinkBusy(true)
+    try {
+      const payload = issueLinkExpires ? { expires_at: issueLinkExpires } : {}
+      const res = await contractsService.issueLink(id, payload)
+      const data = res?.data ?? res
+      setIssuedLink(data)
+      setIssueLinkOpen(false)
+      setIssueLinkExpires('')
+      loadLinks()
+    } catch (e) {
+      error(e?.response?.data?.message || 'Failed to issue signing link')
+    } finally {
+      setIssueLinkBusy(false)
+    }
+  }
+
+  const handleRevokeLink = async (link) => {
+    if (!link?.id) return
+    if (!window.confirm('Revoke this signing link? Existing recipients will no longer be able to sign with it.')) {
+      return
+    }
+    try {
+      await contractsService.revokeLink(id, link.id)
+      success('Signing link revoked')
+      loadLinks()
+    } catch {
+      error('Failed to revoke link')
+    }
+  }
+
+  const handleCopy = async (text) => {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      success('Copied to clipboard')
+    } catch {
+      error('Could not access clipboard')
     }
   }
 
@@ -533,6 +622,215 @@ export default function ContractDetail() {
           )}
         </Card>
       ) : null}
+
+      {tab === 'signing' ? (
+        <div className="space-y-6">
+          <Card>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">Signing Links</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Send a link by email so the customer can sign without signing in.
+                  The plaintext token is shown once when issued — store it safely.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => setIssueLinkOpen(true)}>
+                New Link
+              </Button>
+            </div>
+            {linksLoading ? (
+              <div className="py-6 flex justify-center"><Loading /></div>
+            ) : links.length === 0 ? (
+              <p className="text-gray-500 text-sm py-4">No signing links issued.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Short Code</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expires</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Accessed</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {links.map((link) => {
+                      const revoked = !!link.revoked_at
+                      const expired = link.expires_at && new Date(link.expires_at) < new Date()
+                      const shortUrl = `${window.location.origin}/c/${link.short_code}`
+                      return (
+                        <tr key={link.id}>
+                          <td className="px-4 py-3 text-sm font-mono text-gray-900">{link.short_code}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(link.created_at)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(link.expires_at)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(link.last_accessed_at)}</td>
+                          <td className="px-4 py-3 text-sm">
+                            {revoked ? (
+                              <Badge size="sm" variant="danger">revoked</Badge>
+                            ) : expired ? (
+                              <Badge size="sm" variant="warning">expired</Badge>
+                            ) : (
+                              <Badge size="sm" variant="success">active</Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                            <Button size="sm" variant="ghost" onClick={() => handleCopy(shortUrl)}>
+                              Copy URL
+                            </Button>
+                            {!revoked && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 hover:text-red-700"
+                                onClick={() => handleRevokeLink(link)}
+                              >
+                                Revoke
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <div className="mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Signature Audit</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Append-only record of every captured signature, with IP, user agent,
+                and forensic hashes for the document and signature.
+              </p>
+            </div>
+            {signaturesLoading ? (
+              <div className="py-6 flex justify-center"><Loading /></div>
+            ) : signatures.length === 0 ? (
+              <p className="text-gray-500 text-sm py-4">No signatures captured yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Signer</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Signed At</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Consent</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document Hash</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {signatures.map((sig) => (
+                      <tr key={sig.id}>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          <div className="font-medium">{sig.signer_name || '—'}</div>
+                          {sig.signer_title && (
+                            <div className="text-xs text-gray-500">{sig.signer_title}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{sig.signer_email || '—'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(sig.signed_at)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">{sig.ip_address || '—'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {sig.legal_consent ? (
+                            <Badge size="sm" variant="success">yes</Badge>
+                          ) : (
+                            <Badge size="sm" variant="warning">no</Badge>
+                          )}
+                        </td>
+                        <td
+                          className="px-4 py-3 text-xs text-gray-500 font-mono truncate max-w-xs"
+                          title={sig.document_hash || ''}
+                        >
+                          {sig.document_hash ? `${sig.document_hash.slice(0, 16)}…` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      ) : null}
+
+      <Modal open={issueLinkOpen} title="Issue Signing Link" onClose={() => setIssueLinkOpen(false)}>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            Issue a fresh link for this contract. The plaintext token is shown only
+            once after creation — store it safely or send it directly to the signer.
+          </p>
+          <Input
+            label="Expires At (optional)"
+            type="datetime-local"
+            value={issueLinkExpires}
+            onUpdateModelValue={setIssueLinkExpires}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setIssueLinkOpen(false)}>Cancel</Button>
+            <Button loading={issueLinkBusy} onClick={handleIssueLink}>Issue Link</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!issuedLink}
+        title="Signing Link Created"
+        onClose={() => setIssuedLink(null)}
+      >
+        <div className="space-y-4">
+          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            This is the only time the plaintext token will be shown. Copy it now.
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Short URL</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={issuedLink?.short_url || ''}
+                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm font-mono bg-gray-50"
+              />
+              <Button size="sm" variant="secondary" onClick={() => handleCopy(issuedLink?.short_url)}>
+                Copy
+              </Button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Secure URL (long token)</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={issuedLink?.secure_url || ''}
+                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm font-mono bg-gray-50"
+              />
+              <Button size="sm" variant="secondary" onClick={() => handleCopy(issuedLink?.secure_url)}>
+                Copy
+              </Button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Token</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={issuedLink?.token || ''}
+                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm font-mono bg-gray-50"
+              />
+              <Button size="sm" variant="secondary" onClick={() => handleCopy(issuedLink?.token)}>
+                Copy
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={() => setIssuedLink(null)}>Done</Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={deleteModal} title="Delete Contract" onClose={() => setDeleteModal(false)}>
         <p className="text-sm text-gray-600 mb-4">

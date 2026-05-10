@@ -59,4 +59,23 @@ export default {
   publicSign(payload) {
     return api.post('/public/contract/sign', payload).then((res) => res.data)
   },
+
+  // Signing-link administration (auth required)
+  listLinks(contractId) {
+    return api.get(`/contracts/${contractId}/links`).then((res) => res.data)
+  },
+  issueLink(contractId, payload = {}) {
+    return api.post(`/contracts/${contractId}/links`, payload).then((res) => res.data)
+  },
+  revokeLink(contractId, linkId) {
+    return api.delete(`/contracts/${contractId}/links/${linkId}`).then((res) => res.data)
+  },
+
+  // Signature audit + internal signature capture
+  listSignatures(contractId) {
+    return api.get(`/contracts/${contractId}/signatures`).then((res) => res.data)
+  },
+  captureInternalSignature(contractId, payload) {
+    return api.post(`/contracts/${contractId}/signatures`, payload).then((res) => res.data)
+  },
 }
