@@ -38,6 +38,12 @@ use App\Services\Portal\PortalPaymentMethodRepository;
 use App\Services\Portal\PortalPermissionService;
 use App\Services\Portal\PortalRequestController;
 use App\Services\Portal\PortalRequestWizardService;
+use App\Services\Portal\PortalSsoController;
+use App\Services\Portal\PortalSsoService;
+use App\Services\Sso\OidcHttpClient;
+use App\Services\Sso\SsoLoginAttemptRepository;
+use App\Services\Sso\SsoProviderRepository;
+use App\Services\Sso\SsoUserLinkRepository;
 use App\Services\Tickets\ItHelpdeskService;
 use App\Services\Portal\PortalThemeController;
 use App\Services\Portal\PortalThemeRepository;
@@ -243,26 +249,75 @@ return function (Router $router, RouteContext $ctx): void {
     $workorderService = new PortalWorkorderService($portalWorkorderRepo, $portalCustomerRepo);
     $workorderController = new PortalWorkorderController($workorderService);
 
-    // --- Public login endpoint (no auth, strict throttle) ---
-    $router->group([Middleware::throttleStrict(10, 60)], function (Router $router) use ($controller, $themeController) {
-        $router->post('/api/portal/auth/login', function (Request $request) use ($controller) {
-            return Response::json($controller->login(
-                $request->body(),
-                $request->getClientIp(),
-                $request->header('User-Agent') ?? $request->header('HTTP_USER_AGENT'),
-            ));
-        });
+    // Phase 2e (Decision D) — portal-side OIDC. Reuses the staff repos
+    // (provider/link/attempt) but resolves to portal_accounts and issues
+    // a portal-scoped JWT. Provider scoping (company_id NULL = global,
+    // set = per-company) is enforced by SsoProviderRepository helpers.
+    $portalSsoService = new PortalSsoService(
+        $ctx->connection,
+        new SsoProviderRepository($ctx->connection),
+        new SsoUserLinkRepository($ctx->connection),
+        new SsoLoginAttemptRepository($ctx->connection),
+        $accounts,
+        new CompanyRepository($ctx->connection),
+        new OidcHttpClient(),
+        $ctx->auditLogger,
+    );
+    $portalSsoController = new PortalSsoController(
+        $portalSsoService,
+        $jwtService,
+        $portalPermissions,
+    );
 
-        // Phase 6.8 — public theme lookup keyed on Host header so the
-        // login page can render branded before any JWT exists. Always
-        // returns a payload (default if no match), so callers don't
-        // have to branch on 404.
-        $router->get('/api/portal/theme', function (Request $request) use ($themeController) {
-            return Response::json($themeController->publicResolveByHost(
-                $request->header('Host'),
-            ));
-        });
-    });
+    // --- Public login endpoint (no auth, strict throttle) ---
+    $router->group(
+        [Middleware::throttleStrict(10, 60)],
+        function (Router $router) use ($controller, $themeController, $portalSsoController) {
+            $router->post('/api/portal/auth/login', function (Request $request) use ($controller) {
+                return Response::json($controller->login(
+                    $request->body(),
+                    $request->getClientIp(),
+                    $request->header('User-Agent') ?? $request->header('HTTP_USER_AGENT'),
+                ));
+            });
+
+            // Phase 6.8 — public theme lookup keyed on Host header so the
+            // login page can render branded before any JWT exists. Always
+            // returns a payload (default if no match), so callers don't
+            // have to branch on 404.
+            $router->get('/api/portal/theme', function (Request $request) use ($themeController) {
+                return Response::json($themeController->publicResolveByHost(
+                    $request->header('Host'),
+                ));
+            });
+
+            // Phase 2e — portal SSO. List, start, callback. Throttled like
+            // password login (same anon surface, same brute-force concern).
+            $router->get(
+                '/api/portal/auth/sso/providers',
+                function (Request $request) use ($portalSsoController) {
+                    return Response::json($portalSsoController->listProviders($request->query()));
+                }
+            );
+
+            $router->post(
+                '/api/portal/auth/sso/{slug}/start',
+                function (Request $request) use ($portalSsoController) {
+                    return Response::json($portalSsoController->start(
+                        (string) $request->getAttribute('slug'),
+                        $request->body(),
+                    ));
+                }
+            );
+
+            $router->get(
+                '/api/portal/auth/sso/callback',
+                function (Request $request) use ($portalSsoController) {
+                    return Response::json($portalSsoController->callback($request->query()));
+                }
+            );
+        }
+    );
 
     // --- Portal-scoped routes (portal_user + portal_account required) ---
     // Phase 2a — portalTenantGate is layered AFTER portalAuth so a portal

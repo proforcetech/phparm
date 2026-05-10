@@ -240,6 +240,7 @@ import RetentionRuns from '../views/retention/RetentionRuns'
 // Phase 2a/2b — new portal tree (parallel to legacy customer-portal/*)
 import PortalLayout from '../views/portal/PortalLayout'
 import PortalLogin from '../views/portal/PortalLogin'
+import PortalSsoCallback from '../views/portal/PortalSsoCallback'
 import PortalDashboard from '../views/portal/PortalDashboard'
 import PortalApprovals from '../views/portal/PortalApprovals'
 import PortalRequest from '../views/portal/PortalRequest'
@@ -722,6 +723,9 @@ export const router = createBrowserRouter([
     element: <PortalShell />,
     children: [
       { path: 'login', loader: requirePortalGuest, element: <PortalLogin /> },
+      // Phase 2e — IdP redirect-back lands here. No guard so an
+      // unauthenticated user can complete the OIDC dance.
+      { path: 'auth/sso/callback', element: <PortalSsoCallback /> },
       {
         element: <PortalLayout />,
         loader: requirePortalAuth,

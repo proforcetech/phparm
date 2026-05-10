@@ -11,6 +11,7 @@ class SsoProvider extends BaseModel
 
     public ?int $id = null;
     public string $slug = '';
+    public ?int $company_id = null;
     public string $name = '';
     public string $type = self::TYPE_OIDC;
     public ?string $issuer_url = null;
@@ -23,6 +24,8 @@ class SsoProvider extends BaseModel
     public ?string $jwks_uri = null;
     public string $scopes = 'openid email profile';
     public bool $is_active = true;
+    public bool $portal_enabled = false;
+    public bool $staff_enabled = true;
     public bool $auto_provision = false;
     public ?string $default_role = null;
     public bool $sync_profile_on_login = true;

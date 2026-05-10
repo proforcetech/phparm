@@ -102,6 +102,28 @@ export function PortalAuthProvider({ children }) {
     }
   }, [])
 
+  // Phase 2e — SSO callback path. The IdP redirects back to /p/auth/sso with
+  // ?state=&code=; the callback page calls this to exchange them for a
+  // portal-scoped JWT pair and seed the auth context the same way password
+  // login does.
+  const completeSso = useCallback(async ({ state, code }) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await portalAuthService.completeSso({ state, code })
+      setToken(data.access_token)
+      setUser(data.user)
+      setAccount(data.portal_account)
+      return data
+    } catch (err) {
+      const message = err.response?.data?.message || 'SSO sign-in failed'
+      setError(message)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   const logout = useCallback(async () => {
     await portalAuthService.logout()
     clearPortalSession()
@@ -126,8 +148,9 @@ export function PortalAuthProvider({ children }) {
       refresh,
       tier,
       can,
+      completeSso,
     }),
-    [token, user, account, loading, error, isAuthenticated, login, logout, refresh, tier, can]
+    [token, user, account, loading, error, isAuthenticated, login, logout, refresh, tier, can, completeSso]
   )
 
   return <PortalAuthContext.Provider value={value}>{children}</PortalAuthContext.Provider>

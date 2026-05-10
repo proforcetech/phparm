@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { usePortalAuth } from '../../stores/portalAuth'
 import { usePortalTheme } from '../../stores/portalTheme'
+import { portalAuthService } from '../../../services/portal/auth.service'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Alert from '../../components/ui/Alert'
@@ -17,8 +18,45 @@ export default function PortalLogin() {
   const [password, setPassword] = useState('')
   const [submitError, setSubmitError] = useState(null)
 
+  const [ssoProviders, setSsoProviders] = useState([])
+  const [ssoBusySlug, setSsoBusySlug] = useState(null)
+
   const expired = params.get('expired') === '1'
+  const ssoError = params.get('sso_error')
   const displayName = theme?.display_name || 'Customer Portal'
+  const companyId = theme?.company_id || null
+
+  // Fetch SSO providers as soon as we know the tenant. A null company_id
+  // (platform default theme — no host match) means we can't scope the list,
+  // so we skip the SSO row entirely rather than show all globals.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    portalAuthService
+      .listSsoProviders(companyId)
+      .then((list) => { if (!cancelled) setSsoProviders(Array.isArray(list) ? list : []) })
+      .catch(() => { if (!cancelled) setSsoProviders([]) })
+    return () => { cancelled = true }
+  }, [companyId])
+
+  const startSso = async (slug) => {
+    if (!companyId) return
+    setSsoBusySlug(slug)
+    setSubmitError(null)
+    try {
+      const result = await portalAuthService.startSso(slug, {
+        companyId,
+        redirectUri: `${window.location.origin}/p`,
+      })
+      const url = result?.authorize_url
+      if (!url) throw new Error('SSO start did not return an authorize URL.')
+      window.location.assign(url)
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Unable to start SSO sign-in.'
+      setSubmitError(msg)
+      setSsoBusySlug(null)
+    }
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -53,14 +91,45 @@ export default function PortalLogin() {
           <p className="text-sm text-gray-500 mt-1">Sign in to your portal</p>
         </div>
 
-        {expired && !submitError && (
+        {expired && !submitError && !ssoError && (
           <div className="mb-4">
             <Alert variant="warning">Your session has expired. Please sign in again.</Alert>
+          </div>
+        )}
+        {ssoError && !submitError && (
+          <div className="mb-4">
+            <Alert variant="error">{decodeURIComponent(ssoError)}</Alert>
           </div>
         )}
         {submitError && (
           <div className="mb-4">
             <Alert variant="error">{submitError}</Alert>
+          </div>
+        )}
+
+        {ssoProviders.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {ssoProviders.map((p) => (
+              <Button
+                key={p.slug}
+                type="button"
+                variant="outline"
+                fullWidth
+                loading={ssoBusySlug === p.slug}
+                disabled={ssoBusySlug !== null}
+                onClick={() => startSso(p.slug)}
+              >
+                Continue with {p.name}
+              </Button>
+            ))}
+            <div className="relative pt-2">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-white px-2 text-xs text-gray-500">or sign in with email</span>
+              </div>
+            </div>
           </div>
         )}
 

@@ -231,6 +231,29 @@ class SsoController
         if (isset($payload['type']) && !in_array($payload['type'], SsoProvider::TYPES, true)) {
             throw new InvalidArgumentException('Invalid provider type: ' . $payload['type']);
         }
+        if (
+            array_key_exists('company_id', $payload)
+            && $payload['company_id'] !== null
+            && $payload['company_id'] !== ''
+            && (int) $payload['company_id'] <= 0
+        ) {
+            throw new InvalidArgumentException('company_id must be a positive integer or null.');
+        }
+        // A provider that is enabled for neither side is allowed (admins may
+        // stage one before flipping it on), but we reject the obvious typo of
+        // setting both to false in the same edit if the row is being created
+        // — saving a no-op provider has no upside.
+        if (
+            $isCreate
+            && array_key_exists('portal_enabled', $payload)
+            && array_key_exists('staff_enabled', $payload)
+            && !$payload['portal_enabled']
+            && !$payload['staff_enabled']
+        ) {
+            throw new InvalidArgumentException(
+                'New providers must be enabled for at least one side (portal or staff).'
+            );
+        }
         // For OIDC, certain fields are required to actually run a flow. We
         // allow saving a half-configured row (admins may want to stage in
         // pieces), but startLogin() will reject it at runtime.

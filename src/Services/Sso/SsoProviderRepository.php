@@ -9,17 +9,18 @@ use PDO;
 class SsoProviderRepository
 {
     private const COLUMNS = [
-        'id', 'slug', 'name', 'type', 'issuer_url', 'client_id', 'client_secret',
+        'id', 'slug', 'company_id', 'name', 'type', 'issuer_url', 'client_id', 'client_secret',
         'redirect_uri', 'authorize_endpoint', 'token_endpoint', 'userinfo_endpoint',
-        'jwks_uri', 'scopes', 'is_active', 'auto_provision', 'default_role',
-        'sync_profile_on_login', 'metadata', 'created_at', 'updated_at',
+        'jwks_uri', 'scopes', 'is_active', 'portal_enabled', 'staff_enabled',
+        'auto_provision', 'default_role', 'sync_profile_on_login', 'metadata',
+        'created_at', 'updated_at',
     ];
 
     private const WRITABLE = [
-        'slug', 'name', 'type', 'issuer_url', 'client_id', 'client_secret',
+        'slug', 'company_id', 'name', 'type', 'issuer_url', 'client_id', 'client_secret',
         'redirect_uri', 'authorize_endpoint', 'token_endpoint', 'userinfo_endpoint',
-        'jwks_uri', 'scopes', 'is_active', 'auto_provision', 'default_role',
-        'sync_profile_on_login', 'metadata',
+        'jwks_uri', 'scopes', 'is_active', 'portal_enabled', 'staff_enabled',
+        'auto_provision', 'default_role', 'sync_profile_on_login', 'metadata',
     ];
 
     public function __construct(private Connection $connection)
@@ -66,6 +67,83 @@ class SsoProviderRepository
             'SELECT ' . implode(', ', self::COLUMNS) . ' FROM sso_providers WHERE is_active = 1 ORDER BY name ASC'
         );
         return array_map([$this, 'hydrate'], $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * Active staff-side providers visible to the staff login picker.
+     * Includes global (company_id IS NULL) and any provider scoped to the
+     * passed company. Backward-compat: when company filter is not used,
+     * returns staff-enabled providers across all companies.
+     *
+     * @return array<int, SsoProvider>
+     */
+    public function listForStaff(?int $companyId = null): array
+    {
+        $sql = 'SELECT ' . implode(', ', self::COLUMNS)
+            . ' FROM sso_providers WHERE is_active = 1 AND staff_enabled = 1';
+        $params = [];
+        if ($companyId !== null) {
+            $sql .= ' AND (company_id IS NULL OR company_id = :cid)';
+            $params['cid'] = $companyId;
+        }
+        $sql .= ' ORDER BY name ASC';
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+        return array_map([$this, 'hydrate'], $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * Active portal-side providers a portal account in $companyId can use.
+     * Includes global (company_id IS NULL) and providers scoped to that company.
+     *
+     * @return array<int, SsoProvider>
+     */
+    public function listForPortal(int $companyId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT ' . implode(', ', self::COLUMNS) . ' FROM sso_providers
+             WHERE is_active = 1 AND portal_enabled = 1
+               AND (company_id IS NULL OR company_id = :cid)
+             ORDER BY name ASC'
+        );
+        $stmt->execute(['cid' => $companyId]);
+        return array_map([$this, 'hydrate'], $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * Lookup for the portal callback: provider must be active, portal-enabled,
+     * and either global or matching the portal account's company.
+     */
+    public function findActiveBySlugForPortal(string $slug, int $companyId): ?SsoProvider
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT ' . implode(', ', self::COLUMNS) . ' FROM sso_providers
+             WHERE slug = :s AND is_active = 1 AND portal_enabled = 1
+               AND (company_id IS NULL OR company_id = :cid)
+             LIMIT 1'
+        );
+        $stmt->execute(['s' => $slug, 'cid' => $companyId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $this->hydrate($row);
+    }
+
+    /**
+     * Lookup for the staff login flow.
+     */
+    public function findActiveBySlugForStaff(string $slug, ?int $companyId = null): ?SsoProvider
+    {
+        $sql = 'SELECT ' . implode(', ', self::COLUMNS) . ' FROM sso_providers
+             WHERE slug = :s AND is_active = 1 AND staff_enabled = 1';
+        $params = ['s' => $slug];
+        if ($companyId !== null) {
+            $sql .= ' AND (company_id IS NULL OR company_id = :cid)';
+            $params['cid'] = $companyId;
+        }
+        $sql .= ' LIMIT 1';
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $this->hydrate($row);
     }
 
     /**
@@ -125,8 +203,14 @@ class SsoProviderRepository
 
     private function encode(string $col, mixed $value): mixed
     {
-        if (in_array($col, ['is_active', 'auto_provision', 'sync_profile_on_login'], true)) {
+        if (in_array($col, [
+            'is_active', 'portal_enabled', 'staff_enabled',
+            'auto_provision', 'sync_profile_on_login',
+        ], true)) {
             return $value ? 1 : 0;
+        }
+        if ($col === 'company_id') {
+            return $value === null || $value === '' ? null : (int) $value;
         }
         if ($col === 'metadata' && $value !== null && !is_string($value)) {
             return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -152,8 +236,9 @@ class SsoProviderRepository
             return null;
         }
         return match ($key) {
-            'id' => (int) $value,
-            'is_active', 'auto_provision', 'sync_profile_on_login' => (bool) $value,
+            'id', 'company_id' => (int) $value,
+            'is_active', 'portal_enabled', 'staff_enabled',
+            'auto_provision', 'sync_profile_on_login' => (bool) $value,
             'metadata' => is_string($value) ? (json_decode($value, true) ?: null) : $value,
             default => $value,
         };

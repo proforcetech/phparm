@@ -11,6 +11,7 @@ import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import { useToast } from '../../stores/toast.jsx'
 import ssoService from '../../../services/sso.service'
+import crmService from '../../../services/crm.service'
 
 const KIND_VARIANT = {
   oauth2: 'info',
@@ -48,6 +49,10 @@ function emptyForm() {
     allowed_domains: '',
     default_role: '',
     is_active: true,
+    // Phase 2e — Decision D scoping fields.
+    company_id: '',          // '' = global (NULL on backend)
+    portal_enabled: false,
+    staff_enabled: true,
   }
 }
 
@@ -67,6 +72,26 @@ export default function SsoProviders() {
 
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Companies list for the scope picker. Loaded once on mount.
+  const [companies, setCompanies] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    crmService
+      .listCompanies()
+      .then((res) => {
+        if (cancelled) return
+        const list = res?.data ?? res ?? []
+        setCompanies(Array.isArray(list) ? list : [])
+      })
+      .catch(() => { if (!cancelled) setCompanies([]) })
+    return () => { cancelled = true }
+  }, [])
+
+  const companyOptions = useMemo(() => ([
+    { value: '', label: 'Global — all companies' },
+    ...companies.map((c) => ({ value: String(c.id), label: c.name || `Company #${c.id}` })),
+  ]), [companies])
 
   const loadAvailable = useCallback(() => {
     setAvailableLoading(true)
@@ -123,6 +148,9 @@ export default function SsoProviders() {
           : (full.allowed_domains || ''),
         default_role: full.default_role || '',
         is_active: full.is_active !== false,
+        company_id: full.company_id != null ? String(full.company_id) : '',
+        portal_enabled: Boolean(full.portal_enabled),
+        staff_enabled: full.staff_enabled !== false,
       })
       setFormOpen(true)
     } catch (e) {
@@ -152,6 +180,11 @@ export default function SsoProviders() {
       .map((s) => s.trim())
       .filter(Boolean)
 
+    if (!form.portal_enabled && !form.staff_enabled) {
+      setFormError('A provider must be enabled for at least one side (portal or staff).')
+      return
+    }
+
     const payload = {
       name: form.name.trim(),
       slug: form.slug.trim(),
@@ -160,6 +193,9 @@ export default function SsoProviders() {
       allowed_domains: allowedDomains,
       default_role: form.default_role.trim() || null,
       is_active: form.is_active,
+      company_id: form.company_id === '' ? null : Number(form.company_id),
+      portal_enabled: form.portal_enabled,
+      staff_enabled: form.staff_enabled,
     }
 
     setSaving(true)
@@ -241,6 +277,8 @@ export default function SsoProviders() {
                   <th className="text-left p-2">Name</th>
                   <th className="text-left p-2">Slug</th>
                   <th className="text-left p-2">Kind</th>
+                  <th className="text-left p-2">Scope</th>
+                  <th className="text-left p-2">Sides</th>
                   <th className="text-left p-2">Active</th>
                   <th className="text-left p-2">Created</th>
                   <th className="text-right p-2"> </th>
@@ -253,6 +291,18 @@ export default function SsoProviders() {
                     <td className="p-2 font-mono text-xs">{p.slug}</td>
                     <td className="p-2">
                       <Badge variant={KIND_VARIANT[p.kind] || 'default'}>{(p.kind || '').toUpperCase()}</Badge>
+                    </td>
+                    <td className="p-2 text-xs">
+                      {p.company_id == null
+                        ? <Badge variant="info">Global</Badge>
+                        : (companies.find((c) => c.id === p.company_id)?.name
+                          ?? `Company #${p.company_id}`)}
+                    </td>
+                    <td className="p-2 text-xs">
+                      <div className="flex gap-1">
+                        {p.staff_enabled !== false && <Badge variant="default">Staff</Badge>}
+                        {p.portal_enabled && <Badge variant="primary">Portal</Badge>}
+                      </div>
                     </td>
                     <td className="p-2">
                       {p.is_active === false
@@ -320,6 +370,34 @@ export default function SsoProviders() {
             onChange={(e) => setForm({ ...form, allowed_domains: e.target.value })}
             placeholder="acme.com, partners.acme.com"
           />
+          {/* Phase 2e — Decision D: per-company / per-side scoping. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
+            <Select
+              label="Company scope"
+              value={form.company_id}
+              onChange={(e) => setForm({ ...form, company_id: e?.target?.value ?? '' })}
+              options={companyOptions}
+              helperText="Global providers are visible to every tenant; company-scoped providers are limited to that company's portal/staff."
+            />
+            <div className="flex flex-col gap-2 pt-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.staff_enabled}
+                  onChange={(e) => setForm({ ...form, staff_enabled: e.target.checked })}
+                />
+                Enable for staff sign-in
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.portal_enabled}
+                  onChange={(e) => setForm({ ...form, portal_enabled: e.target.checked })}
+                />
+                Enable for customer portal sign-in
+              </label>
+            </div>
+          </div>
           <Textarea
             label="Config (JSON)"
             value={form.config}

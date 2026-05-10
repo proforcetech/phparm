@@ -9,8 +9,8 @@ use PDO;
 class SsoUserLinkRepository
 {
     private const COLUMNS = [
-        'id', 'user_id', 'provider_id', 'subject', 'email', 'display_name',
-        'last_login_at', 'created_at', 'updated_at',
+        'id', 'user_id', 'portal_account_id', 'provider_id', 'subject',
+        'email', 'display_name', 'last_login_at', 'created_at', 'updated_at',
     ];
 
     public function __construct(private Connection $connection)
@@ -52,21 +52,46 @@ class SsoUserLinkRepository
     }
 
     /**
-     * @param array<string, mixed> $payload Required: user_id, provider_id, subject.
+     * @return array<int, SsoUserLink>
+     */
+    public function listForPortalAccount(int $portalAccountId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT ' . implode(', ', self::COLUMNS) . ' FROM sso_user_links '
+            . 'WHERE portal_account_id = :pa ORDER BY id DESC'
+        );
+        $stmt->execute(['pa' => $portalAccountId]);
+        return array_map([$this, 'hydrate'], $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *   Exactly one of user_id or portal_account_id must be set.
+     *   Required: provider_id, subject.
      */
     public function create(array $payload): SsoUserLink
     {
+        $userId = isset($payload['user_id']) ? (int) $payload['user_id'] : null;
+        $portalAccountId = isset($payload['portal_account_id'])
+            ? (int) $payload['portal_account_id'] : null;
+        if (($userId === null) === ($portalAccountId === null)) {
+            throw new \InvalidArgumentException(
+                'sso_user_links requires exactly one of user_id or portal_account_id'
+            );
+        }
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO sso_user_links (user_id, provider_id, subject, email, display_name, last_login_at) '
-            . 'VALUES (:u, :p, :s, :e, :n, :t)'
+            'INSERT INTO sso_user_links '
+            . '(user_id, portal_account_id, provider_id, subject, email, display_name, last_login_at) '
+            . 'VALUES (:u, :pa, :p, :s, :e, :n, :t)'
         );
         $stmt->execute([
-            'u' => (int) $payload['user_id'],
-            'p' => (int) $payload['provider_id'],
-            's' => (string) $payload['subject'],
-            'e' => $payload['email'] ?? null,
-            'n' => $payload['display_name'] ?? null,
-            't' => $payload['last_login_at'] ?? null,
+            'u'  => $userId,
+            'pa' => $portalAccountId,
+            'p'  => (int) $payload['provider_id'],
+            's'  => (string) $payload['subject'],
+            'e'  => $payload['email'] ?? null,
+            'n'  => $payload['display_name'] ?? null,
+            't'  => $payload['last_login_at'] ?? null,
         ]);
         $id = (int) $this->connection->pdo()->lastInsertId();
         return $this->find($id) ?? new SsoUserLink(['id' => $id]);
@@ -118,7 +143,7 @@ class SsoUserLinkRepository
             return null;
         }
         return match ($key) {
-            'id', 'user_id', 'provider_id' => (int) $value,
+            'id', 'user_id', 'portal_account_id', 'provider_id' => (int) $value,
             default => $value,
         };
     }

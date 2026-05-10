@@ -9,7 +9,8 @@ use PDO;
 class SsoLoginAttemptRepository
 {
     private const COLUMNS = [
-        'id', 'provider_id', 'state', 'nonce', 'redirect_uri', 'user_id',
+        'id', 'provider_id', 'side', 'state', 'nonce', 'redirect_uri',
+        'user_id', 'portal_account_id', 'intended_company_id',
         'status', 'error_message', 'completed_at', 'created_at',
     ];
 
@@ -43,13 +44,16 @@ class SsoLoginAttemptRepository
     public function create(array $payload): SsoLoginAttempt
     {
         $this->connection->pdo()->prepare(
-            'INSERT INTO sso_login_attempts (provider_id, state, nonce, redirect_uri, status) '
-            . 'VALUES (:p, :s, :n, :r, :st)'
+            'INSERT INTO sso_login_attempts '
+            . '(provider_id, side, state, nonce, redirect_uri, intended_company_id, status) '
+            . 'VALUES (:p, :side, :s, :n, :r, :ic, :st)'
         )->execute([
             'p' => (int) $payload['provider_id'],
+            'side' => $payload['side'] ?? SsoLoginAttempt::SIDE_STAFF,
             's' => (string) $payload['state'],
             'n' => $payload['nonce'] ?? null,
             'r' => $payload['redirect_uri'] ?? null,
+            'ic' => isset($payload['intended_company_id']) ? (int) $payload['intended_company_id'] : null,
             'st' => $payload['status'] ?? SsoLoginAttempt::STATUS_PENDING,
         ]);
         $id = (int) $this->connection->pdo()->lastInsertId();
@@ -64,6 +68,19 @@ class SsoLoginAttemptRepository
             'id' => $id,
             'st' => SsoLoginAttempt::STATUS_COMPLETED,
             'u' => $userId,
+            't' => $when ?? date('Y-m-d H:i:s'),
+        ]);
+        return $this->find($id);
+    }
+
+    public function completePortal(int $id, ?int $portalAccountId, ?string $when = null): ?SsoLoginAttempt
+    {
+        $this->connection->pdo()->prepare(
+            'UPDATE sso_login_attempts SET status = :st, portal_account_id = :pa, completed_at = :t WHERE id = :id'
+        )->execute([
+            'id' => $id,
+            'st' => SsoLoginAttempt::STATUS_COMPLETED,
+            'pa' => $portalAccountId,
             't' => $when ?? date('Y-m-d H:i:s'),
         ]);
         return $this->find($id);
@@ -119,7 +136,7 @@ class SsoLoginAttemptRepository
             return null;
         }
         return match ($key) {
-            'id', 'provider_id', 'user_id' => (int) $value,
+            'id', 'provider_id', 'user_id', 'portal_account_id', 'intended_company_id' => (int) $value,
             default => $value,
         };
     }

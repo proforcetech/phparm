@@ -16,12 +16,18 @@ class SsoLoginAttempt extends BaseModel
         self::STATUS_EXPIRED,
     ];
 
+    public const SIDE_STAFF = 'staff';
+    public const SIDE_PORTAL = 'portal';
+
     public ?int $id = null;
     public int $provider_id = 0;
+    public string $side = self::SIDE_STAFF;
     public string $state = '';
     public ?string $nonce = null;
     public ?string $redirect_uri = null;
     public ?int $user_id = null;
+    public ?int $portal_account_id = null;
+    public ?int $intended_company_id = null;
     public string $status = self::STATUS_PENDING;
     public ?string $error_message = null;
     public ?string $completed_at = null;
