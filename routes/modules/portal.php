@@ -241,7 +241,13 @@ return function (Router $router, RouteContext $ctx): void {
     });
 
     // --- Portal-scoped routes (portal_user + portal_account required) ---
-    $router->group([Middleware::portalAuth($portalAuth)], function (Router $router) use (
+    // Phase 2a — portalTenantGate is layered AFTER portalAuth so a portal
+    // JWT minted for tenant A cannot be used to read tenant B's surfaces
+    // when served from tenant B's white-label host.
+    $router->group([
+        Middleware::portalAuth($portalAuth),
+        Middleware::portalTenantGate($themeService),
+    ], function (Router $router) use (
         $controller, $wizardController, $approvalController, $assetController,
         $billingController, $messagingController, $uploadController, $uploadService,
         $etaController, $themeController, $lifecycleController,

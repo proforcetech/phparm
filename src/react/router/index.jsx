@@ -237,6 +237,15 @@ import SecurityEvents from '../views/security/SecurityEvents'
 import RetentionPolicies from '../views/retention/RetentionPolicies'
 import RetentionRuns from '../views/retention/RetentionRuns'
 
+// Phase 2a — new portal tree (parallel to legacy customer-portal/*)
+import PortalLayout from '../views/portal/PortalLayout'
+import PortalLogin from '../views/portal/PortalLogin'
+import PortalDashboard from '../views/portal/PortalDashboard'
+import PortalSoon from '../views/portal/PortalSoon'
+import { PortalAuthProvider } from '../stores/portalAuth'
+import { PortalThemeProvider } from '../stores/portalTheme'
+import { PORTAL_TOKEN_KEY } from '../../services/portal/api'
+
 const reactBasename = import.meta.env.VITE_REACT_BASE || ''
 
 const routePaths = {
@@ -272,6 +281,30 @@ const requireGuest = () => {
 
   return null
 }
+
+// Phase 2a — portal-specific auth gates. Reads the namespaced portal token
+// (NOT the staff auth_token) so a logged-in staff user does not bypass the
+// portal login requirement, and a logged-in portal user is redirected past
+// /p/login.
+const requirePortalAuth = () => {
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem(PORTAL_TOKEN_KEY) : null
+  if (!token) return redirect('/p/login')
+  return null
+}
+
+const requirePortalGuest = () => {
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem(PORTAL_TOKEN_KEY) : null
+  if (token) return redirect('/p')
+  return null
+}
+
+const PortalShell = () => (
+  <PortalThemeProvider>
+    <PortalAuthProvider>
+      <Outlet />
+    </PortalAuthProvider>
+  </PortalThemeProvider>
+)
 
 const PublicLayout = () => (
   <div className="react-app">
@@ -669,5 +702,30 @@ export const router = createBrowserRouter([
     loader: requireAuth,
     element: <TenantLayout />,
     children: tenantChildren,
+  },
+  // Phase 2a — new portal tree under /p/* (parallel to legacy /portal/*).
+  // PortalShell mounts both the theme provider (host-resolved branding) and
+  // the portal auth provider (namespaced JWT). Guards differ from staff:
+  // requirePortalAuth reads the portal-namespaced token, not auth_token.
+  {
+    path: '/p',
+    element: <PortalShell />,
+    children: [
+      { path: 'login', loader: requirePortalGuest, element: <PortalLogin /> },
+      {
+        element: <PortalLayout />,
+        loader: requirePortalAuth,
+        children: [
+          { index: true, element: <PortalDashboard /> },
+          { path: 'approvals', element: <PortalSoon title="Approvals" blurb="Pending estimates and contracts will appear here." /> },
+          { path: 'requests', element: <PortalSoon title="New request" blurb="Submit a service or support request." /> },
+          { path: 'work-orders', element: <PortalSoon title="Work orders" blurb="Live and completed work at your sites." /> },
+          { path: 'invoices', element: <PortalSoon title="Invoices" blurb="View, download, and pay invoices." /> },
+          { path: 'contracts', element: <PortalSoon title="Contracts" blurb="Service agreements and SLA status." /> },
+          { path: 'messages', element: <PortalSoon title="Messages" blurb="Conversations with your service team." /> },
+          { path: '*', element: <NotFound /> },
+        ],
+      },
+    ],
   },
 ], { basename: reactBasename })

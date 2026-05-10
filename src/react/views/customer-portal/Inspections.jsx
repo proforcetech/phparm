@@ -1,3 +1,4 @@
+// @deprecated Phase 2a — frozen for legacy `customer` role. New portal lives at src/react/views/portal/*.
 import { useCallback, useEffect, useState } from 'react'
 
 import inspectionService from '../../../services/inspection.service'

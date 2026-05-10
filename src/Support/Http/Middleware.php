@@ -478,6 +478,55 @@ class Middleware
     }
 
     /**
+     * Phase 2a — tenant host gate.
+     *
+     * Prevents cross-tenant access on white-label hosts. Resolves the request
+     * Host via PortalThemeService::resolveByHost; if a tenant theme matches,
+     * the authenticated portal_account.company_id MUST equal the resolved
+     * theme.company_id, otherwise the request is rejected.
+     *
+     * Permissive when no theme matches the host — that path is the
+     * unbranded/default portal (e.g. portal.example.com or localhost in
+     * dev), where any company's portal user is allowed.
+     *
+     * Must be layered AFTER portalAuth so portal_account is on the request.
+     */
+    public static function portalTenantGate(\App\Services\Portal\PortalThemeService $themeService): callable
+    {
+        return function (Request $request, callable $next) use ($themeService) {
+            $account = $request->getAttribute('portal_account');
+            if (!($account instanceof \App\Models\PortalAccount)) {
+                // portalAuth must have run first. Treat absence as a hard
+                // fail rather than silently letting the request through —
+                // misconfigured route groups should surface immediately.
+                throw new UnauthorizedException('portal tenant gate requires portal authentication');
+            }
+
+            $host = $request->header('Host') ?? $request->header('HTTP_HOST');
+            $resolved = $themeService->resolveByHost($host);
+            if ($resolved === null) {
+                // No tenant theme bound to this host — unbranded/default
+                // surface, no cross-tenant claim to enforce.
+                return $next($request);
+            }
+            $themeCompanyId = isset($resolved['company_id']) ? (int) $resolved['company_id'] : 0;
+            if ($themeCompanyId === 0) {
+                // Default payload returned by publicResolveOrDefault has
+                // company_id null, but resolveByHost returns null for
+                // unmatched hosts, so this branch only fires on a
+                // misconfigured theme row. Refuse to gate without a target.
+                throw new UnauthorizedException('portal tenant could not be determined');
+            }
+            if ($themeCompanyId !== $account->company_id) {
+                throw new UnauthorizedException('portal account does not belong to this host');
+            }
+
+            $request->setAttribute('portal_host_company_id', $themeCompanyId);
+            return $next($request);
+        };
+    }
+
+    /**
      * Require specific permission
      */
     public static function can(string $permission, AccessGate $gate): callable
