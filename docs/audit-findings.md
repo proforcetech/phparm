@@ -26,6 +26,7 @@ Use this file as the live register during audit execution.
 - Actual fix: Added shared trusted-proxy-aware resolution in `src/Support/Http/IpAddressResolver.php` and routed `Request`, `Middleware`, and `LoginRateLimiter` through it. Forwarded headers are now only honored when `REMOTE_ADDR` matches `TRUSTED_PROXIES`.
 - Verification: `php tests/IpAddressResolverTest.php`; `php -l src/Support/Http/IpAddressResolver.php`; `php -l src/Support/Http/Request.php`; `php -l src/Support/Http/Middleware.php`; `php -l src/Support/Security/LoginRateLimiter.php`
 - Residual risk: Deployments behind a reverse proxy must set `TRUSTED_PROXIES` correctly or the app will fall back to the proxy IP rather than the originating client IP.
+- Re-verified: `2026-05-10` (Phase 1) — `IpAddressResolver` remains the single source for `Request`, `Middleware`, and `LoginRateLimiter`. Original fix holds. Related new issue with leftmost-XFF parsing is opened as `AUD-072`, not a regression of this finding.
 
 #### AUD-002
 
@@ -40,6 +41,7 @@ Use this file as the live register during audit execution.
 - Actual fix: New password reset and email verification tokens are now stored as SHA-256 hashes, while lookup and mark-used paths accept either the legacy plaintext form or the new hashed form to preserve compatibility during rollout.
 - Verification: `php -l src/Support/Auth/PasswordResetRepository.php`; `php -l src/Support/Auth/EmailVerificationRepository.php`; `php -l tests/AuthTokenRepositorySecurityTest.php`; `php tests/AuthTokenRepositorySecurityTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`
 - Residual risk: Legacy plaintext rows already stored in the database remain plaintext until they expire or are explicitly rotated/migrated.
+- Re-verified: `2026-05-10` (Phase 1) — both repositories still hash on write and accept either form on lookup. Holds.
 
 #### AUD-003
 
@@ -96,6 +98,7 @@ Use this file as the live register during audit execution.
 - Actual fix: `PaymentProcessingService` now resolves `invoice_id` from explicit references, existing payment records, and stored checkout-session metadata. It also logs unmatched handled events for investigation and routes refund webhooks into `recordRefund()`. Square webhook normalization now preserves `reference_id`, and PayPal normalization now preserves parent payment and invoice reference identifiers to support reconciliation.
 - Verification: `php tests/PaymentWebhookReconciliationTest.php`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l src/Services/Payment/SquareGateway.php`; `php -l src/Services/Payment/PayPalGateway.php`; `php -l tests/PaymentWebhookReconciliationTest.php`
 - Residual risk: Historical payment sessions created before these metadata improvements still rely on whatever provider identifiers were already stored, so some older unmatched events may require manual reconciliation.
+- Re-verified: `2026-05-10` (Phase 1) — server-side resolution of `invoice_id` and refund routing through `recordRefund()` are still in place. Holds.
 
 #### AUD-009
 
@@ -110,6 +113,7 @@ Use this file as the live register during audit execution.
 - Actual fix: `PaymentProcessingService` now deduplicates payment writes by existing transaction/reference on the target invoice, deduplicates refunds by `refund_id`, avoids reapplying already successful payment amounts, and skips regressive invoice-state transitions when a duplicate non-success event arrives after a successful payment. Unmatched handled events now log full normalized webhook data, and session/payment writes trigger `recoverUnmatchedWebhookEvents()` to replay recoverable audit-log entries once a provider session/payment mapping exists.
 - Verification: `php tests/PaymentWebhookReconciliationTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l tests/PaymentWebhookReconciliationTest.php`
 - Residual risk: Application-level idempotency still depends on stable provider identifiers already being present in webhook normalization; if a provider changes identifiers or historical rows contain inconsistent transaction/reference values, some edge cases may still require manual reconciliation.
+- Re-verified: `2026-05-10` (Phase 1) — idempotency guards still in `PaymentProcessingService`. Holds.
 
 #### AUD-010
 
@@ -124,6 +128,7 @@ Use this file as the live register during audit execution.
 - Actual fix: `PaymentProcessingService` now applies refunded amounts through `syncInvoiceAfterRefund()`, using delta-based logic against any existing refund record. Refunds reduce `amount_paid`, restore `balance_due`, clear `paid_at` when the invoice is no longer fully paid, and set invoice status back to `partial` or `pending` as appropriate instead of forcing a blanket `refunded` state.
 - Verification: `php tests/PaymentWebhookReconciliationTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l tests/PaymentWebhookReconciliationTest.php`
 - Residual risk: The broader invoice domain still does not have a first-class invoice status for fully refunded/credited documents, so business reporting may still need a more explicit refund/credit state model later.
+- Re-verified: `2026-05-10` (Phase 1) — refund balance sync via `syncInvoiceAfterRefund()` still in place. Holds.
 
 #### AUD-011
 
@@ -152,6 +157,7 @@ Use this file as the live register during audit execution.
 - Actual fix: `InvoiceService` now writes schema-valid manual payment rows with normalized `gateway`, `method`, `transaction_id`, `reference`, and `status` fields. Balance sync now sums only successful payment statuses, reverts invoices back to `pending` when no successful payments remain, and suppresses undeposited-funds entries for non-successful manual payment attempts. I also aligned the install SQL snapshots so the payments table definition matches the migrated shape.
 - Verification: `php tests/InvoiceManualPaymentConsistencyTest.php` returned `SKIPPED: pdo_sqlite extension is not available.`; `php -l src/Services/Invoice/InvoiceService.php`; `php -l tests/InvoiceManualPaymentConsistencyTest.php`; `php -l database/install/install.sql`
 - Residual risk: Manual payment and gateway payment flows still live in separate services, so a future refactor should likely extract a shared payment-recording policy to eliminate duplicated status semantics entirely.
+- Re-verified: `2026-05-10` (Phase 1) — manual-payment normalization still in place. Holds.
 
 #### AUD-013
 
@@ -838,6 +844,7 @@ Use this file as the live register during audit execution.
 - Actual fix: Retired the legacy HTML admin path in `routes/cms.php`. `GET /cms/admin*` now redirects to the SPA-admin replacement paths under `/cp/cms` or `/cp/login`, and legacy `POST /cms/admin*` requests now fail closed with HTTP 410 instead of dispatching to `AdminController`.
 - Verification: `php -l routes/cms.php`
 - Residual risk: Existing bookmarks or automation that still submit directly to `/cms/admin*` must be updated to the SPA-admin and `/api/cms` flows.
+- Re-verified: `2026-05-10` (Phase 1) — `routes/cms.php:225-249` confirms `GET /cms/admin*` still redirects and `POST /cms/admin*` still returns 410 (no `new AdminController` instantiation in the file). Holds.
 
 #### AUD-062
 
@@ -866,6 +873,7 @@ Use this file as the live register during audit execution.
 - Actual fix: Updated webhook routes to pass full verification context and changed Stripe, Square, and PayPal gateway handlers to fail closed. Webhook handlers now require the signature header, and Square/PayPal also require their configured webhook credential before processing any payload.
 - Verification: `php -l src/Services/Payment/StripeGateway.php`; `php -l src/Services/Payment/SquareGateway.php`; `php -l src/Services/Payment/PayPalGateway.php`; `php -l src/Services/Invoice/PaymentProcessingService.php`; `php -l src/Services/Invoice/InvoiceController.php`; `php -l routes/api.php`
 - Residual risk: Deployments must provide valid Stripe webhook secret, Square webhook signature key, and PayPal webhook ID or public webhook delivery will now fail by design.
+- Re-verified: `2026-05-10` (Phase 1) — `SquareGateway::handleWebhook()` (`src/Services/Payment/SquareGateway.php:169`) and `PayPalGateway::handleWebhook()` (`src/Services/Payment/PayPalGateway.php:145`) both throw on missing signature header before any payload processing. Fail-closed behavior holds.
 
 #### AUD-007
 
@@ -880,6 +888,165 @@ Use this file as the live register during audit execution.
 - Actual fix: `Request` now preserves the original raw body and exposes `rawBody()` and `fullUrl()`. Payment webhook routes pass that data into the payment service, Stripe now verifies the original raw body, and Square now verifies against the original raw body plus the exact request URL instead of reconstructed values.
 - Verification: `php tests/RequestWebhookSupportTest.php`; `php -l src/Support/Http/Request.php`; `php -l src/Services/Payment/PaymentGatewayInterface.php`; `php -l routes/api.php`
 - Residual risk: If an environment terminates TLS or rewrites host/scheme before PHP sees the request, the application must still receive the externally correct webhook URL for providers that sign the notification URL.
+
+## Audit v2 — Phase 1 (Security Delta)
+
+The following findings are produced by Phase 1 of the v2 audit (`docs/audit-v2-plan.md`,
+`docs/audit-v2-baseline.md`). They cover code added or substantively changed since the
+v1 closeout (`2026-04-08`). Re-verifications of prior findings are recorded in-place on the
+original entries above with a `Re-verified:` line.
+
+#### AUD-063
+
+- Status: `open`
+- Category: `security`
+- Severity: `high`
+- Location: `src/Services/VoiceNotes/VoiceNoteService.php:150`, `src/Services/VoiceNotes/HeuristicTranscriber.php:111`, `routes/modules/voice_notes.php:35`
+- Summary: The voice-note record endpoint accepts an attacker-controlled `audio_path` string from the request body and the default transcriber resolves it as a filesystem path with no root confinement.
+- Evidence: `VoiceNoteService::record()` reads `audio_path` directly from `$payload`, validates only that it does not contain `..` segments, and persists the value into `voice_notes.audio_path`. The shipped `HeuristicTranscriber` is constructed in `routes/modules/voice_notes.php` with no `storageRoot` argument; its `resolve()` method then returns the supplied path verbatim and reads `<audio_path>.txt` from disk. There is no upload pipeline in this route module — the path is fully under client control.
+- Impact: Any authenticated user with `voice_notes.create` can (a) plant rows referencing arbitrary absolute filesystem paths, and (b) cause the transcriber to read any `*.txt` file the PHP process can access, including operator-managed sidecars under attacker-controlled subdirectories. Downstream UIs that surface or download the audio path inherit the same trust gap (path traversal via absolute paths).
+- Recommended fix: Replace the string-payload model with a real upload pipeline (multipart upload → server-generated path under a configured `voice_notes` storage root). Always prefix with the storage root, reject absolute paths, and reject paths whose `realpath()` escapes the root. Inject a non-empty `storageRoot` into `HeuristicTranscriber` in production wiring and assert it is non-empty in the constructor when the binding is "real".
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-064
+
+- Status: `open`
+- Category: `security`
+- Severity: `high`
+- Location: `src/Services/Contracts/ContractSigningService.php:160`, `src/Services/Estimate/EstimatePublicLinkService.php:198`, `src/Services/Contracts/ContractPublicLinkRepository.php`
+- Summary: E-sign public links are not single-use and are never invalidated on signature capture, so the same link can be replayed to attach additional signatures (or attribute fraudulent ones to other parties).
+- Evidence: `ContractSigningService::captureSignature()` resolves the link, writes a `contract_signatures` row, optionally transitions status, but never updates the `contract_public_links` row to record consumption or to invalidate the token. `EstimatePublicLinkService::captureSignature()` follows the same pattern (no `signed_at` / `consumed_at` write to the link). The link remains valid until `expires_at` (which is optional and may be `NULL`).
+- Impact: Anyone who obtains the link or its 10-character `short_code` (see AUD-065) — including an over-the-shoulder observer, a forwarded email, or an MITM in transit — can submit additional `signer_name`/`signer_email` payloads with whatever consent text they choose. Audit rows accumulate but no defense-in-depth prevents impersonation of co-signers or repeated signing on a contract that has already activated. There is also no rate limit on the public capture endpoint.
+- Recommended fix: For single-party signing, mark the link `consumed_at` on first successful capture and reject subsequent captures. For multi-party flows, issue one link per intended signer (each bound to that signer's email at issue time, optionally with a magic-link verification step), and reject any capture whose `signer_email` does not match the link binding. Apply per-link rate limiting on the public capture endpoint.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-065
+
+- Status: `open`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Services/Estimate/EstimatePublicLinkService.php:43`, `src/Services/Estimate/EstimatePublicLinkService.php:480`, `src/Services/Contracts/ContractSigningService.php:41`, `src/Services/Contracts/ContractSigningService.php:337`, `routes/api.php:4279`
+- Summary: Public estimate and contract links accept a 10-character SHA-256 prefix (`short_code`) as the sole bearer credential on `/e/{shortCode}` and on the contract short-code path, providing only ~40 bits of token entropy.
+- Evidence: `EstimatePublicLinkService::issueLink()` derives `$shortCode = substr(hash('sha256', $token), 0, 10)` and `resolveLink()` resolves links by `short_code` alone (no separate token required). `ContractSigningService` follows the identical pattern with `SHORT_CODE_LEN = 10`. The `/e/{shortCode}` route handler in `routes/api.php` has no rate limiting on the lookup. The longer 256-bit `secure_url` token exists but is optional for both endpoints.
+- Impact: 40 bits of token entropy is below the modern bearer-token threshold (≥128 bits is standard). With public deployment and no per-IP throttling on `/e/{shortCode}`, a determined attacker can brute-force valid short codes against a known target estimate/contract universe. Birthday-style enumeration becomes practical at scale (>1M issued links).
+- Recommended fix: Require the long `token` for any state change (signature capture, comment add, approve/reject). Restrict `/e/{shortCode}` to an unauthenticated *redirect* that bounces to `/estimate/view?token=…` only when the looked-up link is still within an unexpired short window after issue (or, simpler: deprecate short codes for new links and require the token everywhere). Add per-IP rate limiting on the public lookup paths.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-066
+
+- Status: `open`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Services/Contracts/ContractSigningService.php:189`, `src/Services/Estimate/EstimatePublicLinkService.php:213`
+- Summary: The `document_hash` recorded with each signature is computed at sign-time, not at link-issue-time, so the document the signer "agreed to" is whatever the contract/estimate state is at the moment of capture — not what was presented at issue.
+- Evidence: `ContractSigningService::captureSignature()` calls `$this->hashContractSnapshot($contract)` *after* calling `requireContract($link->contract_id)` (line 168) — i.e., the snapshot reflects the current row, not the row as of `link.created_at`. Same pattern in `EstimatePublicLinkService::captureSignature()` (line 213, `generateDocumentHash($estimate->toArray())`). There is no stored snapshot or hash on the `*_public_links` rows for verification.
+- Impact: An internal actor (or anyone with `contracts.update` / `estimates.update`) can modify the contract/estimate between issue and signature capture; the resulting `document_hash` is bound to the modified content. Forensic reconstruction of "what did the signer actually see" relies on event log replay rather than a stored hash, and there is no mechanism to detect mid-flight tampering.
+- Recommended fix: Snapshot the contract/estimate at link-issue time (compute and persist `document_hash` on the link row), then on capture (a) compare current vs. issue-time hash, (b) refuse capture if they differ unless the caller has an `override_changed=true` flag and the override is logged, (c) record both hashes on the signature row.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-067
+
+- Status: `open`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Services/Portal/PortalBillingService.php:58`, `src/Services/Portal/PortalBillingService.php:322`, `src/Services/Portal/PortalContractService.php:41`, `src/Services/Portal/PortalContractService.php:81`, `src/Services/Portal/PortalWorkorderService.php:61`
+- Summary: Portal billing, contract, and workorder services scope reads to `portal_account.company_id` only and never call `PortalAuthService::assertSiteAccess()`, so a portal account narrowed to specific `allowed_site_ids` still sees company-wide invoices, contracts, and workorders.
+- Evidence: `PortalBillingService::listInvoices()` calls `customers->listIdsForCompany($account->company_id)` and iterates without site filtering. `loadScopedInvoice()` only checks `customer.company_id === account->company_id`. `PortalContractService` filters by `'company_id' => $account->company_id` and re-checks `$contract->company_id !== $account->company_id` — no site assertion. `PortalWorkorderService` has the same pattern. By contrast `PortalUploadService`, `PortalRequestWizardService`, `PortalMessagingService`, `PortalEtaPromiseService`, and `PortalAssetViewService` all call `assertSiteAccess()` correctly.
+- Impact: A portal account whose `scope.allowed_site_ids = [5]` is intended to be limited to one site; today they can read every billing invoice, contract, and workorder belonging to other sites in the same company. This violates the principle the rest of the portal services already implement.
+- Recommended fix: Either (a) require site filtering for billing/contract/workorder reads when `account->scope` defines `allowed_site_ids` (resolve site through customer→site mapping for invoices, through `contract_sites` for contracts, and through `workorders.site_id` for workorders), or (b) document explicitly that these three surfaces are intentionally company-scoped and reject scope payloads that try to narrow them.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-068
+
+- Status: `open`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Support/Auth/StepUpService.php:50`, `src/Support/Auth/TotpService.php:27`
+- Summary: Step-up TOTP verification has no replay/reuse protection — a single captured 6-digit code is valid across the configurable verification window (~90 seconds with the default `±1` window) and can be submitted multiple times to mint multiple step-up stamps.
+- Evidence: `TotpService::verifyCode()` accepts the code if it matches *any* of `current ± window` slots without recording which slot was consumed. `StepUpService::verify()` then INSERTs a new `auth_step_up_verifications` row on every successful verification. There is no `last_used_counter` per user, no per-code dedupe, and no failed-attempt tracking on the `/api/auth/step-up` endpoint.
+- Impact: An attacker who shoulder-surfs or sniffs one TOTP code (e.g., from a screenshot, an over-the-shoulder glance, or a leaked screen recording) can submit it within the window to gain step-up freshness. Combined with AUD-069 below, the freshness then permits sensitive settings writes from the attacker's session.
+- Recommended fix: Track the consumed TOTP counter (`floor(time/period) ± window`) per user in the `users` row or in a small `totp_consumed_counters` table; reject any subsequent verify against a counter slot already consumed. Optionally add per-user/per-IP failed-attempt limits on `/api/auth/step-up` to bound brute-force across stolen sessions.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-069
+
+- Status: `open`
+- Category: `security`
+- Severity: `medium`
+- Location: `src/Support/Auth/StepUpService.php:67`, `src/Support/Auth/StepUpService.php:50`
+- Summary: A step-up verification is keyed only on `user_id` — `isFresh()` does not bind to the session/JWT, the IP, or the User-Agent that performed the verification. A step-up performed on one device satisfies sensitive endpoints called from any other device for the same user within the freshness window.
+- Evidence: `verify()` records `ip_address` and `user_agent` columns but `isFresh()` only reads `verified_at` ordered by `verified_at DESC LIMIT 1`. There is no `WHERE ip = :ip` or `WHERE session_id = :sid`. The 5-minute `FRESHNESS_SECONDS` constant applies user-wide.
+- Impact: If an attacker obtains a valid session token (XSS, leaked JWT, hijacked cookie) within 5 minutes of a legitimate step-up by the real user, the attacker inherits the step-up freshness without producing a TOTP code. This is exactly the property step-up was introduced to *defeat* (a session-level compromise of a sensitive write path).
+- Recommended fix: Bind the step-up to the JWT/session identifier — record the JWT `jti` (or session id) on `verify()`, require an exact match on `isFresh()`. As a defense-in-depth secondary check, also bind to a stable client fingerprint (e.g., `sha256(ip + user_agent_family)`) and reject mismatches. Invalidate all step-ups for a user on logout, password change, and 2FA-secret rotation.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-070
+
+- Status: `open`
+- Category: `security`
+- Severity: `low`
+- Location: `src/Services/Crm/CrmController.php:531`, `src/Services/Crm/CrmController.php:531`
+- Summary: When a stored alarm/gate code ciphertext fails authentication (tampered, key-rotated, or corrupted), `tryDecrypt()` swallows the failure and returns `null`. The reveal endpoint then reports the field as "not set" instead of surfacing tamper/integrity failures to the operator or audit log.
+- Evidence: `CrmController::tryDecrypt()` catches `\Throwable` and returns `null`. `revealSiteCodes()` then logs `site.codes.viewed` with whichever fields decrypted successfully and silently omits the failed ones. There is no separate `site.codes.decrypt_failed` audit event, and no telemetry distinguishes "code never set" from "code present but failed authentication".
+- Impact: Tampering of `alarm_code_encrypted` / `gate_code_encrypted` (e.g., a malicious DBA truncating the payload, or an unintended key rotation) is invisible at the application layer. Operators see "no code set" and either re-enter the code (overwriting evidence) or proceed without one. Forensic detection of crypto-layer tampering is lost.
+- Recommended fix: Distinguish "absent" (`alarm_code_encrypted IS NULL`) from "present-but-undecryptable" (non-null ciphertext, `decrypt()` throws). On the latter path, emit a high-severity audit event (`site.codes.decrypt_failed`) and return an explicit error code in the response so the UI can surface "code stored but cannot be decrypted — admin attention required".
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-071
+
+- Status: `open`
+- Category: `security`
+- Severity: `low`
+- Location: `src/Support/Crypto/FieldCipher.php:25`, `src/Services/Crm/CrmController.php:526`, `src/Services/Integrations/IntegrationService.php:121`
+- Summary: A single environment key (`SITE_CODES_ENCRYPTION_KEY`) covers two unrelated domains (CRM site alarm/gate codes, third-party integration credentials) with no key versioning, no rotation path, and no domain separation.
+- Evidence: `FieldCipher::__construct()` defaults to `SITE_CODES_ENCRYPTION_KEY`; both call sites construct the cipher with the default. The on-disk format is `base64(nonce || ciphertext)` with no version byte and no key id. There is no AAD/context binding (libsodium `crypto_secretbox` does not provide AAD; an `xchacha20poly1305_ietf_*` variant would).
+- Impact: Rotating the key for one domain forces simultaneous re-encryption of the other. A future leak of `SITE_CODES_ENCRYPTION_KEY` yields plaintext for both site operational data and partner API credentials. Without a version byte, online rotation (decrypt-with-old, re-encrypt-with-new) requires schema changes.
+- Recommended fix: (a) Use distinct env keys per domain (`SITE_CODES_ENCRYPTION_KEY` and `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY`), (b) prefix ciphertexts with a 1-byte version + 4-byte key-id so rotation can decrypt-old / encrypt-new in place, (c) consider switching to `crypto_aead_xchacha20poly1305_ietf_*` so a domain-binding string can be added as AAD.
+- Actual fix:
+- Verification:
+- Residual risk:
+
+#### AUD-072
+
+- Status: `open`
+- Category: `security`
+- Severity: `low`
+- Location: `src/Support/Http/IpAddressResolver.php:22`
+- Summary: When the request comes from a trusted proxy, the resolver returns the *leftmost* valid IP from `X-Forwarded-For`. Standard proxy practice (AWS ELB/ALB, nginx `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`) is to *append* the real client IP to the end of the chain, so a malicious client that pre-supplies its own `X-Forwarded-For: spoofed_ip` will produce a chain like `spoofed_ip, real_client, proxy_internal` — the resolver returns `spoofed_ip`.
+- Evidence: `IpAddressResolver::resolve()` lines 22–30 iterate the comma-split header and `return` the first valid IP. There is no concept of a trusted-proxy chain length to skip from the right.
+- Impact: Once `TRUSTED_PROXIES` is configured (a precondition for IP normalization to engage at all), the resolved client IP can be spoofed by any client that includes its own `X-Forwarded-For` header. This re-introduces the audit/rate-limiting-bypass risk that AUD-001 was meant to close.
+- Recommended fix: Skip from the right by the configured trusted-proxy chain length: walk `X-Forwarded-For` right-to-left, drop entries that match a trusted-proxy CIDR, return the first untrusted entry. Document deployment-side that the configured proxy must always *append* the client IP (not trust client-supplied headers verbatim).
+- Actual fix:
+- Verification:
+- Residual risk:
+
+### Phase 1 Re-verifications
+
+The following prior findings had touched files; the v2 baseline flagged them for re-check.
+Each was re-verified during Phase 1; results are recorded in-place on the original entry
+above as a `Re-verified:` line. Summary:
+
+- **AUD-001** — re-verified `2026-05-10`: `IpAddressResolver` is still the single source of truth for `Request`, `Middleware`, and `LoginRateLimiter`. The original fix holds. New related finding AUD-072 (leftmost-XFF parsing) is opened separately rather than reopening AUD-001.
+- **AUD-002** — re-verified `2026-05-10`: `PasswordResetRepository` and `EmailVerificationRepository` both hash on write and accept either form on lookup. The compatibility shim is unchanged. Holds.
+- **AUD-006** — re-verified `2026-05-10`: `SquareGateway::handleWebhook` (line 169) and `PayPalGateway::handleWebhook` (line 145) both `throw new InvalidArgumentException('Webhook signature is required')` when the header is missing, before any payload processing. Holds.
+- **AUD-008** — re-verified `2026-05-10`: PaymentProcessingService still resolves `invoice_id` server-side and routes refunds through `recordRefund()`. Holds.
+- **AUD-009 / AUD-010 / AUD-012 / AUD-061** — re-verified `2026-05-10` against current source: original fixes still in place. No regression detected.
 
 ### Template
 
