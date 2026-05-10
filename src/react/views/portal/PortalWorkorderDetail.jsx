@@ -7,6 +7,8 @@ import Loading from '../../components/ui/Loading'
 import Button from '../../components/ui/Button'
 import Textarea from '../../components/ui/Textarea'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const statusBadge = (status) => {
   switch (status) {
@@ -29,6 +31,8 @@ const formatMoney = (n) => {
 const formatDate = (s) => (s ? new Date(s).toLocaleString() : '—')
 
 function MessagesPanel({ workorderId }) {
+  const { can } = usePortalAuth()
+  const canReply = can(PORTAL_PERMISSION.CREATE_MESSAGES)
   const [threads, setThreads] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -144,29 +148,37 @@ function MessagesPanel({ workorderId }) {
                 </button>
               ))}
             </div>
-            <div className="p-3 border-t bg-gray-50 space-y-2">
-              <input
-                type="text"
-                placeholder="Subject (optional)"
-                value={newSubject}
-                onChange={(e) => setNewSubject(e.target.value)}
-                className="w-full text-sm border rounded px-2 py-1"
-              />
-              <Textarea
-                placeholder="Start a new thread…"
-                modelValue={newBody}
-                onUpdateModelValue={setNewBody}
-                rows={2}
-              />
-              <Button
-                size="sm"
-                onClick={startThread}
-                loading={creatingThread}
-                disabled={creatingThread || !newBody.trim()}
-              >
-                Start thread
-              </Button>
-            </div>
+            {canReply ? (
+              <div className="p-3 border-t bg-gray-50 space-y-2">
+                <input
+                  type="text"
+                  placeholder="Subject (optional)"
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  className="w-full text-sm border rounded px-2 py-1"
+                />
+                <Textarea
+                  placeholder="Start a new thread…"
+                  modelValue={newBody}
+                  onUpdateModelValue={setNewBody}
+                  rows={2}
+                />
+                <Button
+                  size="sm"
+                  onClick={startThread}
+                  loading={creatingThread}
+                  disabled={creatingThread || !newBody.trim()}
+                >
+                  Start thread
+                </Button>
+              </div>
+            ) : (
+              <div className="p-3 border-t bg-gray-50">
+                <p className="text-xs text-gray-500 italic">
+                  Your portal role can&rsquo;t start new threads.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="md:col-span-2 border rounded flex flex-col min-h-[20rem]">
@@ -193,22 +205,30 @@ function MessagesPanel({ workorderId }) {
                     </div>
                   ))}
                 </div>
-                <div className="p-3 border-t bg-gray-50 space-y-2">
-                  <Textarea
-                    placeholder="Type a reply…"
-                    modelValue={draft}
-                    onUpdateModelValue={setDraft}
-                    rows={2}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={sendReply}
-                    loading={sending}
-                    disabled={sending || !draft.trim()}
-                  >
-                    Send
-                  </Button>
-                </div>
+                {canReply ? (
+                  <div className="p-3 border-t bg-gray-50 space-y-2">
+                    <Textarea
+                      placeholder="Type a reply…"
+                      modelValue={draft}
+                      onUpdateModelValue={setDraft}
+                      rows={2}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={sendReply}
+                      loading={sending}
+                      disabled={sending || !draft.trim()}
+                    >
+                      Send
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="p-3 border-t bg-gray-50">
+                    <p className="text-xs text-gray-500 italic">
+                      Your portal role can read this thread but can&rsquo;t reply.
+                    </p>
+                  </div>
+                )}
               </>
             )}
           </div>

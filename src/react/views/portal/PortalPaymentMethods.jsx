@@ -8,6 +8,8 @@ import Select from '../../components/ui/Select'
 import Alert from '../../components/ui/Alert'
 import Loading from '../../components/ui/Loading'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const GATEWAY_OPTIONS = [
   { value: 'stripe', label: 'Stripe' },
@@ -28,6 +30,8 @@ const initialForm = {
 }
 
 export default function PortalPaymentMethods() {
+  const { can } = usePortalAuth()
+  const canManage = can(PORTAL_PERMISSION.MANAGE_PAYMENT_METHODS)
   const [methods, setMethods] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -120,10 +124,18 @@ export default function PortalPaymentMethods() {
             Manage saved cards and accounts for invoice checkout.
           </p>
         </div>
-        <Button onClick={() => { setShowAdd(true); setSaveError(null); setForm(initialForm) }}>
-          Add payment method
-        </Button>
+        {canManage && (
+          <Button onClick={() => { setShowAdd(true); setSaveError(null); setForm(initialForm) }}>
+            Add payment method
+          </Button>
+        )}
       </header>
+
+      {!canManage && (
+        <Alert variant="info" closable={false}>
+          Your portal role can view saved payment methods but can&rsquo;t add, change the default, or remove them.
+        </Alert>
+      )}
 
       {error && <Alert variant="error" closable={false}>{error}</Alert>}
       {actionError && <Alert variant="error" closable={false}>{actionError}</Alert>}
@@ -168,28 +180,30 @@ export default function PortalPaymentMethods() {
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    {!m.is_default && (
+                  {canManage && (
+                    <div className="flex gap-2">
+                      {!m.is_default && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          loading={defaultBusy}
+                          disabled={!!busyKey}
+                          onClick={() => setDefault(m.id)}
+                        >
+                          Set default
+                        </Button>
+                      )}
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        loading={defaultBusy}
+                        loading={deleteBusy}
                         disabled={!!busyKey}
-                        onClick={() => setDefault(m.id)}
+                        onClick={() => removeMethod(m.id)}
                       >
-                        Set default
+                        Delete
                       </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      loading={deleteBusy}
-                      disabled={!!busyKey}
-                      onClick={() => removeMethod(m.id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               </Card>
             )

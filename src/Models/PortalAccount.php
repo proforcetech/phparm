@@ -16,6 +16,12 @@ class PortalAccount extends BaseModel
     public int $company_id = 0;
     /** @var array<int, int>|null */
     public ?array $allowed_site_ids = null;
+    // Phase 2d (Decision C): role_tier is the named coarse permission
+    // bucket; scope is the freeform overlay (see PortalPermissionService).
+    // Default 'requester' matches the column DEFAULT in migration 179.
+    public string $role_tier = 'requester';
+    /** @var array<string, mixed>|null */
+    public ?array $scope = null;
     public bool $is_active = true;
     public ?int $provisioned_by_user_id = null;
     public ?string $provisioned_at = null;

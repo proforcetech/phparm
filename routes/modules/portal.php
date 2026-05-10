@@ -35,6 +35,7 @@ use App\Services\Portal\PortalLifecycleService;
 use App\Services\Portal\PortalMessagingController;
 use App\Services\Portal\PortalMessagingService;
 use App\Services\Portal\PortalPaymentMethodRepository;
+use App\Services\Portal\PortalPermissionService;
 use App\Services\Portal\PortalRequestController;
 use App\Services\Portal\PortalRequestWizardService;
 use App\Services\Tickets\ItHelpdeskService;
@@ -83,6 +84,7 @@ return function (Router $router, RouteContext $ctx): void {
     $passwordPolicy = new PasswordPolicy($authConfig);
 
     $accounts = new PortalAccountRepository($ctx->connection);
+    $portalPermissions = new PortalPermissionService();
     $portalAuth = new PortalAuthService(
         $ctx->connection,
         $accounts,
@@ -93,8 +95,9 @@ return function (Router $router, RouteContext $ctx): void {
         $ctx->gate,
         $ctx->auditLogger,
         $authConfig,
+        $portalPermissions,
     );
-    $controller = new PortalController($portalAuth, $accounts);
+    $controller = new PortalController($portalAuth, $accounts, $portalPermissions);
 
     // Wizard dependencies (Phase 6.2). Re-use the ticket infrastructure
     // from Phase 3.1/3.3 so portal-submitted tickets flow through the
@@ -115,6 +118,7 @@ return function (Router $router, RouteContext $ctx): void {
         $siteAssetRepo,
         $ctx->auditLogger,
         new ItHelpdeskService(),
+        $portalPermissions,
     );
     $wizardController = new PortalRequestController($wizardService);
 
@@ -127,6 +131,7 @@ return function (Router $router, RouteContext $ctx): void {
         new ContractRepository($ctx->connection),
         new ContractAmendmentRepository($ctx->connection),
         $ctx->auditLogger,
+        $portalPermissions,
     );
     $approvalController = new PortalApprovalController($approvalService);
 
@@ -148,6 +153,7 @@ return function (Router $router, RouteContext $ctx): void {
         new InvoicePublicPaymentTokenService($ctx->connection),
         new PortalPaymentMethodRepository($ctx->connection),
         $ctx->auditLogger,
+        $portalPermissions,
     );
     $billingController = new PortalBillingController($billingService);
 
@@ -161,6 +167,7 @@ return function (Router $router, RouteContext $ctx): void {
         $portalCustomerRepo,
         $portalAuth,
         $ctx->auditLogger,
+        $portalPermissions,
     );
     $messagingController = new PortalMessagingController($messagingService);
 
@@ -174,6 +181,7 @@ return function (Router $router, RouteContext $ctx): void {
         $portalCustomerRepo,
         $portalAuth,
         $ctx->auditLogger,
+        $portalPermissions,
     );
     $uploadController = new PortalUploadController($uploadService);
 
@@ -220,6 +228,7 @@ return function (Router $router, RouteContext $ctx): void {
         new AssetDecommissionRepository($ctx->connection),
         $portalCustomerRepo,
         $ctx->auditLogger,
+        $portalPermissions,
     );
     $lifecycleController = new PortalLifecycleController($lifecycleService);
 

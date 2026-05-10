@@ -60,6 +60,7 @@ class PortalApprovalService
         private readonly ContractRepository $contracts,
         private readonly ContractAmendmentRepository $amendments,
         private readonly AuditLogger $audit,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
     }
 
@@ -92,6 +93,7 @@ class PortalApprovalService
         int $estimateId,
         ?string $note = null,
     ): Estimate {
+        $this->assertPermission($account, PortalPermission::APPROVE_ESTIMATES);
         $estimate = $this->loadScopedEstimate($account, $estimateId);
         if (!in_array($estimate->status, self::ESTIMATE_PENDING_STATUSES, true)) {
             throw new InvalidArgumentException(
@@ -129,6 +131,7 @@ class PortalApprovalService
         int $estimateId,
         string $reason,
     ): Estimate {
+        $this->assertPermission($account, PortalPermission::APPROVE_ESTIMATES);
         $reason = trim($reason);
         if ($reason === '') {
             throw new InvalidArgumentException('a rejection reason is required');
@@ -173,6 +176,7 @@ class PortalApprovalService
         ?string $ipAddress = null,
         ?string $userAgent = null,
     ): Contract {
+        $this->assertPermission($account, PortalPermission::SIGN_CONTRACTS);
         $contract = $this->loadScopedContract($account, $contractId);
         if (!in_array($contract->status, self::CONTRACT_PENDING_STATUSES, true)) {
             throw new InvalidArgumentException(
@@ -224,6 +228,7 @@ class PortalApprovalService
         int $contractId,
         string $reason,
     ): Contract {
+        $this->assertPermission($account, PortalPermission::SIGN_CONTRACTS);
         $reason = trim($reason);
         if ($reason === '') {
             throw new InvalidArgumentException('a rejection reason is required');
@@ -358,6 +363,12 @@ class PortalApprovalService
             );
         }
         return $contract;
+    }
+
+    private function assertPermission(PortalAccount $account, string $permission): void
+    {
+        $service = $this->permissions ?? new PortalPermissionService();
+        $service->assert($account, $permission);
     }
 
     private function assertUsable(PortalAccount $account): void

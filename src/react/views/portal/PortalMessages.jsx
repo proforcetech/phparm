@@ -7,6 +7,8 @@ import Loading from '../../components/ui/Loading'
 import Button from '../../components/ui/Button'
 import Textarea from '../../components/ui/Textarea'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const formatDate = (s) => (s ? new Date(s).toLocaleString() : '')
 
@@ -23,6 +25,8 @@ const entityLabel = (thread) => {
 }
 
 export default function PortalMessages() {
+  const { can } = usePortalAuth()
+  const canReply = can(PORTAL_PERMISSION.CREATE_MESSAGES)
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [list, setList] = useState({ data: [], total: 0 })
   const [loading, setLoading] = useState(true)
@@ -186,20 +190,28 @@ export default function PortalMessages() {
                 ))}
               </div>
               <div className="p-3 border-t bg-gray-50 space-y-2">
-                <Textarea
-                  placeholder="Type a reply…"
-                  modelValue={draft}
-                  onUpdateModelValue={setDraft}
-                  rows={2}
-                />
-                <Button
-                  size="sm"
-                  onClick={sendReply}
-                  loading={sending}
-                  disabled={sending || !draft.trim()}
-                >
-                  Send
-                </Button>
+                {canReply ? (
+                  <>
+                    <Textarea
+                      placeholder="Type a reply…"
+                      modelValue={draft}
+                      onUpdateModelValue={setDraft}
+                      rows={2}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={sendReply}
+                      loading={sending}
+                      disabled={sending || !draft.trim()}
+                    >
+                      Send
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-500 italic">
+                    Your portal role can read messages but can&rsquo;t reply.
+                  </p>
+                )}
               </div>
             </>
           )}

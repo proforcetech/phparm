@@ -57,6 +57,7 @@ class PortalAuthService
         private readonly AuditLogger $audit,
         /** @var array<string, mixed> */
         private readonly array $config,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
     }
 
@@ -104,11 +105,16 @@ class PortalAuthService
 
         $this->accounts->recordLogin($account->id);
 
+        // role_tier + scope ride along inside the JWT for transparency in
+        // logs/inspectors, but the authoritative source is the row —
+        // assertValidSession() re-reads the row on every request so a
+        // tier downgrade / scope rewrite takes effect within one request.
         $claims = [
             'scope' => 'portal',
             'portal_account_id' => $account->id,
             'company_id' => $account->company_id,
             'site_ids' => $account->allowed_site_ids,
+            'role_tier' => $account->role_tier,
         ];
         $accessToken = $this->jwt->generateToken($user, $claims);
         $refreshToken = $this->jwt->generateRefreshToken($user, null, $ipAddress, $userAgent);
@@ -182,12 +188,17 @@ class PortalAuthService
             $user = $this->createPortalUser($name, $email, $password);
         }
 
+        $roleTier = $this->normalizeTier($input['role_tier'] ?? null) ?? PortalPermission::TIER_REQUESTER;
+        $scope = $this->normalizeScope($input['scope'] ?? null);
+
         $account = $this->accounts->provision(
             $user->id,
             $companyId,
             $siteIds,
             $actor->id ?? null,
             isset($input['notes']) ? (string) $input['notes'] : null,
+            $roleTier,
+            $scope,
         );
 
         $this->audit->log(new AuditEntry(
@@ -199,6 +210,8 @@ class PortalAuthService
                 'user_id' => $user->id,
                 'company_id' => $companyId,
                 'site_ids' => $siteIds,
+                'role_tier' => $roleTier,
+                'scope' => $scope,
             ]
         ));
 
@@ -219,15 +232,32 @@ class PortalAuthService
             ? $this->normalizeSiteIds($input['site_ids'], $existing->company_id)
             : $existing->allowed_site_ids;
         $notes = array_key_exists('notes', $input) ? (string) $input['notes'] : $existing->notes;
+        $roleTier = array_key_exists('role_tier', $input)
+            ? $this->normalizeTier($input['role_tier'])
+            : null;
+        $touchScope = array_key_exists('scope', $input);
+        $scope = $touchScope ? $this->normalizeScope($input['scope']) : null;
 
-        $updated = $this->accounts->updateScope($existing->id, $siteIds, $notes);
+        $updated = $this->accounts->updateScope(
+            $existing->id,
+            $siteIds,
+            $notes,
+            $roleTier,
+            $scope,
+            $touchScope,
+        );
 
         $this->audit->log(new AuditEntry(
             'portal.account.updated',
             'portal_account',
             $updated->id,
             $actor->id ?? null,
-            ['site_ids' => $siteIds]
+            [
+                'site_ids' => $siteIds,
+                'role_tier' => $roleTier,
+                'scope_touched' => $touchScope,
+                'scope' => $touchScope ? $scope : null,
+            ]
         ));
 
         return $updated;
@@ -303,6 +333,32 @@ class PortalAuthService
     public function assertListAccess(User $actor): void
     {
         $this->gate->assert($actor, 'users.create');
+    }
+
+    private function normalizeTier(mixed $raw): ?string
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (!is_string($raw)) {
+            throw new InvalidArgumentException('role_tier must be a string');
+        }
+        $tier = strtolower(trim($raw));
+        if (!PortalPermission::isValidTier($tier)) {
+            throw new InvalidArgumentException(
+                'role_tier must be one of: ' . implode(', ', PortalPermission::TIERS)
+            );
+        }
+        return $tier;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function normalizeScope(mixed $raw): ?array
+    {
+        $service = $this->permissions ?? new PortalPermissionService();
+        return $service->normalizeScope($raw);
     }
 
     /**

@@ -56,6 +56,7 @@ class PortalRequestWizardService
         private readonly SiteAssetRepository $assets,
         private readonly AuditLogger $audit,
         private readonly ItHelpdeskService $itHelpdesk,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
     }
 
@@ -126,6 +127,8 @@ class PortalRequestWizardService
         if (!$account->isUsable()) {
             throw new UnauthorizedException('portal_account is not usable for new requests');
         }
+        ($this->permissions ?? new PortalPermissionService())
+            ->assert($account, PortalPermission::CREATE_TICKETS);
 
         $title = trim((string) ($input['title'] ?? ''));
         if ($title === '') {

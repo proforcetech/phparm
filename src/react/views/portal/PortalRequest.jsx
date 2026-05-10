@@ -9,6 +9,8 @@ import Loading from '../../components/ui/Loading'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const STEPS = [
   { key: 'type', label: 'Request type' },
@@ -55,6 +57,8 @@ export default function PortalRequest() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const initialKind = searchParams.get('kind') || ''
+  const { can } = usePortalAuth()
+  const canCreate = can(PORTAL_PERMISSION.CREATE_TICKETS)
 
   const [stepIndex, setStepIndex] = useState(0)
   const [form, setForm] = useState({ ...initialForm, it_request_kind: initialKind })
@@ -443,6 +447,21 @@ export default function PortalRequest() {
     isItKindSelected, requiresBusinessImpact,
     selectedType, selectedSubcategory, selectedSite, selectedAsset,
   ])
+
+  if (!canCreate) {
+    return (
+      <div className="space-y-6">
+        <header>
+          <h1 className="text-2xl font-semibold">Submit a request</h1>
+        </header>
+        <Alert variant="info" closable={false}>
+          Your portal role can&rsquo;t open new requests. Ask an account approver or admin
+          on your team to submit on your behalf.
+        </Alert>
+        <Button variant="ghost" onClick={() => navigate('/p')}>← Back to portal home</Button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

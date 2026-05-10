@@ -56,7 +56,14 @@ class PortalMessagingService
         private readonly CustomerRepository $customers,
         private readonly PortalAuthService $portalAuth,
         private readonly AuditLogger $audit,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
+    }
+
+    private function assertPermission(PortalAccount $account, string $permission): void
+    {
+        $service = $this->permissions ?? new PortalPermissionService();
+        $service->assert($account, $permission);
     }
 
     // ── Read: threads ────────────────────────────────────────────────────
@@ -276,6 +283,7 @@ class PortalMessagingService
         string $body,
         ?string $subject = null,
     ): array {
+        $this->assertPermission($account, PortalPermission::CREATE_MESSAGES);
         $ticket = $this->loadScopedTicket($account, $ticketId);
         $body = trim($body);
         if ($body === '') {
@@ -309,6 +317,7 @@ class PortalMessagingService
         string $body,
         ?string $subject = null,
     ): array {
+        $this->assertPermission($account, PortalPermission::CREATE_MESSAGES);
         $wo = $this->loadScopedWorkorder($account, $workorderId);
         $body = trim($body);
         if ($body === '') {
@@ -344,6 +353,7 @@ class PortalMessagingService
         int $threadId,
         string $body,
     ): array {
+        $this->assertPermission($account, PortalPermission::CREATE_MESSAGES);
         $thread = $this->loadScopedThread($user, $account, $threadId);
 
         $body = trim($body);

@@ -7,6 +7,8 @@ import Textarea from '../../components/ui/Textarea'
 import Alert from '../../components/ui/Alert'
 import Loading from '../../components/ui/Loading'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const formatMoney = (cents, currency = 'USD') => {
   if (cents == null) return '—'
@@ -29,6 +31,9 @@ const formatDate = (value) => {
 }
 
 export default function PortalApprovals() {
+  const { can } = usePortalAuth()
+  const canApproveEstimates = can(PORTAL_PERMISSION.APPROVE_ESTIMATES)
+  const canSignContracts = can(PORTAL_PERMISSION.SIGN_CONTRACTS)
   const [data, setData] = useState({ estimates: [], contracts: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -165,22 +170,30 @@ export default function PortalApprovals() {
                       )}
                     </div>
                     <div className="flex md:flex-col gap-2 md:w-44">
-                      <Button
-                        fullWidth
-                        loading={isBusy}
-                        disabled={!!busyKey}
-                        onClick={() => approve('estimate', e.id)}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        variant="outline"
-                        fullWidth
-                        disabled={!!busyKey}
-                        onClick={() => openReject('estimate', e.id, `Estimate #${e.number || e.id}`)}
-                      >
-                        Reject
-                      </Button>
+                      {canApproveEstimates ? (
+                        <>
+                          <Button
+                            fullWidth
+                            loading={isBusy}
+                            disabled={!!busyKey}
+                            onClick={() => approve('estimate', e.id)}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            fullWidth
+                            disabled={!!busyKey}
+                            onClick={() => openReject('estimate', e.id, `Estimate #${e.number || e.id}`)}
+                          >
+                            Reject
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-500 italic md:text-right">
+                          Your role can&rsquo;t approve estimates.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -242,22 +255,30 @@ export default function PortalApprovals() {
                       )}
                     </div>
                     <div className="flex md:flex-col gap-2 md:w-44">
-                      <Button
-                        fullWidth
-                        loading={isBusy}
-                        disabled={!!busyKey}
-                        onClick={() => approve('contract', c.id)}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        variant="outline"
-                        fullWidth
-                        disabled={!!busyKey}
-                        onClick={() => openReject('contract', c.id, c.title || `Contract ${c.contract_number}`)}
-                      >
-                        Reject
-                      </Button>
+                      {canSignContracts ? (
+                        <>
+                          <Button
+                            fullWidth
+                            loading={isBusy}
+                            disabled={!!busyKey}
+                            onClick={() => approve('contract', c.id)}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            fullWidth
+                            disabled={!!busyKey}
+                            onClick={() => openReject('contract', c.id, c.title || `Contract ${c.contract_number}`)}
+                          >
+                            Reject
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-500 italic md:text-right">
+                          Your role can&rsquo;t sign contracts.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </Card>

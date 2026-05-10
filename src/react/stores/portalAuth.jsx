@@ -43,6 +43,22 @@ export function PortalAuthProvider({ children }) {
 
   const isAuthenticated = useMemo(() => Boolean(token), [token])
 
+  // Effective permission set is computed by the backend (PortalPermissionService::effective)
+  // and serialized into account.permissions. We only build a Set for O(1) lookups
+  // in `can()`. Tier is exposed separately so the UI can render the badge label
+  // even on the rare race where permissions hasn't synced yet.
+  const permissionSet = useMemo(() => {
+    const list = Array.isArray(account?.permissions) ? account.permissions : []
+    return new Set(list)
+  }, [account])
+
+  const can = useCallback(
+    (permission) => permissionSet.has(permission),
+    [permissionSet]
+  )
+
+  const tier = account?.role_tier || null
+
   const refresh = useCallback(async () => {
     if (!readToken()) return null
     try {
@@ -108,8 +124,10 @@ export function PortalAuthProvider({ children }) {
       login,
       logout,
       refresh,
+      tier,
+      can,
     }),
-    [token, user, account, loading, error, isAuthenticated, login, logout, refresh]
+    [token, user, account, loading, error, isAuthenticated, login, logout, refresh, tier, can]
   )
 
   return <PortalAuthContext.Provider value={value}>{children}</PortalAuthContext.Provider>

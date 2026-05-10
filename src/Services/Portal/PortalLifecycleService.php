@@ -52,7 +52,14 @@ class PortalLifecycleService
         private readonly AssetDecommissionRepository $decommissions,
         private readonly CustomerRepository $customers,
         private readonly ?AuditLogger $audit = null,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
+    }
+
+    private function assertCanDecide(PortalAccount $account): void
+    {
+        ($this->permissions ?? new PortalPermissionService())
+            ->assert($account, PortalPermission::DECIDE_LIFECYCLE);
     }
 
     // ── leases ───────────────────────────────────────────────────────────────
@@ -115,6 +122,7 @@ class PortalLifecycleService
         int $leaseId,
         array $body,
     ): array {
+        $this->assertCanDecide($account);
         $decision = trim((string) ($body['decision'] ?? ''));
         if (!in_array($decision, AssetLease::ALLOWED_DECISIONS, true)) {
             throw new InvalidArgumentException(
@@ -215,6 +223,7 @@ class PortalLifecycleService
         int $acquisitionId,
         array $body,
     ): array {
+        $this->assertCanDecide($account);
         $current = $this->loadScopedAcquisition($account, $acquisitionId);
         if ($current->status !== AssetAcquisition::STATUS_QUOTED) {
             throw new InvalidArgumentException(
@@ -248,6 +257,7 @@ class PortalLifecycleService
         int $acquisitionId,
         array $body,
     ): array {
+        $this->assertCanDecide($account);
         $reason = trim((string) ($body['reason'] ?? ''));
         if ($reason === '') {
             throw new InvalidArgumentException('reason is required');

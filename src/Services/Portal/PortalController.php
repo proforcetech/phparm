@@ -17,6 +17,7 @@ class PortalController
     public function __construct(
         private readonly PortalAuthService $auth,
         private readonly PortalAccountRepository $accounts,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
     }
 
@@ -120,11 +121,19 @@ class PortalController
      */
     private function serializeAccount(\App\Models\PortalAccount $account): array
     {
+        $permissions = $this->permissions ?? new PortalPermissionService();
         return [
             'id' => $account->id,
             'user_id' => $account->user_id,
             'company_id' => $account->company_id,
             'allowed_site_ids' => $account->allowed_site_ids,
+            'role_tier' => $account->role_tier,
+            'scope' => $account->scope,
+            // effective permissions are derived from tier+scope; surfacing
+            // the resolved list lets the React layer gate buttons without
+            // re-deriving the matrix client-side. Re-resolved on every
+            // /auth/me hit so a tier change shows up after one refresh.
+            'permissions' => $permissions->effective($account),
             'is_active' => $account->is_active,
             'provisioned_by_user_id' => $account->provisioned_by_user_id,
             'provisioned_at' => $account->provisioned_at,

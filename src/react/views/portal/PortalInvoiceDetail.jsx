@@ -7,6 +7,8 @@ import Select from '../../components/ui/Select'
 import Alert from '../../components/ui/Alert'
 import Loading from '../../components/ui/Loading'
 import { portalService } from '../../../services/portal/portal.service'
+import { usePortalAuth } from '../../stores/portalAuth'
+import { PORTAL_PERMISSION } from '../../../services/portal/permissions'
 
 const formatMoney = (value) => {
   if (value == null) return '—'
@@ -42,6 +44,8 @@ export default function PortalInvoiceDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
   const invoiceId = Number(id)
+  const { can } = usePortalAuth()
+  const canPayInvoices = can(PORTAL_PERMISSION.PAY_INVOICES)
 
   const [invoice, setInvoice] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -113,7 +117,8 @@ export default function PortalInvoiceDetail() {
   }
 
   const balance = Number(invoice.balance_due ?? invoice.total ?? 0)
-  const canPay = invoice.status !== 'paid' && balance > 0
+  const hasOpenBalance = invoice.status !== 'paid' && balance > 0
+  const showCheckout = hasOpenBalance && canPayInvoices
 
   return (
     <div className="space-y-6">
@@ -160,7 +165,16 @@ export default function PortalInvoiceDetail() {
         </dl>
       </Card>
 
-      {canPay && (
+      {hasOpenBalance && !canPayInvoices && (
+        <Card>
+          <p className="text-sm text-gray-700">
+            This invoice has an open balance of <span className="font-medium">{formatMoney(balance)}</span>,
+            but your portal role can&rsquo;t pay invoices. Ask an account approver to complete payment.
+          </p>
+        </Card>
+      )}
+
+      {showCheckout && (
         <Card>
           <h2 className="text-base font-semibold">Pay this invoice</h2>
           <p className="text-sm text-gray-600 mt-1 mb-4">

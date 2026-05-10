@@ -47,6 +47,7 @@ class PortalBillingService
         private readonly InvoicePublicPaymentTokenService $paymentTokens,
         private readonly PortalPaymentMethodRepository $methods,
         private readonly AuditLogger $audit,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
     }
 
@@ -109,6 +110,7 @@ class PortalBillingService
         string $provider,
         array $options = [],
     ): array {
+        $this->assertPermission($account, PortalPermission::PAY_INVOICES);
         $invoice = $this->loadScopedInvoice($account, $invoiceId);
         if ($invoice->status === 'paid') {
             throw new InvalidArgumentException('invoice is already paid');
@@ -195,6 +197,7 @@ class PortalBillingService
     public function savePaymentMethod(User $user, PortalAccount $account, array $input): array
     {
         $this->assertUsable($account);
+        $this->assertPermission($account, PortalPermission::MANAGE_PAYMENT_METHODS);
 
         $gateway = strtolower(trim((string) ($input['gateway'] ?? '')));
         if (!in_array($gateway, PortalPaymentMethodRepository::ALLOWED_GATEWAYS, true)) {
@@ -278,6 +281,7 @@ class PortalBillingService
 
     public function setDefaultMethod(User $user, PortalAccount $account, int $methodId): array
     {
+        $this->assertPermission($account, PortalPermission::MANAGE_PAYMENT_METHODS);
         $method = $this->loadScopedMethod($account, $methodId);
         $this->methods->setDefault($account->id, $method->id);
         $this->audit->log(new AuditEntry(
@@ -298,6 +302,7 @@ class PortalBillingService
 
     public function deletePaymentMethod(User $user, PortalAccount $account, int $methodId): void
     {
+        $this->assertPermission($account, PortalPermission::MANAGE_PAYMENT_METHODS);
         $method = $this->loadScopedMethod($account, $methodId);
         $this->methods->delete($method->id);
         $this->audit->log(new AuditEntry(
@@ -355,6 +360,12 @@ class PortalBillingService
         if (!$account->isUsable()) {
             throw new UnauthorizedException('portal_account is not usable');
         }
+    }
+
+    private function assertPermission(PortalAccount $account, string $permission): void
+    {
+        $service = $this->permissions ?? new PortalPermissionService();
+        $service->assert($account, $permission);
     }
 
     /**

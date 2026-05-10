@@ -20,8 +20,8 @@ use RuntimeException;
 class PortalAccountRepository
 {
     private const COLUMNS = 'id, user_id, company_id, allowed_site_ids,
-        is_active, provisioned_by_user_id, provisioned_at, last_login_at,
-        revoked_at, revoked_reason, notes, created_at, updated_at';
+        role_tier, scope, is_active, provisioned_by_user_id, provisioned_at,
+        last_login_at, revoked_at, revoked_reason, notes, created_at, updated_at';
 
     public function __construct(private readonly Connection $connection)
     {
@@ -80,6 +80,7 @@ class PortalAccountRepository
 
     /**
      * @param array<int, int>|null $allowedSiteIds
+     * @param array<string, mixed>|null $scope per-account JSON overlay (see PortalPermissionService)
      */
     public function provision(
         int $userId,
@@ -87,6 +88,8 @@ class PortalAccountRepository
         ?array $allowedSiteIds,
         ?int $provisionedByUserId,
         ?string $notes = null,
+        string $roleTier = 'requester',
+        ?array $scope = null,
     ): PortalAccount {
         if ($this->findByUserAndCompany($userId, $companyId) !== null) {
             throw new InvalidArgumentException(
@@ -97,9 +100,9 @@ class PortalAccountRepository
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO portal_accounts
-             (user_id, company_id, allowed_site_ids, is_active,
+             (user_id, company_id, allowed_site_ids, role_tier, scope, is_active,
               provisioned_by_user_id, provisioned_at, notes, created_at, updated_at)
-             VALUES (:user_id, :company_id, :allowed_site_ids, 1,
+             VALUES (:user_id, :company_id, :allowed_site_ids, :role_tier, :scope, 1,
                      :provisioned_by, NOW(), :notes, NOW(), NOW())'
         );
         $stmt->execute([
@@ -108,6 +111,8 @@ class PortalAccountRepository
             'allowed_site_ids' => $allowedSiteIds === null
                 ? null
                 : json_encode(array_values(array_map('intval', $allowedSiteIds))),
+            'role_tier' => $roleTier,
+            'scope' => $scope === null ? null : json_encode($scope),
             'provisioned_by' => $provisionedByUserId,
             'notes' => $notes,
         ]);
@@ -121,23 +126,43 @@ class PortalAccountRepository
 
     /**
      * @param array<int, int>|null $allowedSiteIds
+     * @param array<string, mixed>|null $scope pass null to clear the overlay
      */
-    public function updateScope(int $id, ?array $allowedSiteIds, ?string $notes): PortalAccount
-    {
-        $stmt = $this->connection->pdo()->prepare(
-            'UPDATE portal_accounts
-             SET allowed_site_ids = :allowed_site_ids,
-                 notes = :notes,
-                 updated_at = NOW()
-             WHERE id = :id'
-        );
-        $stmt->execute([
+    public function updateScope(
+        int $id,
+        ?array $allowedSiteIds,
+        ?string $notes,
+        ?string $roleTier = null,
+        ?array $scope = null,
+        bool $touchScope = false,
+    ): PortalAccount {
+        // touchScope distinguishes "leave scope alone" (the legacy two-arg
+        // call) from "set scope to NULL". Without it, callers couldn't
+        // clear a scope overlay because $scope=null is the same as the
+        // default.
+        $sets = [
+            'allowed_site_ids = :allowed_site_ids',
+            'notes = :notes',
+            'updated_at = NOW()',
+        ];
+        $params = [
             'id' => $id,
             'allowed_site_ids' => $allowedSiteIds === null
                 ? null
                 : json_encode(array_values(array_map('intval', $allowedSiteIds))),
             'notes' => $notes,
-        ]);
+        ];
+        if ($roleTier !== null) {
+            $sets[] = 'role_tier = :role_tier';
+            $params['role_tier'] = $roleTier;
+        }
+        if ($touchScope) {
+            $sets[] = 'scope = :scope';
+            $params['scope'] = $scope === null ? null : json_encode($scope);
+        }
+        $sql = 'UPDATE portal_accounts SET ' . implode(', ', $sets) . ' WHERE id = :id';
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
         $row = $this->findById($id);
         if ($row === null) {
             throw new RuntimeException("portal_account id={$id} vanished after updateScope");
@@ -171,6 +196,10 @@ class PortalAccountRepository
         if (isset($row['allowed_site_ids']) && is_string($row['allowed_site_ids'])) {
             $decoded = json_decode($row['allowed_site_ids'], true);
             $row['allowed_site_ids'] = is_array($decoded) ? array_map('intval', $decoded) : null;
+        }
+        if (isset($row['scope']) && is_string($row['scope'])) {
+            $decoded = json_decode($row['scope'], true);
+            $row['scope'] = is_array($decoded) ? $decoded : null;
         }
         return new PortalAccount($row);
     }

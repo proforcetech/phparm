@@ -48,7 +48,14 @@ class PortalUploadService
         private readonly CustomerRepository $customers,
         private readonly PortalAuthService $portalAuth,
         private readonly AuditLogger $audit,
+        private readonly ?PortalPermissionService $permissions = null,
     ) {
+    }
+
+    private function assertCanUpload(PortalAccount $account): void
+    {
+        ($this->permissions ?? new PortalPermissionService())
+            ->assert($account, PortalPermission::UPLOAD_FILES);
     }
 
     /**
@@ -62,6 +69,7 @@ class PortalUploadService
         array $file,
         bool $requireUploadedFile = true,
     ): array {
+        $this->assertCanUpload($account);
         $ticket = $this->loadScopedTicket($account, $ticketId);
         $validated = PortalUploadValidator::validate($file, $requireUploadedFile);
         return $this->persistAndRecord(
@@ -85,6 +93,7 @@ class PortalUploadService
         array $file,
         bool $requireUploadedFile = true,
     ): array {
+        $this->assertCanUpload($account);
         $wo = $this->loadScopedWorkorder($account, $workorderId);
         $validated = PortalUploadValidator::validate($file, $requireUploadedFile);
         return $this->persistAndRecord(
@@ -108,6 +117,7 @@ class PortalUploadService
         array $file,
         bool $requireUploadedFile = true,
     ): array {
+        $this->assertCanUpload($account);
         $thread = $this->loadScopedThread($user, $account, $threadId);
         $validated = PortalUploadValidator::validate($file, $requireUploadedFile);
         return $this->persistAndRecord(

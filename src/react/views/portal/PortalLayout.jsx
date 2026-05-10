@@ -2,6 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { usePortalAuth } from '../../stores/portalAuth'
 import { usePortalTheme } from '../../stores/portalTheme'
+import { PORTAL_TIER_LABELS } from '../../../services/portal/permissions'
 
 /**
  * Phase 2a — chrome for the new portal tree.
@@ -26,7 +27,8 @@ const NAV_ITEMS = [
 
 export default function PortalLayout() {
   const { theme } = usePortalTheme()
-  const { user, account, logout } = usePortalAuth()
+  const { user, account, logout, tier } = usePortalAuth()
+  const tierLabel = tier ? (PORTAL_TIER_LABELS[tier] || tier) : null
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -72,6 +74,14 @@ export default function PortalLayout() {
             {user && (
               <span className="text-gray-600 hidden sm:inline">
                 {user.name || user.email}
+              </span>
+            )}
+            {tierLabel && (
+              <span
+                className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                title={`Portal role: ${tierLabel}`}
+              >
+                {tierLabel}
               </span>
             )}
             <button
