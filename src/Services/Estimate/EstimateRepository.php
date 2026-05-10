@@ -322,6 +322,7 @@ class EstimateRepository
             'grand_total' => (float) $row['grand_total'],
             'internal_notes' => $row['internal_notes'],
             'customer_notes' => $row['customer_notes'],
+            'require_signature' => (bool) ($row['require_signature'] ?? false),
             'rejection_reason' => $row['rejection_reason'] ?? null,
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],

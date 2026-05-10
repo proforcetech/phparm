@@ -4219,6 +4219,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
         $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
+        $forensics = [
+            'geo_lat' => $body['geo_lat'] ?? null,
+            'geo_lng' => $body['geo_lng'] ?? null,
+            'geo_accuracy_m' => $body['geo_accuracy_m'] ?? null,
+            'geo_captured_at' => $body['geo_captured_at'] ?? null,
+            'browser_name' => $body['browser_name'] ?? null,
+            'browser_version' => $body['browser_version'] ?? null,
+            'os_name' => $body['os_name'] ?? null,
+            'os_version' => $body['os_version'] ?? null,
+        ];
+
         try {
             $signature = $linkService->captureSignature(
                 $token,
@@ -4231,7 +4242,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $body['device_fingerprint'] ?? null,
                 !empty($body['legal_consent']),
                 $body['consent_text'] ?? null,
-                $shortCode ?: null
+                $shortCode ?: null,
+                $forensics
             );
 
             // Auto-create workorder after signature is captured

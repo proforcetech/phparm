@@ -116,6 +116,7 @@ class EstimatePublicLinkService
     ): bool {
         $link = $this->resolveLink($token, $shortCode);
         $estimateId = $link->estimate_id;
+        $this->assertSignatureRequirementMet($estimateId);
         $updated = $this->editor->setJobCustomerStatus($estimateId, $jobId, 'approved');
 
         if ($updated) {
@@ -154,6 +155,7 @@ class EstimatePublicLinkService
     ): bool {
         $link = $this->resolveLink($token, $shortCode);
         $estimateId = $link->estimate_id;
+        $this->assertSignatureRequirementMet($estimateId);
         $updated = $this->editor->setJobCustomerStatus($estimateId, $jobId, 'rejected');
 
         if ($updated) {
@@ -180,6 +182,11 @@ class EstimatePublicLinkService
         return $updated;
     }
 
+    /**
+     * @param array<string, mixed> $forensics Optional browser-supplied forensic data:
+     *   geo_lat, geo_lng, geo_accuracy_m, geo_captured_at,
+     *   browser_name, browser_version, os_name, os_version
+     */
     public function captureSignature(
         ?string $token,
         string $name,
@@ -191,7 +198,8 @@ class EstimatePublicLinkService
         ?string $deviceFingerprint = null,
         bool $legalConsent = false,
         ?string $consentText = null,
-        ?string $shortCode = null
+        ?string $shortCode = null,
+        array $forensics = []
     ): EstimateSignature {
         $link = $this->resolveLink($token, $shortCode);
         $estimate = $this->estimates->find($link->estimate_id);
@@ -211,14 +219,29 @@ class EstimatePublicLinkService
             ? $this->approvalAudit->generateSignatureHash($signatureData, $name, $signedAt)
             : null;
 
+        $locationLat = $this->normalizeFloat($forensics['geo_lat'] ?? null);
+        $locationLng = $this->normalizeFloat($forensics['geo_lng'] ?? null);
+        $locationAccuracy = $this->normalizeFloat($forensics['geo_accuracy_m'] ?? null);
+        $locationCapturedAt = $this->normalizeDateTime($forensics['geo_captured_at'] ?? null);
+        $browserName = $this->normalizeString($forensics['browser_name'] ?? null, 80);
+        $browserVersion = $this->normalizeString($forensics['browser_version'] ?? null, 40);
+        $osName = $this->normalizeString($forensics['os_name'] ?? null, 80);
+        $osVersion = $this->normalizeString($forensics['os_version'] ?? null, 40);
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             INSERT INTO estimate_signatures (
                 estimate_id, signer_name, signer_email, signature_data,
-                ip_address, user_agent, device_fingerprint, document_hash,
+                ip_address, user_agent,
+                location_lat, location_lng, location_accuracy_m, location_captured_at,
+                browser_name, browser_version, os_name, os_version,
+                device_fingerprint, document_hash,
                 legal_consent, consent_text, comment, signed_at, created_at
             ) VALUES (
                 :estimate_id, :signer_name, :signer_email, :signature_data,
-                :ip_address, :user_agent, :device_fingerprint, :document_hash,
+                :ip_address, :user_agent,
+                :location_lat, :location_lng, :location_accuracy_m, :location_captured_at,
+                :browser_name, :browser_version, :os_name, :os_version,
+                :device_fingerprint, :document_hash,
                 :legal_consent, :consent_text, :comment, :signed_at, NOW()
             )
         SQL);
@@ -230,6 +253,14 @@ class EstimatePublicLinkService
             'signature_data' => $signatureData,
             'ip_address' => $ipAddress,
             'user_agent' => $userAgent,
+            'location_lat' => $locationLat,
+            'location_lng' => $locationLng,
+            'location_accuracy_m' => $locationAccuracy,
+            'location_captured_at' => $locationCapturedAt,
+            'browser_name' => $browserName,
+            'browser_version' => $browserVersion,
+            'os_name' => $osName,
+            'os_version' => $osVersion,
             'device_fingerprint' => $deviceFingerprint,
             'document_hash' => $documentHash,
             'legal_consent' => $legalConsent ? 1 : 0,
@@ -247,6 +278,14 @@ class EstimatePublicLinkService
             'signature_data' => $signatureData,
             'ip_address' => $ipAddress,
             'user_agent' => $userAgent,
+            'location_lat' => $locationLat,
+            'location_lng' => $locationLng,
+            'location_accuracy_m' => $locationAccuracy,
+            'location_captured_at' => $locationCapturedAt,
+            'browser_name' => $browserName,
+            'browser_version' => $browserVersion,
+            'os_name' => $osName,
+            'os_version' => $osVersion,
             'device_fingerprint' => $deviceFingerprint,
             'document_hash' => $documentHash,
             'legal_consent' => $legalConsent,
@@ -471,5 +510,61 @@ class EstimatePublicLinkService
         }
 
         $this->audit->log(new AuditEntry($event, 'estimate', (string) $estimateId, $actorId, $context));
+    }
+
+    /**
+     * When require_signature is on, every per-job approve/reject must be backed
+     * by a captured signature. The signature is the legal proof of acceptance;
+     * approving a single job without one would leave us holding a customer
+     * "yes" we cannot evidence. The accept page enforces this in the UI, but
+     * the API also enforces it so an attacker can't bypass by hitting the
+     * endpoint directly.
+     */
+    private function assertSignatureRequirementMet(int $estimateId): void
+    {
+        $estimate = $this->estimates->find($estimateId);
+        if ($estimate === null || !$estimate->require_signature) {
+            return;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT 1 FROM estimate_signatures WHERE estimate_id = :id LIMIT 1'
+        );
+        $stmt->execute(['id' => $estimateId]);
+        if ($stmt->fetchColumn() === false) {
+            throw new RuntimeException('A signature is required before approving or rejecting jobs on this estimate.');
+        }
+    }
+
+    private function normalizeFloat(mixed $value): ?float
+    {
+        if ($value === null || $value === '' || !is_numeric($value)) {
+            return null;
+        }
+        return (float) $value;
+    }
+
+    private function normalizeString(mixed $value, int $maxLength): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $string = trim((string) $value);
+        if ($string === '') {
+            return null;
+        }
+        return mb_substr($string, 0, $maxLength);
+    }
+
+    private function normalizeDateTime(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $timestamp = is_numeric($value) ? (int) $value : strtotime((string) $value);
+        if ($timestamp === false || $timestamp <= 0) {
+            return null;
+        }
+        return date('Y-m-d H:i:s', $timestamp);
     }
 }

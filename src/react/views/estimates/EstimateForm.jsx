@@ -70,6 +70,7 @@ export default function EstimateForm() {
     grand_total: 0,
     customer_notes: '',
     internal_notes: '',
+    require_signature: false,
     status: 'pending',
     line_items: [],
   })
@@ -144,6 +145,7 @@ export default function EstimateForm() {
         site_asset_id: data.site_asset_id ?? null,
         service_line_id: data.service_line_id ?? prev.service_line_id ?? null,
         is_mobile: Boolean(data.is_mobile),
+        require_signature: Boolean(data.require_signature),
         line_items: rawItems.map((item) => ({
           type: item.type || 'LABOR',
           sku: item.sku || '',
@@ -364,6 +366,7 @@ export default function EstimateForm() {
         discounts: parseFloat(form.discounts) || 0,
         customer_notes: form.customer_notes || null,
         internal_notes: form.internal_notes || null,
+        require_signature: Boolean(form.require_signature),
         status: form.status || 'pending',
         jobs: [
           {
@@ -904,6 +907,22 @@ export default function EstimateForm() {
                       onUpdateModelValue={(value) => setForm((prev) => ({ ...prev, internal_notes: value }))}
                     />
                   </div>
+
+                  <label className="flex items-start gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={Boolean(form.require_signature)}
+                      onChange={(e) => setForm((prev) => ({ ...prev, require_signature: e.target.checked }))}
+                    />
+                    <span>
+                      <span className="font-medium">Require e-signature to accept</span>
+                      <span className="block text-xs text-gray-500">
+                        Customer must sign the estimate before any job can be approved or rejected.
+                        Per-job approve/reject is disabled on the public accept page until a signature is captured.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               </Card>
             </div>

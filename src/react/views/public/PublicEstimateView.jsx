@@ -8,6 +8,64 @@ import { useToast } from '../../stores/toast'
 
 const formatCurrency = (amount) => `$${Number(amount || 0).toFixed(2)}`
 
+// Lightweight UA parsing for forensic fields. We persist the raw user_agent
+// already; this just gives reports a friendly browser/OS pair without
+// re-parsing the UA on every read. Order matters: Edg/OPR must beat Chrome,
+// Chrome must beat Safari (Chrome's UA contains "Safari").
+const parseUserAgent = (ua) => {
+  const result = { browser_name: null, browser_version: null, os_name: null, os_version: null }
+  if (!ua || typeof ua !== 'string') return result
+
+  const browserPatterns = [
+    { name: 'Edge', re: /Edg\/(\d+(?:\.\d+)*)/ },
+    { name: 'Opera', re: /OPR\/(\d+(?:\.\d+)*)/ },
+    { name: 'Firefox', re: /Firefox\/(\d+(?:\.\d+)*)/ },
+    { name: 'Chrome', re: /Chrome\/(\d+(?:\.\d+)*)/ },
+    { name: 'Safari', re: /Version\/(\d+(?:\.\d+)*).*Safari/ },
+  ]
+  for (const { name, re } of browserPatterns) {
+    const m = ua.match(re)
+    if (m) { result.browser_name = name; result.browser_version = m[1]; break }
+  }
+
+  if (/Windows NT ([\d.]+)/.test(ua)) {
+    result.os_name = 'Windows'
+    result.os_version = ua.match(/Windows NT ([\d.]+)/)[1]
+  } else if (/Mac OS X ([\d_]+)/.test(ua)) {
+    result.os_name = 'macOS'
+    result.os_version = ua.match(/Mac OS X ([\d_]+)/)[1].replace(/_/g, '.')
+  } else if (/Android ([\d.]+)/.test(ua)) {
+    result.os_name = 'Android'
+    result.os_version = ua.match(/Android ([\d.]+)/)[1]
+  } else if (/iPhone OS ([\d_]+)|iPad.*OS ([\d_]+)/.test(ua)) {
+    const m = ua.match(/(?:iPhone OS|iPad.*OS) ([\d_]+)/)
+    result.os_name = 'iOS'
+    result.os_version = m ? m[1].replace(/_/g, '.') : null
+  } else if (/Linux/.test(ua)) {
+    result.os_name = 'Linux'
+  }
+
+  return result
+}
+
+const requestGeolocation = () =>
+  new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      resolve(null)
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({
+        geo_lat: pos.coords.latitude,
+        geo_lng: pos.coords.longitude,
+        geo_accuracy_m: pos.coords.accuracy,
+        geo_captured_at: new Date(pos.timestamp).toISOString(),
+      }),
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    )
+  })
+
 const statusLabels = {
   approved: 'Approved',
   rejected: 'Rejected',
@@ -150,8 +208,13 @@ export default function PublicEstimateView() {
   const [jobNotes, setJobNotes] = useState({})
   const [jobRejectionReasons, setJobRejectionReasons] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [geo, setGeo] = useState(null)
+  const [geoStatus, setGeoStatus] = useState('idle') // idle | requesting | granted | denied
+  const browserInfo = useMemo(() => parseUserAgent(typeof navigator !== 'undefined' ? navigator.userAgent : ''), [])
 
   const query = useMemo(() => new URLSearchParams(location.search), [location.search])
+
+  const requireSignature = Boolean(estimate?.require_signature)
 
   const loadEstimate = useCallback(async () => {
     setLoading(true)
@@ -199,6 +262,29 @@ export default function PublicEstimateView() {
     loadEstimate()
     loadRejectionReasons()
   }, [loadEstimate, loadRejectionReasons])
+
+  // Best-effort: ask for the user's location once the estimate is loaded so
+  // the coords are ready when they sign. Browsers will surface a permission
+  // prompt; if they deny, we just submit without coords (legal validity of
+  // the e-signature does not depend on geo).
+  const captureGeo = useCallback(async () => {
+    if (geoStatus !== 'idle') return geo
+    setGeoStatus('requesting')
+    const result = await requestGeolocation()
+    if (result) {
+      setGeo(result)
+      setGeoStatus('granted')
+    } else {
+      setGeoStatus('denied')
+    }
+    return result
+  }, [geo, geoStatus])
+
+  useEffect(() => {
+    if (estimate && !hasSignature && geoStatus === 'idle') {
+      captureGeo()
+    }
+  }, [estimate, hasSignature, geoStatus, captureGeo])
 
   const jobStatusSummary = useMemo(() => {
     const approved = jobs.filter((job) => job.customer_status === 'approved').length
@@ -273,12 +359,14 @@ export default function PublicEstimateView() {
 
     setSubmitting(true)
     try {
-      const pendingJobs = jobs.filter((job) => job.customer_status !== 'approved')
-      for (const job of pendingJobs) {
-        await submitJobAction(job.id, 'approved')
-      }
+      // Re-attempt geo capture in case the user dismissed it earlier — a
+      // user-initiated click is the most likely time browsers will allow it.
+      const liveGeo = geo ?? (await captureGeo())
 
-      await api.post('/public/estimate/signature', {
+      // Capture the signature FIRST when require_signature is on so the
+      // backend approve-job guard sees the signature row and lets the
+      // sign-and-approve-all loop proceed.
+      const submitSignature = () => api.post('/public/estimate/signature', {
         token,
         short_code: shortCode,
         name: signerName,
@@ -287,7 +375,29 @@ export default function PublicEstimateView() {
         comment: comment || undefined,
         legal_consent: legalConsent,
         consent_text: consentText || undefined,
+        geo_lat: liveGeo?.geo_lat ?? null,
+        geo_lng: liveGeo?.geo_lng ?? null,
+        geo_accuracy_m: liveGeo?.geo_accuracy_m ?? null,
+        geo_captured_at: liveGeo?.geo_captured_at ?? null,
+        browser_name: browserInfo.browser_name,
+        browser_version: browserInfo.browser_version,
+        os_name: browserInfo.os_name,
+        os_version: browserInfo.os_version,
       })
+
+      if (requireSignature) {
+        await submitSignature()
+        const pendingJobs = jobs.filter((job) => job.customer_status !== 'approved')
+        for (const job of pendingJobs) {
+          await submitJobAction(job.id, 'approved')
+        }
+      } else {
+        const pendingJobs = jobs.filter((job) => job.customer_status !== 'approved')
+        for (const job of pendingJobs) {
+          await submitJobAction(job.id, 'approved')
+        }
+        await submitSignature()
+      }
 
       setHasSignature(true)
       success('Estimate approved and signed. Thank you!')
@@ -441,7 +551,7 @@ export default function PublicEstimateView() {
                     variant="primary"
                     size="sm"
                     onClick={() => handleApproveJob(job.id)}
-                    disabled={job.customer_status === 'approved'}
+                    disabled={job.customer_status === 'approved' || (requireSignature && !hasSignature)}
                   >
                     Approve Job
                   </Button>
@@ -449,10 +559,16 @@ export default function PublicEstimateView() {
                     variant="danger"
                     size="sm"
                     onClick={() => handleRejectJob(job.id)}
-                    disabled={job.customer_status === 'rejected'}
+                    disabled={job.customer_status === 'rejected' || (requireSignature && !hasSignature)}
                   >
                     Reject Job
                   </Button>
+                  {requireSignature && !hasSignature ? (
+                    <p className="w-full text-xs text-amber-700">
+                      A signature is required to approve or reject jobs on this estimate.
+                      Please scroll down and sign first.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -502,6 +618,17 @@ export default function PublicEstimateView() {
             <p className="text-sm text-gray-500">
               Please sign to approve the estimate and authorize work. Your signature records your approval.
             </p>
+            {requireSignature && !hasSignature ? (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+                This estimate requires an electronic signature before any job can be approved or rejected.
+              </div>
+            ) : null}
+            <div className="text-xs text-gray-500">
+              For audit purposes we record your IP address, browser, operating system,
+              and the date/time of your signature.
+              {geoStatus === 'granted' ? ' Approximate location will also be attached.' : ''}
+              {geoStatus === 'denied' ? ' Location was not shared and will not be recorded.' : ''}
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>

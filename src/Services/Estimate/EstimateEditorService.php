@@ -318,8 +318,8 @@ class EstimateEditorService
     private function insertEstimate(array $payload, string $status): int
     {
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, site_asset_id, service_line_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, call_out_fee, mileage_total, discounts, shop_fee, hazmat_disposal_fee, subtotal, tax, grand_total, created_at, updated_at)
-            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :site_asset_id, :service_line_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :call_out_fee, :mileage_total, :discounts, :shop_fee, :hazmat_disposal_fee, 0, 0, 0, NOW(), NOW())
+            INSERT INTO estimates (parent_id, number, customer_id, vehicle_id, site_asset_id, service_line_id, is_mobile, technician_id, expiration_date, status, internal_notes, customer_notes, require_signature, call_out_fee, mileage_total, discounts, shop_fee, hazmat_disposal_fee, subtotal, tax, grand_total, created_at, updated_at)
+            VALUES (:parent_id, :number, :customer_id, :vehicle_id, :site_asset_id, :service_line_id, :is_mobile, :technician_id, :expiration_date, :status, :internal_notes, :customer_notes, :require_signature, :call_out_fee, :mileage_total, :discounts, :shop_fee, :hazmat_disposal_fee, 0, 0, 0, NOW(), NOW())
         SQL);
 
         $expirationDate = $payload['expiration_date'] ?? date('Y-m-d', strtotime('+14 days'));
@@ -337,6 +337,7 @@ class EstimateEditorService
             'status' => $status,
             'internal_notes' => $payload['internal_notes'] ?? null,
             'customer_notes' => $payload['customer_notes'] ?? null,
+            'require_signature' => !empty($payload['require_signature']) ? 1 : 0,
             'call_out_fee' => (float) ($payload['call_out_fee'] ?? 0),
             'mileage_total' => (float) ($payload['mileage_total'] ?? 0),
             'discounts' => (float) ($payload['discounts'] ?? 0),
@@ -374,6 +375,7 @@ class EstimateEditorService
                 status = COALESCE(:status, status),
                 internal_notes = :internal_notes,
                 customer_notes = :customer_notes,
+                require_signature = :require_signature,
                 call_out_fee = :call_out_fee,
                 mileage_total = :mileage_total,
                 discounts = :discounts,
@@ -398,6 +400,7 @@ class EstimateEditorService
             'status' => $status,
             'internal_notes' => $payload['internal_notes'] ?? null,
             'customer_notes' => $payload['customer_notes'] ?? null,
+            'require_signature' => !empty($payload['require_signature']) ? 1 : 0,
             'call_out_fee' => (float) ($payload['call_out_fee'] ?? 0),
             'mileage_total' => (float) ($payload['mileage_total'] ?? 0),
             'discounts' => (float) ($payload['discounts'] ?? 0),

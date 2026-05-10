@@ -11,6 +11,14 @@ class EstimateSignature extends BaseModel
     public string $signature_data;
     public ?string $ip_address = null;
     public ?string $user_agent = null;
+    public ?float $location_lat = null;
+    public ?float $location_lng = null;
+    public ?float $location_accuracy_m = null;
+    public ?string $location_captured_at = null;
+    public ?string $browser_name = null;
+    public ?string $browser_version = null;
+    public ?string $os_name = null;
+    public ?string $os_version = null;
     public ?string $device_fingerprint = null;
     public ?string $document_hash = null;
     public bool $legal_consent = false;

@@ -39,6 +39,7 @@ class Estimate extends BaseModel
     public float $grand_total = 0.0;
     public ?string $internal_notes = null;
     public ?string $customer_notes = null;
+    public bool $require_signature = false;
     public ?string $rejection_reason = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
