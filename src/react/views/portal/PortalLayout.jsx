@@ -15,9 +15,11 @@ import { usePortalTheme } from '../../stores/portalTheme'
 const NAV_ITEMS = [
   { to: '/p', label: 'Home', exact: true },
   { to: '/p/approvals', label: 'Approvals' },
-  { to: '/p/requests', label: 'Requests' },
+  { to: '/p/requests', label: 'New request' },
   { to: '/p/work-orders', label: 'Work Orders' },
   { to: '/p/invoices', label: 'Invoices' },
+  { to: '/p/sites', label: 'Sites' },
+  { to: '/p/payment-methods', label: 'Payment Methods' },
   { to: '/p/contracts', label: 'Contracts' },
   { to: '/p/messages', label: 'Messages' },
 ]

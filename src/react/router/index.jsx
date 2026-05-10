@@ -237,11 +237,17 @@ import SecurityEvents from '../views/security/SecurityEvents'
 import RetentionPolicies from '../views/retention/RetentionPolicies'
 import RetentionRuns from '../views/retention/RetentionRuns'
 
-// Phase 2a — new portal tree (parallel to legacy customer-portal/*)
+// Phase 2a/2b — new portal tree (parallel to legacy customer-portal/*)
 import PortalLayout from '../views/portal/PortalLayout'
 import PortalLogin from '../views/portal/PortalLogin'
 import PortalDashboard from '../views/portal/PortalDashboard'
 import PortalSoon from '../views/portal/PortalSoon'
+import PortalApprovals from '../views/portal/PortalApprovals'
+import PortalRequest from '../views/portal/PortalRequest'
+import PortalInvoices from '../views/portal/PortalInvoices'
+import PortalInvoiceDetail from '../views/portal/PortalInvoiceDetail'
+import PortalPaymentMethods from '../views/portal/PortalPaymentMethods'
+import PortalSites from '../views/portal/PortalSites'
 import { PortalAuthProvider } from '../stores/portalAuth'
 import { PortalThemeProvider } from '../stores/portalTheme'
 import { PORTAL_TOKEN_KEY } from '../../services/portal/api'
@@ -717,12 +723,17 @@ export const router = createBrowserRouter([
         loader: requirePortalAuth,
         children: [
           { index: true, element: <PortalDashboard /> },
-          { path: 'approvals', element: <PortalSoon title="Approvals" blurb="Pending estimates and contracts will appear here." /> },
-          { path: 'requests', element: <PortalSoon title="New request" blurb="Submit a service or support request." /> },
-          { path: 'work-orders', element: <PortalSoon title="Work orders" blurb="Live and completed work at your sites." /> },
-          { path: 'invoices', element: <PortalSoon title="Invoices" blurb="View, download, and pay invoices." /> },
-          { path: 'contracts', element: <PortalSoon title="Contracts" blurb="Service agreements and SLA status." /> },
-          { path: 'messages', element: <PortalSoon title="Messages" blurb="Conversations with your service team." /> },
+          { path: 'approvals', element: <PortalApprovals /> },
+          { path: 'requests', element: <PortalRequest /> },
+          { path: 'invoices', element: <PortalInvoices /> },
+          { path: 'invoices/:id', element: <PortalInvoiceDetail /> },
+          { path: 'payment-methods', element: <PortalPaymentMethods /> },
+          { path: 'sites', element: <PortalSites /> },
+          // Phase 2c — surfaces below need GAP endpoints (work-orders list,
+          // contracts list, standalone messaging inbox); keep walkable for now.
+          { path: 'work-orders', element: <PortalSoon title="Work orders" blurb="Live and completed work at your sites. (Coming in Phase 2c.)" /> },
+          { path: 'contracts', element: <PortalSoon title="Contracts" blurb="Service agreements and SLA status. (Coming in Phase 2c.)" /> },
+          { path: 'messages', element: <PortalSoon title="Messages" blurb="Conversations with your service team. (Coming in Phase 2c.)" /> },
           { path: '*', element: <NotFound /> },
         ],
       },

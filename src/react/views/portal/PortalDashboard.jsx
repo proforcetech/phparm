@@ -23,14 +23,24 @@ const SURFACES = [
     description: 'Submit a support, maintenance, or service request.',
   },
   {
-    to: '/p/work-orders',
-    title: 'Work orders',
-    description: 'Track active and completed work at your sites.',
-  },
-  {
     to: '/p/invoices',
     title: 'Invoices',
     description: 'View invoices, download PDFs, and pay online.',
+  },
+  {
+    to: '/p/payment-methods',
+    title: 'Payment methods',
+    description: 'Save cards and accounts for faster checkout.',
+  },
+  {
+    to: '/p/sites',
+    title: 'Sites',
+    description: 'View locations and installed assets at each site.',
+  },
+  {
+    to: '/p/work-orders',
+    title: 'Work orders',
+    description: 'Track active and completed work at your sites.',
   },
   {
     to: '/p/contracts',
