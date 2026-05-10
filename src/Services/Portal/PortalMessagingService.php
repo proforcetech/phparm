@@ -85,6 +85,151 @@ class PortalMessagingService
         return $this->listThreadsForEntity($user, 'workorder_id', $workorderId);
     }
 
+    /**
+     * Phase 2c — standalone inbox aggregating threads across every ticket
+     * and workorder owned by the portal_account's company. Same row shape
+     * as listThreadsForEntity, plus an entity_kind discriminator so the
+     * UI knows whether to deep-link to /p/work-orders/X or a future
+     * /p/tickets/X view.
+     *
+     * Participant filter is preserved: a portal user only sees threads
+     * they're already on. This matches the per-entity endpoints and
+     * avoids surprising "your coworker's private chat is suddenly in your
+     * inbox" leaks if multiple portal users share a company.
+     *
+     * @param array{limit?: int, offset?: int, unread_only?: bool} $query
+     * @return array{data: array<int, array<string, mixed>>, total: int}
+     */
+    public function inbox(User $user, PortalAccount $account, array $query = []): array
+    {
+        if (!$account->isUsable()) {
+            throw new UnauthorizedException('portal_account is not usable');
+        }
+
+        // Resolve the entity sets the portal user's company owns. We pull
+        // ids only — the inbox query joins them in via IN(...) clauses,
+        // not full row hydration, so this stays cheap even for large
+        // companies.
+        $ticketIds = $this->ticketIdsForCompany($account->company_id);
+        $workorderIds = $this->workorderIdsForCompany($account->company_id);
+        if ($ticketIds === [] && $workorderIds === []) {
+            return ['data' => [], 'total' => 0];
+        }
+
+        $limit = max(1, min(200, (int) ($query['limit'] ?? 50)));
+        $offset = max(0, (int) ($query['offset'] ?? 0));
+        $unreadOnly = (bool) ($query['unread_only'] ?? false);
+
+        // Build an OR clause across ticket_id and workorder_id IN(...).
+        // Either side may be empty so we guard each branch independently.
+        $clauses = [];
+        $params = ['pid' => $user->id];
+        if ($ticketIds !== []) {
+            $tPlaceholders = [];
+            foreach ($ticketIds as $i => $tid) {
+                $key = 'tid_' . $i;
+                $tPlaceholders[] = ':' . $key;
+                $params[$key] = $tid;
+            }
+            $clauses[] = 't.ticket_id IN (' . implode(',', $tPlaceholders) . ')';
+        }
+        if ($workorderIds !== []) {
+            $wPlaceholders = [];
+            foreach ($workorderIds as $i => $wid) {
+                $key = 'wid_' . $i;
+                $wPlaceholders[] = ':' . $key;
+                $params[$key] = $wid;
+            }
+            $clauses[] = 't.workorder_id IN (' . implode(',', $wPlaceholders) . ')';
+        }
+        $entityWhere = '(' . implode(' OR ', $clauses) . ')';
+        $unreadFilter = $unreadOnly
+            ? ' HAVING unread_count > 0'
+            : '';
+
+        $sql = "SELECT t.id, t.subject, t.ticket_id, t.workorder_id, t.created_by,
+                       t.created_at, t.updated_at,
+                       (SELECT m.body FROM message_messages m
+                        WHERE m.thread_id = t.id AND m.is_internal = 0
+                        ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
+                       (SELECT m.created_at FROM message_messages m
+                        WHERE m.thread_id = t.id AND m.is_internal = 0
+                        ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_at,
+                       (SELECT COUNT(*)
+                        FROM message_messages m
+                        LEFT JOIN message_reads r
+                            ON r.thread_id = t.id AND r.participant_id = :pid
+                        WHERE m.thread_id = t.id
+                          AND m.is_internal = 0
+                          AND m.sender_id != :pid
+                          AND (r.last_read_message_id IS NULL
+                               OR m.id > r.last_read_message_id)
+                       ) AS unread_count
+                FROM message_threads t
+                JOIN message_participants p ON p.thread_id = t.id
+                    AND p.participant_id = :pid
+                WHERE {$entityWhere}
+                {$unreadFilter}
+                ORDER BY COALESCE(last_message_at, t.created_at) DESC";
+
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $total = count($rows);
+        $page = array_slice($rows, $offset, $limit);
+
+        return [
+            'data' => array_map(
+                function (array $row) {
+                    $serialized = $this->serializeThread($row);
+                    $serialized['entity_kind'] = $row['workorder_id'] !== null
+                        ? 'workorder'
+                        : ($row['ticket_id'] !== null ? 'ticket' : 'standalone');
+                    return $serialized;
+                },
+                $page,
+            ),
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function ticketIdsForCompany(int $companyId): array
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id FROM tickets WHERE company_id = :cid'
+        );
+        $stmt->execute(['cid' => $companyId]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function workorderIdsForCompany(int $companyId): array
+    {
+        $customerIds = $this->customers->listIdsForCompany($companyId);
+        if ($customerIds === []) {
+            return [];
+        }
+        $placeholders = [];
+        $bindings = [];
+        foreach ($customerIds as $i => $cid) {
+            $key = 'cid_' . $i;
+            $placeholders[] = ':' . $key;
+            $bindings[$key] = $cid;
+        }
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id FROM workorders WHERE customer_id IN ('
+            . implode(',', $placeholders) . ')'
+        );
+        $stmt->execute($bindings);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+    }
+
     // ── Read: messages ───────────────────────────────────────────────────
 
     /**

@@ -24,6 +24,8 @@ use App\Services\Portal\PortalAssetViewService;
 use App\Services\Portal\PortalAuthService;
 use App\Services\Portal\PortalBillingController;
 use App\Services\Portal\PortalBillingService;
+use App\Services\Portal\PortalContractController;
+use App\Services\Portal\PortalContractService;
 use App\Services\Portal\PortalController;
 use App\Services\Portal\PortalEtaPromiseController;
 use App\Services\Portal\PortalEtaPromiseRepository;
@@ -43,6 +45,8 @@ use App\Services\Portal\PortalUploadController;
 use App\Services\Portal\PortalUploadRepository;
 use App\Services\Portal\PortalUploadService;
 use App\Services\Portal\PortalUploadStorage;
+use App\Services\Portal\PortalWorkorderController;
+use App\Services\Portal\PortalWorkorderService;
 use App\Services\Tickets\TicketCategoryRepository;
 use App\Services\Tickets\TicketEventRepository;
 use App\Services\Tickets\TicketRepository;
@@ -219,6 +223,17 @@ return function (Router $router, RouteContext $ctx): void {
     );
     $lifecycleController = new PortalLifecycleController($lifecycleService);
 
+    // Phase 2c — read-only contracts surface (the approval center handles
+    // pending sign-off; this service exposes the full contract roll for
+    // history/SLA visibility).
+    $contractService = new PortalContractService(new ContractRepository($ctx->connection));
+    $contractController = new PortalContractController($contractService);
+
+    // Phase 2c — read-only workorders surface (jobs + status history,
+    // scoped via customers.company_id like invoices).
+    $workorderService = new PortalWorkorderService($portalWorkorderRepo, $portalCustomerRepo);
+    $workorderController = new PortalWorkorderController($workorderService);
+
     // --- Public login endpoint (no auth, strict throttle) ---
     $router->group([Middleware::throttleStrict(10, 60)], function (Router $router) use ($controller, $themeController) {
         $router->post('/api/portal/auth/login', function (Request $request) use ($controller) {
@@ -251,6 +266,7 @@ return function (Router $router, RouteContext $ctx): void {
         $controller, $wizardController, $approvalController, $assetController,
         $billingController, $messagingController, $uploadController, $uploadService,
         $etaController, $themeController, $lifecycleController,
+        $contractController, $workorderController,
     ) {
         $router->get('/api/portal/auth/me', function (Request $request) use ($controller) {
             $account = $request->getAttribute('portal_account');
@@ -675,6 +691,49 @@ return function (Router $router, RouteContext $ctx): void {
                 $request->getAttribute('user'),
                 $request->getAttribute('portal_account'),
                 (int) $request->getAttribute('id'),
+            ));
+        });
+
+        // Phase 2c — contracts (read-only)
+        $router->get('/api/portal/contracts', function (Request $request) use ($contractController) {
+            return Response::json($contractController->listForPortal(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
+            ));
+        });
+
+        $router->get('/api/portal/contracts/{id}', function (Request $request) use ($contractController) {
+            return Response::json($contractController->getForPortal(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+            ));
+        });
+
+        // Phase 2c — workorders (read-only with jobs + status history)
+        $router->get('/api/portal/workorders', function (Request $request) use ($workorderController) {
+            return Response::json($workorderController->listForPortal(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
+            ));
+        });
+
+        $router->get('/api/portal/workorders/{id}', function (Request $request) use ($workorderController) {
+            return Response::json($workorderController->getForPortal(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+            ));
+        });
+
+        // Phase 2c — standalone messages inbox (cross-thread aggregator)
+        $router->get('/api/portal/messages', function (Request $request) use ($messagingController) {
+            return Response::json($messagingController->inbox(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
             ));
         });
     });

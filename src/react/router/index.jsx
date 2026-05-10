@@ -241,13 +241,17 @@ import RetentionRuns from '../views/retention/RetentionRuns'
 import PortalLayout from '../views/portal/PortalLayout'
 import PortalLogin from '../views/portal/PortalLogin'
 import PortalDashboard from '../views/portal/PortalDashboard'
-import PortalSoon from '../views/portal/PortalSoon'
 import PortalApprovals from '../views/portal/PortalApprovals'
 import PortalRequest from '../views/portal/PortalRequest'
 import PortalInvoices from '../views/portal/PortalInvoices'
 import PortalInvoiceDetail from '../views/portal/PortalInvoiceDetail'
 import PortalPaymentMethods from '../views/portal/PortalPaymentMethods'
 import PortalSites from '../views/portal/PortalSites'
+import PortalContracts from '../views/portal/PortalContracts'
+import PortalContractDetail from '../views/portal/PortalContractDetail'
+import PortalWorkorders from '../views/portal/PortalWorkorders'
+import PortalWorkorderDetail from '../views/portal/PortalWorkorderDetail'
+import PortalMessages from '../views/portal/PortalMessages'
 import { PortalAuthProvider } from '../stores/portalAuth'
 import { PortalThemeProvider } from '../stores/portalTheme'
 import { PORTAL_TOKEN_KEY } from '../../services/portal/api'
@@ -729,11 +733,11 @@ export const router = createBrowserRouter([
           { path: 'invoices/:id', element: <PortalInvoiceDetail /> },
           { path: 'payment-methods', element: <PortalPaymentMethods /> },
           { path: 'sites', element: <PortalSites /> },
-          // Phase 2c — surfaces below need GAP endpoints (work-orders list,
-          // contracts list, standalone messaging inbox); keep walkable for now.
-          { path: 'work-orders', element: <PortalSoon title="Work orders" blurb="Live and completed work at your sites. (Coming in Phase 2c.)" /> },
-          { path: 'contracts', element: <PortalSoon title="Contracts" blurb="Service agreements and SLA status. (Coming in Phase 2c.)" /> },
-          { path: 'messages', element: <PortalSoon title="Messages" blurb="Conversations with your service team. (Coming in Phase 2c.)" /> },
+          { path: 'work-orders', element: <PortalWorkorders /> },
+          { path: 'work-orders/:id', element: <PortalWorkorderDetail /> },
+          { path: 'contracts', element: <PortalContracts /> },
+          { path: 'contracts/:id', element: <PortalContractDetail /> },
+          { path: 'messages', element: <PortalMessages /> },
           { path: '*', element: <NotFound /> },
         ],
       },

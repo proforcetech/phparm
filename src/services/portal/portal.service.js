@@ -10,8 +10,8 @@ import portalApi from './api'
  *
  * 2b adds: approval actions, request-wizard reads, request submit,
  * invoice detail + checkout, payment-method CRUD, sites + assets reads.
- * 2c will extend with messages/contracts/work-orders once the GAP
- * endpoints land.
+ * 2c adds: contracts list/detail, workorders list/detail, standalone
+ * messages inbox + per-thread reads/writes.
  */
 export const portalService = {
   // ── Theme ────────────────────────────────────────────────────────────
@@ -135,5 +135,64 @@ export const portalService = {
 
   async deletePaymentMethod(methodId) {
     await portalApi.delete(`/portal/payment-methods/${methodId}`)
+  },
+
+  // ── Contracts (Phase 2c, read-only) ──────────────────────────────────
+  async listContracts(params = {}) {
+    const response = await portalApi.get('/portal/contracts', { params })
+    return response.data?.data ?? { data: [], total: 0 }
+  },
+
+  async getContract(contractId) {
+    const response = await portalApi.get(`/portal/contracts/${contractId}`)
+    return response.data?.data ?? response.data ?? null
+  },
+
+  // ── Work orders (Phase 2c, read-only) ────────────────────────────────
+  async listWorkorders(params = {}) {
+    const response = await portalApi.get('/portal/workorders', { params })
+    return response.data?.data ?? { data: [], total: 0 }
+  },
+
+  async getWorkorder(workorderId) {
+    const response = await portalApi.get(`/portal/workorders/${workorderId}`)
+    return response.data?.data ?? response.data ?? null
+  },
+
+  async listWorkorderThreads(workorderId) {
+    const response = await portalApi.get(`/portal/workorders/${workorderId}/threads`)
+    return response.data?.data ?? []
+  },
+
+  async startWorkorderThread(workorderId, body, subject = null) {
+    const payload = subject ? { body, subject } : { body }
+    const response = await portalApi.post(
+      `/portal/workorders/${workorderId}/threads`,
+      payload,
+    )
+    return response.data?.data ?? response.data
+  },
+
+  // ── Messages (Phase 2c, standalone inbox + thread ops) ───────────────
+  async listMessageInbox(params = {}) {
+    const response = await portalApi.get('/portal/messages', { params })
+    return response.data?.data ?? { data: [], total: 0 }
+  },
+
+  async listThreadMessages(threadId) {
+    const response = await portalApi.get(`/portal/threads/${threadId}/messages`)
+    return response.data?.data ?? []
+  },
+
+  async postThreadMessage(threadId, body) {
+    const response = await portalApi.post(
+      `/portal/threads/${threadId}/messages`,
+      { body },
+    )
+    return response.data?.data ?? response.data
+  },
+
+  async markThreadRead(threadId) {
+    await portalApi.post(`/portal/threads/${threadId}/read`)
   },
 }

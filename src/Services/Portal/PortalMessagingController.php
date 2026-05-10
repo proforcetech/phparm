@@ -97,6 +97,19 @@ class PortalMessagingController
     }
 
     /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function inbox(User $user, PortalAccount $account, array $query): array
+    {
+        return $this->service->inbox($user, $account, [
+            'limit' => isset($query['limit']) ? (int) $query['limit'] : 50,
+            'offset' => isset($query['offset']) ? (int) $query['offset'] : 0,
+            'unread_only' => ((string) ($query['unread_only'] ?? '')) === '1',
+        ]);
+    }
+
+    /**
      * @param array<string, mixed> $body
      */
     private function requireBody(array $body): string
