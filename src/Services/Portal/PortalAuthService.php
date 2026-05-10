@@ -327,6 +327,33 @@ class PortalAuthService
     }
 
     /**
+     * Phase 2f — resolve {user, account} for a successfully-authenticated
+     * portal_api_token. The token has already been validated for
+     * presence/expiry/secret-match by PortalApiTokenService::authenticate;
+     * here we only enforce the same liveness checks the JWT path runs
+     * (active account, active user, role still portal_user). Returning
+     * null lets the middleware reject with a generic 401 rather than
+     * leaking which check failed.
+     *
+     * @return array{user: User, account: PortalAccount}|null
+     */
+    public function resolveByApiToken(int $portalAccountId): ?array
+    {
+        if ($portalAccountId <= 0) {
+            return null;
+        }
+        $account = $this->accounts->findById($portalAccountId);
+        if ($account === null || !$account->isUsable()) {
+            return null;
+        }
+        $user = $this->findUserById($account->user_id);
+        if ($user === null || $user->role !== 'portal_user') {
+            return null;
+        }
+        return ['user' => $user, 'account' => $account];
+    }
+
+    /**
      * Gate for the portal-account admin list endpoint. Same permission as
      * provisioning — viewing who has portal access is staff-only material.
      */

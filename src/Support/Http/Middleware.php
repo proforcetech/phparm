@@ -452,13 +452,42 @@ class Middleware
      * or staff-style auth — the portal is a separate security context and
      * mixing fallbacks would undermine the isolation.
      */
-    public static function portalAuth(\App\Services\Portal\PortalAuthService $authService): callable
-    {
-        return function (Request $request, callable $next) use ($authService) {
+    public static function portalAuth(
+        \App\Services\Portal\PortalAuthService $authService,
+        ?\App\Services\Portal\PortalApiTokenService $apiTokenService = null,
+    ): callable {
+        return function (Request $request, callable $next) use ($authService, $apiTokenService) {
             $token = $request->bearerToken();
             if ($token === null) {
                 throw new UnauthorizedException('portal authentication required');
             }
+
+            // Phase 2f — bearer tokens prefixed with `pat_` route to the
+            // self-issued portal API token path; everything else is treated
+            // as a JWT. Falling back from one to the other would let an
+            // attacker probe both code paths with the same token, so the
+            // scheme tag is the single discriminator.
+            if ($apiTokenService !== null
+                && str_starts_with($token, \App\Services\Portal\PortalApiTokenService::TOKEN_SCHEME)
+            ) {
+                $apiToken = $apiTokenService->authenticate($token);
+                if ($apiToken === null) {
+                    throw new UnauthorizedException('invalid or expired portal API token');
+                }
+                $resolved = $authService->resolveByApiToken($apiToken->portal_account_id);
+                if ($resolved === null) {
+                    throw new UnauthorizedException('portal API token references an inactive account');
+                }
+                $request->setAttribute('user', $resolved['user']);
+                $request->setAttribute('portal_account', $resolved['account']);
+                $request->setAttribute('portal_scope', [
+                    'company_id' => $resolved['account']->company_id,
+                    'site_ids' => $resolved['account']->allowed_site_ids,
+                ]);
+                $request->setAttribute('portal_api_token', $apiToken);
+                return $next($request);
+            }
+
             $jwtService = self::getJwtService();
             $result = $jwtService->validateTokenWithPayload($token);
             if ($result === null) {

@@ -23,6 +23,10 @@ const NAV_ITEMS = [
   { to: '/p/payment-methods', label: 'Payment Methods' },
   { to: '/p/contracts', label: 'Contracts' },
   { to: '/p/messages', label: 'Messages' },
+  { to: '/p/satisfaction', label: 'Surveys' },
+  { to: '/p/notifications', label: 'Notifications' },
+  { to: '/p/activity', label: 'Activity' },
+  { to: '/p/api-tokens', label: 'API tokens' },
 ]
 
 export default function PortalLayout() {

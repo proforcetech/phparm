@@ -52,6 +52,26 @@ const SURFACES = [
     title: 'Messages',
     description: 'Communicate with the team about your work.',
   },
+  {
+    to: '/p/satisfaction',
+    title: 'Satisfaction surveys',
+    description: 'Rate completed work and review past responses.',
+  },
+  {
+    to: '/p/notifications',
+    title: 'Notification preferences',
+    description: 'Choose how we reach out for each kind of update.',
+  },
+  {
+    to: '/p/activity',
+    title: 'Activity log',
+    description: 'Recent activity on your account and entities.',
+  },
+  {
+    to: '/p/api-tokens',
+    title: 'API tokens',
+    description: 'Issue tokens for scripts and integrations.',
+  },
 ]
 
 export default function PortalDashboard() {

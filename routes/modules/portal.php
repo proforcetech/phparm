@@ -17,16 +17,24 @@ use App\Services\Invoice\InvoiceService;
 use App\Services\Invoice\PaymentProcessingService;
 use App\Services\Payment\PaymentGatewayFactory;
 use App\Services\Portal\PortalAccountRepository;
+use App\Services\Portal\PortalApiTokenController;
+use App\Services\Portal\PortalApiTokenRepository;
+use App\Services\Portal\PortalApiTokenService;
 use App\Services\Portal\PortalApprovalController;
 use App\Services\Portal\PortalApprovalService;
 use App\Services\Portal\PortalAssetController;
 use App\Services\Portal\PortalAssetViewService;
+use App\Services\Portal\PortalAuditController;
+use App\Services\Portal\PortalAuditService;
 use App\Services\Portal\PortalAuthService;
 use App\Services\Portal\PortalBillingController;
 use App\Services\Portal\PortalBillingService;
 use App\Services\Portal\PortalContractController;
 use App\Services\Portal\PortalContractService;
 use App\Services\Portal\PortalController;
+use App\Services\Portal\PortalCsatController;
+use App\Services\Portal\PortalCsatRepository;
+use App\Services\Portal\PortalCsatService;
 use App\Services\Portal\PortalEtaPromiseController;
 use App\Services\Portal\PortalEtaPromiseRepository;
 use App\Services\Portal\PortalEtaPromiseService;
@@ -34,6 +42,9 @@ use App\Services\Portal\PortalLifecycleController;
 use App\Services\Portal\PortalLifecycleService;
 use App\Services\Portal\PortalMessagingController;
 use App\Services\Portal\PortalMessagingService;
+use App\Services\Portal\PortalNotificationPreferenceController;
+use App\Services\Portal\PortalNotificationPreferenceRepository;
+use App\Services\Portal\PortalNotificationPreferenceService;
 use App\Services\Portal\PortalPaymentMethodRepository;
 use App\Services\Portal\PortalPermissionService;
 use App\Services\Portal\PortalRequestController;
@@ -269,6 +280,31 @@ return function (Router $router, RouteContext $ctx): void {
         $portalPermissions,
     );
 
+    // Phase 2f — CSAT, notification preferences, audit trail, API tokens.
+    // Each surface is a thin service+controller pair; all share the same
+    // portalAuth gate. The API token service is also handed to the
+    // portalAuth middleware so `pat_*` bearers route through it instead
+    // of JWT validation (see Middleware::portalAuth signature).
+    $csatRepo = new PortalCsatRepository($ctx->connection);
+    $csatService = new PortalCsatService(
+        $csatRepo,
+        $portalWorkorderRepo,
+        $portalCustomerRepo,
+        $ctx->auditLogger,
+    );
+    $csatController = new PortalCsatController($csatService);
+
+    $notifRepo = new PortalNotificationPreferenceRepository($ctx->connection);
+    $notifService = new PortalNotificationPreferenceService($notifRepo, $ctx->auditLogger);
+    $notifController = new PortalNotificationPreferenceController($notifService);
+
+    $auditService = new PortalAuditService($ctx->connection, $portalCustomerRepo);
+    $auditController = new PortalAuditController($auditService);
+
+    $apiTokenRepo = new PortalApiTokenRepository($ctx->connection);
+    $apiTokenService = new PortalApiTokenService($apiTokenRepo, $ctx->auditLogger);
+    $apiTokenController = new PortalApiTokenController($apiTokenService);
+
     // --- Public login endpoint (no auth, strict throttle) ---
     $router->group(
         [Middleware::throttleStrict(10, 60)],
@@ -319,18 +355,41 @@ return function (Router $router, RouteContext $ctx): void {
         }
     );
 
+    // --- Public CSAT response by token (Phase 2f) ---
+    // No auth, strict throttle: the token in the URL is the bearer of
+    // record. Lives outside the portalAuth group so emailed survey
+    // links work without forcing recipients to log in.
+    $router->group(
+        [Middleware::throttleStrict(20, 60)],
+        function (Router $router) use ($csatController) {
+            $router->post(
+                '/api/portal/csat/public/{token}',
+                function (Request $request) use ($csatController) {
+                    return Response::json($csatController->submitPublic(
+                        (string) $request->getAttribute('token'),
+                        $request->body(),
+                    ));
+                }
+            );
+        }
+    );
+
     // --- Portal-scoped routes (portal_user + portal_account required) ---
     // Phase 2a — portalTenantGate is layered AFTER portalAuth so a portal
     // JWT minted for tenant A cannot be used to read tenant B's surfaces
     // when served from tenant B's white-label host.
+    // Phase 2f — apiTokenService is passed to portalAuth so `pat_*`
+    // bearers route through the personal-access-token validator instead
+    // of the JWT path.
     $router->group([
-        Middleware::portalAuth($portalAuth),
+        Middleware::portalAuth($portalAuth, $apiTokenService),
         Middleware::portalTenantGate($themeService),
     ], function (Router $router) use (
         $controller, $wizardController, $approvalController, $assetController,
         $billingController, $messagingController, $uploadController, $uploadService,
         $etaController, $themeController, $lifecycleController,
         $contractController, $workorderController,
+        $csatController, $notifController, $auditController, $apiTokenController,
     ) {
         $router->get('/api/portal/auth/me', function (Request $request) use ($controller) {
             $account = $request->getAttribute('portal_account');
@@ -799,6 +858,84 @@ return function (Router $router, RouteContext $ctx): void {
                 $request->getAttribute('portal_account'),
                 $request->query(),
             ));
+        });
+
+        // Phase 2f — CSAT (authenticated paths; public token-link path
+        // lives in the unauthenticated group above).
+        $router->get('/api/portal/csat/pending', function (Request $request) use ($csatController) {
+            return Response::json($csatController->listPending(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+            ));
+        });
+
+        $router->get('/api/portal/csat/history', function (Request $request) use ($csatController) {
+            return Response::json($csatController->listHistory(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+            ));
+        });
+
+        $router->post('/api/portal/csat/workorders/{id}', function (Request $request) use ($csatController) {
+            return Response::json($csatController->submit(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+                $request->body(),
+            ));
+        });
+
+        // Phase 2f — notification preferences (matrix read + cell upsert)
+        $router->get('/api/portal/notification-preferences', function (Request $request) use ($notifController) {
+            return Response::json($notifController->listMatrix(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+            ));
+        });
+
+        $router->put('/api/portal/notification-preferences', function (Request $request) use ($notifController) {
+            return Response::json($notifController->set(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->body(),
+            ));
+        });
+
+        // Phase 2f — read-only audit timeline scoped to entities the
+        // portal account owns (work orders, invoices, contracts, etc.)
+        $router->get('/api/portal/audit-trail', function (Request $request) use ($auditController) {
+            return Response::json($auditController->listForAccount(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->query(),
+            ));
+        });
+
+        // Phase 2f — self-issued personal access tokens. Plaintext is
+        // returned exactly once at issue time; thereafter only the
+        // prefix is observable.
+        $router->get('/api/portal/api-tokens', function (Request $request) use ($apiTokenController) {
+            return Response::json($apiTokenController->listForAccount(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+            ));
+        });
+
+        $router->post('/api/portal/api-tokens', function (Request $request) use ($apiTokenController) {
+            return Response::created($apiTokenController->issue(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                $request->body(),
+            ));
+        });
+
+        $router->delete('/api/portal/api-tokens/{id}', function (Request $request) use ($apiTokenController) {
+            $apiTokenController->revoke(
+                $request->getAttribute('user'),
+                $request->getAttribute('portal_account'),
+                (int) $request->getAttribute('id'),
+            );
+            return Response::noContent();
         });
     });
 

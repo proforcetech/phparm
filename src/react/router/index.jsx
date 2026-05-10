@@ -253,6 +253,10 @@ import PortalContractDetail from '../views/portal/PortalContractDetail'
 import PortalWorkorders from '../views/portal/PortalWorkorders'
 import PortalWorkorderDetail from '../views/portal/PortalWorkorderDetail'
 import PortalMessages from '../views/portal/PortalMessages'
+import PortalCsat from '../views/portal/PortalCsat'
+import PortalNotificationPreferences from '../views/portal/PortalNotificationPreferences'
+import PortalAuditTrail from '../views/portal/PortalAuditTrail'
+import PortalApiTokens from '../views/portal/PortalApiTokens'
 import { PortalAuthProvider } from '../stores/portalAuth'
 import { PortalThemeProvider } from '../stores/portalTheme'
 import { PORTAL_TOKEN_KEY } from '../../services/portal/api'
@@ -742,6 +746,10 @@ export const router = createBrowserRouter([
           { path: 'contracts', element: <PortalContracts /> },
           { path: 'contracts/:id', element: <PortalContractDetail /> },
           { path: 'messages', element: <PortalMessages /> },
+          { path: 'satisfaction', element: <PortalCsat /> },
+          { path: 'notifications', element: <PortalNotificationPreferences /> },
+          { path: 'activity', element: <PortalAuditTrail /> },
+          { path: 'api-tokens', element: <PortalApiTokens /> },
           { path: '*', element: <NotFound /> },
         ],
       },
