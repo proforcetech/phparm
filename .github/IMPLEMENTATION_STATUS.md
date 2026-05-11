@@ -202,7 +202,7 @@ The following items require verification that they are **fully integrated and te
 5. **VIN Decoder External API Setup** ✅ COMPLETE (January 25, 2026)
    - Database: ✅ Migration 096 - vin_decode_cache, vin_decode_log, vin_decode_rate_limits, vin_decode_stats
    - Config: ✅ config/vin_decoder.php - Primary decoder, fallback, cache TTL, rate limits, retry settings
-   - Backend: ✅ Decorator pattern: CachingVinDecoder, RateLimitedVinDecoder, LoggingVinDecoder
+   - Backend: ✅ Decorator pattern: CachingVinDecoder, RateLimitedVinDecoder
    - Backend: ✅ FallbackVinDecoder with chain-of-responsibility and retry logic
    - Backend: ✅ VinDecoderFactory assembles complete decoder stack
    - Backend: ✅ PartsTechVinDecoderAdapter for premium VIN decoding
