@@ -38,11 +38,26 @@ final class HeuristicTranscriber implements TranscriberInterface
      * stores paths relative to this root for portability; the transcriber
      * needs the absolute prefix to read the sidecar.
      *
-     * Default: the current working directory. Production wiring should
-     * pass the configured uploads root (typically `storage/voice_notes`).
+     * AUD-063 — production wiring MUST supply a non-empty storage root.
+     * The empty default existed historically to make the service usable
+     * without filesystem setup, but that mode let any audio_path resolve
+     * relative to the PHP CWD, which combined with the relative-path
+     * gate at the service layer is still unsafe (e.g., `tests/fixtures/`
+     * could be read at runtime). We retain `$allowEmptyRootForTests` as
+     * an explicit opt-in so unit tests can construct an unrooted
+     * transcriber, but real callers must provide a root.
      */
-    public function __construct(private readonly string $storageRoot = '')
-    {
+    public function __construct(
+        private readonly string $storageRoot = '',
+        private readonly bool $allowEmptyRootForTests = false,
+    ) {
+        if ($this->storageRoot === '' && !$this->allowEmptyRootForTests) {
+            throw new RuntimeException(
+                'HeuristicTranscriber: storageRoot must be non-empty in production. '
+                . 'Construct with HeuristicTranscriber($root) or, in tests only, '
+                . 'HeuristicTranscriber("", allowEmptyRootForTests: true).'
+            );
+        }
     }
 
     public function transcribe(string $audioPath, ?string $languageHint = null): TranscriptionResult
@@ -104,22 +119,68 @@ final class HeuristicTranscriber implements TranscriberInterface
     }
 
     /**
-     * Resolve a relative `audio_path` against the configured storage root.
-     * Defends against directory traversal — paths containing `..` segments
-     * are rejected outright rather than allowed to escape the root.
+     * Resolve a relative `audio_path` against the configured storage root,
+     * then verify the resolved absolute path stays under the root.
+     *
+     * Defenses (AUD-063):
+     *   1. Reject `..` segments and null bytes outright.
+     *   2. Reject absolute paths — the service layer also rejects these,
+     *      this is belt-and-braces against a future caller bypassing it.
+     *   3. After concatenation, walk realpath and require the result to
+     *      live under the canonicalised root (defeats symlink escapes
+     *      that survive (1) and (2) — e.g., a symlink inside the root
+     *      pointing at /etc).
      */
     private function resolve(string $audioPath): string
     {
-        if (str_contains($audioPath, '..')) {
+        if (str_contains($audioPath, '..') || str_contains($audioPath, "\0")) {
             throw new RuntimeException(
-                "HeuristicTranscriber: refusing to resolve path with .. segment: {$audioPath}"
+                "HeuristicTranscriber: refusing to resolve unsafe path: {$audioPath}"
+            );
+        }
+        if ($audioPath !== '' && ($audioPath[0] === '/' || $audioPath[0] === '\\'
+            || preg_match('#^[A-Za-z]:[\\\\/]#', $audioPath))
+        ) {
+            throw new RuntimeException(
+                "HeuristicTranscriber: audio_path must be relative: {$audioPath}"
             );
         }
         if ($this->storageRoot === '') {
+            // Test-mode opt-in. Already validated in the constructor; the
+            // checks above still applied so even the test path is safe.
             return $audioPath;
         }
+
         $root = rtrim($this->storageRoot, "/\\");
         $rel = ltrim($audioPath, "/\\");
-        return $root . DIRECTORY_SEPARATOR . $rel;
+        $candidate = $root . DIRECTORY_SEPARATOR . $rel;
+
+        // For containment we canonicalise the root once (must exist) and
+        // require the candidate's parent directory to canonicalise under
+        // it. We use the parent dir because the audio file itself may be
+        // missing in the no-sidecar case; the directory should still be
+        // inside the root.
+        $rootReal = realpath($root);
+        if ($rootReal === false) {
+            throw new RuntimeException(
+                "HeuristicTranscriber: storage root does not exist: {$root}"
+            );
+        }
+        $parentReal = realpath(dirname($candidate));
+        if ($parentReal === false) {
+            // Parent dir doesn't exist — the file definitely won't either,
+            // so no read can happen, but we still want a clean error.
+            throw new RuntimeException(
+                "HeuristicTranscriber: audio directory does not exist under storage root: {$audioPath}"
+            );
+        }
+        $rootRealNormalised = rtrim($rootReal, "/\\") . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($parentReal . DIRECTORY_SEPARATOR, $rootRealNormalised)) {
+            throw new RuntimeException(
+                "HeuristicTranscriber: resolved path escapes storage root: {$audioPath}"
+            );
+        }
+
+        return $candidate;
     }
 }

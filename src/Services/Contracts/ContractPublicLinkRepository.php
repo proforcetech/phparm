@@ -15,7 +15,8 @@ use RuntimeException;
 class ContractPublicLinkRepository
 {
     private const COLUMNS = 'id, contract_id, token_hash, short_code,
-        expires_at, last_accessed_at, revoked_at, created_by_user_id,
+        expires_at, last_accessed_at, revoked_at,
+        consumed_at, consumed_by_signature_id, created_by_user_id,
         created_at, updated_at';
 
     public function __construct(private readonly Connection $connection)
@@ -111,5 +112,39 @@ class ContractPublicLinkRepository
             'UPDATE contract_public_links SET revoked_at = NOW() WHERE id = :id AND revoked_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
+    }
+
+    /**
+     * AUD-064 — atomically claim a link as consumed. Returns true iff this
+     * call was the one that won the claim (UPDATE matched a row with
+     * consumed_at IS NULL). Subsequent callers see false. The signature_id
+     * is filled in by {@see attachSignature()} once the signature row has
+     * been persisted; we cannot pass it here because the claim must happen
+     * before the signature INSERT to make the race-window watertight.
+     */
+    public function claim(int $id): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE contract_public_links
+                SET consumed_at = NOW()
+              WHERE id = :id AND consumed_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Stamp the signature id onto the consumed link. Best-effort; the
+     * UPDATE is idempotent and a missing signature row would only impact
+     * the audit trail's link → signature pointer, never auth.
+     */
+    public function attachSignature(int $linkId, int $signatureId): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE contract_public_links
+                SET consumed_by_signature_id = :sid
+              WHERE id = :id'
+        );
+        $stmt->execute(['id' => $linkId, 'sid' => $signatureId]);
     }
 }

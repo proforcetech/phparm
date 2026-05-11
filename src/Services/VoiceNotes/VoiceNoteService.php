@@ -151,9 +151,27 @@ class VoiceNoteService
         if ($audioPath === '') {
             throw new InvalidArgumentException('audio_path is required');
         }
+        // AUD-063 — reject absolute paths and `..` segments at the service
+        // boundary so an attacker can't plant a metadata row that points at
+        // arbitrary filesystem locations (e.g., /etc/passwd) and then exercise
+        // it via the transcriber. The transcriber repeats the same check
+        // before resolving against its storage root, so the defense holds
+        // even if a future caller forgets to pre-validate.
+        if (self::isAbsolutePath($audioPath)) {
+            throw new InvalidArgumentException(
+                'audio_path must be relative to the configured voice-notes storage root'
+            );
+        }
         if (str_contains($audioPath, '..')) {
             throw new InvalidArgumentException(
                 'audio_path may not contain `..` segments'
+            );
+        }
+        // Null bytes truncate paths in C-level syscalls — strip the entire
+        // attempt rather than try to sanitize.
+        if (str_contains($audioPath, "\0")) {
+            throw new InvalidArgumentException(
+                'audio_path contains an invalid null byte'
             );
         }
 
@@ -388,5 +406,24 @@ class VoiceNoteService
                 . '(allowed from: ' . implode(', ', $allowedFrom) . ')'
             );
         }
+    }
+
+    /**
+     * True if the given path looks absolute on either POSIX or Windows.
+     * We intentionally do NOT trust the OS we happen to be running on —
+     * a Linux server fed a `C:\\` path should still reject it, both
+     * because the data may have been authored on Windows and because
+     * the paranoia costs nothing.
+     */
+    private static function isAbsolutePath(string $path): bool
+    {
+        if ($path === '') {
+            return false;
+        }
+        if ($path[0] === '/' || $path[0] === '\\') {
+            return true;
+        }
+        // Windows drive letter: e.g. C:\, D:/
+        return (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $path);
     }
 }

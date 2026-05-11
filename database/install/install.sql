@@ -1473,11 +1473,14 @@ CREATE TABLE IF NOT EXISTS estimate_public_links (
     short_code VARCHAR(20) NOT NULL,
     expires_at DATETIME NULL,
     last_accessed_at DATETIME NULL,
+    consumed_at DATETIME NULL,
+    consumed_by_signature_id INT UNSIGNED NULL,
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     UNIQUE KEY uk_estimate_public_links_hash (token_hash),
     UNIQUE KEY uk_estimate_public_links_short (short_code),
     INDEX idx_estimate_public_links_estimate (estimate_id),
+    INDEX idx_estimate_public_links_consumed (consumed_at),
     CONSTRAINT fk_estimate_public_links_estimate FOREIGN KEY (estimate_id) REFERENCES estimates (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

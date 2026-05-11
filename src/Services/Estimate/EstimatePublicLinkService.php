@@ -207,6 +207,15 @@ class EstimatePublicLinkService
             throw new RuntimeException('Estimate not found for signature.');
         }
 
+        // AUD-064 — single-use enforcement. See ContractSigningService for
+        // the full rationale; mirrored here for the estimate accept flow.
+        if ($link->consumed_at !== null) {
+            throw new RuntimeException('This estimate link has already been used to capture a signature.');
+        }
+        if (!$this->claimLink($link->id)) {
+            throw new RuntimeException('This estimate link has already been used to capture a signature.');
+        }
+
         $signedAt = date('Y-m-d H:i:s');
 
         // Generate document hash for integrity verification
@@ -293,6 +302,9 @@ class EstimatePublicLinkService
             'comment' => $comment,
             'signed_at' => $signedAt,
         ]);
+
+        // AUD-064 — backfill the link → signature pointer for forensics.
+        $this->attachSignatureToLink($link->id, $signatureId);
 
         $this->log('estimate.signature_captured', $estimate->id, null, ['signer' => $name]);
 
@@ -454,6 +466,30 @@ class EstimatePublicLinkService
     {
         $stmt = $this->connection->pdo()->prepare('UPDATE estimate_public_links SET last_accessed_at = NOW() WHERE id = :id');
         $stmt->execute(['id' => $linkId]);
+    }
+
+    /**
+     * AUD-064 — atomic single-use claim. See ContractPublicLinkRepository::claim().
+     */
+    private function claimLink(int $linkId): bool
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE estimate_public_links
+                SET consumed_at = NOW()
+              WHERE id = :id AND consumed_at IS NULL'
+        );
+        $stmt->execute(['id' => $linkId]);
+        return $stmt->rowCount() === 1;
+    }
+
+    private function attachSignatureToLink(int $linkId, int $signatureId): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE estimate_public_links
+                SET consumed_by_signature_id = :sid
+              WHERE id = :id'
+        );
+        $stmt->execute(['id' => $linkId, 'sid' => $signatureId]);
     }
 
     private function resolveLink(?string $token, ?string $shortCode = null): EstimatePublicLink

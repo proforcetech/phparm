@@ -173,6 +173,17 @@ class ContractSigningService
             );
         }
 
+        // AUD-064 — defend against link-replay impersonation. A link that
+        // has already produced a signature is dead: re-using it to attach
+        // additional signer identities would let anyone with the URL
+        // (forwarded email, over-the-shoulder, MITM) graft fake signers
+        // onto a contract that the real party already signed. Multi-party
+        // co-signing is supported by issuing one link per signer (see
+        // docs/audit-v2-recommendations.md).
+        if ($link->consumed_at !== null) {
+            throw new RuntimeException('This contract link has already been used to capture a signature.');
+        }
+
         $name = trim((string) ($payload['signer_name'] ?? ''));
         if ($name === '') {
             throw new InvalidArgumentException('signer_name is required');
@@ -183,6 +194,14 @@ class ContractSigningService
         }
         if (empty($payload['legal_consent'])) {
             throw new InvalidArgumentException('legal_consent must be acknowledged');
+        }
+
+        // AUD-064 — atomic claim closes the race window between the
+        // optimistic check above and the signature INSERT below. If two
+        // requests for the same link arrive simultaneously, only one of
+        // them sees rowCount() === 1.
+        if (!$this->links->claim($link->id)) {
+            throw new RuntimeException('This contract link has already been used to capture a signature.');
         }
 
         $signedAt = date('Y-m-d H:i:s');
@@ -205,6 +224,11 @@ class ContractSigningService
             'comment' => $payload['comment'] ?? null,
             'signed_at' => $signedAt,
         ]);
+
+        // AUD-064 — best-effort backfill of the link → signature pointer
+        // for forensic linkage. The claim above is what enforces single-
+        // use; this is purely informational.
+        $this->links->attachSignature($link->id, (int) $signature->id);
 
         // First signature activates the contract + stamps primary signer fields.
         if ($contract->signed_at === null) {

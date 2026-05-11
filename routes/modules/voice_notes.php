@@ -25,14 +25,25 @@ use App\Support\Http\Router;
  * Whisper/Deepgram/AssemblyAI implementation by replacing the constructor
  * line below — no other route surface changes.
  *
- * The HeuristicTranscriber's storage root is left empty here; if a future
- * migration introduces a configured uploads root, pass it as the
- * constructor argument so the sidecar lookup resolves against it.
+ * Storage root: AUD-063 hardening — the HeuristicTranscriber now requires
+ * a non-empty root so it can verify the resolved audio path stays under it
+ * (defends against absolute-path planting and symlink escapes). The root
+ * is created on first request if missing so deployments don't have to
+ * remember a manual mkdir step.
  */
 return function (Router $router, RouteContext $ctx): void {
+    $storageRoot = dirname(__DIR__, 2) . '/storage/private/voice_notes';
+    if (!is_dir($storageRoot)) {
+        // 0750 — owner full, group read+exec, others nothing. Audio files
+        // are PII-adjacent (transcripts of customer interactions), so the
+        // group-read mask is the floor for letting log/cron workers reach
+        // sidecars without giving the rest of the box visibility.
+        @mkdir($storageRoot, 0750, true);
+    }
+
     $repo = new VoiceNoteRepository($ctx->connection);
     $tagRepo = new VoiceNoteTagRepository($ctx->connection);
-    $transcriber = new HeuristicTranscriber();
+    $transcriber = new HeuristicTranscriber($storageRoot);
     $service = new VoiceNoteService($repo, $tagRepo, $transcriber, $ctx->gate);
     $controller = new VoiceNoteController($service);
 

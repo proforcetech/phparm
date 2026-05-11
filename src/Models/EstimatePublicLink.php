@@ -10,6 +10,8 @@ class EstimatePublicLink extends BaseModel
     public string $short_code;
     public ?string $expires_at = null;
     public ?string $last_accessed_at = null;
+    public ?string $consumed_at = null;
+    public ?int $consumed_by_signature_id = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 }

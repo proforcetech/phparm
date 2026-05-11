@@ -172,6 +172,25 @@ class SignFakeLinks extends ContractPublicLinkRepository
             $this->store[$id]->revoked_at = date('Y-m-d H:i:s');
         }
     }
+
+    public function claim(int $id): bool
+    {
+        if (!isset($this->store[$id])) {
+            return false;
+        }
+        if ($this->store[$id]->consumed_at !== null) {
+            return false;
+        }
+        $this->store[$id]->consumed_at = date('Y-m-d H:i:s');
+        return true;
+    }
+
+    public function attachSignature(int $linkId, int $signatureId): void
+    {
+        if (isset($this->store[$linkId])) {
+            $this->store[$linkId]->consumed_by_signature_id = $signatureId;
+        }
+    }
 }
 
 class SignFakeSignatures extends ContractSignatureRepository
@@ -449,28 +468,72 @@ expectFail(function () use ($e11, $issued11) {
     );
 }, 'signature without signature_data rejected', 'signature_data');
 
-// 16. Second signature does NOT re-transition status (already active).
+// 16. AUD-064 — single-use link: a second captureSignature call on the same
+//     link is rejected, the link's consumed_at is stamped, and the signature
+//     row count stays at 1. Multi-party co-signing is now expressed by
+//     issuing one link per signer (see docs/audit-v2-recommendations.md).
 $e12 = signEnv('draft');
 $issued12 = $e12['service']->issueLink(user(), $e12['contract']->id, 'https://shop.example');
-$e12['service']->captureSignature(
+$firstSig = $e12['service']->captureSignature(
     $issued12['token'],
     ['signer_name' => 'First', 'signature_data' => 'sig1', 'legal_consent' => true]
 );
-$firstSignedAt = $e12['contract']->signed_at;
-$e12['contract']->status = 'active';
-expectOk(function () use ($e12, $issued12, $firstSignedAt) {
+$linkAfter = $e12['links']->findById($issued12['link']->id);
+if ($linkAfter->consumed_at === null) {
+    echo "  FAIL link.consumed_at not stamped after first signature\n";
+    exit(1);
+}
+if ($linkAfter->consumed_by_signature_id !== $firstSig->id) {
+    echo "  FAIL link.consumed_by_signature_id not backfilled\n";
+    exit(1);
+}
+expectFail(function () use ($e12, $issued12) {
     $e12['service']->captureSignature(
         $issued12['token'],
-        ['signer_name' => 'Second', 'signature_data' => 'sig2', 'legal_consent' => true]
+        ['signer_name' => 'Replay', 'signature_data' => 'sig2', 'legal_consent' => true]
     );
-    $contract = $e12['contracts']->findById($e12['contract']->id);
-    if ($contract->signed_at !== $firstSignedAt) {
-        throw new RuntimeException('signed_at should not change on co-signer');
-    }
-    if ($e12['sigs']->countForContract($e12['contract']->id) !== 2) {
-        throw new RuntimeException('expected 2 signatures on record');
-    }
-}, 'co-signer appends without re-activating');
+}, 'replay against consumed link rejected', 'already been used');
+if ($e12['sigs']->countForContract($e12['contract']->id) !== 1) {
+    echo "  FAIL replay produced an extra signature row\n";
+    exit(1);
+}
+echo "  PASS link is single-use after first signature\n";
+
+// 16b. AUD-064 — short_code path also rejects replay against a consumed link.
+$e12b = signEnv('draft');
+$issued12b = $e12b['service']->issueLink(user(), $e12b['contract']->id, 'https://shop.example');
+$e12b['service']->captureSignature(
+    null,
+    ['signer_name' => 'First', 'signature_data' => 'sig1', 'legal_consent' => true],
+    null,
+    null,
+    $issued12b['link']->short_code
+);
+expectFail(function () use ($e12b, $issued12b) {
+    $e12b['service']->captureSignature(
+        null,
+        ['signer_name' => 'Replay', 'signature_data' => 'sig2', 'legal_consent' => true],
+        null,
+        null,
+        $issued12b['link']->short_code
+    );
+}, 'short_code replay against consumed link rejected', 'already been used');
+
+// 16c. AUD-064 — captureInternalSignature is unaffected by link consumption
+//     (it doesn't touch a public link at all).
+$e12c = signEnv('draft');
+expectOk(function () use ($e12c) {
+    $e12c['service']->captureInternalSignature(
+        user(7),
+        $e12c['contract']->id,
+        ['signer_name' => 'Internal', 'signature_data' => 'sig', 'legal_consent' => true]
+    );
+    $e12c['service']->captureInternalSignature(
+        user(7),
+        $e12c['contract']->id,
+        ['signer_name' => 'Internal Again', 'signature_data' => 'sig', 'legal_consent' => true]
+    );
+}, 'internal signing path is independent of link consumption');
 
 // 17. pending_signature → active transition on first sign.
 $e13 = signEnv('pending_signature');

@@ -289,8 +289,35 @@ $tests['supported_formats_published'] = function () {
 // ──── Heuristic transcriber ────
 
 $tests['heuristic_label_is_versioned'] = function () {
-    $t = new HeuristicTranscriber();
+    // AUD-063 — empty root is now an opt-in test escape hatch only.
+    $t = new HeuristicTranscriber('', allowEmptyRootForTests: true);
     vnAssertSame('heuristic_v1', $t->label());
+};
+
+$tests['heuristic_constructor_rejects_empty_root_in_production'] = function () {
+    vnAssertThrows(
+        fn() => new HeuristicTranscriber(''),
+        RuntimeException::class,
+        'empty storage root must be opt-in for tests only'
+    );
+};
+
+$tests['heuristic_refuses_absolute_path'] = function () {
+    $t = new HeuristicTranscriber('/tmp');
+    vnAssertThrows(
+        fn() => $t->transcribe('/etc/passwd.mp3'),
+        RuntimeException::class,
+        'absolute paths must be refused at the transcriber boundary'
+    );
+};
+
+$tests['heuristic_refuses_null_byte'] = function () {
+    $t = new HeuristicTranscriber('/tmp');
+    vnAssertThrows(
+        fn() => $t->transcribe("note.mp3\0/etc/passwd"),
+        RuntimeException::class,
+        'null bytes in audio_path must be refused'
+    );
 };
 
 $tests['heuristic_returns_sidecar_contents'] = function () {
@@ -498,6 +525,33 @@ $tests['record_rejects_dotdot_path'] = function () {
     vnAssertThrows(
         fn() => $f['service']->record(makeVnUser(7), ['audio_path' => '../../../etc/passwd']),
         InvalidArgumentException::class
+    );
+};
+
+$tests['record_rejects_absolute_unix_path'] = function () {
+    $f = makeVnFixture();
+    vnAssertThrows(
+        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => '/etc/passwd']),
+        InvalidArgumentException::class,
+        'absolute POSIX paths must be rejected at the service boundary (AUD-063)'
+    );
+};
+
+$tests['record_rejects_absolute_windows_path'] = function () {
+    $f = makeVnFixture();
+    vnAssertThrows(
+        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => 'C:\\Windows\\System32\\config\\SAM']),
+        InvalidArgumentException::class,
+        'Windows-style absolute paths must be rejected even on Linux hosts (AUD-063)'
+    );
+};
+
+$tests['record_rejects_null_byte_in_path'] = function () {
+    $f = makeVnFixture();
+    vnAssertThrows(
+        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => "note.mp3\0/etc/passwd"]),
+        InvalidArgumentException::class,
+        'null bytes in audio_path must be rejected (AUD-063)'
     );
 };
 
