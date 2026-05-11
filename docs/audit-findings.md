@@ -1052,6 +1052,84 @@ above as a `Re-verified:` line. Summary:
 - **AUD-008** — re-verified `2026-05-10`: PaymentProcessingService still resolves `invoice_id` server-side and routes refunds through `recordRefund()`. Holds.
 - **AUD-009 / AUD-010 / AUD-012 / AUD-061** — re-verified `2026-05-10` against current source: original fixes still in place. No regression detected.
 
+## Audit v2 — Phase 3 (Performance Delta)
+
+The following findings are produced by Phase 3 of the v2 audit. They cover performance
+issues (N+1 queries, missing indexes, blocking I/O, unbounded result sets, cron hygiene)
+discovered in code added or substantively changed since the v1 closeout (`2026-04-08`).
+Hot-path or trivial issues are fixed inline; larger or design-level items are deferred to
+`docs/audit-v2-recommendations.md`.
+
+#### AUD-073
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/Services/Contracts/ContractSlaResolver.php:62`, `src/Services/Tickets/SlaClockService.php:57`
+- Summary: `ContractSlaResolver::resolveFor()` ran a per-entitlement `TicketSlaPolicyRepository::findById()` from inside a nested foreach over (active covering contracts × their entitlements). The resolver is called from `SlaClockService::attachForTicket()`, which fires on every ticket creation — so a customer site with 3 active contracts each carrying 5 SLA-bearing entitlements drove 15 single-row policy lookups per ticket on top of the contract + entitlement queries.
+- Evidence: pre-fix `resolveFor()` body — `foreach ($this->contracts->listActiveForSite(...) as $contract) { foreach ($this->entitlements->listForContract($contract->id, true) as $ent) { ... $policy = $this->slaPolicies->findById((int) $ent->sla_policy_id); ... } }`. The class docblock states "ranks competing contracts" and is invoked from `SlaClockService::resolvePolicy()` which is called from `attachForTicket()` (every ticket create) and `resolvePolicy()` (preview / clock recompute paths).
+- Impact: Excess query volume on the ticket-create hot path scales with portfolio-coverage breadth, not with the number of policies that actually exist (the catalog is small — typically <50 rows). Fanning out to N+1 single-row reads is wasteful and inflates ticket-create latency, especially under multi-contract enterprise tenancy where a handful of large customers can dominate the ticket-create traffic.
+- Recommended fix: Two-pass: collect every (contract, entitlement) pair that names an `sla_policy_id`, then bulk-load the referenced policies in one `SELECT … WHERE id IN (…)`. Resolution scoring then reads from the in-memory map rather than re-querying.
+- Actual fix: Added `TicketSlaPolicyRepository::findByIds(array $ids): array<int, TicketSlaPolicy>` returning a map keyed by policy id. Refactored `ContractSlaResolver::resolveFor()` to first walk the contracts/entitlements collecting `(contract, entitlement)` pairs and the distinct set of `sla_policy_id` values, then `findByIds()` once, then rank in memory.
+- Verification: `php tests/ContractSlaResolverTest.php` — all 13 scenarios pass (including `tightest response_minutes wins across competing contracts`, which is the multi-contract path that exercised the N+1).
+- Residual risk: None for the fix. The wider expansion-plan question of whether `listActiveForSite` itself should JOIN entitlements + policies in a single query is left as a Phase-3 follow-up if a future profile shows the entitlements lookup dominating.
+
+#### AUD-074
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Portal/PortalApprovalService.php:296`
+- Summary: `pendingEstimatesFor()` issued a `CustomerRepository::find()` call for every estimate returned by each pending status query (up to 500 rows × 2 statuses) just to filter on `customers.company_id`. Authoring comment acknowledged the pattern as deliberately simple but flagged the helper as a future need; the helper already existed (`listIdsForCompany()`) and was not being used.
+- Evidence: pre-fix loop body — `foreach ($this->estimates->list(['status' => $status], 500, 0) as $e) { $customer = $this->customers->find($e->customer_id); ... if ((int) ($customer->company_id ?? 0) !== $account->company_id) continue; }`. Repeated for each status in `ESTIMATE_PENDING_STATUSES`.
+- Impact: Up to (statuses × 500) single-row customer reads on every portal pending-queue load. The portal dashboard auto-refreshes on a short interval, so a few connected portal accounts can drive thousands of redundant point reads per minute. Not a security issue — just wasted DB time.
+- Recommended fix: Resolve the `company_id → customer_ids` set once via the existing `CustomerRepository::listIdsForCompany()` helper, then membership-test in memory.
+- Actual fix: `pendingEstimatesFor()` now calls `listIdsForCompany($account->company_id)` once, flips the result into an isset() lookup map, and short-circuits the per-estimate filter in O(1) per estimate. Customer query count drops from O(N estimates) to 1.
+- Verification: `php tests/PortalApprovalServiceTest.php` — the three `listPending` scenarios (`scopes estimates by company`, `marks renewal contracts`, `rejects revoked account`) all pass. Pre-existing test failures further down the suite (`approveEstimate` permission tests) are unrelated and reproduce on `main` without this change.
+- Residual risk: The estimates table is still read via `EstimateRepository::list(['status' => …], 500, 0)` per status, so a tenant with >500 pending estimates of one status will silently truncate. That cap predates this finding and is tracked under the unbounded-result-sets review (AUD-077 below).
+
+#### AUD-075
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `low`
+- Location: `src/Services/Integrations/ThirdParty/AbstractIntegrationAdapter.php:86`, `src/Services/Sso/OidcHttpClient.php:36`, `src/Services/Sso/OidcHttpClient.php:72`
+- Summary: Synchronous outbound HTTP from request handlers (third-party integrations, OIDC token exchange, OIDC userinfo) set `CURLOPT_TIMEOUT` but not `CURLOPT_CONNECTTIMEOUT`. libcurl defaults the connect timeout to 300 s; the overall TIMEOUT bounds the *total* call but a degraded downstream that drops SYNs (without RST) can still tie up an FPM worker for the full 15–30 s overall budget on every retry attempt instead of failing fast at the connect stage.
+- Evidence: pre-fix `curl_setopt_array(...)` blocks in both files set only `CURLOPT_TIMEOUT` (15 for OIDC, 30 for the integration adapter). `PartsTechAdapter::request()` already sets `CURLOPT_CONNECTTIMEOUT => 10` (line 319), demonstrating the missing setting on the other two paths is an oversight, not a deliberate choice.
+- Impact: During a third-party brownout (PartsTech rate-limited, telematics provider DNS misconfigured, IdP unreachable), every UI search / SSO callback that hits the offending adapter blocks the FPM worker for the full transfer-timeout window. Under FPM's bounded worker pool, a sustained brownout of an upstream can starve the pool and stall otherwise-unrelated traffic.
+- Recommended fix: Add `CURLOPT_CONNECTTIMEOUT => 5` to both call sites so the worker gets the connection back inside ~5 s when the downstream is unreachable. Keep the existing total-transfer timeouts; the connect timeout caps just the TCP-handshake stage.
+- Actual fix: Inserted `CURLOPT_CONNECTTIMEOUT => 5` into all three `curl_setopt_array(...)` blocks (`AbstractIntegrationAdapter::request`, `OidcHttpClient::postForm`, `OidcHttpClient::getJson`). No change to the request semantics — only adds a connect-stage cap.
+- Verification: `composer run phpcs -- src/Services/Integrations/ThirdParty/AbstractIntegrationAdapter.php src/Services/Sso/OidcHttpClient.php` lint-clean. No behavioral test exists for the timeout values; the constant-only edit is verified by inspection plus the surrounding test suite (`OidcServiceTest`, `IntegrationAdapterRegistryTest`) continuing to pass.
+- Residual risk: Adapters that were not in scope (`PayPalGateway`, `SquareGateway`, `StripeGateway`, `MaskedSmsGateway`, `PartnerDispatchSyncService`, `IntegrationWebhookService`) should be audited in a follow-up sweep. The payment gateway HTTP paths in particular are higher-impact than the read-side adapters fixed here.
+
+#### AUD-076
+
+- Status: `resolved`
+- Category: `performance`
+- Severity: `medium`
+- Location: `bin/cron/data-cleanup.php:55-130`
+- Summary: The nightly data-cleanup cron issued single unlimited `DELETE FROM <table> WHERE <retention predicate>` statements against `password_resets`, `email_verifications`, `notification_logs`, `audit_logs`, `payment_sessions`, and `reminder_logs`. On a deployment where any of these tables has accumulated a large backlog (audit_logs grows fast on busy tenants; notification/reminder logs grow with campaign throughput), a single unbounded DELETE takes a long-held exclusive table-region lock, generates one giant binlog event, and can stall replication / block other writers for the duration of the sweep.
+- Evidence: pre-fix script lines 57, 67, 90, 102, 113, 124 — every cleanup step prepares a `DELETE … WHERE …` and executes it once. No `LIMIT`, no chunking, no transaction sizing.
+- Impact: For small deployments the unbounded DELETE completes in seconds and is fine. For deployments that have run for years without retention (or that hit a sudden burst — for example, an audit storm during an incident), the next nightly sweep can lock the table for minutes, queue write traffic against it, and produce a single multi-megabyte binlog event that disrupts replication. The payment_sessions and audit_logs tables are the highest-risk because they grow continuously and aren't typically pruned by other code paths.
+- Recommended fix: Wrap each DELETE in a `LIMIT N` loop that exits when `rowCount() < N`. Sleep briefly between batches so concurrent writers can interleave. Keep the cumulative `rowCount` for the existing log line.
+- Actual fix: Added a `$batchedDelete(PDO, sql, params, batchSize=5000)` closure to `data-cleanup.php` that appends `LIMIT 5000` to the supplied SQL, loops until a partial batch returns, and totals the rowCount across iterations. Refactored all six DELETE call sites to route through it. Sleep is `usleep(50000)` (50 ms) between batches.
+- Verification: `php -l bin/cron/data-cleanup.php` reports no syntax errors. The script's behavior is otherwise unchanged from a correctness standpoint — same predicates, same rowCount totals, same log lines — only the lock-hold profile changes.
+- Residual risk: Other cron scripts (`auth-sweep.php`, `retention-runner.php`, `pos-stale-sweeper.php`) were not modified in this pass. They were spot-checked and either operate on small inherently-bounded sets or use higher-level service code that handles batching internally; a deeper audit of those scripts is captured as a Phase-3 follow-up if a future profile shows long-held locks from them.
+
+#### AUD-077
+
+- Status: `open`
+- Category: `performance`
+- Severity: `low`
+- Location: `bin/cron/run.php:200-204`, `bin/cron/run.php:181-194`
+- Summary: The unified cron runner serializes all due jobs in a single PHP process and gates execution on a global file-based lock that has no PID check and a 5-minute timeout. With 4+ jobs scheduled every minute (`waterfall-dispatch`, `geofence-processor`, `pos-stale-sweeper`, `ticket-sla-breach`) plus the `*/5` set, a slow or hung child can monopolise the lock and skip subsequent ticks for up to 5 minutes; meanwhile any *other* job spawned by the same tick blocks behind the slow one because `runJob()` calls `exec()` synchronously.
+- Evidence: `run.php:200-204` — `foreach ($jobs as $key => $job) { if (isDue($job['schedule'])) { runJob($job, $quiet); } }` — single sequential loop, no `&`, no `proc_open` parallelism. `run.php:186-188` — lock check uses `time() - $lockTime < 300` and reads only the timestamp; if the holder process has died the lock survives until 5 min after creation.
+- Impact: Per-minute jobs can develop coordinated lateness during a slow run; in the worst case the per-minute SLA breach detector and POS stale-heartbeat sweeper miss multiple ticks if any earlier job in the dispatch order hangs. Stale lock files from crashed cron runs delay the next legitimate run by up to 5 minutes.
+- Recommended fix: (1) Switch the lock to PID-based using `flock()` on the lock file FD so the lock releases automatically when the holder process exits or is killed. (2) For per-minute jobs that are independent of each other, dispatch them via `proc_open` in parallel and wait at the end of the tick. (3) Add a per-job timeout (kill the child after N seconds and continue with the next job) so one runaway script doesn't block the rest of the sweep.
+- Actual fix:
+- Verification:
+- Residual risk:
+
 ### Template
 
 #### AUD-XXX

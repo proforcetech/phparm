@@ -108,6 +108,16 @@ class ApprFakeCustomers extends CustomerRepository
     {
         return $this->store[$id] ?? null;
     }
+    public function listIdsForCompany(int $companyId): array
+    {
+        $out = [];
+        foreach ($this->store as $c) {
+            if ((int) ($c->company_id ?? 0) === $companyId) {
+                $out[] = (int) $c->id;
+            }
+        }
+        return $out;
+    }
     public function seed(array $row): Customer
     {
         $c = new Customer();

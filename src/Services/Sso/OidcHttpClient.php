@@ -38,6 +38,7 @@ class OidcHttpClient
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => http_build_query($form),
             CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 15,
             CURLOPT_FOLLOWLOCATION => false,
         ]);
@@ -75,6 +76,7 @@ class OidcHttpClient
                 'Accept: application/json',
                 'Authorization: Bearer ' . $bearerToken,
             ],
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 15,
             CURLOPT_FOLLOWLOCATION => false,
         ]);

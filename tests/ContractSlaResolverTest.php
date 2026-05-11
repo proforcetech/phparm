@@ -107,6 +107,17 @@ class SlaFakePolicies extends TicketSlaPolicyRepository
     {
         return $this->store[$id] ?? null;
     }
+    public function findByIds(array $ids): array
+    {
+        $out = [];
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if (isset($this->store[$id])) {
+                $out[$id] = $this->store[$id];
+            }
+        }
+        return $out;
+    }
     public function findForTicket(?int $divisionId, string $priority): ?TicketSlaPolicy
     {
         foreach ($this->store as $p) {

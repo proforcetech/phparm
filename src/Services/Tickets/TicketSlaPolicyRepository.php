@@ -58,6 +58,35 @@ class TicketSlaPolicyRepository
     }
 
     /**
+     * @param array<int, int> $ids
+     * @return array<int, TicketSlaPolicy> keyed by policy id
+     */
+    public function findByIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if ($ids === []) {
+            return [];
+        }
+        $placeholders = [];
+        $params = [];
+        foreach ($ids as $i => $id) {
+            $key = 'id' . $i;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $id;
+        }
+        $sql = 'SELECT ' . self::COLUMNS . ' FROM ticket_sla_policies
+                WHERE id IN (' . implode(',', $placeholders) . ')';
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($params);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $policy = new TicketSlaPolicy($row);
+            $out[(int) $policy->id] = $policy;
+        }
+        return $out;
+    }
+
+    /**
      * Resolve the policy for a ticket. Prefers a division-specific match;
      * falls back to the global (division_id IS NULL) policy for that priority.
      */

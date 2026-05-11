@@ -87,6 +87,7 @@ abstract class AbstractIntegrationAdapter implements IntegrationAdapterInterface
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
             CURLOPT_HTTPHEADER => $headerLines,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 30,
             CURLOPT_FOLLOWLOCATION => false,
         ]);

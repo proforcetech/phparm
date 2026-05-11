@@ -62,25 +62,42 @@ class ContractSlaResolver
     public function resolveFor(int $companyId, ?int $siteId, ?string $onDate = null): ?array
     {
         $onDate = $onDate ?? date('Y-m-d');
-        $best = null;
+
+        // Two-pass: first collect every covering (contract, entitlement) pair
+        // that names an sla_policy_id, then bulk-load the referenced policies
+        // in a single query. Avoids the per-entitlement findById N+1 that
+        // ran on every ticket create (AUD-073).
+        $pairs = [];
+        $policyIds = [];
         foreach ($this->contracts->listActiveForSite($companyId, $siteId, $onDate) as $contract) {
             foreach ($this->entitlements->listForContract($contract->id, true) as $ent) {
                 if ($ent->sla_policy_id === null) {
                     continue;
                 }
-                $policy = $this->slaPolicies->findById((int) $ent->sla_policy_id);
-                if ($policy === null || !$policy->is_active) {
-                    continue;
-                }
-                $responseMinutes = $policy->response_minutes ?? PHP_INT_MAX;
-                if ($best === null || $responseMinutes < $best['response']) {
-                    $best = [
-                        'policy' => $policy,
-                        'contract' => $contract,
-                        'entitlement' => $ent,
-                        'response' => $responseMinutes,
-                    ];
-                }
+                $pairs[] = ['contract' => $contract, 'entitlement' => $ent];
+                $policyIds[] = (int) $ent->sla_policy_id;
+            }
+        }
+        if ($pairs === []) {
+            return null;
+        }
+
+        $policiesById = $this->slaPolicies->findByIds($policyIds);
+
+        $best = null;
+        foreach ($pairs as $pair) {
+            $policy = $policiesById[(int) $pair['entitlement']->sla_policy_id] ?? null;
+            if ($policy === null || !$policy->is_active) {
+                continue;
+            }
+            $responseMinutes = $policy->response_minutes ?? PHP_INT_MAX;
+            if ($best === null || $responseMinutes < $best['response']) {
+                $best = [
+                    'policy' => $policy,
+                    'contract' => $pair['contract'],
+                    'entitlement' => $pair['entitlement'],
+                    'response' => $responseMinutes,
+                ];
             }
         }
         if ($best === null) {

@@ -284,21 +284,19 @@ class PortalApprovalService
      */
     private function pendingEstimatesFor(PortalAccount $account): array
     {
+        // EstimateRepository::list doesn't accept company_id directly — the
+        // legacy schema binds estimates to a customer row. Pre-resolve the
+        // company → customer-id set in a single query so the per-status loop
+        // can filter in memory rather than re-querying the customers table
+        // once per pending estimate (AUD-074).
+        $companyCustomerIds = array_flip($this->customers->listIdsForCompany($account->company_id));
+        if ($companyCustomerIds === []) {
+            return [];
+        }
         $out = [];
         foreach (self::ESTIMATE_PENDING_STATUSES as $status) {
-            // EstimateRepository::list doesn't accept company_id directly —
-            // we resolve via customer_id after loading. The legacy schema
-            // binds estimates to a customer row; filtering on the
-            // customers.company_id column happens here. Kept simple (N+1
-            // pattern) because portal pending queues are small lists a
-            // human is about to look at; if the list grows huge, add a
-            // listByCompanyId helper.
             foreach ($this->estimates->list(['status' => $status], 500, 0) as $e) {
-                $customer = $this->customers->find($e->customer_id);
-                if ($customer === null) {
-                    continue;
-                }
-                if ((int) ($customer->company_id ?? 0) !== $account->company_id) {
+                if (!isset($companyCustomerIds[(int) $e->customer_id])) {
                     continue;
                 }
                 $out[] = $e;
