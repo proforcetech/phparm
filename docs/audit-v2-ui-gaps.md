@@ -1,10 +1,19 @@
 # Audit v2 — Phase 5: UI Gap Catalog
 
-**Date:** 2026-05-11
+**Date:** 2026-05-11 (catalog) / 2026-05-12 (UIG-1, UIG-2, UIG-9 closeouts)
 **Plan:** [audit-v2-plan.md](audit-v2-plan.md)
 **Findings register:** [audit-findings.md](audit-findings.md) (UI gaps are **not**
 appended to the main register — they are a backlog, not security/correctness
 defects, per the v2 plan's "Findings register conventions" section.)
+
+## Closeout status
+
+| ID    | Status                | Shipped     | Notes |
+| ----- | --------------------- | ----------- | ----- |
+| UIG-1 | ✅ Resolved           | 2026-05-12  | `TechnicianPortal.jsx` replaced with real read-only view bound to `/api/time-tracking/technician/portal`. Totals header, active timer card, assigned jobs, recent history (10). |
+| UIG-2 | ✅ Resolved           | 2026-05-12  | "View requests" CTA removed from `AdminDashboard.jsx`. The placeholder route remains in routing for now (no inbound link). |
+| UIG-9 | ✅ Resolved           | 2026-05-12  | `DELETE /api/divisions/{id}` shipped with `DivisionControllerDestroyTest`; frontend delete button enabled with confirm dialog. Hard-delete is safe — all FKs to `divisions.id` are `ON DELETE SET NULL`. |
+| UIG-3, 4, 5, 6, 7, 8, 10, 11 | Open | —         | See backlog table below. |
 
 ## Scope
 

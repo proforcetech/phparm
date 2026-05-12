@@ -74,11 +74,15 @@ each entry's `Verification:` line.
 - v2 added two new test files: `tests/StepUpReplayDefenseTest.php` and
   `tests/EsignSingleUseTest.php` (both run successfully against in-memory
   SQLite mirroring the post-migration schema).
-- The three v1-blocked database tests are still blocked here for the same
-  reason — the `pdo_sqlite` extension is not available in this environment:
-  - [tests/AuthTokenRepositorySecurityTest.php](/var/www/phparm/tests/AuthTokenRepositorySecurityTest.php)
-  - [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php)
-  - [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php)
+- The three v1-blocked database tests (2026-05-12 re-investigation, see
+  v2 stop-point follow-up): `pdo_sqlite` is in fact installed here. The
+  real blocker is MySQL-specific SQL functions in production code paths.
+  `tests/test_bootstrap.php::registerMysqlCompatFunctions()` now installs
+  shims for `NOW()`, `GREATEST()`, and `LEAST()` as SQLite UDFs, and two
+  of the three tests pass against it:
+  - [tests/AuthTokenRepositorySecurityTest.php](/var/www/phparm/tests/AuthTokenRepositorySecurityTest.php) — **passes**.
+  - [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php) — **passes** after fixing a fixture (invoice rows now seed `customer_id` since the `App\Models\Invoice::$customer_id` declaration is `int`, not `?int`).
+  - [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php) — **still blocked**, but by a different root cause. `PaymentProcessingService::recordWebhookEvent()` reuses the same named placeholder multiple times in its UPSERT (`:invoice_id` 2×, `:status` 3×). MySQL with emulated prepares accepts this; `pdo_sqlite` does not support `ATTR_EMULATE_PREPARES` at all. Unblocking it requires a production-side SQL rewrite (distinct names per reuse, or splitting the conditional updates), which is out of scope for the v2 stop-point cleanup.
 
 ## Residual Risks And Follow-Up
 
@@ -123,13 +127,17 @@ This is a clean stop point.
 
 If work resumes, the highest-value next steps are:
 
-1. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends
-   (technician sidebar, admin dashboard CTA, divisions delete).
-2. Wire `pdo_sqlite` (or equivalent) into the test environment and run the
-   three blocked v1 tests + the new v2 tests as one regression sweep.
-3. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
+1. Rewrite `PaymentProcessingService::recordWebhookEvent()` to use distinct
+   placeholder names per reuse so `tests/PaymentWebhookReconciliationTest.php`
+   can run under PDO_SQLITE — the only remaining legacy v1 test still blocked
+   after the 2026-05-12 bootstrap UDF wiring (the other two now pass).
+2. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
    signing + per-link rate limiting; largest remaining cost on the
    recommendations doc.
+
+UIG-1, UIG-2, and UIG-9 closed 2026-05-12 (technician portal real view,
+admin dashboard CTA hidden, `DELETE /api/divisions/{id}` shipped with
+test). See `audit-v2-ui-gaps.md` for status.
 
 Beyond that, performance work should switch to production-traces-led
 profiling rather than further static cleanup.

@@ -32,6 +32,7 @@ function setUpAuthTokenDatabase(): PDO
 
     $pdo = new PDO('sqlite::memory:');
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    registerMysqlCompatFunctions($pdo);
 
     $pdo->exec('CREATE TABLE password_resets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

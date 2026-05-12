@@ -74,6 +74,19 @@ export default function Divisions() {
     setFormOpen(true)
   }
 
+  const handleDelete = async (row) => {
+    if (!window.confirm(`Delete division "${row.name}"? This cannot be undone.`)) {
+      return
+    }
+    try {
+      await divisionsService.delete(row.id)
+      toast.success('Division deleted')
+      load()
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e?.message || 'Delete failed')
+    }
+  }
+
   const submit = async () => {
     if (!form.name.trim()) {
       toast.error('Name is required')
@@ -167,13 +180,11 @@ export default function Divisions() {
                     <td className="p-2 text-gray-500">{formatDate(d.created_at)}</td>
                     <td className="p-2 text-right">
                       <Button variant="outline" size="sm" onClick={() => openEdit(d)}>Edit</Button>
-                      {/* TODO: needs divisionsService.delete(id) — destructive action disabled. */}
                       <Button
                         variant="danger"
                         size="sm"
                         className="ml-2"
-                        disabled
-                        title="Delete not yet supported by API"
+                        onClick={() => handleDelete(d)}
                       >
                         Delete
                       </Button>

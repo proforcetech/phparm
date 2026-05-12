@@ -16,4 +16,7 @@ export default {
   update(id, payload) {
     return api.put(`/divisions/${id}`, payload).then((res) => res.data)
   },
+  delete(id) {
+    return api.delete(`/divisions/${id}`).then((res) => res.data)
+  },
 }

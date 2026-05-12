@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 
 import Alert from '../../components/ui/Alert'
 import Badge from '../../components/ui/Badge'
@@ -562,9 +561,6 @@ export default function AdminDashboard() {
                   <h3 className="text-lg font-medium text-gray-900">Inventory Pull Requests</h3>
                   <p className="text-sm text-gray-500">Recent stock pull and order activity</p>
                 </div>
-                <Link to="/cp/inventory/pull-requests">
-                  <Button variant="outline">View requests</Button>
-                </Link>
               </div>
             }
           >

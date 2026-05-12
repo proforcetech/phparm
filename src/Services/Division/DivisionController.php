@@ -108,6 +108,22 @@ class DivisionController
     }
 
     /**
+     * Hard-delete a division. FKs to divisions.id are ON DELETE SET NULL,
+     * so child rows are detached automatically — no soft-delete needed.
+     */
+    public function destroy(User $user, int $id): void
+    {
+        $this->gate->assert($user, 'settings.divisions.manage');
+
+        $existing = $this->repository->findById($id);
+        if ($existing === null) {
+            throw new InvalidArgumentException("Division {$id} not found");
+        }
+
+        $this->repository->delete($id);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private static function toArray(Division $d): array

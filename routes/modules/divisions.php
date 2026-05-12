@@ -53,5 +53,13 @@ return function (Router $router, RouteContext $ctx): void {
                 ),
             ]);
         });
+
+        $router->delete('/api/divisions/{id}', function (Request $request) use ($controller) {
+            $controller->destroy(
+                $request->getAttribute('user'),
+                (int) $request->getAttribute('id')
+            );
+            return Response::noContent();
+        });
     });
 };

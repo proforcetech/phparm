@@ -121,6 +121,7 @@ namespace {
     {
         $pdo = new \PDO('sqlite::memory:');
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        \registerMysqlCompatFunctions($pdo);
 
         $pdo->exec('CREATE TABLE invoices (
             id INTEGER PRIMARY KEY,

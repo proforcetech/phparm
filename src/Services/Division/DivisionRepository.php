@@ -142,4 +142,17 @@ class DivisionRepository
 
         return $division;
     }
+
+    /**
+     * Hard-delete a division row. Child rows that reference divisions.id
+     * are declared ON DELETE SET NULL across the schema, so no manual
+     * cleanup is required (see database/migrations/ for the FK declarations).
+     */
+    public function delete(int $id): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'DELETE FROM divisions WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+    }
 }

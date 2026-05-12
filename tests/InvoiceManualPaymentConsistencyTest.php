@@ -55,6 +55,7 @@ namespace {
     {
         $pdo = new \PDO('sqlite::memory:');
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        \registerMysqlCompatFunctions($pdo);
 
         $pdo->exec('CREATE TABLE invoices (
             id INTEGER PRIMARY KEY,
@@ -90,7 +91,7 @@ namespace {
     $pdo = setupInvoicePaymentDatabase();
     $service = buildInvoiceService($pdo);
 
-    $pdo->exec("INSERT INTO invoices (id, status, total, amount_paid, balance_due) VALUES (1, 'pending', 100, 0, 100)");
+    $pdo->exec("INSERT INTO invoices (id, customer_id, status, total, amount_paid, balance_due) VALUES (1, 1, 'pending', 100, 0, 100)");
 
     $successful = $service->recordPayment(1, [
         'amount' => 40.0,
