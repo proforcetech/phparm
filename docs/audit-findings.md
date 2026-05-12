@@ -1000,17 +1000,17 @@ original entries above with a `Re-verified:` line.
 
 #### AUD-070
 
-- Status: `open`
+- Status: `resolved`
 - Category: `security`
 - Severity: `low`
-- Location: `src/Services/Crm/CrmController.php:531`, `src/Services/Crm/CrmController.php:531`
+- Location: `src/Services/Crm/CrmController.php:538-564`
 - Summary: When a stored alarm/gate code ciphertext fails authentication (tampered, key-rotated, or corrupted), `tryDecrypt()` swallows the failure and returns `null`. The reveal endpoint then reports the field as "not set" instead of surfacing tamper/integrity failures to the operator or audit log.
 - Evidence: `CrmController::tryDecrypt()` catches `\Throwable` and returns `null`. `revealSiteCodes()` then logs `site.codes.viewed` with whichever fields decrypted successfully and silently omits the failed ones. There is no separate `site.codes.decrypt_failed` audit event, and no telemetry distinguishes "code never set" from "code present but failed authentication".
 - Impact: Tampering of `alarm_code_encrypted` / `gate_code_encrypted` (e.g., a malicious DBA truncating the payload, or an unintended key rotation) is invisible at the application layer. Operators see "no code set" and either re-enter the code (overwriting evidence) or proceed without one. Forensic detection of crypto-layer tampering is lost.
 - Recommended fix: Distinguish "absent" (`alarm_code_encrypted IS NULL`) from "present-but-undecryptable" (non-null ciphertext, `decrypt()` throws). On the latter path, emit a high-severity audit event (`site.codes.decrypt_failed`) and return an explicit error code in the response so the UI can surface "code stored but cannot be decrypted — admin attention required".
-- Actual fix:
-- Verification:
-- Residual risk:
+- Actual fix: `CrmController::decryptCodeField()` (`src/Services/Crm/CrmController.php:538-564`) replaces the old `tryDecrypt()` swallow-and-return-null. It returns `{value, status}` where status is one of `absent | ok | key_unavailable | decrypt_failed`, and emits `site.codes.decrypt_failed` audit events for both the missing-key and authentication-failure paths. `revealSiteCodes()` propagates the per-field status into the response so the UI can show "stored but cannot be decrypted" instead of "not set." Landed in commit `dd85214` (Phase 2) on `2026-05-10`.
+- Verification: `php -l src/Services/Crm/CrmController.php`. No dedicated unit test was added for the decrypt-failure branches because they require a constructed crypto failure that the existing test fakes do not synthesize; behavioral verification is via the audit event being emitted from a code path that previously swallowed silently. Code review confirms the four return paths are mutually exclusive and only `ok` carries a non-null value.
+- Residual risk: A future addition of a new ciphertext field that re-introduces the silent-catch pattern would not be caught by current tests. The `decryptCodeField()` helper is the only sanctioned path; ad-hoc `try { decrypt() } catch {}` calls in this controller should be rejected at review.
 
 #### AUD-071
 
