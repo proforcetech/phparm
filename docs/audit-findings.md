@@ -1028,7 +1028,7 @@ original entries above with a `Re-verified:` line.
 
 #### AUD-072
 
-- Status: `open`
+- Status: `resolved`
 - Category: `security`
 - Severity: `low`
 - Location: `src/Support/Http/IpAddressResolver.php:22`
@@ -1036,9 +1036,9 @@ original entries above with a `Re-verified:` line.
 - Evidence: `IpAddressResolver::resolve()` lines 22–30 iterate the comma-split header and `return` the first valid IP. There is no concept of a trusted-proxy chain length to skip from the right.
 - Impact: Once `TRUSTED_PROXIES` is configured (a precondition for IP normalization to engage at all), the resolved client IP can be spoofed by any client that includes its own `X-Forwarded-For` header. This re-introduces the audit/rate-limiting-bypass risk that AUD-001 was meant to close.
 - Recommended fix: Skip from the right by the configured trusted-proxy chain length: walk `X-Forwarded-For` right-to-left, drop entries that match a trusted-proxy CIDR, return the first untrusted entry. Document deployment-side that the configured proxy must always *append* the client IP (not trust client-supplied headers verbatim).
-- Actual fix:
-- Verification:
-- Residual risk:
+- Actual fix: `IpAddressResolver::resolve()` (`src/Support/Http/IpAddressResolver.php:22-41`) now reverses the comma-split header and walks right-to-left, skipping entries whose IP matches any `TRUSTED_PROXIES` CIDR, and returns the first untrusted entry. Landed in commit `dd85214` (Phase 2 security fixes) on `2026-05-10` alongside AUD-068/069/070.
+- Verification: `php tests/IpAddressResolverTest.php` — five scenarios pass, including two AUD-072-specific cases: "rightmost-untrusted parsing rejects client-supplied spoofed XFF entries" (`1.2.3.4, 203.0.113.77, 10.1.2.3` → `203.0.113.77`) and "multiple trusted proxies are skipped right-to-left" (`203.0.113.77, 10.5.5.5, 10.1.2.3` → `203.0.113.77`).
+- Residual risk: Deployments behind a reverse proxy must set `TRUSTED_PROXIES` correctly. If the proxy itself trusts client-supplied `X-Forwarded-For` headers verbatim instead of appending, the resolver still has nothing trustworthy to walk back through — proxy configuration discipline is a precondition.
 
 ### Phase 1 Re-verifications
 

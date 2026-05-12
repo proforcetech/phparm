@@ -16,7 +16,7 @@ domains since the v1 closeout).
 | -------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
 | 0 — Scoping                | [audit-v2-plan.md](audit-v2-plan.md), [audit-v2-baseline.md](audit-v2-baseline.md)                           | complete    |
 | 1 — Security delta         | AUD-063..AUD-072 in [audit-findings.md](audit-findings.md)                                                    | complete    |
-| 2 — Security fixes         | Inline fixes for AUD-068, AUD-069 + partial fixes for AUD-063, AUD-064; non-fixes in [audit-v2-recommendations.md](audit-v2-recommendations.md) | complete    |
+| 2 — Security fixes         | Inline fixes for AUD-068, AUD-069, AUD-070, AUD-072 + partial fixes for AUD-063, AUD-064; non-fixes in [audit-v2-recommendations.md](audit-v2-recommendations.md) | complete    |
 | 3 — Performance delta      | AUD-073..AUD-077 + inline fixes for AUD-073..AUD-076                                                          | complete    |
 | 4 — Stale code             | [audit-v2-stale-code.md](audit-v2-stale-code.md), 16 files removed (~1,877 lines)                             | complete    |
 | 5 — UI gap catalog         | [audit-v2-ui-gaps.md](audit-v2-ui-gaps.md), 11 gaps (UIG-1..UIG-11)                                          | complete    |
@@ -28,21 +28,22 @@ domains since the v1 closeout).
 
 | Status              | Count | IDs                                                              |
 | ------------------- | ----- | ---------------------------------------------------------------- |
-| Resolved            | 6     | AUD-068, AUD-069, AUD-073, AUD-074, AUD-075, AUD-076             |
+| Resolved            | 8     | AUD-068, AUD-069, AUD-070, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076 |
 | Partially resolved  | 2     | AUD-063, AUD-064 (immediate exploit closed; architectural follow-up deferred to recommendations) |
-| Open / deferred     | 7     | AUD-065, AUD-066, AUD-067, AUD-070, AUD-071, AUD-072, AUD-077    |
+| Open / deferred     | 5     | AUD-065, AUD-066, AUD-067, AUD-071, AUD-077                      |
 
 By category:
 
 | Category    | Total | Resolved | Partial | Open |
 | ----------- | ----: | -------: | ------: | ---: |
-| Security    |    10 |        2 |       2 |    6 |
+| Security    |    10 |        4 |       2 |    4 |
 | Performance |     5 |        4 |       0 |    1 |
 
 Open items have all been written up with full evidence + recommended fix in
-the register; six of them have escalated, designed-out replacement specs in
-[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-01..R-06). The
-seventh (AUD-077, cron parallelism / lock hygiene) is a design tweak left in
+the register; four of them have escalated, designed-out replacement specs in
+[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-03, R-04, R-05,
+R-06 — R-01 / R-02 cover the partially-resolved AUD-063 / AUD-064). The
+fifth (AUD-077, cron parallelism / lock hygiene) is a design tweak left in
 the register only.
 
 Also recorded:
@@ -61,6 +62,13 @@ Also recorded:
 - Step-up session binding (AUD-069) — freshness now keyed on session
   fingerprint, defeating the "step-up on device A satisfies sensitive write
   on device B" attack.
+- Silent decrypt-failure surfacing (AUD-070) — `CrmController::revealSiteCodes`
+  now distinguishes absent / key_unavailable / decrypt_failed / ok and
+  audit-logs the failure modes, so tampered ciphertext no longer reads as
+  "not set."
+- Right-walk X-Forwarded-For (AUD-072) — `IpAddressResolver` walks the XFF
+  chain right-to-left, dropping trusted-proxy hops, so a client-supplied
+  leading entry can no longer spoof the resolved IP.
 - E-sign single-use links (AUD-064) — atomic `consumed_at` claim on first
   capture across both contract and estimate flows, with a new dedicated
   test suite covering replay paths.
@@ -113,9 +121,11 @@ Verification was per-finding and is recorded inline in
 
 Coverage:
 
-- All 6 fully-resolved findings have a passing test cited in the register.
-  Where applicable (AUD-068, 069, 064), a new test file or new cases were
-  added in the same commit as the fix.
+- All 8 fully-resolved findings have a passing test cited in the register.
+  Where applicable (AUD-068, 069, 064, 072), a new test file or new cases
+  were added in the same commit as the fix. AUD-072 is verified by
+  `tests/IpAddressResolverTest.php` (5 scenarios, including two
+  XFF-spoofing cases added in commit `dd85214`).
 - AUD-073 (N+1 fix) is covered by the existing
   `tests/ContractSlaResolverTest.php` (13 scenarios pass) and required a
   fake-method addition (`findByIds`) on the test fake.
@@ -145,7 +155,7 @@ post-migration schema and ran successfully here.
 
 The findings register is the canonical list. Highlights:
 
-**Security — 6 items still open.** All have a recommended fix in the register
+**Security — 4 items still open.** All have a recommended fix in the register
 plus a deeper architectural recommendation in `audit-v2-recommendations.md`
 where applicable. Highest residual exposure:
 
@@ -154,12 +164,11 @@ where applicable. Highest residual exposure:
   every billing invoice / contract / workorder for the company. Pattern
   inconsistency across the portal services; the fix is mechanical (add
   `assertSiteAccess()` calls) but cuts across three service files.
-- **AUD-072** (leftmost-XFF parsing) — once `TRUSTED_PROXIES` is configured,
-  client-supplied `X-Forwarded-For` is trusted as the resolved IP, partly
-  re-introducing the audit/rate-limit-bypass risk that AUD-001 was meant
-  to close. Fix is the right-walk-with-trusted-proxy-CIDR-skip.
 - **AUD-065/066** (short-code entropy + post-issue document mutation)
   weaken the e-sign chain even after the AUD-064 single-use fix.
+- **AUD-071** (single env key spans two domains) — rotation in either
+  domain forces simultaneous re-encryption of the other; no version byte
+  for online rotation.
 
 **Performance — 1 item open (AUD-077).** Cron runner has no PID-based lock
 and serializes per-minute jobs; a hung job can stall subsequent ticks for
@@ -203,13 +212,11 @@ If work resumes from here, the highest-value next steps are, in order:
 
 1. Implement R-05 (AUD-067, portal site-scoping) — the only open finding
    that allows cross-site data exposure in a multi-tenant model.
-2. Fix AUD-072 (right-walk XFF) — cheap, mechanical, removes a re-opened
-   IP-spoofing class.
-3. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
+2. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
    audio paths with a real upload pipeline; the inline fix only closed the
    exploit windows, not the design.
-4. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends.
-5. Get `pdo_sqlite` (or equivalent) wired into the test environment and run
+3. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends.
+4. Get `pdo_sqlite` (or equivalent) wired into the test environment and run
    the three blocked v1 tests + the new v2 tests as a single regression
    sweep.
 
