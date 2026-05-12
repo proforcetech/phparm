@@ -137,51 +137,28 @@ class VoiceNoteService
     // ─────────────────────────────────────────────── record ────
 
     /**
-     * Persist a freshly-uploaded audio recording's metadata row in the
-     * 'pending' state. The cron worker (or a manual .transcribe call)
-     * picks it up from there.
+     * Persist the metadata row for an audio recording the upload service
+     * has already landed on disk. The caller MUST pass the result of
+     * VoiceNoteUploadService::ingest() as $upload — record() trusts the
+     * upload service for path/MIME/size/sha256 and refuses to let the
+     * client provide them directly.
      *
-     * @param array<string, mixed> $payload
+     * AUD-063 / R-01 — this method used to take the audio_path string
+     * from the client's JSON body. That flow is gone. We assert below
+     * that the client payload does NOT include any storage-managed
+     * field; any such payload is treated as an attack and rejected with
+     * a 400.
+     *
+     * @param array<string, mixed> $upload  Result of VoiceNoteUploadService::ingest()
+     * @param array<string, mixed> $payload Remaining client-supplied metadata
+     *                                      (workorder_id, ticket_id, etc.)
      */
-    public function record(User $actor, array $payload): VoiceNote
+    public function record(User $actor, array $upload, array $payload = []): VoiceNote
     {
         $this->gate->assert($actor, 'voice_notes.create');
 
-        $audioPath = trim((string) ($payload['audio_path'] ?? ''));
-        if ($audioPath === '') {
-            throw new InvalidArgumentException('audio_path is required');
-        }
-        // AUD-063 — reject absolute paths and `..` segments at the service
-        // boundary so an attacker can't plant a metadata row that points at
-        // arbitrary filesystem locations (e.g., /etc/passwd) and then exercise
-        // it via the transcriber. The transcriber repeats the same check
-        // before resolving against its storage root, so the defense holds
-        // even if a future caller forgets to pre-validate.
-        if (self::isAbsolutePath($audioPath)) {
-            throw new InvalidArgumentException(
-                'audio_path must be relative to the configured voice-notes storage root'
-            );
-        }
-        if (str_contains($audioPath, '..')) {
-            throw new InvalidArgumentException(
-                'audio_path may not contain `..` segments'
-            );
-        }
-        // Null bytes truncate paths in C-level syscalls — strip the entire
-        // attempt rather than try to sanitize.
-        if (str_contains($audioPath, "\0")) {
-            throw new InvalidArgumentException(
-                'audio_path contains an invalid null byte'
-            );
-        }
-
-        $format = strtolower(trim((string) ($payload['audio_format'] ?? 'mp3')));
-        if (!in_array($format, VoiceNote::SUPPORTED_FORMATS, true)) {
-            throw new InvalidArgumentException(
-                "Unsupported audio format `{$format}` "
-                . '(allowed: ' . implode(', ', VoiceNote::SUPPORTED_FORMATS) . ')'
-            );
-        }
+        $this->assertNoClientStoragePayload($payload);
+        $this->assertUploadShape($upload);
 
         $visibility = (string) ($payload['visibility'] ?? VoiceNote::VISIBILITY_INTERNAL);
         if (!in_array($visibility, VoiceNote::VISIBILITIES, true)) {
@@ -197,9 +174,13 @@ class VoiceNoteService
             'vehicle_id' => $payload['vehicle_id'] ?? null,
             // author is the actor — never trust the payload for this.
             'author_user_id' => $actor->id ?? null,
-            'audio_path' => $audioPath,
-            'audio_format' => $format,
-            'audio_size_bytes' => $payload['audio_size_bytes'] ?? null,
+            // Storage-managed fields come from the upload service struct,
+            // never from the client payload.
+            'audio_path' => (string) $upload['audio_path'],
+            'audio_format' => (string) $upload['audio_format'],
+            'audio_mime' => (string) $upload['audio_mime'],
+            'audio_size_bytes' => (int) $upload['audio_size_bytes'],
+            'audio_sha256_hash' => (string) $upload['audio_sha256_hash'],
             'duration_seconds' => $payload['duration_seconds'] ?? null,
             'transcript_language' => $payload['transcript_language'] ?? null,
             'transcription_provider' => $this->transcriber->label(),
@@ -409,21 +390,79 @@ class VoiceNoteService
     }
 
     /**
-     * True if the given path looks absolute on either POSIX or Windows.
-     * We intentionally do NOT trust the OS we happen to be running on —
-     * a Linux server fed a `C:\\` path should still reject it, both
-     * because the data may have been authored on Windows and because
-     * the paranoia costs nothing.
+     * AUD-063 / R-01 — these field names are owned by the upload
+     * service. If a client payload includes any of them we treat it as
+     * an attempted bypass and reject the whole request, rather than
+     * silently ignoring the suspect fields. Loud failure is the right
+     * call here: any caller still passing audio_path in JSON is using
+     * the deleted pre-R-01 contract and needs to be updated.
+     *
+     * @param array<string, mixed> $payload
      */
-    private static function isAbsolutePath(string $path): bool
+    private function assertNoClientStoragePayload(array $payload): void
     {
-        if ($path === '') {
-            return false;
+        $reserved = [
+            'audio_path',
+            'audio_mime',
+            'audio_size_bytes',
+            'audio_sha256_hash',
+            'audio_format',
+        ];
+        foreach ($reserved as $field) {
+            if (array_key_exists($field, $payload)) {
+                throw new InvalidArgumentException(
+                    "voice_notes: `{$field}` is server-managed and must not be "
+                    . 'included in the client payload. Upload the audio via '
+                    . 'multipart/form-data with field `audio` and let the '
+                    . 'server populate storage metadata.'
+                );
+            }
         }
-        if ($path[0] === '/' || $path[0] === '\\') {
-            return true;
+    }
+
+    /**
+     * Sanity-check the upload struct the caller hands us. The route
+     * handler is the only producer (via VoiceNoteUploadService) so the
+     * shape should always be right; this is a guard against a future
+     * refactor breaking the contract.
+     *
+     * @param array<string, mixed> $upload
+     */
+    private function assertUploadShape(array $upload): void
+    {
+        $required = [
+            'audio_path' => 'string',
+            'audio_format' => 'string',
+            'audio_mime' => 'string',
+            'audio_size_bytes' => 'int',
+            'audio_sha256_hash' => 'string',
+        ];
+        foreach ($required as $field => $type) {
+            if (!array_key_exists($field, $upload)) {
+                throw new InvalidArgumentException(
+                    "voice_notes: upload struct missing required field `{$field}`"
+                );
+            }
+            $value = $upload[$field];
+            $ok = match ($type) {
+                'string' => is_string($value) && $value !== '',
+                'int' => is_int($value) && $value > 0,
+                default => false,
+            };
+            if (!$ok) {
+                throw new InvalidArgumentException(
+                    "voice_notes: upload struct field `{$field}` has an invalid value"
+                );
+            }
         }
-        // Windows drive letter: e.g. C:\, D:/
-        return (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $path);
+        // Sha256 hex is exactly 64 chars; reject anything else loudly so
+        // a future bug in the upload service (e.g., hash_file failure
+        // returning a short value) doesn't quietly persist a truncated
+        // hash that would later confuse integrity checks.
+        if (strlen((string) $upload['audio_sha256_hash']) !== 64) {
+            throw new InvalidArgumentException(
+                'voice_notes: audio_sha256_hash must be a 64-character hex digest'
+            );
+        }
     }
 }

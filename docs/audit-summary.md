@@ -27,11 +27,11 @@ Combined register in [audit-findings.md](audit-findings.md):
 | Cycle | Total | Resolved | Partial | Open |
 | ----- | ----: | -------: | ------: | ---: |
 | v1    |    62 |       62 |       0 |    0 |
-| v2    |    15 |        9 |       2 |    4 |
-| **All** | **77** | **71** | **2** | **4** |
+| v2    |    15 |       10 |       1 |    4 |
+| **All** | **77** | **72** | **1** | **4** |
 
 v1 by category — Security 8, Error handling 6, Performance 48.
-v2 by category — Security 10 (5 resolved + 2 partial), Performance 5 (4 resolved).
+v2 by category — Security 10 (6 resolved + 1 partial), Performance 5 (4 resolved).
 
 ### Open v2 findings (deferred or designed-out)
 
@@ -42,8 +42,9 @@ v2 by category — Security 10 (5 resolved + 2 partial), Performance 5 (4 resolv
 - **AUD-077** — cron runner serializes per-minute jobs and uses a stale-prone
   file lock — register only
 
-(AUD-067 portal site-scoping shipped 2026-05-11 under R-05's strict policy —
-see the AUD-067 register entry for the breaking-shape note.)
+(AUD-063 voice-note upload pipeline shipped 2026-05-12 under R-01; AUD-067
+portal site-scoping shipped 2026-05-11 under R-05's strict policy. See each
+register entry for the corresponding breaking-shape note.)
 
 R-XX recommendations are written up in
 [audit-v2-recommendations.md](audit-v2-recommendations.md).
@@ -104,11 +105,14 @@ Other residuals from v1 still apply:
 
 Net new from v2:
 
-- 6 open security findings have a designed-out follow-up in
-  `audit-v2-recommendations.md` (R-01..R-06). None are committed.
-- The two partially-resolved security findings (AUD-063, AUD-064) closed
-  the immediate exploit windows but defer the architectural cleanup to the
-  same recommendations doc.
+- 6 security findings opened in v2 had a designed-out follow-up in
+  `audit-v2-recommendations.md` (R-01..R-06). Two have since shipped
+  (R-01 / AUD-063 on 2026-05-12; R-05 / AUD-067 on 2026-05-11); the
+  remaining four (R-02, R-03, R-04, R-06) are still uncommitted.
+- One partially-resolved security finding (AUD-064) closed the immediate
+  exploit window but defers the architectural cleanup (first-class
+  multi-party signing + per-link rate limiting) to R-02 in the same
+  recommendations doc.
 - The cron lock / per-minute parallelism issue (AUD-077) is the last
   low-cost performance item; everything else is profiling-led structural
   work as already noted in v1.
@@ -119,12 +123,13 @@ This is a clean stop point.
 
 If work resumes, the highest-value next steps are:
 
-1. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
-   audio paths with a real upload pipeline.
-2. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends
+1. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends
    (technician sidebar, admin dashboard CTA, divisions delete).
-3. Wire `pdo_sqlite` (or equivalent) into the test environment and run the
+2. Wire `pdo_sqlite` (or equivalent) into the test environment and run the
    three blocked v1 tests + the new v2 tests as one regression sweep.
+3. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
+   signing + per-link rate limiting; largest remaining cost on the
+   recommendations doc.
 
 Beyond that, performance work should switch to production-traces-led
 profiling rather than further static cleanup.

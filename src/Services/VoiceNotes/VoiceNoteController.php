@@ -14,8 +14,10 @@ use App\Models\VoiceNote;
  */
 class VoiceNoteController
 {
-    public function __construct(private readonly VoiceNoteService $service)
-    {
+    public function __construct(
+        private readonly VoiceNoteService $service,
+        private readonly VoiceNoteUploadService $uploads,
+    ) {
     }
 
     // ─────────────────────────────────────────────── reads ────
@@ -84,9 +86,15 @@ class VoiceNoteController
     public function getNote(User $actor, int $id): array
     {
         $bundle = $this->service->getNoteWithTags($actor, $id);
-        return [
-            'data' => $bundle['note']->toArray() + ['tags' => $bundle['tags']],
+        // R-01 — synthesise the auth-gated stream URL. The React detail
+        // modal binds an <audio src> to this; nothing constructs paths
+        // on the client side. Keeping URL construction in the controller
+        // (not the model) keeps the model storage-layout agnostic.
+        $payload = $bundle['note']->toArray() + [
+            'tags' => $bundle['tags'],
+            'audio_url' => "/api/voice-notes/{$bundle['note']->id}/audio",
         ];
+        return ['data' => $payload];
     }
 
     /**
@@ -100,12 +108,47 @@ class VoiceNoteController
     // ─────────────────────────────────────────────── mutations ────
 
     /**
-     * @param array<string, mixed> $payload
+     * R-01 — `audio` is a required $_FILES-style upload from the
+     * multipart request. The remaining $payload carries the optional
+     * metadata (workorder_id, ticket_id, visibility, etc.). The
+     * upload pipeline runs first so that if the file is rejected we
+     * never touch the database.
+     *
+     * @param array<string, mixed> $file    $_FILES['audio']
+     * @param array<string, mixed> $payload Body (without storage fields)
      * @return array<string, mixed>
      */
-    public function recordNote(User $actor, array $payload): array
+    public function recordNote(User $actor, array $file, array $payload): array
     {
-        return ['data' => $this->service->record($actor, $payload)->toArray()];
+        $upload = $this->uploads->ingest($actor, $file);
+        return ['data' => $this->service->record($actor, $upload, $payload)->toArray()];
+    }
+
+    /**
+     * R-01 — stream the stored audio back to authorised callers.
+     *
+     * Returns a struct describing the stream (absolute_path, mime,
+     * size); the route layer wraps that in the HTTP response. We
+     * return the path rather than echoing here so the controller stays
+     * pure (no header()/echo side effects), which keeps it unit-
+     * testable.
+     *
+     * @return array{absolute_path: string, mime: string, size_bytes: int, filename: string}
+     */
+    public function streamAudio(User $actor, int $id): array
+    {
+        $note = $this->service->getNote($actor, $id);
+        $absolute = $this->uploads->resolveStoredFile($note->audio_path);
+        if ($absolute === null || !is_file($absolute) || !is_readable($absolute)) {
+            throw new \InvalidArgumentException("Voice note {$id} audio file is missing");
+        }
+        $size = filesize($absolute);
+        return [
+            'absolute_path' => $absolute,
+            'mime' => $note->audio_mime ?: 'application/octet-stream',
+            'size_bytes' => $size === false ? 0 : $size,
+            'filename' => "voice-note-{$id}.{$note->audio_format}",
+        ];
     }
 
     /**

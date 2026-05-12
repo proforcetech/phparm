@@ -5,6 +5,7 @@ use App\Services\VoiceNotes\VoiceNoteController;
 use App\Services\VoiceNotes\VoiceNoteRepository;
 use App\Services\VoiceNotes\VoiceNoteService;
 use App\Services\VoiceNotes\VoiceNoteTagRepository;
+use App\Services\VoiceNotes\VoiceNoteUploadService;
 use App\Support\Http\Middleware;
 use App\Support\Http\Request;
 use App\Support\Http\Response;
@@ -32,7 +33,8 @@ use App\Support\Http\Router;
  * remember a manual mkdir step.
  */
 return function (Router $router, RouteContext $ctx): void {
-    $storageRoot = dirname(__DIR__, 2) . '/storage/private/voice_notes';
+    $voiceConfig = require __DIR__ . '/../../config/voice_notes.php';
+    $storageRoot = (string) $voiceConfig['storage_root'];
     if (!is_dir($storageRoot)) {
         // 0750 — owner full, group read+exec, others nothing. Audio files
         // are PII-adjacent (transcripts of customer interactions), so the
@@ -45,7 +47,12 @@ return function (Router $router, RouteContext $ctx): void {
     $tagRepo = new VoiceNoteTagRepository($ctx->connection);
     $transcriber = new HeuristicTranscriber($storageRoot);
     $service = new VoiceNoteService($repo, $tagRepo, $transcriber, $ctx->gate);
-    $controller = new VoiceNoteController($service);
+    $uploads = new VoiceNoteUploadService(
+        $storageRoot,
+        $voiceConfig['allowed_mime_types'] ?? null,
+        (int) $voiceConfig['max_upload_bytes'],
+    );
+    $controller = new VoiceNoteController($service, $uploads);
 
     $router->group([Middleware::auth()], function (Router $router) use ($controller) {
         // ── attached lists ──────────────────────────────────────
@@ -107,11 +114,45 @@ return function (Router $router, RouteContext $ctx): void {
             ));
         });
 
+        // R-01 — multipart/form-data: file part `audio` is required;
+        // every other field comes through $request->body() (PHP populates
+        // $_POST for multipart requests).
         $router->post('/api/voice-notes', function (Request $request) use ($controller) {
+            $file = $request->file('audio');
+            if (!is_array($file)) {
+                return Response::badRequest(
+                    'audio: multipart file field `audio` is required'
+                );
+            }
             return Response::created($controller->recordNote(
                 $request->getAttribute('user'),
+                $file,
                 $request->body()
             ));
+        });
+
+        // R-01 — auth-gated audio stream. We deliberately set
+        // Cache-Control: private so an intermediary CDN won't cache the
+        // PII-adjacent recording across users. Range support is not
+        // implemented in this pass — short field recordings (< 25 MB)
+        // play fine over a single response; we can add 206 handling
+        // later if the React UI starts needing seek.
+        $router->get('/api/voice-notes/{id}/audio', function (Request $request) use ($controller) {
+            $stream = $controller->streamAudio(
+                $request->getAttribute('user'),
+                (int) $request->getAttribute('id')
+            );
+            $content = @file_get_contents($stream['absolute_path']);
+            if ($content === false) {
+                return Response::serverError('audio: could not read stored audio file');
+            }
+            return Response::make($content, 200, [
+                'Content-Type' => $stream['mime'],
+                'Content-Length' => (string) $stream['size_bytes'],
+                'Content-Disposition' => 'inline; filename="' . $stream['filename'] . '"',
+                'Cache-Control' => 'private, max-age=0, no-store',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
         });
 
         $router->put('/api/voice-notes/{id}', function (Request $request) use ($controller) {

@@ -20,48 +20,86 @@ to a future planning round.
 
 ---
 
-## R-01 — AUD-063: Replace client-supplied `audio_path` with server-managed multipart upload
+## R-01 — AUD-063: Replace client-supplied `audio_path` with server-managed multipart upload ✅ Shipped 2026-05-12
 
-**Source finding:** AUD-063 (security/medium, partially-resolved)
+**Source finding:** AUD-063 (security/medium) — **resolved**.
 
-**What Phase 2 did:** Hardened the immediate exploit surface.
-`HeuristicTranscriber` now requires a non-empty storage root, refuses
-`..` / null bytes / absolute paths, and verifies via `realpath()` that
-the resolved file lives inside the configured root.
-`VoiceNoteService::record()` rejects absolute paths and null bytes.
-The route wires a per-deployment `storage/private/voice_notes/` root and
-creates it `0750`.
+**What Phase 2 had hardened:** The immediate exploit surface only.
+`HeuristicTranscriber` already required a non-empty storage root, refused
+`..` / null bytes / absolute paths, and verified containment via
+`realpath()`. `VoiceNoteService::record()` already rejected absolute paths
+and null bytes. But the route still accepted `audio_path` as a
+**client-supplied relative string**, so an authenticated
+`voice_notes.create` actor could still pick any sub-path inside the root
+and collide with another user's notes — an integrity issue, and the
+path-as-input shape was fundamentally the wrong contract.
 
-**What's still broken architecturally:** The voice-notes API still accepts
-`audio_path` as a **client-supplied relative string**. An authenticated
-`voice_notes.create` actor can choose any sub-path inside the root, which
-permits collisions with another user's notes (an integrity issue: actor A
-records over actor B's path) and leaks path patterns into transcripts and
-the UI. The path-as-input shape is fundamentally the wrong contract.
+**What shipped:**
 
-**Recommended rewrite:**
+1. **Schema (migration 186):** added `audio_mime VARCHAR(64) NULL` (after
+   `audio_format`) and `audio_sha256_hash CHAR(64) NULL` (after
+   `audio_size_bytes`), plus a non-unique `idx_vn_audio_sha` for future
+   dedupe scans. Both nullable so pre-R-01 rows continue to load. We
+   chose to keep the existing `audio_format` column (rather than rename
+   to `audio_mime` outright) and reuse `audio_size_bytes` (rather than
+   introduce `audio_bytes_size` as the original recommendation
+   suggested) — minimal-churn schema that doesn't break the read path.
+2. **`App\Support\Ulid`:** 26-char Crockford-base32 ULID generator with
+   monotonic-within-millisecond guarantee. Replaces UUIDv4 for the
+   filename component because ULIDs sort by creation time (cheap
+   directory walks, naturally clustered backlog scans).
+3. **`config/voice_notes.php`:** `max_upload_bytes` (default 25 MB,
+   override via `VOICE_NOTES_MAX_UPLOAD_BYTES`), `storage_root`
+   (override via `VOICE_NOTES_STORAGE_ROOT`), and the
+   `allowed_mime_types` map (sniffed-mime → extension).
+4. **`VoiceNoteUploadService`:** single ingest pipeline — validates the
+   `$_FILES` shape (presence, error code, non-empty, under cap), sniffs
+   MIME via `finfo_buffer` on the first 2 KiB (the client's `type`
+   field is entirely ignored), rejects anything outside the allowlist,
+   computes sha256, generates
+   `{yyyy}/{mm}/{user_id}/{ulid}.{ext}` where `{ext}` comes from the
+   sniffed MIME (not the uploaded filename), and `move_uploaded_file()`s
+   the tmp file into place. A second method, `resolveStoredFile()`,
+   resolves a stored relative path back to an absolute one with a
+   realpath-containment check so the streaming endpoint can't be
+   tricked into serving `/etc/passwd` via a planted symlink.
+5. **`VoiceNoteService::record()` signature changed** from
+   `record($actor, $payload)` to
+   `record($actor, $upload, $payload)`. Two new server-side guards:
+   `assertNoClientStoragePayload()` rejects any client payload still
+   carrying `audio_path`, `audio_mime`, `audio_size_bytes`,
+   `audio_sha256_hash`, or `audio_format` (loud
+   `InvalidArgumentException` — no silent bypass);
+   `assertUploadShape()` enforces that the upload struct has all six
+   required keys and a 64-char hex sha256.
+6. **`VoiceNoteController::recordNote()` signature changed** to
+   `(User $actor, array $file, array $payload)`. The route layer
+   extracts `$_FILES['audio']` and returns 400 if missing.
+   `getNote()` now synthesises an `audio_url => /api/voice-notes/{id}/audio`
+   field so the React detail modal binds to a stable, auth-gated stream
+   URL (paths never leak to the client).
+7. **`GET /api/voice-notes/{id}/audio`:** new streaming endpoint behind
+   `voice_notes.view`. Returns the bytes with `Cache-Control:
+   private, max-age=0, no-store`, `X-Content-Type-Options: nosniff`, and
+   a `Content-Disposition: inline; filename="voice-note-{id}.{ext}"`.
+   No Range support in this pass — field recordings under 25 MB stream
+   fine over a single response; we can add 206 handling when the React
+   UI starts needing seek.
 
-1. Replace the JSON `audio_path` field with a `multipart/form-data` upload
-   field (`audio` file part) on `POST /api/voice-notes`.
-2. Server generates the storage path: `voice_notes/{yyyy}/{mm}/{user_id}/{ulid}.{ext}`
-   where `ulid` is `Ulid::generate()` (sortable by time, no collision
-   surface).
-3. MIME-sniff the upload (PHP `finfo` on the first 2 KiB), reject anything
-   not in `audio/{mp3, mpeg, wav, ogg, webm, m4a, aac}`, and clamp the
-   file size at the route layer (proposed: 25 MB, configurable via
-   `voice_notes.max_upload_bytes` setting).
-4. Persist `audio_path`, `audio_mime`, `audio_bytes_size`, and
-   `audio_sha256_hash` (already in the model) atomically in the same
-   transaction.
-5. Reject any payload that still includes a string `audio_path` field;
-   the field becomes write-only-by-the-server.
+**Verification:** `php tests/VoiceNoteServiceTest.php` (61 cases — model
++ repo + tag repo + service + controller + permission gates, all on the
+new upload struct) and `php tests/VoiceNoteUploadServiceTest.php`
+(22 cases — happy path, MIME rejection across text / junk-octets /
+spoofed-content-type, size cap, empty-file, missing-tmp_name,
+upload-error code, authorless actor, resolveStoredFile containment +
+symlink escape, original-name sanitisation, ULID uniqueness). Both
+green.
 
-**Cost:** ~2 days. Touches the React recorder component (currently uploads
-the file via a separate `/api/voice-notes/audio` step that doesn't exist
-yet — see also UI gap survey), the service signature, and the test
-fixture set. Backwards compatibility is not a concern: the feature is
-behind a permission and the on-disk path scheme can include both styles
-during cutover.
+**Breaking-shape risk:** Any external client that still POSTs JSON with
+an `audio_path` field will now get a 400 — that's intentional, the
+write-only-by-server contract is the point. The web/mobile recorder UI
+was already sending multipart with an `audio` file part, so the
+in-tree clients keep working unchanged.
 
 ---
 
@@ -294,7 +332,7 @@ for any rows the rewrap missed).
 
 | ID | Status in register | This doc |
 |----|--------------------|----------|
-| AUD-063 | partially-resolved | R-01 |
+| AUD-063 | resolved | R-01 (shipped 2026-05-12) |
 | AUD-064 | partially-resolved | R-02 |
 | AUD-065 | open | R-03 |
 | AUD-066 | open | R-04 |

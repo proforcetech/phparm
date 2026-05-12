@@ -75,7 +75,18 @@ class VoiceNote extends BaseModel
     public ?int $author_user_id = null;
     public string $audio_path = '';
     public string $audio_format = 'mp3';
+    /**
+     * Sniffed Content-Type the server saw at upload time (e.g.,
+     * `audio/mpeg`, `audio/mp4`). NULL for pre-R-01 rows that predated
+     * the server-managed upload pipeline.
+     */
+    public ?string $audio_mime = null;
     public ?int $audio_size_bytes = null;
+    /**
+     * Hex sha256 of the audio bytes as written to disk. NULL for
+     * pre-R-01 rows. Used for upload audit + duplicate detection.
+     */
+    public ?string $audio_sha256_hash = null;
     public ?float $duration_seconds = null;
     public ?string $transcript = null;
     public ?string $transcript_language = null;

@@ -28,22 +28,23 @@ domains since the v1 closeout).
 
 | Status              | Count | IDs                                                                       |
 | ------------------- | ----- | ------------------------------------------------------------------------- |
-| Resolved            | 9     | AUD-067, AUD-068, AUD-069, AUD-070, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076 |
-| Partially resolved  | 2     | AUD-063, AUD-064 (immediate exploit closed; architectural follow-up deferred to recommendations) |
+| Resolved            | 10    | AUD-063, AUD-067, AUD-068, AUD-069, AUD-070, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076 |
+| Partially resolved  | 1     | AUD-064 (immediate exploit closed; architectural follow-up deferred to recommendations) |
 | Open / deferred     | 4     | AUD-065, AUD-066, AUD-071, AUD-077                                        |
 
 By category:
 
 | Category    | Total | Resolved | Partial | Open |
 | ----------- | ----: | -------: | ------: | ---: |
-| Security    |    10 |        5 |       2 |    3 |
+| Security    |    10 |        6 |       1 |    3 |
 | Performance |     5 |        4 |       0 |    1 |
 
 Open items have all been written up with full evidence + recommended fix in
 the register; three of them have escalated, designed-out replacement specs in
-[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-03, R-04, R-06 —
-R-01 / R-02 cover the partially-resolved AUD-063 / AUD-064; R-05 / AUD-067
-shipped under the strict site-scoping policy on 2026-05-11). The fourth
+[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-03, R-04, R-06).
+R-02 still covers the partially-resolved AUD-064. R-01 / AUD-063 (server-managed
+voice-note upload pipeline) shipped on 2026-05-12; R-05 / AUD-067 (portal
+site-scoping) shipped under the strict policy on 2026-05-11. The fourth
 (AUD-077, cron parallelism / lock hygiene) is a design tweak left in the
 register only.
 
@@ -169,7 +170,10 @@ where applicable. Highest residual exposure:
 (AUD-067 portal site-scoping was the previous top-of-list item; it shipped
 on 2026-05-11 under the strict policy described in R-05. See the AUD-067
 register entry for the breaking-shape note for legacy auto-shop installs
-that still set `allowed_site_ids` against rows with no `site_asset_id`.)
+that still set `allowed_site_ids` against rows with no `site_asset_id`.
+AUD-063 voice-note upload pipeline shipped on 2026-05-12 — see R-01 for
+the full surface: schema additions, the new `VoiceNoteUploadService`, MIME
+sniffing, ULID path generation, and the auth-gated streaming endpoint.)
 
 **Performance — 1 item open (AUD-077).** Cron runner has no PID-based lock
 and serializes per-minute jobs; a hung job can stall subsequent ticks for
@@ -211,13 +215,13 @@ This is a clean stop point.
 
 If work resumes from here, the highest-value next steps are, in order:
 
-1. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
-   audio paths with a real upload pipeline; the inline fix only closed the
-   exploit windows, not the design.
-2. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends.
-3. Get `pdo_sqlite` (or equivalent) wired into the test environment and run
+1. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends.
+2. Get `pdo_sqlite` (or equivalent) wired into the test environment and run
    the three blocked v1 tests + the new v2 tests as a single regression
    sweep.
+3. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
+   signing + per-link rate limiting. Cost-wise this is the largest remaining
+   item on the recommendations doc.
 
 Profiling-led performance work remains the right next move beyond that —
 the broad query / bootstrap cleanup is exhausted. AUD-077 (cron lock /

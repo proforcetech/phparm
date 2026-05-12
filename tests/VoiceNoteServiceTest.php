@@ -20,6 +20,7 @@ use App\Services\VoiceNotes\VoiceNoteController;
 use App\Services\VoiceNotes\VoiceNoteRepository;
 use App\Services\VoiceNotes\VoiceNoteService;
 use App\Services\VoiceNotes\VoiceNoteTagRepository;
+use App\Services\VoiceNotes\VoiceNoteUploadService;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
 
@@ -77,7 +78,9 @@ function vnSetUpDatabase(): PDO
         author_user_id INTEGER NULL,
         audio_path TEXT NOT NULL,
         audio_format TEXT NOT NULL DEFAULT 'mp3',
+        audio_mime TEXT NULL,
         audio_size_bytes INTEGER NULL,
+        audio_sha256_hash TEXT NULL,
         duration_seconds REAL NULL,
         transcript TEXT NULL,
         transcript_language TEXT NULL,
@@ -156,6 +159,37 @@ class VnCannedTranscriber implements TranscriberInterface
     }
 }
 
+/**
+ * Test double for VoiceNoteUploadService — bypasses constructor + ingest.
+ * Returns a fixed upload struct so controller tests can exercise
+ * recordNote() without touching the filesystem.
+ */
+class VnFakeUploadService extends VoiceNoteUploadService
+{
+    public ?array $lastFile = null;
+    public ?array $lastActor = null;
+    public function __construct()
+    {
+    }
+    public function ingest(User $actor, array $file, ?DateTimeImmutable $now = null): array
+    {
+        $this->lastFile = $file;
+        $this->lastActor = ['id' => $actor->id ?? null];
+        return [
+            'audio_path' => 'workorders/42/test.mp3',
+            'audio_format' => 'mp3',
+            'audio_mime' => 'audio/mpeg',
+            'audio_size_bytes' => 1024,
+            'audio_sha256_hash' => str_repeat('a', 64),
+            'original_name' => 'recording.mp3',
+        ];
+    }
+    public function resolveStoredFile(string $relativePath): ?string
+    {
+        return null;
+    }
+}
+
 function makeVnFixture(?TranscriberInterface $transcriber = null): array
 {
     $pdo = vnSetUpDatabase();
@@ -170,8 +204,30 @@ function makeVnFixture(?TranscriberInterface $transcriber = null): array
         durationSeconds: 12.5,
     ));
     $service = new VoiceNoteService($repo, $tagRepo, $transcriber, $gate);
-    $controller = new VoiceNoteController($service);
-    return compact('pdo', 'conn', 'gate', 'repo', 'tagRepo', 'transcriber', 'service', 'controller');
+    $uploads = new VnFakeUploadService();
+    $controller = new VoiceNoteController($service, $uploads);
+    return compact(
+        'pdo', 'conn', 'gate', 'repo', 'tagRepo', 'transcriber',
+        'service', 'uploads', 'controller'
+    );
+}
+
+/**
+ * Build a valid VoiceNoteUploadService::ingest() result for the
+ * metadata-row tests. The audio_path can point at any string — the
+ * service layer no longer validates it (path safety is the upload
+ * service's job, exercised in VoiceNoteUploadServiceTest).
+ */
+function vnFakeUpload(string $audioPath = 'workorders/42/a.mp3', string $format = 'mp3'): array
+{
+    return [
+        'audio_path' => $audioPath,
+        'audio_format' => $format,
+        'audio_mime' => $format === 'mp3' ? 'audio/mpeg' : "audio/{$format}",
+        'audio_size_bytes' => 1024,
+        'audio_sha256_hash' => str_repeat('a', 64),
+        'original_name' => 'recording.' . $format,
+    ];
 }
 
 function vnAssertSame($expected, $actual, string $msg = ''): void
@@ -491,88 +547,140 @@ $tests['tag_repo_listAllTags_distinct'] = function () {
 
 $tests['record_persists_with_actor_as_author'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), [
-        'workorder_id' => 42,
-        'audio_path' => 'workorders/42/note.mp3',
-        'audio_format' => 'm4a',
-    ]);
+    $note = $f['service']->record(
+        makeVnUser(7),
+        vnFakeUpload('workorders/42/note.m4a', 'm4a'),
+        ['workorder_id' => 42]
+    );
     vnAssertSame(7, $note->author_user_id, 'author_user_id from actor, not payload');
     vnAssertSame('m4a', $note->audio_format);
+    vnAssertSame('audio/m4a', $note->audio_mime, 'mime from upload struct');
+    vnAssertSame(1024, $note->audio_size_bytes, 'size from upload struct');
+    vnAssertSame(64, strlen((string) $note->audio_sha256_hash), 'sha256 hex captured');
     vnAssertSame('pending', $note->transcription_status);
     vnAssertSame('canned_v1', $note->transcription_provider, 'provider stamped from transcriber label');
 };
 
 $tests['record_ignores_payload_author_id'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), [
-        'audio_path' => 'a.mp3',
-        // Attempt to spoof author — should be overwritten by actor id.
-        'author_user_id' => 999,
-    ]);
+    $note = $f['service']->record(
+        makeVnUser(7),
+        vnFakeUpload(),
+        [
+            // Attempt to spoof author — should be overwritten by actor id.
+            'author_user_id' => 999,
+        ]
+    );
     vnAssertSame(7, $note->author_user_id);
 };
 
-$tests['record_rejects_empty_audio_path'] = function () {
+$tests['record_rejects_client_supplied_audio_path'] = function () {
+    // R-01 — the legacy contract let the client pass audio_path in JSON.
+    // That field is now server-managed; any payload still using the
+    // old shape must be rejected loudly so the bypass isn't silently
+    // tolerated.
     $f = makeVnFixture();
     vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => '']),
-        InvalidArgumentException::class
-    );
-};
-
-$tests['record_rejects_dotdot_path'] = function () {
-    $f = makeVnFixture();
-    vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => '../../../etc/passwd']),
-        InvalidArgumentException::class
-    );
-};
-
-$tests['record_rejects_absolute_unix_path'] = function () {
-    $f = makeVnFixture();
-    vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => '/etc/passwd']),
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            vnFakeUpload(),
+            ['audio_path' => '/etc/passwd']
+        ),
         InvalidArgumentException::class,
-        'absolute POSIX paths must be rejected at the service boundary (AUD-063)'
+        'legacy client-supplied audio_path must be rejected'
     );
 };
 
-$tests['record_rejects_absolute_windows_path'] = function () {
+$tests['record_rejects_client_supplied_audio_mime'] = function () {
     $f = makeVnFixture();
     vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => 'C:\\Windows\\System32\\config\\SAM']),
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            vnFakeUpload(),
+            ['audio_mime' => 'audio/wav']
+        ),
         InvalidArgumentException::class,
-        'Windows-style absolute paths must be rejected even on Linux hosts (AUD-063)'
+        'audio_mime is server-managed'
     );
 };
 
-$tests['record_rejects_null_byte_in_path'] = function () {
+$tests['record_rejects_client_supplied_audio_sha256'] = function () {
     $f = makeVnFixture();
     vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => "note.mp3\0/etc/passwd"]),
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            vnFakeUpload(),
+            ['audio_sha256_hash' => str_repeat('b', 64)]
+        ),
         InvalidArgumentException::class,
-        'null bytes in audio_path must be rejected (AUD-063)'
+        'audio_sha256_hash is server-managed'
     );
 };
 
-$tests['record_rejects_unsupported_format'] = function () {
+$tests['record_rejects_client_supplied_audio_size'] = function () {
     $f = makeVnFixture();
     vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), [
-            'audio_path' => 'a.exe',
-            'audio_format' => 'exe',
-        ]),
-        InvalidArgumentException::class
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            vnFakeUpload(),
+            ['audio_size_bytes' => 1]
+        ),
+        InvalidArgumentException::class,
+        'audio_size_bytes is server-managed'
+    );
+};
+
+$tests['record_rejects_client_supplied_audio_format'] = function () {
+    $f = makeVnFixture();
+    vnAssertThrows(
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            vnFakeUpload(),
+            ['audio_format' => 'wav']
+        ),
+        InvalidArgumentException::class,
+        'audio_format is server-managed'
+    );
+};
+
+$tests['record_rejects_malformed_upload_struct'] = function () {
+    $f = makeVnFixture();
+    // Missing audio_sha256_hash
+    vnAssertThrows(
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            [
+                'audio_path' => 'a.mp3',
+                'audio_format' => 'mp3',
+                'audio_mime' => 'audio/mpeg',
+                'audio_size_bytes' => 1024,
+            ],
+            []
+        ),
+        InvalidArgumentException::class,
+        'partial upload struct must be rejected'
+    );
+};
+
+$tests['record_rejects_short_sha256'] = function () {
+    $f = makeVnFixture();
+    $upload = vnFakeUpload();
+    $upload['audio_sha256_hash'] = 'shorthash';
+    vnAssertThrows(
+        fn() => $f['service']->record(makeVnUser(7), $upload, []),
+        InvalidArgumentException::class,
+        'sha256 hex must be exactly 64 chars'
     );
 };
 
 $tests['record_rejects_unknown_visibility'] = function () {
     $f = makeVnFixture();
     vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), [
-            'audio_path' => 'a.mp3',
-            'visibility' => 'public',
-        ]),
+        fn() => $f['service']->record(
+            makeVnUser(7),
+            vnFakeUpload(),
+            ['visibility' => 'public']
+        ),
         InvalidArgumentException::class
     );
 };
@@ -581,7 +689,7 @@ $tests['record_requires_create_permission'] = function () {
     $f = makeVnFixture();
     $f['gate']->denials['voice_notes.create'] = true;
     vnAssertThrows(
-        fn() => $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']),
+        fn() => $f['service']->record(makeVnUser(7), vnFakeUpload(), []),
         UnauthorizedException::class
     );
 };
@@ -590,7 +698,7 @@ $tests['record_requires_create_permission'] = function () {
 
 $tests['transcribe_pending_to_completed_via_canned'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $now = new DateTimeImmutable('2026-04-25 12:00:00');
     $result = $f['service']->transcribe(makeVnUser(7), $note->id, $now);
     vnAssertSame('completed', $result->transcription_status);
@@ -602,8 +710,7 @@ $tests['transcribe_pending_to_completed_via_canned'] = function () {
 
 $tests['transcribe_uses_recorder_supplied_duration'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), [
-        'audio_path' => 'a.mp3',
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), [
         'duration_seconds' => 99.0,
     ]);
     $result = $f['service']->transcribe(makeVnUser(7), $note->id);
@@ -613,7 +720,7 @@ $tests['transcribe_uses_recorder_supplied_duration'] = function () {
 
 $tests['transcribe_fills_duration_when_recorder_omitted'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $result = $f['service']->transcribe(makeVnUser(7), $note->id);
     vnAssertSame(12.5, $result->duration_seconds,
         'transcriber-supplied duration fills when recorder omitted');
@@ -622,7 +729,7 @@ $tests['transcribe_fills_duration_when_recorder_omitted'] = function () {
 $tests['transcribe_pending_to_failed_when_transcriber_throws'] = function () {
     $boom = new VnCannedTranscriber(new RuntimeException('whisper API unreachable'));
     $f = makeVnFixture($boom);
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $result = $f['service']->transcribe(makeVnUser(7), $note->id);
     vnAssertSame('failed', $result->transcription_status);
     vnAssertSame('whisper API unreachable', $result->transcription_failure_reason);
@@ -631,7 +738,7 @@ $tests['transcribe_pending_to_failed_when_transcriber_throws'] = function () {
 $tests['transcribe_failed_to_completed_via_retry'] = function () {
     $f = makeVnFixture();
     // Create a note that's already failed.
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['repo']->update($note->id, [
         'transcription_status' => 'failed',
         'transcription_failure_reason' => 'previous attempt timed out',
@@ -644,7 +751,7 @@ $tests['transcribe_failed_to_completed_via_retry'] = function () {
 
 $tests['transcribe_completed_re_runs_in_place_without_status_flip'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['service']->transcribe(makeVnUser(7), $note->id);
     // Swap in a different transcriber via fixture rebuild — but we can also
     // just call transcribe again and verify the row stays 'completed'.
@@ -657,10 +764,11 @@ $tests['transcribe_with_heuristic_sidecar_end_to_end'] = function () {
     $tree = vnMakeAudioTree('Replaced front pads, no further symptoms.');
     $transcriber = new HeuristicTranscriber($tree['root']);
     $f = makeVnFixture($transcriber);
-    $note = $f['service']->record(makeVnUser(7), [
-        'audio_path' => $tree['audioRel'],
-        'audio_format' => 'mp3',
-    ]);
+    $note = $f['service']->record(
+        makeVnUser(7),
+        vnFakeUpload($tree['audioRel'], 'mp3'),
+        []
+    );
     $result = $f['service']->transcribe(makeVnUser(7), $note->id);
     vnAssertSame('completed', $result->transcription_status);
     vnAssertTrue(str_contains($result->transcript, 'Replaced front pads'),
@@ -670,7 +778,7 @@ $tests['transcribe_with_heuristic_sidecar_end_to_end'] = function () {
 
 $tests['transcribe_requires_transcribe_permission'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['gate']->denials['voice_notes.transcribe'] = true;
     vnAssertThrows(
         fn() => $f['service']->transcribe(makeVnUser(7), $note->id),
@@ -690,7 +798,7 @@ $tests['transcribe_rejects_unknown_note'] = function () {
 
 $tests['updateNote_allows_visibility_change'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $updated = $f['service']->updateNote(makeVnUser(7), $note->id, [
         'visibility' => 'customer_visible',
     ]);
@@ -699,7 +807,7 @@ $tests['updateNote_allows_visibility_change'] = function () {
 
 $tests['updateNote_rejects_unknown_visibility'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     vnAssertThrows(
         fn() => $f['service']->updateNote(makeVnUser(7), $note->id, [
             'visibility' => 'private',
@@ -710,7 +818,7 @@ $tests['updateNote_rejects_unknown_visibility'] = function () {
 
 $tests['updateNote_allows_transcript_edit'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $updated = $f['service']->updateNote(makeVnUser(7), $note->id, [
         'transcript' => 'manual override',
     ]);
@@ -719,7 +827,7 @@ $tests['updateNote_allows_transcript_edit'] = function () {
 
 $tests['pin_unpin_lifecycle'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     vnAssertTrue(!$note->pinned, 'fresh note unpinned');
     $pinned = $f['service']->pin(makeVnUser(7), $note->id);
     vnAssertTrue($pinned->pinned, 'pin sets pinned');
@@ -729,7 +837,7 @@ $tests['pin_unpin_lifecycle'] = function () {
 
 $tests['updateNote_requires_manage_permission'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['gate']->denials['voice_notes.manage'] = true;
     vnAssertThrows(
         fn() => $f['service']->updateNote(makeVnUser(7), $note->id, ['notes' => 'x']),
@@ -741,7 +849,7 @@ $tests['updateNote_requires_manage_permission'] = function () {
 
 $tests['deleteNote_sweeps_tags_via_cascade'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['tagRepo']->addTag($note->id, 'brake');
     $f['tagRepo']->addTag($note->id, 'tire');
     $f['service']->deleteNote(makeVnUser(7), $note->id);
@@ -752,7 +860,7 @@ $tests['deleteNote_sweeps_tags_via_cascade'] = function () {
 
 $tests['deleteNote_requires_manage_permission'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['gate']->denials['voice_notes.manage'] = true;
     vnAssertThrows(
         fn() => $f['service']->deleteNote(makeVnUser(7), $note->id),
@@ -764,7 +872,7 @@ $tests['deleteNote_requires_manage_permission'] = function () {
 
 $tests['setTags_returns_added_removed_diff'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['tagRepo']->addTag($note->id, 'brake');
     $bundle = $f['service']->setTags(makeVnUser(7), $note->id, ['brake', 'oil']);
     vnAssertSame(['oil'], $bundle['added']);
@@ -775,7 +883,7 @@ $tests['setTags_returns_added_removed_diff'] = function () {
 
 $tests['setTags_requires_manage_permission'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['gate']->denials['voice_notes.manage'] = true;
     vnAssertThrows(
         fn() => $f['service']->setTags(makeVnUser(7), $note->id, ['brake']),
@@ -805,7 +913,7 @@ $tests['listPendingTranscriptions_requires_view_permission'] = function () {
 
 $tests['getNoteWithTags_returns_bundle'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['tagRepo']->addTag($note->id, 'brake');
     $bundle = $f['service']->getNoteWithTags(makeVnUser(7), $note->id);
     vnAssertSame($note->id, $bundle['note']->id);
@@ -815,20 +923,26 @@ $tests['getNoteWithTags_returns_bundle'] = function () {
 // ──── Controller envelope shape ────
 
 $tests['controller_recordNote_returns_data_envelope'] = function () {
+    // R-01 — recordNote now takes (actor, $_FILES-style array, $payload).
+    // The fake upload service ignores the file struct and returns canned
+    // metadata; the payload carries the optional fields.
     $f = makeVnFixture();
-    $resp = $f['controller']->recordNote(makeVnUser(7), [
-        'workorder_id' => 42,
-        'audio_path' => 'a.mp3',
-    ]);
+    $resp = $f['controller']->recordNote(
+        makeVnUser(7),
+        ['tmp_name' => '/tmp/fake', 'name' => 'r.mp3', 'size' => 1024, 'error' => 0],
+        ['workorder_id' => 42]
+    );
     vnAssertTrue(array_key_exists('data', $resp));
     vnAssertSame(42, $resp['data']['workorder_id']);
     vnAssertSame('pending', $resp['data']['transcription_status']);
+    vnAssertSame('audio/mpeg', $resp['data']['audio_mime'], 'mime persisted from upload');
+    vnAssertSame(64, strlen((string) $resp['data']['audio_sha256_hash']));
 };
 
 $tests['controller_listForWorkorder_returns_data_envelope'] = function () {
     $f = makeVnFixture();
-    $f['service']->record(makeVnUser(7), ['workorder_id' => 42, 'audio_path' => 'a.mp3']);
-    $f['service']->record(makeVnUser(7), ['workorder_id' => 42, 'audio_path' => 'b.mp3']);
+    $f['service']->record(makeVnUser(7), vnFakeUpload(), ['workorder_id' => 42]);
+    $f['service']->record(makeVnUser(7), vnFakeUpload(), ['workorder_id' => 42]);
     $resp = $f['controller']->listForWorkorder(makeVnUser(7), 42);
     vnAssertTrue(array_key_exists('data', $resp));
     vnAssertSame(2, count($resp['data']));
@@ -836,17 +950,24 @@ $tests['controller_listForWorkorder_returns_data_envelope'] = function () {
 
 $tests['controller_getNote_merges_tags_into_payload'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $f['tagRepo']->addTag($note->id, 'brake');
     $resp = $f['controller']->getNote(makeVnUser(7), $note->id);
     vnAssertTrue(array_key_exists('tags', $resp['data']),
         'getNote merges tags into the data payload');
     vnAssertSame(['brake'], $resp['data']['tags']);
+    // R-01 — controller synthesises the auth-gated audio stream URL so the
+    // React detail modal has a stable href.
+    vnAssertSame(
+        "/api/voice-notes/{$note->id}/audio",
+        $resp['data']['audio_url'],
+        'audio_url is server-synthesised, never derived from audio_path'
+    );
 };
 
 $tests['controller_setTags_returns_added_and_removed'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $resp = $f['controller']->setTags(makeVnUser(7), $note->id, ['tags' => ['oil', 'tire']]);
     sort($resp['data']['added']);
     vnAssertSame(['oil', 'tire'], $resp['data']['added']);
@@ -855,7 +976,7 @@ $tests['controller_setTags_returns_added_and_removed'] = function () {
 
 $tests['controller_transcribeNote_returns_completed_envelope'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $resp = $f['controller']->transcribeNote(makeVnUser(7), $note->id);
     vnAssertSame('completed', $resp['data']['transcription_status']);
     vnAssertSame('fallback transcript', $resp['data']['transcript']);
@@ -863,7 +984,7 @@ $tests['controller_transcribeNote_returns_completed_envelope'] = function () {
 
 $tests['controller_pin_unpin_round_trip'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $pinned = $f['controller']->pinNote(makeVnUser(7), $note->id);
     vnAssertTrue($pinned['data']['pinned']);
     $unpinned = $f['controller']->unpinNote(makeVnUser(7), $note->id);
@@ -872,7 +993,7 @@ $tests['controller_pin_unpin_round_trip'] = function () {
 
 $tests['controller_deleteNote_returns_deleted_marker'] = function () {
     $f = makeVnFixture();
-    $note = $f['service']->record(makeVnUser(7), ['audio_path' => 'a.mp3']);
+    $note = $f['service']->record(makeVnUser(7), vnFakeUpload(), []);
     $resp = $f['controller']->deleteNote(makeVnUser(7), $note->id);
     vnAssertSame(true, $resp['data']['deleted']);
     vnAssertSame(null, $f['repo']->findById($note->id));

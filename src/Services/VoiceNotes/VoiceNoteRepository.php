@@ -34,7 +34,8 @@ use RuntimeException;
 class VoiceNoteRepository
 {
     private const COLUMNS = 'id, workorder_id, ticket_id, vehicle_id, author_user_id,
-        audio_path, audio_format, audio_size_bytes, duration_seconds,
+        audio_path, audio_format, audio_mime, audio_size_bytes, audio_sha256_hash,
+        duration_seconds,
         transcript, transcript_language, transcription_provider, transcription_status,
         transcription_started_at, transcription_completed_at, transcription_failure_reason,
         confidence, visibility, pinned, notes, created_at, updated_at';
@@ -128,12 +129,14 @@ class VoiceNoteRepository
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO voice_notes
              (workorder_id, ticket_id, vehicle_id, author_user_id,
-              audio_path, audio_format, audio_size_bytes, duration_seconds,
+              audio_path, audio_format, audio_mime, audio_size_bytes, audio_sha256_hash,
+              duration_seconds,
               transcription_provider, transcription_status, transcript_language,
               visibility, pinned, notes)
              VALUES
              (:workorder_id, :ticket_id, :vehicle_id, :author_user_id,
-              :audio_path, :audio_format, :audio_size_bytes, :duration_seconds,
+              :audio_path, :audio_format, :audio_mime, :audio_size_bytes, :audio_sha256_hash,
+              :duration_seconds,
               :transcription_provider, :transcription_status, :transcript_language,
               :visibility, :pinned, :notes)'
         );
@@ -144,7 +147,9 @@ class VoiceNoteRepository
             'author_user_id' => self::nullableInt($data['author_user_id'] ?? null),
             'audio_path' => (string) ($data['audio_path'] ?? ''),
             'audio_format' => (string) ($data['audio_format'] ?? 'mp3'),
+            'audio_mime' => self::nullableString($data['audio_mime'] ?? null),
             'audio_size_bytes' => self::nullableInt($data['audio_size_bytes'] ?? null),
+            'audio_sha256_hash' => self::nullableString($data['audio_sha256_hash'] ?? null),
             'duration_seconds' => self::nullableFloat($data['duration_seconds'] ?? null),
             'transcription_provider' => (string) ($data['transcription_provider'] ?? 'heuristic_v1'),
             'transcription_status' => (string) ($data['transcription_status'] ?? VoiceNote::STATUS_PENDING),
@@ -168,7 +173,8 @@ class VoiceNoteRepository
     {
         $writable = [
             'workorder_id', 'ticket_id', 'vehicle_id',
-            'audio_format', 'audio_size_bytes', 'duration_seconds',
+            'audio_format', 'audio_mime', 'audio_size_bytes', 'audio_sha256_hash',
+            'duration_seconds',
             'transcript', 'transcript_language', 'transcription_provider',
             'transcription_status', 'transcription_started_at',
             'transcription_completed_at', 'transcription_failure_reason',
@@ -219,6 +225,7 @@ class VoiceNoteRepository
                 => self::nullableInt($value),
             'duration_seconds', 'confidence' => self::nullableFloat($value),
             'pinned' => !empty($value) ? 1 : 0,
+            'audio_mime', 'audio_sha256_hash',
             'transcript', 'transcript_language', 'transcription_started_at',
             'transcription_completed_at', 'transcription_failure_reason',
             'notes' => self::nullableString($value),
