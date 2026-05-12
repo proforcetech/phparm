@@ -49,4 +49,37 @@ class PortalAccount extends BaseModel
         }
         return false;
     }
+
+    /**
+     * Strict per-row site gate for transactional documents whose site is
+     * resolved indirectly (invoices/workorders via site_assets, contracts
+     * via contract_sites). Unscoped accounts (allowed_site_ids === null)
+     * see everything in their company; scoped accounts must have at least
+     * one matching site, AND a row with no resolvable site is excluded —
+     * not silently passed through. See R-05 / AUD-067.
+     *
+     * For multi-site rows (contracts span multiple sites), pass every
+     * resolved site id; ANY-match wins.
+     *
+     * @param array<int, int>|int|null $siteIds
+     */
+    public function allowsRowWithSite(array|int|null $siteIds): bool
+    {
+        if ($this->allowed_site_ids === null) {
+            return true;
+        }
+        if ($siteIds === null) {
+            return false;
+        }
+        $candidates = is_array($siteIds) ? $siteIds : [$siteIds];
+        if ($candidates === []) {
+            return false;
+        }
+        foreach ($candidates as $siteId) {
+            if ($this->allowsSite((int) $siteId)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

@@ -8,6 +8,7 @@ use App\Models\Workorder;
 use App\Models\WorkorderJob;
 use App\Models\WorkorderItem;
 use App\Models\WorkorderStatusHistory;
+use App\Services\Assets\SiteAssetRepository;
 use App\Services\Customer\CustomerRepository;
 use App\Services\Workorder\WorkorderRepository;
 use App\Support\Auth\UnauthorizedException;
@@ -48,6 +49,7 @@ class PortalWorkorderService
     public function __construct(
         private readonly WorkorderRepository $workorders,
         private readonly CustomerRepository $customers,
+        private readonly ?SiteAssetRepository $siteAssets = null,
     ) {
     }
 
@@ -84,6 +86,7 @@ class PortalWorkorderService
                 $rows[] = $wo;
             }
         }
+        $rows = $this->filterWorkordersByAllowedSites($account, $rows);
         usort(
             $rows,
             static fn(Workorder $a, Workorder $b) => strcmp((string) $b->created_at, (string) $a->created_at),
@@ -162,7 +165,68 @@ class PortalWorkorderService
         ) {
             throw new UnauthorizedException('workorder belongs to a different company');
         }
+        // R-05 / AUD-067: when the portal account is narrowed to specific
+        // sites, the workorder's resolved site_id (via site_assets) must
+        // match. Strict policy: a workorder with site_asset_id = NULL is
+        // out-of-scope for narrowed accounts. Same error message as the
+        // company mismatch above so we do not leak whether the row exists.
+        if ($account->allowed_site_ids !== null) {
+            $resolved = $this->resolveWorkorderSiteIds([$wo]);
+            if (!$account->allowsRowWithSite($resolved[$wo->id] ?? null)) {
+                throw new UnauthorizedException('workorder belongs to a different company');
+            }
+        }
         return $wo;
+    }
+
+    /**
+     * @param array<int, Workorder> $workorders
+     * @return array<int, Workorder>
+     */
+    private function filterWorkordersByAllowedSites(PortalAccount $account, array $workorders): array
+    {
+        if ($account->allowed_site_ids === null || $workorders === []) {
+            return $workorders;
+        }
+        $resolved = $this->resolveWorkorderSiteIds($workorders);
+        $out = [];
+        foreach ($workorders as $wo) {
+            $siteId = $resolved[$wo->id] ?? null;
+            if ($account->allowsRowWithSite($siteId)) {
+                $out[] = $wo;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<int, Workorder> $workorders
+     * @return array<int, int> workorderId => siteId (only keys for resolvable rows)
+     */
+    private function resolveWorkorderSiteIds(array $workorders): array
+    {
+        if ($this->siteAssets === null) {
+            return [];
+        }
+        $assetIds = [];
+        foreach ($workorders as $wo) {
+            if ($wo->site_asset_id !== null) {
+                $assetIds[] = (int) $wo->site_asset_id;
+            }
+        }
+        if ($assetIds === []) {
+            return [];
+        }
+        $assetToSite = $this->siteAssets->resolveSiteIdsForAssetIds($assetIds);
+        $out = [];
+        foreach ($workorders as $wo) {
+            if ($wo->site_asset_id !== null
+                && isset($assetToSite[(int) $wo->site_asset_id])
+            ) {
+                $out[$wo->id] = $assetToSite[(int) $wo->site_asset_id];
+            }
+        }
+        return $out;
     }
 
     /**

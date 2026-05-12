@@ -174,6 +174,7 @@ return function (Router $router, RouteContext $ctx): void {
         new PortalPaymentMethodRepository($ctx->connection),
         $ctx->auditLogger,
         $portalPermissions,
+        $siteAssetRepo,
     );
     $billingController = new PortalBillingController($billingService);
 
@@ -272,7 +273,7 @@ return function (Router $router, RouteContext $ctx): void {
 
     // Phase 2c — read-only workorders surface (jobs + status history,
     // scoped via customers.company_id like invoices).
-    $workorderService = new PortalWorkorderService($portalWorkorderRepo, $portalCustomerRepo);
+    $workorderService = new PortalWorkorderService($portalWorkorderRepo, $portalCustomerRepo, $siteAssetRepo);
     $workorderController = new PortalWorkorderController($workorderService);
 
     // Phase 2e (Decision D) — portal-side OIDC. Reuses the staff repos

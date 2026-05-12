@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\PortalAccount;
 use App\Models\PortalPaymentMethod;
 use App\Models\User;
+use App\Services\Assets\SiteAssetRepository;
 use App\Services\Customer\CustomerRepository;
 use App\Services\Invoice\InvoicePublicPaymentTokenService;
 use App\Services\Invoice\InvoiceService;
@@ -48,6 +49,7 @@ class PortalBillingService
         private readonly PortalPaymentMethodRepository $methods,
         private readonly AuditLogger $audit,
         private readonly ?PortalPermissionService $permissions = null,
+        private readonly ?SiteAssetRepository $siteAssets = null,
     ) {
     }
 
@@ -67,7 +69,8 @@ class PortalBillingService
             ? self::UNPAID_INVOICE_STATUSES
             : self::PORTAL_VISIBLE_INVOICE_STATUSES;
 
-        $out = [];
+        /** @var array<int, Invoice> $rows */
+        $rows = [];
         $limit = max(1, min(500, (int) ($filters['limit'] ?? 100)));
         foreach ($customerIds as $customerId) {
             foreach ($statuses as $status) {
@@ -76,10 +79,12 @@ class PortalBillingService
                     $limit,
                     0,
                 ) as $invoice) {
-                    $out[] = $this->serializeInvoice($invoice);
+                    $rows[] = $invoice;
                 }
             }
         }
+        $rows = $this->filterInvoicesByAllowedSites($account, $rows);
+        $out = array_map(fn(Invoice $i) => $this->serializeInvoice($i), $rows);
         // Sort by issue_date desc so the portal UI sees newest first.
         usort($out, static fn($a, $b) => strcmp((string) ($b['issue_date'] ?? ''), (string) ($a['issue_date'] ?? '')));
         return $out;
@@ -337,7 +342,70 @@ class PortalBillingService
                 'invoice belongs to a different company'
             );
         }
+        // R-05 / AUD-067: when the portal account is narrowed to specific
+        // sites, the invoice's resolved site_id (via site_assets) must
+        // match. Strict policy: an invoice with site_asset_id = NULL is
+        // out-of-scope for narrowed accounts. Same error message as the
+        // company mismatch above so we do not leak whether the row exists.
+        if ($account->allowed_site_ids !== null) {
+            $resolved = $this->resolveInvoiceSiteIds([$invoice]);
+            if (!$account->allowsRowWithSite($resolved[$invoice->id] ?? null)) {
+                throw new UnauthorizedException(
+                    'invoice belongs to a different company'
+                );
+            }
+        }
         return $invoice;
+    }
+
+    /**
+     * @param array<int, Invoice> $invoices
+     * @return array<int, Invoice>
+     */
+    private function filterInvoicesByAllowedSites(PortalAccount $account, array $invoices): array
+    {
+        if ($account->allowed_site_ids === null || $invoices === []) {
+            return $invoices;
+        }
+        $resolved = $this->resolveInvoiceSiteIds($invoices);
+        $out = [];
+        foreach ($invoices as $invoice) {
+            $siteId = $resolved[$invoice->id] ?? null;
+            if ($account->allowsRowWithSite($siteId)) {
+                $out[] = $invoice;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<int, Invoice> $invoices
+     * @return array<int, int> invoiceId => siteId (only keys for resolvable rows)
+     */
+    private function resolveInvoiceSiteIds(array $invoices): array
+    {
+        if ($this->siteAssets === null) {
+            return [];
+        }
+        $assetIds = [];
+        foreach ($invoices as $invoice) {
+            if ($invoice->site_asset_id !== null) {
+                $assetIds[] = (int) $invoice->site_asset_id;
+            }
+        }
+        if ($assetIds === []) {
+            return [];
+        }
+        $assetToSite = $this->siteAssets->resolveSiteIdsForAssetIds($assetIds);
+        $out = [];
+        foreach ($invoices as $invoice) {
+            if ($invoice->site_asset_id !== null
+                && isset($assetToSite[(int) $invoice->site_asset_id])
+            ) {
+                $out[$invoice->id] = $assetToSite[(int) $invoice->site_asset_id];
+            }
+        }
+        return $out;
     }
 
     private function loadScopedMethod(PortalAccount $account, int $methodId): PortalPaymentMethod

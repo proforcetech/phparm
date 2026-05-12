@@ -31,7 +31,7 @@ class ContractRepository
      * @param array{
      *   company_id?: int, division_id?: int, status?: string,
      *   contract_type?: string, active_on?: string, query?: string,
-     *   limit?: int, offset?: int
+     *   allowed_site_ids?: array<int, int>, limit?: int, offset?: int
      * } $filters
      * @return array{data: array<int, Contract>, total: int}
      */
@@ -62,6 +62,25 @@ class ContractRepository
             $where[] = '(contract_number LIKE :q OR title LIKE :q)';
             $params['q'] = '%' . $filters['query'] . '%';
         }
+        // Strict portal site-scoping (R-05 / AUD-067). When the caller passes
+        // a non-empty allowed_site_ids list, restrict to contracts that have
+        // at least one contract_sites row matching the list (ANY-match).
+        // Contracts with no contract_sites rows at all are excluded — that's
+        // the strict policy: unresolvable-site rows are out-of-scope for
+        // narrowed accounts.
+        if (isset($filters['allowed_site_ids']) && is_array($filters['allowed_site_ids']) && $filters['allowed_site_ids'] !== []) {
+            $sitePlaceholders = [];
+            $i = 0;
+            foreach ($filters['allowed_site_ids'] as $sid) {
+                $key = 'allowed_site_' . $i;
+                $sitePlaceholders[] = ':' . $key;
+                $params[$key] = (int) $sid;
+                $i++;
+            }
+            $where[] = 'EXISTS (SELECT 1 FROM contract_sites cs '
+                . 'WHERE cs.contract_id = contracts.id '
+                . 'AND cs.site_id IN (' . implode(',', $sitePlaceholders) . '))';
+        }
 
         $whereSql = implode(' AND ', $where);
         $limit = max(1, min(500, (int) ($filters['limit'] ?? 100)));
@@ -82,6 +101,43 @@ class ContractRepository
             'data' => array_map(static fn(array $r) => new Contract($r), $rows),
             'total' => $total,
         ];
+    }
+
+    /**
+     * Bulk-resolve the contract_sites linking rows for a set of contract
+     * ids. Used by the portal contract surface (R-05 / AUD-067) to
+     * authorize getForPortal — a scoped account must match at least one
+     * of the contract's sites; contracts with no contract_sites rows are
+     * excluded under the strict policy.
+     *
+     * @param array<int, int> $contractIds
+     * @return array<int, array<int, int>> contractId => [siteId, ...]
+     */
+    public function listSiteIdsForContractIds(array $contractIds): array
+    {
+        $unique = [];
+        foreach ($contractIds as $id) {
+            $intId = (int) $id;
+            if ($intId > 0) {
+                $unique[$intId] = true;
+            }
+        }
+        if ($unique === []) {
+            return [];
+        }
+        $ids = array_keys($unique);
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT contract_id, site_id FROM contract_sites WHERE contract_id IN ({$placeholders})"
+        );
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $cid = (int) $row['contract_id'];
+            $out[$cid] ??= [];
+            $out[$cid][] = (int) $row['site_id'];
+        }
+        return $out;
     }
 
     public function findById(int $id): ?Contract

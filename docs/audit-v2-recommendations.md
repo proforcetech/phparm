@@ -184,47 +184,71 @@ should be measured before rolling out for older contracts.
 
 ---
 
-## R-05 — AUD-067: Portal site-scoping for billing, contracts, workorders
+## R-05 — AUD-067: Portal site-scoping for billing, contracts, workorders ✅ Shipped 2026-05-11
 
-**Source finding:** AUD-067 (security/medium, open)
+**Source finding:** AUD-067 (security/medium) — **resolved**.
 
-**Why deferred:** The portal services in question
-(`PortalBillingService`, `PortalContractService`, `PortalWorkorderService`)
-intentionally scope to `portal_account.company_id` only — site
-restriction was never wired in for these surfaces. Closing the gap
-requires deciding **policy** first:
+**Policy decided:** **Strict.** A portal account narrowed to
+`allowed_site_ids = [N]` sees only rows that resolve to one of those
+site ids. Rows with no resolvable site (invoices/workorders with
+`site_asset_id = NULL`, contracts with no `contract_sites` linking rows)
+are **excluded** — not silently passed through. Multi-site contracts
+match via **ANY** of their linked sites. No legacy passthrough config
+flag — silent passthrough was the original bug and re-introducing it
+would have re-opened the same hole.
 
-- Should `allowed_site_ids = [5]` mean "this portal account sees only
-  invoices for customers at site 5", or "this portal account sees only
-  invoices created by techs at site 5"? The two definitions yield
-  different join paths.
-- Multi-site contracts (covered via `contract_sites` linking table) span
-  multiple sites — does an account narrowed to site 5 see the contract
-  if **any** of the contract's sites is 5, or only if **all** sites
-  match?
+**Schema reality vs. original recommendation:** the original recommendation
+proposed filtering via `customers.site_id` and `workorders.site_id`, but
+neither column exists in the post-migration-156 schema. The real path
+is:
 
-**Recommended path:**
+- **Invoices / workorders:** `transactional_doc.site_asset_id →
+  site_assets.site_id` (nullable; legacy auto-shop installs run with
+  this universally NULL).
+- **Contracts:** `contract_sites` linking table (multi-site, ANY-match).
 
-1. Define the policy in `docs/portal-scoping-policy.md` (separate
-   document, ~1 page). Get explicit sign-off from a stakeholder before
-   touching code.
-2. Once policy is fixed, add `assertSiteAccess()` calls to:
-   - `PortalBillingService::listInvoices()`,
-     `PortalBillingService::getInvoice()` — filter via
-     `customers.site_id` (or `invoices.site_id` if the invoice has its
-     own site).
-   - `PortalContractService::listContracts()` — filter via
-     `contract_sites` join with the chosen `ANY` vs. `ALL` semantics.
-   - `PortalWorkorderService::list*()` — filter via `workorders.site_id`.
-3. Add a regression test per service that proves a scoped account
-   cannot see another site's data.
+**What shipped:**
 
-**Cost:** Policy write + sign-off ≈ 1 day; implementation ≈ 1.5 days;
-tests ≈ 0.5 day.
+1. `PortalAccount::allowsRowWithSite(array|int|null $siteIds)` — single
+   strict-policy gate. Unscoped (`allowed_site_ids === null`) returns
+   true; scoped + null/empty returns false.
+2. `SiteAssetRepository::resolveSiteIdsForAssetIds(int[]): array<int,int>` —
+   bulk lookup so list views stay O(1) extra query rather than N+1.
+3. `ContractRepository::listSiteIdsForContractIds(int[]): array<int,int[]>` —
+   same shape for the contract path.
+4. `ContractRepository::search()` got an `allowed_site_ids` filter that
+   pushes `EXISTS (SELECT 1 FROM contract_sites cs WHERE cs.contract_id
+   = contracts.id AND cs.site_id IN (…))` into the SQL, so paginated
+   counts/results stay correct under narrowing (no post-filter drift).
+5. `PortalBillingService` and `PortalWorkorderService` got an optional
+   positional `?SiteAssetRepository $siteAssets = null` constructor arg
+   (added at the **end** of the parameter list — backward-compatible for
+   the existing positional callsite in `routes/modules/portal.php`).
+   `loadScoped*` and `list*ForPortal()` now apply
+   `allowsRowWithSite()` after the company check.
+6. `PortalContractService::listForPortal()` forwards `allowed_site_ids`
+   into `ContractRepository::search()`; `getForPortal()` re-checks via
+   `listSiteIdsForContractIds([$contract->id])`.
+7. Cross-site rejections re-use the existing `"…belongs to a different
+   company"` message so a narrowed account cannot enumerate row IDs by
+   diffing error responses.
+8. `routes/modules/portal.php` now passes `$siteAssetRepo` as the 8th
+   arg to `PortalBillingService` and the 3rd arg to
+   `PortalWorkorderService`.
 
-**Risk of doing nothing:** Low-prevalence today (most installs have
-either one site per portal account or no site narrowing at all), but
-breaches a stated security boundary the portal advertises.
+**Verification:** `php tests/PortalSiteScopingTest.php` — 11 cases. All
+pass. Covers unscoped/scoped × list/get for all three services, the
+NULL-site strict-drop, the multi-site ANY-match contract case, and that
+unscoped accounts skip the `site_assets` lookup entirely.
+
+**Breaking-shape risk:** A portal account with `allowed_site_ids` set
+against a legacy auto-shop install (where `site_asset_id` is universally
+NULL) will now see an empty list. Practical impact is zero — legacy
+installs that have not adopted the multi-site schema run with
+`allowed_site_ids = NULL` — but operators who flip a narrowing on
+without backfilling `site_asset_id` will need to either backfill or
+revert to unscoped. This is intentional; the alternative (silent
+passthrough flag) was the original bug.
 
 ---
 
@@ -274,7 +298,7 @@ for any rows the rewrap missed).
 | AUD-064 | partially-resolved | R-02 |
 | AUD-065 | open | R-03 |
 | AUD-066 | open | R-04 |
-| AUD-067 | open | R-05 |
+| AUD-067 | resolved | R-05 (shipped 2026-05-11) |
 | AUD-071 | open | R-06 |
 
 Findings AUD-068 (TOTP code reuse), AUD-069 (step-up session binding),

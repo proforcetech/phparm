@@ -13,8 +13,8 @@ Two audit cycles have completed against this repository:
 - **v2** (closed 2026-05-11): six-phase delta pass against the ~189k
   insertions / ~1.2k files added since the v1 closeout, plus two new categories
   (stale code identification, missing/stubbed UI inventory). Produced 15 new
-  findings (AUD-063..AUD-077) and 11 UI gap entries (UIG-1..UIG-11). 10 of 15
-  findings resolved or partially-resolved; 5 deferred to the recommendations
+  findings (AUD-063..AUD-077) and 11 UI gap entries (UIG-1..UIG-11). 11 of 15
+  findings resolved or partially-resolved; 4 deferred to the recommendations
   doc or carried open in the register.
 
 The CMS review work that began in v1 remains complete for findings confirmed
@@ -27,22 +27,23 @@ Combined register in [audit-findings.md](audit-findings.md):
 | Cycle | Total | Resolved | Partial | Open |
 | ----- | ----: | -------: | ------: | ---: |
 | v1    |    62 |       62 |       0 |    0 |
-| v2    |    15 |        8 |       2 |    5 |
-| **All** | **77** | **70** | **2** | **5** |
+| v2    |    15 |        9 |       2 |    4 |
+| **All** | **77** | **71** | **2** | **4** |
 
 v1 by category — Security 8, Error handling 6, Performance 48.
-v2 by category — Security 10 (4 resolved + 2 partial), Performance 5 (4 resolved).
+v2 by category — Security 10 (5 resolved + 2 partial), Performance 5 (4 resolved).
 
 ### Open v2 findings (deferred or designed-out)
 
 - **AUD-065** — short-code entropy on public e-sign links (~40 bits) — `R-03`
 - **AUD-066** — document hash computed at sign-time, not issue-time — `R-04`
-- **AUD-067** — portal services miss site-scope filtering for billing /
-  contracts / workorders — `R-05`
 - **AUD-071** — single env key spans CRM site-codes + integration credentials —
   `R-06`
 - **AUD-077** — cron runner serializes per-minute jobs and uses a stale-prone
   file lock — register only
+
+(AUD-067 portal site-scoping shipped 2026-05-11 under R-05's strict policy —
+see the AUD-067 register entry for the breaking-shape note.)
 
 R-XX recommendations are written up in
 [audit-v2-recommendations.md](audit-v2-recommendations.md).
@@ -118,13 +119,11 @@ This is a clean stop point.
 
 If work resumes, the highest-value next steps are:
 
-1. Implement R-05 (AUD-067, portal site-scoping) — only open finding that
-   permits cross-site data exposure.
-2. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
+1. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
    audio paths with a real upload pipeline.
-3. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends
+2. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends
    (technician sidebar, admin dashboard CTA, divisions delete).
-4. Wire `pdo_sqlite` (or equivalent) into the test environment and run the
+3. Wire `pdo_sqlite` (or equivalent) into the test environment and run the
    three blocked v1 tests + the new v2 tests as one regression sweep.
 
 Beyond that, performance work should switch to production-traces-led

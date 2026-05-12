@@ -105,6 +105,41 @@ class SiteAssetRepository
     }
 
     /**
+     * Bulk-resolve site_id for a set of site_assets ids. Used by the portal
+     * services (R-05 / AUD-067) to filter transactional documents
+     * (invoices, workorders) down to a portal account's allowed sites
+     * without N+1 lookups. Returns only ids that resolve — callers treat
+     * a missing key as "site unresolvable" and apply the strict policy.
+     *
+     * @param array<int, int> $assetIds
+     * @return array<int, int> assetId => siteId
+     */
+    public function resolveSiteIdsForAssetIds(array $assetIds): array
+    {
+        $unique = [];
+        foreach ($assetIds as $id) {
+            $intId = (int) $id;
+            if ($intId > 0) {
+                $unique[$intId] = true;
+            }
+        }
+        if ($unique === []) {
+            return [];
+        }
+        $ids = array_keys($unique);
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT id, site_id FROM site_assets WHERE id IN ({$placeholders})"
+        );
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $out[(int) $row['id']] = (int) $row['site_id'];
+        }
+        return $out;
+    }
+
+    /**
      * @return array<int, SiteAsset>
      */
     public function listChildren(int $parentId): array

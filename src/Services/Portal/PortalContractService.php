@@ -54,6 +54,14 @@ class PortalContractService
         if (isset($query['query']) && is_string($query['query']) && trim($query['query']) !== '') {
             $filters['query'] = trim($query['query']);
         }
+        // R-05 / AUD-067: strict site-scoping for narrowed portal accounts.
+        // ContractRepository::search applies an EXISTS clause on
+        // contract_sites so paginated counts/results match the filter.
+        // Strict policy: contracts with no contract_sites entries are
+        // excluded for narrowed accounts.
+        if ($account->allowed_site_ids !== null) {
+            $filters['allowed_site_ids'] = $account->allowed_site_ids;
+        }
 
         $result = $this->contracts->search($filters);
         return [
@@ -80,6 +88,18 @@ class PortalContractService
         }
         if ($contract->company_id !== $account->company_id) {
             throw new UnauthorizedException('contract belongs to a different company');
+        }
+        // R-05 / AUD-067: enforce ANY-match against the contract's
+        // contract_sites linking rows when the account is narrowed.
+        // Strict policy: a contract with no contract_sites is out-of-scope
+        // for narrowed accounts. Same error message as the company-mismatch
+        // branch so we do not leak whether the row exists.
+        if ($account->allowed_site_ids !== null) {
+            $byContract = $this->contracts->listSiteIdsForContractIds([$contract->id]);
+            $siteIds = $byContract[$contract->id] ?? [];
+            if (!$account->allowsRowWithSite($siteIds === [] ? null : $siteIds)) {
+                throw new UnauthorizedException('contract belongs to a different company');
+            }
         }
         return $this->serialize($contract, includeTerms: true);
     }

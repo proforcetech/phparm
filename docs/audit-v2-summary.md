@@ -26,25 +26,26 @@ domains since the v1 closeout).
 
 15 new findings added to the register, continuing from `AUD-063`:
 
-| Status              | Count | IDs                                                              |
-| ------------------- | ----- | ---------------------------------------------------------------- |
-| Resolved            | 8     | AUD-068, AUD-069, AUD-070, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076 |
+| Status              | Count | IDs                                                                       |
+| ------------------- | ----- | ------------------------------------------------------------------------- |
+| Resolved            | 9     | AUD-067, AUD-068, AUD-069, AUD-070, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076 |
 | Partially resolved  | 2     | AUD-063, AUD-064 (immediate exploit closed; architectural follow-up deferred to recommendations) |
-| Open / deferred     | 5     | AUD-065, AUD-066, AUD-067, AUD-071, AUD-077                      |
+| Open / deferred     | 4     | AUD-065, AUD-066, AUD-071, AUD-077                                        |
 
 By category:
 
 | Category    | Total | Resolved | Partial | Open |
 | ----------- | ----: | -------: | ------: | ---: |
-| Security    |    10 |        4 |       2 |    4 |
+| Security    |    10 |        5 |       2 |    3 |
 | Performance |     5 |        4 |       0 |    1 |
 
 Open items have all been written up with full evidence + recommended fix in
-the register; four of them have escalated, designed-out replacement specs in
-[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-03, R-04, R-05,
-R-06 — R-01 / R-02 cover the partially-resolved AUD-063 / AUD-064). The
-fifth (AUD-077, cron parallelism / lock hygiene) is a design tweak left in
-the register only.
+the register; three of them have escalated, designed-out replacement specs in
+[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-03, R-04, R-06 —
+R-01 / R-02 cover the partially-resolved AUD-063 / AUD-064; R-05 / AUD-067
+shipped under the strict site-scoping policy on 2026-05-11). The fourth
+(AUD-077, cron parallelism / lock hygiene) is a design tweak left in the
+register only.
 
 Also recorded:
 
@@ -155,20 +156,20 @@ post-migration schema and ran successfully here.
 
 The findings register is the canonical list. Highlights:
 
-**Security — 4 items still open.** All have a recommended fix in the register
+**Security — 3 items still open.** All have a recommended fix in the register
 plus a deeper architectural recommendation in `audit-v2-recommendations.md`
 where applicable. Highest residual exposure:
 
-- **AUD-067** (portal site-scoping bypass) — a portal account whose
-  `scope.allowed_site_ids` should narrow them to one site can still read
-  every billing invoice / contract / workorder for the company. Pattern
-  inconsistency across the portal services; the fix is mechanical (add
-  `assertSiteAccess()` calls) but cuts across three service files.
 - **AUD-065/066** (short-code entropy + post-issue document mutation)
   weaken the e-sign chain even after the AUD-064 single-use fix.
 - **AUD-071** (single env key spans two domains) — rotation in either
   domain forces simultaneous re-encryption of the other; no version byte
   for online rotation.
+
+(AUD-067 portal site-scoping was the previous top-of-list item; it shipped
+on 2026-05-11 under the strict policy described in R-05. See the AUD-067
+register entry for the breaking-shape note for legacy auto-shop installs
+that still set `allowed_site_ids` against rows with no `site_asset_id`.)
 
 **Performance — 1 item open (AUD-077).** Cron runner has no PID-based lock
 and serializes per-minute jobs; a hung job can stall subsequent ticks for
@@ -210,13 +211,11 @@ This is a clean stop point.
 
 If work resumes from here, the highest-value next steps are, in order:
 
-1. Implement R-05 (AUD-067, portal site-scoping) — the only open finding
-   that allows cross-site data exposure in a multi-tenant model.
-2. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
+1. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
    audio paths with a real upload pipeline; the inline fix only closed the
    exploit windows, not the design.
-3. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends.
-4. Get `pdo_sqlite` (or equivalent) wired into the test environment and run
+2. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends.
+3. Get `pdo_sqlite` (or equivalent) wired into the test environment and run
    the three blocked v1 tests + the new v2 tests as a single regression
    sweep.
 
