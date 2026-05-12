@@ -74,15 +74,16 @@ each entry's `Verification:` line.
 - v2 added two new test files: `tests/StepUpReplayDefenseTest.php` and
   `tests/EsignSingleUseTest.php` (both run successfully against in-memory
   SQLite mirroring the post-migration schema).
-- The three v1-blocked database tests (2026-05-12 re-investigation, see
-  v2 stop-point follow-up): `pdo_sqlite` is in fact installed here. The
-  real blocker is MySQL-specific SQL functions in production code paths.
-  `tests/test_bootstrap.php::registerMysqlCompatFunctions()` now installs
-  shims for `NOW()`, `GREATEST()`, and `LEAST()` as SQLite UDFs, and two
-  of the three tests pass against it:
+- The three v1-blocked database tests (2026-05-12 re-investigation + stop-point
+  follow-up): `pdo_sqlite` is in fact installed here. The real blocker was
+  MySQL-specific SQL functions and placeholder semantics in production
+  code paths. `tests/test_bootstrap.php::registerMysqlCompatFunctions()`
+  installs shims for `NOW()`, `GREATEST()`, and `LEAST()` as SQLite UDFs.
+  `PaymentProcessingService` was rewritten to avoid PDO_MySQL-only behaviour
+  (placeholder reuse, `ON DUPLICATE KEY UPDATE`). All three tests now pass:
   - [tests/AuthTokenRepositorySecurityTest.php](/var/www/phparm/tests/AuthTokenRepositorySecurityTest.php) — **passes**.
-  - [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php) — **passes** after fixing a fixture (invoice rows now seed `customer_id` since the `App\Models\Invoice::$customer_id` declaration is `int`, not `?int`).
-  - [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php) — **still blocked**, but by a different root cause. `PaymentProcessingService::recordWebhookEvent()` reuses the same named placeholder multiple times in its UPSERT (`:invoice_id` 2×, `:status` 3×). MySQL with emulated prepares accepts this; `pdo_sqlite` does not support `ATTR_EMULATE_PREPARES` at all. Unblocking it requires a production-side SQL rewrite (distinct names per reuse, or splitting the conditional updates), which is out of scope for the v2 stop-point cleanup.
+  - [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php) — **passes** after seeding `customer_id` in the fixture (the `App\Models\Invoice::$customer_id` declaration is `int`, not `?int`).
+  - [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php) — **passes** after: (a) distinct placeholder names per occurrence in `recordWebhookEvent()`'s upsert + per-statement filtered bindings, (b) replacing the `ON DUPLICATE KEY UPDATE` in `storeCheckoutSession()` with a SELECT-then-INSERT/UPDATE pattern matching the file's existing convention, (c) test now mirrors the unmatched webhook into `payment_webhook_events` (the store-backed recovery path) in addition to `audit_logs` (legacy fallback).
 
 ## Residual Risks And Follow-Up
 
@@ -127,17 +128,19 @@ This is a clean stop point.
 
 If work resumes, the highest-value next steps are:
 
-1. Rewrite `PaymentProcessingService::recordWebhookEvent()` to use distinct
-   placeholder names per reuse so `tests/PaymentWebhookReconciliationTest.php`
-   can run under PDO_SQLITE — the only remaining legacy v1 test still blocked
-   after the 2026-05-12 bootstrap UDF wiring (the other two now pass).
-2. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
+1. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
    signing + per-link rate limiting; largest remaining cost on the
    recommendations doc.
+2. R-03 / R-04 (AUD-065 short-code entropy, AUD-066 issue-time document hash)
+   — smaller items related to the public link surface.
+3. R-06 (AUD-071 per-domain encryption keys + versioned ciphertext).
+4. AUD-077 (cron lock / per-minute parallelism).
+5. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
 
-UIG-1, UIG-2, and UIG-9 closed 2026-05-12 (technician portal real view,
-admin dashboard CTA hidden, `DELETE /api/divisions/{id}` shipped with
-test). See `audit-v2-ui-gaps.md` for status.
+UIG-1, UIG-2, UIG-9 closed 2026-05-12 (technician portal real view,
+admin dashboard CTA hidden, `DELETE /api/divisions/{id}` shipped). All
+three legacy v1 tests pass under PDO_SQLITE as of 2026-05-12. See
+`audit-v2-ui-gaps.md` for UI gap status.
 
 Beyond that, performance work should switch to production-traces-led
 profiling rather than further static cleanup.

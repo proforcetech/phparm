@@ -140,17 +140,19 @@ Coverage:
   run, and by syntax-checking the one consumer (`VinDecoderFactory`) that
   the IMPLEMENTATION_STATUS doc had falsely claimed used the removed class.
 
-Verification gaps from v1 partially addressed by v2 stop-point follow-up
+Verification gaps from v1 fully addressed by v2 stop-point follow-up
 (2026-05-12): `pdo_sqlite` is in fact installed in this environment — the
-v1 closeout note was stale. Re-investigation showed the real blocker is
-MySQL-specific SQL functions (`NOW()`, `GREATEST()`) and one fixture/model
-drift. `tests/test_bootstrap.php::registerMysqlCompatFunctions()` now
-installs SQLite UDFs for those functions, and two of the three previously
-blocked tests pass against it:
+v1 closeout note was stale. Re-investigation showed the real blockers were
+MySQL-specific SQL functions (`NOW()`, `GREATEST()`), placeholder reuse
+semantics, `ON DUPLICATE KEY UPDATE`, and one fixture/model drift.
+`tests/test_bootstrap.php::registerMysqlCompatFunctions()` installs SQLite
+UDFs for the functions, and `PaymentProcessingService` was reworked to
+avoid the PDO_MySQL-only behaviour. All three previously blocked tests
+now pass:
 
 - [tests/AuthTokenRepositorySecurityTest.php](/var/www/phparm/tests/AuthTokenRepositorySecurityTest.php) — passes (2026-05-12).
 - [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php) — passes after seeding `customer_id` in the fixture (the `Invoice` model declares `int`, not `?int`).
-- [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php) — still blocked. `PaymentProcessingService::recordWebhookEvent()` reuses the same named placeholder multiple times (`:invoice_id` 2×, `:status` 3×) in both the INSERT and UPDATE statements. PDO/MySQL with emulated prepares accepts this; PDO_SQLITE does not support `ATTR_EMULATE_PREPARES`. Unblocking requires a small production-side rewrite (distinct names per reuse) which is out of scope for the v2 stop-point.
+- [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php) — passes after: distinct placeholder names per occurrence in `recordWebhookEvent()`'s upsert + per-statement filtered bindings (PDO_SQLITE rejects both placeholder reuse and unbound extra keys, both of which PDO_MySQL accepts with emulated prepares); replacing `ON DUPLICATE KEY UPDATE` in `storeCheckoutSession()` with a SELECT-then-INSERT/UPDATE pattern matching the file's existing convention; and mirroring the unmatched-webhook seed into `payment_webhook_events` (the store-backed recovery path the production code now prefers — `audit_logs` is the legacy fallback).
 
 Their v2 successors (`tests/StepUpReplayDefenseTest.php`,
 `tests/EsignSingleUseTest.php`) use in-memory SQLite mirroring the
@@ -218,13 +220,13 @@ This is a clean stop point.
 
 If work resumes from here, the highest-value next steps are, in order:
 
-1. Rewrite `PaymentProcessingService::recordWebhookEvent()` to use distinct
-   placeholder names per reuse so `tests/PaymentWebhookReconciliationTest.php`
-   can run under PDO_SQLITE (the other two legacy v1 tests already pass via
-   the bootstrap UDF shims added 2026-05-12).
-2. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
+1. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
    signing + per-link rate limiting. Cost-wise this is the largest remaining
    item on the recommendations doc.
+2. R-03 / R-04 (AUD-065, AUD-066) on the public link surface.
+3. R-06 (AUD-071) per-domain encryption keys.
+4. AUD-077 cron lock / per-minute parallelism.
+5. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
 
 Profiling-led performance work remains the right next move beyond that —
 the broad query / bootstrap cleanup is exhausted. AUD-077 (cron lock /

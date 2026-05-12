@@ -277,19 +277,44 @@ class PaymentProcessingService
             'provider' => $provider,
         ]);
 
-        $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO payment_sessions (invoice_id, provider, session_id, checkout_url, metadata, created_at) '
-            . 'VALUES (:invoice_id, :provider, :session_id, :checkout_url, :metadata, CURRENT_TIMESTAMP) '
-            . 'ON DUPLICATE KEY UPDATE session_id = :session_id, checkout_url = :checkout_url, metadata = :metadata'
-        );
+        $sessionId = $sessionData['session_id'] ?? $sessionData['payment_id'] ?? null;
+        $checkoutUrl = $sessionData['checkout_url'] ?? null;
+        $metadata = json_encode($sessionMetadata);
 
-        $stmt->execute([
-            'invoice_id' => $invoiceId,
-            'provider' => $provider,
-            'session_id' => $sessionData['session_id'] ?? $sessionData['payment_id'] ?? null,
-            'checkout_url' => $sessionData['checkout_url'] ?? null,
-            'metadata' => json_encode($sessionMetadata),
-        ]);
+        // Upsert via SELECT-then-(INSERT|UPDATE). MySQL's ON DUPLICATE KEY
+        // UPDATE is not portable; this matches the pattern used elsewhere in
+        // the same file (see recordWebhookEvent) and works under PDO_SQLITE
+        // for the in-memory test suite.
+        $existing = $this->connection->pdo()->prepare(
+            'SELECT id FROM payment_sessions WHERE invoice_id = :invoice_id AND provider = :provider'
+        );
+        $existing->execute(['invoice_id' => $invoiceId, 'provider' => $provider]);
+        $existingId = $existing->fetchColumn();
+
+        if ($existingId !== false) {
+            $stmt = $this->connection->pdo()->prepare(
+                'UPDATE payment_sessions SET session_id = :session_id, checkout_url = :checkout_url, '
+                . 'metadata = :metadata WHERE id = :id'
+            );
+            $stmt->execute([
+                'id' => (int) $existingId,
+                'session_id' => $sessionId,
+                'checkout_url' => $checkoutUrl,
+                'metadata' => $metadata,
+            ]);
+        } else {
+            $stmt = $this->connection->pdo()->prepare(
+                'INSERT INTO payment_sessions (invoice_id, provider, session_id, checkout_url, metadata, created_at) '
+                . 'VALUES (:invoice_id, :provider, :session_id, :checkout_url, :metadata, CURRENT_TIMESTAMP)'
+            );
+            $stmt->execute([
+                'invoice_id' => $invoiceId,
+                'provider' => $provider,
+                'session_id' => $sessionId,
+                'checkout_url' => $checkoutUrl,
+                'metadata' => $metadata,
+            ]);
+        }
 
         if (!$this->isRecoveringWebhookEvents) {
             $this->recoverUnmatchedWebhookEvents($provider, $invoiceId);
@@ -911,19 +936,52 @@ class PaymentProcessingService
             'payload' => $payload,
         ];
 
+        // PDO_SQLite has two strictness differences from PDO_MySQL's emulated
+        // prepares: (1) it rejects re-use of the same named placeholder in a
+        // statement, and (2) it rejects extra named bindings that aren't in
+        // the SQL. So we use distinct placeholder names per occurrence and
+        // build each statement's bindings from only the keys it references.
+        // The SQL is otherwise identical between drivers.
+        $invoiceIdMatch = $data['invoice_id'];
+        $statusIsProcessed = $data['status'];
+        $statusIsRecovered = $data['status'];
+
         if ($existing !== null) {
+            $updateBindings = [
+                'provider_event_id' => $data['provider_event_id'],
+                'event_type' => $data['event_type'],
+                'invoice_id' => $data['invoice_id'],
+                'transaction_id' => $data['transaction_id'],
+                'refund_id' => $data['refund_id'],
+                'payment_id' => $data['payment_id'],
+                'session_id' => $data['session_id'],
+                'order_id' => $data['order_id'],
+                'status' => $data['status'],
+                'payload' => $data['payload'],
+                'invoice_id_match' => $invoiceIdMatch,
+                'status_is_processed' => $statusIsProcessed,
+                'status_is_recovered' => $statusIsRecovered,
+                'id' => $existing['id'],
+            ];
+
             $stmt = $this->connection->pdo()->prepare(
                 'UPDATE payment_webhook_events SET provider_event_id = :provider_event_id, event_type = :event_type, '
                 . 'invoice_id = COALESCE(:invoice_id, invoice_id), transaction_id = :transaction_id, refund_id = :refund_id, '
                 . 'payment_id = :payment_id, session_id = :session_id, order_id = :order_id, status = :status, payload = :payload, '
-                . 'attempts = attempts + 1, matched_at = CASE WHEN COALESCE(:invoice_id, 0) > 0 THEN CURRENT_TIMESTAMP ELSE matched_at END, '
-                . 'processed_at = CASE WHEN :status = \'processed\' THEN CURRENT_TIMESTAMP ELSE processed_at END, '
-                . 'recovered_at = CASE WHEN :status = \'recovered\' THEN CURRENT_TIMESTAMP ELSE recovered_at END, '
+                . 'attempts = attempts + 1, matched_at = CASE WHEN COALESCE(:invoice_id_match, 0) > 0 THEN CURRENT_TIMESTAMP ELSE matched_at END, '
+                . 'processed_at = CASE WHEN :status_is_processed = \'processed\' THEN CURRENT_TIMESTAMP ELSE processed_at END, '
+                . 'recovered_at = CASE WHEN :status_is_recovered = \'recovered\' THEN CURRENT_TIMESTAMP ELSE recovered_at END, '
                 . 'updated_at = CURRENT_TIMESTAMP WHERE id = :id'
             );
-            $stmt->execute($data + ['id' => $existing['id']]);
+            $stmt->execute($updateBindings);
             return;
         }
+
+        $insertBindings = $data + [
+            'invoice_id_match' => $invoiceIdMatch,
+            'status_is_processed' => $statusIsProcessed,
+            'status_is_recovered' => $statusIsRecovered,
+        ];
 
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO payment_webhook_events (provider, provider_event_id, dedupe_key, event_type, invoice_id, '
@@ -931,11 +989,11 @@ class PaymentProcessingService
             . 'processed_at, recovered_at, created_at, updated_at) VALUES '
             . '(:provider, :provider_event_id, :dedupe_key, :event_type, :invoice_id, :transaction_id, :refund_id, '
             . ':payment_id, :session_id, :order_id, :status, :payload, 1, '
-            . 'CASE WHEN COALESCE(:invoice_id, 0) > 0 THEN CURRENT_TIMESTAMP ELSE NULL END, '
-            . 'CASE WHEN :status = \'processed\' THEN CURRENT_TIMESTAMP ELSE NULL END, '
-            . 'CASE WHEN :status = \'recovered\' THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+            . 'CASE WHEN COALESCE(:invoice_id_match, 0) > 0 THEN CURRENT_TIMESTAMP ELSE NULL END, '
+            . 'CASE WHEN :status_is_processed = \'processed\' THEN CURRENT_TIMESTAMP ELSE NULL END, '
+            . 'CASE WHEN :status_is_recovered = \'recovered\' THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
         );
-        $stmt->execute($data);
+        $stmt->execute($insertBindings);
     }
 
     private function hasWebhookEventStore(): bool

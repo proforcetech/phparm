@@ -302,23 +302,37 @@ namespace {
     $refundResult = $refundService->handleWebhook('paypal', []);
     $refundDuplicateResult = $refundService->handleWebhook('paypal', []);
 
+    $unmatchedWebhookData = [
+        'event_type' => 'payment.completed',
+        'transaction_id' => 'SALE-404',
+        'payment_id' => 'PAYMENT-404',
+        'amount' => 40.0,
+        'currency' => 'USD',
+        'payment_method' => 'paypal',
+        'status' => 'succeeded',
+        'handled' => true,
+    ];
+
     $audit = new \App\Support\Audit\AuditLogger($connection, ['enabled' => true]);
     $audit->log(new \App\Support\Audit\AuditEntry('payment.webhook_unmatched', 'invoice', 0, null, [
         'provider' => 'paypal',
         'event_type' => 'payment.completed',
         'payment_id' => 'PAYMENT-404',
         'transaction_id' => 'SALE-404',
-        'webhook_data' => [
-            'event_type' => 'payment.completed',
-            'transaction_id' => 'SALE-404',
-            'payment_id' => 'PAYMENT-404',
-            'amount' => 40.0,
-            'currency' => 'USD',
-            'payment_method' => 'paypal',
-            'status' => 'succeeded',
-            'handled' => true,
-        ],
+        'webhook_data' => $unmatchedWebhookData,
     ]));
+
+    // Recovery now reads from payment_webhook_events when the table exists
+    // (audit-log scan is the legacy fallback). Mirror the audit-log unmatched
+    // entry into the event store so the store-backed recovery path can find it.
+    $pdo->prepare(
+        'INSERT INTO payment_webhook_events '
+        . '(provider, dedupe_key, event_type, payment_id, transaction_id, status, payload, attempts, created_at, updated_at) '
+        . "VALUES ('paypal', :dedupe_key, 'payment.completed', 'PAYMENT-404', 'SALE-404', 'unmatched', :payload, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+    )->execute([
+        'dedupe_key' => 'paypal:PAYMENT-404:SALE-404:unmatched',
+        'payload' => json_encode($unmatchedWebhookData),
+    ]);
 
     $recoveryService = new PaymentProcessingService(
         $connection,
