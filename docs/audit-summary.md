@@ -1,72 +1,156 @@
 # Audit Summary
 
-Current snapshot date: `2026-04-08`
+Current snapshot date: `2026-05-11`
+Latest closeout: v2 (`2026-05-11`) — see [audit-v2-summary.md](audit-v2-summary.md)
+Prior closeout: v1 (`2026-04-08`) — see [audit-closeout.md](audit-closeout.md)
 
 ## Current Status
 
-The documented audit work is substantially complete for the findings that were confirmed during execution.
+Two audit cycles have completed against this repository:
 
-- Phase 1 baseline and inventory: complete
-- Phase 2 security audit: complete for the logged finding set
-- Phase 3 performance audit: extensive pass complete through the current logged finding set
-- Phase 4 error handling and resilience audit: complete for the logged finding set
-- Phase 5 fix implementation: complete for the logged finding set
-- Phase 6 verification and closeout: partially complete
+- **v1** (closed 2026-04-08): six-phase pass producing 62 confirmed findings,
+  all resolved at closeout. Covered the original codebase up to that date.
+- **v2** (closed 2026-05-11): six-phase delta pass against the ~189k
+  insertions / ~1.2k files added since the v1 closeout, plus two new categories
+  (stale code identification, missing/stubbed UI inventory). Produced 15 new
+  findings (AUD-063..AUD-077) and 11 UI gap entries (UIG-1..UIG-11). 8 of 15
+  findings resolved or partially-resolved; 7 deferred to the recommendations
+  doc or carried open in the register.
 
-The CMS review pass is now complete for the findings confirmed in this workspace. The legacy HTML admin surface has been retired and the CMS session model has been normalized to the app session namespace.
+The CMS review work that began in v1 remains complete for findings confirmed
+in this workspace.
 
 ## Findings Summary
 
-Confirmed findings logged in [audit-findings.md](/var/www/phparm/docs/audit-findings.md):
+Combined register in [audit-findings.md](audit-findings.md):
 
-- Total confirmed findings: `62`
-- Security findings resolved: `8`
-- Error-handling findings resolved: `6`
-- Performance findings resolved: `48`
-- Open findings: `0`
-- Accepted risk findings: `0`
-- Deferred findings: `0`
-- False positives: `0`
+| Cycle | Total | Resolved | Partial | Open |
+| ----- | ----: | -------: | ------: | ---: |
+| v1    |    62 |       62 |       0 |    0 |
+| v2    |    15 |        6 |       2 |    7 |
+| **All** | **77** | **68** | **2** | **7** |
 
-The audit moved beyond the original security pass and included deeper structural work in payment reconciliation, workorder query shaping, route/bootstrap overhead, dashboard/report aggregation, and storage/admin workflows.
+v1 by category — Security 8, Error handling 6, Performance 48.
+v2 by category — Security 10 (2 resolved + 2 partial), Performance 5 (4 resolved).
+
+### Open v2 findings (deferred or designed-out)
+
+- **AUD-065** — short-code entropy on public e-sign links (~40 bits) — `R-03`
+- **AUD-066** — document hash computed at sign-time, not issue-time — `R-04`
+- **AUD-067** — portal services miss site-scope filtering for billing /
+  contracts / workorders — `R-05`
+- **AUD-070** — silent decrypt failure on alarm/gate codes — register only
+- **AUD-071** — single env key spans CRM site-codes + integration credentials —
+  `R-06`
+- **AUD-072** — leftmost `X-Forwarded-For` parsing trusts client-supplied IP
+  when behind a trusted proxy — register only
+- **AUD-077** — cron runner serializes per-minute jobs and uses a stale-prone
+  file lock — register only
+
+R-XX recommendations are written up in
+[audit-v2-recommendations.md](audit-v2-recommendations.md).
+
+### UI gap backlog
+
+11 user-visible gaps catalogued in [audit-v2-ui-gaps.md](audit-v2-ui-gaps.md):
+
+- 4 Blocking gaps reachable from live UI (UIG-1..UIG-4)
+- 3 Blocking gaps on public routes reachable only by direct URL (UIG-5..UIG-7)
+- 4 Degraded gaps where partial functionality ships (UIG-8..UIG-11)
+
+UI gaps are documentation only — no code changes shipped in Phase 5.
+
+### Code hygiene
+
+Phase 4 of v2 removed 16 zero-reference orphan service classes (~1,877 lines)
+documented in [audit-v2-stale-code.md](audit-v2-stale-code.md).
 
 ## Verification Status
 
-Verification is mixed:
+Verification is per-finding and recorded inline in the findings register on
+each entry's `Verification:` line.
 
-- Many changes were covered by targeted regression scripts and `php -l` checks on changed files.
-- Several database-backed regression tests could not run in this environment because `pdo_sqlite` is not available.
-- Some fixes were validated primarily by static inspection plus syntax checks rather than a full end-to-end runtime exercise.
-
-Known test files that were blocked by the missing `pdo_sqlite` extension include:
-
-- [tests/AuthTokenRepositorySecurityTest.php](/var/www/phparm/tests/AuthTokenRepositorySecurityTest.php)
-- [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php)
-- [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php)
+- All v2 fully-resolved findings cite a passing test in the same commit as
+  the fix.
+- v2 added two new test files: `tests/StepUpReplayDefenseTest.php` and
+  `tests/EsignSingleUseTest.php` (both run successfully against in-memory
+  SQLite mirroring the post-migration schema).
+- The three v1-blocked database tests are still blocked here for the same
+  reason — the `pdo_sqlite` extension is not available in this environment:
+  - [tests/AuthTokenRepositorySecurityTest.php](/var/www/phparm/tests/AuthTokenRepositorySecurityTest.php)
+  - [tests/PaymentWebhookReconciliationTest.php](/var/www/phparm/tests/PaymentWebhookReconciliationTest.php)
+  - [tests/InvoiceManualPaymentConsistencyTest.php](/var/www/phparm/tests/InvoiceManualPaymentConsistencyTest.php)
 
 ## Residual Risks And Follow-Up
 
-The audit has no open confirmed findings in the register, but broader residual follow-up remains:
+**v2 introduces three new migrations that must be applied before deploying
+the v2 code** or the new defenses silently degrade:
 
-- CMS review depth: the legacy `/cms/admin` HTML path has been retired at the route layer and the CMS session split has been removed. The external `cms-php` tree is still not present in this workspace, so controller-level verification of the old legacy implementation remains partially blocked.
-- Deployment dependencies: some fixes depend on schema rollout, especially the webhook-event table and the composite workorder status-history index migrations.
-- Legacy data exposure: hashed-at-rest token fixes preserve compatibility, but older plaintext reset, verification, invoice, and tracking tokens remain plaintext until they expire, rotate, or are migrated.
-- Environment correctness: trusted proxies, canonical `APP_URL`, and payment webhook credentials must be configured correctly or the new hardening changes can fail safe in production.
-- Performance ceiling: the low-risk query and bootstrap cleanup work is largely exhausted. Remaining performance gains are now higher-cost structural work such as materialized reporting state, deeper query-plan/index review, or report consolidation informed by production traffic.
+- `database/migrations/183_*` — `auth_step_up_verifications.totp_counter`
+  (UNIQUE for replay defense, AUD-068)
+- `database/migrations/184_*` — `auth_step_up_verifications.session_fingerprint`
+  (session binding, AUD-069)
+- `database/migrations/185_public_link_single_use.sql` — `consumed_at` columns
+  on `contract_public_links` + `estimate_public_links` (AUD-064)
+
+Plus the two v1 carry-over migrations (`097_payment_webhook_events.sql`,
+`098_workorder_status_history_composite_index.sql`).
+
+Other residuals from v1 still apply:
+
+- Rotate or let expire older plaintext recovery / public tokens that predate
+  the hashed-at-rest rollout.
+- Confirm `TRUSTED_PROXIES`, `APP_URL`, payment webhook credentials in
+  production.
+- Operational cleanup outside the repo for retired CMS admin references.
+
+Net new from v2:
+
+- 6 open security findings have a designed-out follow-up in
+  `audit-v2-recommendations.md` (R-01..R-06). None are committed.
+- The two partially-resolved security findings (AUD-063, AUD-064) closed
+  the immediate exploit windows but defer the architectural cleanup to the
+  same recommendations doc.
+- The cron lock / per-minute parallelism issue (AUD-077) is the last
+  low-cost performance item; everything else is profiling-led structural
+  work as already noted in v1.
 
 ## Recommended Stop Point
 
-This is a reasonable pause point for implementation work.
+This is a clean stop point.
 
-Recommended next steps from here:
+If work resumes, the highest-value next steps are:
 
-1. Run the blocked regression tests in an environment with `pdo_sqlite` or equivalent database-backed test support.
-2. Apply and verify all pending migrations before deployment, including the newer webhook and status-history changes.
-3. Treat any further CMS work as operational cleanup: update bookmarks, automation, or external documentation that still references `/cms/admin`.
-4. Treat any further performance work as profiling-led structural tuning rather than more broad audit cleanup.
+1. Implement R-05 (AUD-067, portal site-scoping) — only open finding that
+   permits cross-site data exposure.
+2. Fix AUD-072 (right-walk XFF) — cheap mechanical fix.
+3. Land R-01 (AUD-063 architectural follow-up) — replace client-supplied
+   audio paths with a real upload pipeline.
+4. Address UIG-1 / UIG-2 / UIG-9 to clean up the obvious UI dead-ends
+   (technician sidebar, admin dashboard CTA, divisions delete).
+5. Wire `pdo_sqlite` (or equivalent) into the test environment and run the
+   three blocked v1 tests + the new v2 tests as one regression sweep.
+
+Beyond that, performance work should switch to production-traces-led
+profiling rather than further static cleanup.
 
 ## Related Documents
 
-- [audit-plan.md](/var/www/phparm/docs/audit-plan.md)
-- [phase1-baseline.md](/var/www/phparm/docs/phase1-baseline.md)
-- [audit-findings.md](/var/www/phparm/docs/audit-findings.md)
+### v2 (current cycle)
+
+- [audit-v2-plan.md](audit-v2-plan.md)
+- [audit-v2-baseline.md](audit-v2-baseline.md)
+- [audit-v2-recommendations.md](audit-v2-recommendations.md)
+- [audit-v2-stale-code.md](audit-v2-stale-code.md)
+- [audit-v2-ui-gaps.md](audit-v2-ui-gaps.md)
+- [audit-v2-summary.md](audit-v2-summary.md)
+
+### v1 (prior cycle, 2026-04-08)
+
+- [audit-plan.md](audit-plan.md)
+- [phase1-baseline.md](phase1-baseline.md)
+- [audit-closeout.md](audit-closeout.md)
+
+### Combined
+
+- [audit-findings.md](audit-findings.md) — register for both cycles
