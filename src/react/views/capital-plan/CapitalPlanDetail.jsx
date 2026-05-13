@@ -75,6 +75,14 @@ export default function CapitalPlanDetail() {
   const [scenarioError, setScenarioError] = useState('')
   const [scenarioBusy, setScenarioBusy] = useState(false)
 
+  // UIG-11 — per-scenario overrides editor.
+  const [overridesScenario, setOverridesScenario] = useState(null)
+  const [overrides, setOverrides] = useState([])
+  const [overridesLoading, setOverridesLoading] = useState(false)
+  const [overridesError, setOverridesError] = useState('')
+  const [overrideDraft, setOverrideDraft] = useState(null)
+  const [overrideBusy, setOverrideBusy] = useState(false)
+
   const load = useCallback(() => {
     if (!id) return
     setLoading(true)
@@ -182,6 +190,115 @@ export default function CapitalPlanDetail() {
     }
   }
 
+  // UIG-11 — per-scenario overrides editor.
+  const blankOverrideDraft = () => ({
+    id: null,
+    site_asset_id: '',
+    defer_months: '',
+    pin_to_year: '',
+    replacement_estimate_cents_override: '',
+    excluded: false,
+    notes: '',
+  })
+
+  const overrideRowToDraft = (row) => ({
+    id: row?.id ?? null,
+    site_asset_id: row?.site_asset_id != null ? String(row.site_asset_id) : '',
+    defer_months: row?.defer_months != null ? String(row.defer_months) : '',
+    pin_to_year: row?.pin_to_year != null ? String(row.pin_to_year) : '',
+    replacement_estimate_cents_override:
+      row?.replacement_estimate_cents_override != null
+        ? String(row.replacement_estimate_cents_override)
+        : '',
+    excluded: !!row?.excluded,
+    notes: row?.notes ?? '',
+  })
+
+  const loadOverrides = useCallback(async (scenarioId) => {
+    setOverridesLoading(true)
+    setOverridesError('')
+    try {
+      const res = await capitalPlanService.listOverrides(scenarioId)
+      const rows = Array.isArray(res?.data) ? res.data : []
+      setOverrides(rows)
+    } catch (e) {
+      setOverrides([])
+      setOverridesError(e?.response?.data?.message || e?.message || 'Failed to load overrides')
+    } finally {
+      setOverridesLoading(false)
+    }
+  }, [])
+
+  const openOverrides = (scenario) => {
+    if (!scenario) return
+    setOverridesScenario(scenario)
+    setOverrideDraft(null)
+    setOverridesError('')
+    loadOverrides(scenario.id)
+  }
+
+  const closeOverrides = () => {
+    setOverridesScenario(null)
+    setOverrides([])
+    setOverrideDraft(null)
+    setOverridesError('')
+  }
+
+  const submitOverride = async () => {
+    if (!overridesScenario || !overrideDraft) return
+    setOverridesError('')
+    const assetId = Number.parseInt(overrideDraft.site_asset_id, 10)
+    if (!Number.isFinite(assetId) || assetId <= 0) {
+      setOverridesError('Site asset id must be a positive integer.')
+      return
+    }
+    // Convert empty strings to null so the backend stores NULL rather than 0.
+    const intOrNull = (v) => {
+      const trimmed = String(v ?? '').trim()
+      if (trimmed === '') return null
+      const n = Number.parseInt(trimmed, 10)
+      return Number.isFinite(n) ? n : null
+    }
+    const payload = {
+      site_asset_id: assetId,
+      defer_months: intOrNull(overrideDraft.defer_months),
+      pin_to_year: intOrNull(overrideDraft.pin_to_year),
+      replacement_estimate_cents_override: intOrNull(overrideDraft.replacement_estimate_cents_override),
+      excluded: !!overrideDraft.excluded,
+      notes: overrideDraft.notes?.trim() || null,
+    }
+    setOverrideBusy(true)
+    try {
+      await capitalPlanService.setOverride(overridesScenario.id, payload)
+      toast.success(overrideDraft.id ? 'Override updated.' : 'Override added.')
+      setOverrideDraft(null)
+      await loadOverrides(overridesScenario.id)
+      // Refresh the parent plan so the scenario row's line-item count
+      // updates without a full page reload.
+      load()
+    } catch (e) {
+      setOverridesError(e?.response?.data?.message || e?.message || 'Save failed')
+    } finally {
+      setOverrideBusy(false)
+    }
+  }
+
+  const removeOverride = async (overrideId) => {
+    if (!overridesScenario) return
+    if (!window.confirm('Delete this override?')) return
+    setOverrideBusy(true)
+    try {
+      await capitalPlanService.removeOverride(overrideId)
+      toast.success('Override deleted.')
+      await loadOverrides(overridesScenario.id)
+      load()
+    } catch (e) {
+      setOverridesError(e?.response?.data?.message || e?.message || 'Delete failed')
+    } finally {
+      setOverrideBusy(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 text-center">
@@ -267,12 +384,14 @@ export default function CapitalPlanDetail() {
                   <th className="text-right p-2">Line Items</th>
                   <th className="text-left p-2">Baseline</th>
                   <th className="text-left p-2">Updated</th>
+                  <th className="text-right p-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {scenarios.map((s) => {
                   const items = lineItemsForScenario(s)
                   const itemsCount = s.line_items_count ?? items.length
+                  const isBaseline = !!(s.is_baseline || s.baseline)
                   return (
                     <tr key={s.id} className="border-t">
                       <td className="p-2">
@@ -284,13 +403,27 @@ export default function CapitalPlanDetail() {
                       <td className="p-2 text-right">{formatMoney(s.total_estimate)}</td>
                       <td className="p-2 text-right">{formatNumber(itemsCount)}</td>
                       <td className="p-2">
-                        {s.is_baseline || s.baseline ? (
+                        {isBaseline ? (
                           <Badge variant="info">Baseline</Badge>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
                       <td className="p-2">{s.updated_at || s.created_at || '—'}</td>
+                      <td className="p-2 text-right">
+                        {isBaseline ? (
+                          <span
+                            className="text-xs text-gray-400"
+                            title="Baseline scenarios cannot have overrides; create a variant scenario to deviate from baseline."
+                          >
+                            Baseline (no overrides)
+                          </span>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => openOverrides(s)}>
+                            Manage overrides
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -339,12 +472,14 @@ export default function CapitalPlanDetail() {
           })}
         </div>
       ) : scenarios.length > 0 ? (
-        // TODO: needs a scenario line-item endpoint and dedicated edit page; service exposes
-        // only createScenario today, so per-item editing is left for a future iteration.
+        // UIG-11 — variant scenarios start with no overrides; the per-row
+        // "Manage overrides" button above opens the editor that adds/edits
+        // them. Baseline scenarios intentionally cannot carry overrides
+        // (CapitalPlanService::setOverride throws on baselines).
         <Card>
           <div className="p-4 text-sm text-gray-500">
-            Per-scenario line items are not yet available here. A future page will allow editing
-            line items per scenario.
+            No per-asset overrides yet. Use “Manage overrides” on a non-baseline scenario above
+            to add per-asset deviations (defer, pin to year, estimate override, exclude).
           </div>
         </Card>
       ) : null}
@@ -443,6 +578,164 @@ export default function CapitalPlanDetail() {
             <Button disabled={scenarioBusy} onClick={submitScenario}>
               {scenarioBusy ? 'Creating…' : 'Create scenario'}
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* UIG-11 — per-scenario overrides editor. Backend treats POST as
+          upsert keyed by (scenario_id, site_asset_id), so editing a row
+          re-sends the full draft for the same site_asset_id. */}
+      <Modal
+        open={!!overridesScenario}
+        onClose={closeOverrides}
+        title={overridesScenario ? `Overrides — ${overridesScenario.name}` : 'Overrides'}
+        size="xl"
+      >
+        <div className="space-y-4">
+          {overridesError ? <Alert variant="danger">{overridesError}</Alert> : null}
+
+          <div className="text-xs text-gray-500">
+            Per-asset deviations within this scenario. Compose on top of the scenario&apos;s
+            global options at compute time. Identify the asset by its site_assets.id.
+          </div>
+
+          {overridesLoading ? (
+            <div className="p-6 text-center"><Loading /></div>
+          ) : (
+            <div className="overflow-x-auto border rounded">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="text-left p-2">Asset ID</th>
+                    <th className="text-right p-2">Defer (mo)</th>
+                    <th className="text-right p-2">Pin year</th>
+                    <th className="text-right p-2">Estimate (¢)</th>
+                    <th className="text-left p-2">Excluded</th>
+                    <th className="text-left p-2">Notes</th>
+                    <th className="text-right p-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overrides.length === 0 ? (
+                    <tr><td colSpan={7} className="p-3 text-center text-gray-500">
+                      No overrides yet — add the first one below.
+                    </td></tr>
+                  ) : (
+                    overrides.map((o) => (
+                      <tr key={o.id} className="border-t">
+                        <td className="p-2">{o.site_asset_id}</td>
+                        <td className="p-2 text-right">{o.defer_months ?? '—'}</td>
+                        <td className="p-2 text-right">{o.pin_to_year ?? '—'}</td>
+                        <td className="p-2 text-right">
+                          {o.replacement_estimate_cents_override != null
+                            ? Number(o.replacement_estimate_cents_override).toLocaleString()
+                            : '—'}
+                        </td>
+                        <td className="p-2">
+                          {o.excluded ? <Badge variant="warning">Excluded</Badge> : '—'}
+                        </td>
+                        <td className="p-2 max-w-xs truncate" title={o.notes || ''}>
+                          {o.notes || ''}
+                        </td>
+                        <td className="p-2 text-right space-x-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setOverrideDraft(overrideRowToDraft(o))}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            disabled={overrideBusy}
+                            onClick={() => removeOverride(o.id)}
+                          >
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {overrideDraft ? (
+            <div className="border rounded p-3 space-y-3 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-sm">
+                  {overrideDraft.id ? `Edit override #${overrideDraft.id}` : 'Add override'}
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setOverrideDraft(null)}>
+                  Cancel
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Site asset ID"
+                  type="number"
+                  required
+                  disabled={!!overrideDraft.id}
+                  value={overrideDraft.site_asset_id}
+                  onChange={(e) => setOverrideDraft((d) => ({ ...d, site_asset_id: e?.target?.value ?? e }))}
+                />
+                <Input
+                  label="Defer months"
+                  type="number"
+                  placeholder="leave blank for no defer"
+                  value={overrideDraft.defer_months}
+                  onChange={(e) => setOverrideDraft((d) => ({ ...d, defer_months: e?.target?.value ?? e }))}
+                />
+                <Input
+                  label="Pin to year"
+                  type="number"
+                  placeholder="leave blank for no pin"
+                  value={overrideDraft.pin_to_year}
+                  onChange={(e) => setOverrideDraft((d) => ({ ...d, pin_to_year: e?.target?.value ?? e }))}
+                />
+                <Input
+                  label="Replacement estimate override (cents)"
+                  type="number"
+                  placeholder="leave blank to inherit"
+                  value={overrideDraft.replacement_estimate_cents_override}
+                  onChange={(e) => setOverrideDraft((d) => ({
+                    ...d,
+                    replacement_estimate_cents_override: e?.target?.value ?? e,
+                  }))}
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={overrideDraft.excluded}
+                  onChange={(e) => setOverrideDraft((d) => ({ ...d, excluded: e.target.checked }))}
+                />
+                Exclude this asset from the scenario entirely
+              </label>
+              <Textarea
+                label="Notes"
+                rows={2}
+                value={overrideDraft.notes}
+                onChange={(e) => setOverrideDraft((d) => ({ ...d, notes: e?.target?.value ?? e }))}
+              />
+              <div className="flex justify-end">
+                <Button disabled={overrideBusy} onClick={submitOverride}>
+                  {overrideBusy ? 'Saving…' : (overrideDraft.id ? 'Save changes' : 'Add override')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setOverrideDraft(blankOverrideDraft())}>
+                Add override
+              </Button>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2 border-t">
+            <Button variant="secondary" onClick={closeOverrides}>Close</Button>
           </div>
         </div>
       </Modal>

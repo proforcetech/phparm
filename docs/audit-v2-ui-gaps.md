@@ -1,6 +1,6 @@
 # Audit v2 — Phase 5: UI Gap Catalog
 
-**Date:** 2026-05-11 (catalog) / 2026-05-12 (UIG-1, UIG-2, UIG-9 closeouts) / 2026-05-13 (UIG-3, UIG-4, UIG-5, UIG-6, UIG-7, UIG-8, UIG-10 closeouts)
+**Date:** 2026-05-11 (catalog) / 2026-05-12 (UIG-1, UIG-2, UIG-9 closeouts) / 2026-05-13 (UIG-3..UIG-8, UIG-10, UIG-11 closeouts) — **all 11 UI gaps now resolved**
 **Plan:** [audit-v2-plan.md](audit-v2-plan.md)
 **Findings register:** [audit-findings.md](audit-findings.md) (UI gaps are **not**
 appended to the main register — they are a backlog, not security/correctness
@@ -20,7 +20,7 @@ defects, per the v2 plan's "Findings register conventions" section.)
 | UIG-6 | ✅ Resolved (deleted) | 2026-05-13  | Same investigation as UIG-5: no inbound references to `/vehicles/:id`. Public route + `VehiclePublicDetail.jsx` deleted. |
 | UIG-7 | ✅ Resolved (deleted) | 2026-05-13  | Same investigation: no inbound references to `/vehicles/:id/edit`. Public route + `VehiclePublicEdit.jsx` deleted. The catalog disposition explicitly noted that any future public vehicle-edit surface needs a token-gated trust model designed before building — preserving the placeholder accomplishes nothing toward that goal. |
 | UIG-10 | ✅ Resolved          | 2026-05-13  | New `GET /api/voice-notes/all` endpoint with newest-first cross-shop feed (limit/offset, capped at 500/page). Gated on the new `voice_notes.view_global` permission held by dispatcher / manager / admin (technicians + accounting stay scoped to their existing `/voice-notes/my` + per-WO timeline surfaces). Frontend "All" tab now calls `voiceNotesService.all()` instead of falling back to `/voice-notes/my`; a 403 surfaces an inline "switch to Mine" prompt instead of silently returning the actor's own notes. 6 new tests in `VoiceNoteServiceTest.php` (67/67 pass). |
-| UIG-11 | Open                 | —         | See backlog table below. |
+| UIG-11 | ✅ Resolved          | 2026-05-13  | Investigation showed the catalog's "service exposes only `createScenario`" was about the **frontend** service: the backend already had full CRUD (`GET/POST /api/capital-plan/scenarios/{id}/overrides`, `DELETE /api/capital-plan/overrides/{id}`) covered by 12 existing service tests. Added `listOverrides`, `setOverride`, `removeOverride` to `src/services/capital-plan.service.js`. `CapitalPlanDetail.jsx` placeholder Card replaced with a per-scenario "Manage overrides" button (hidden for baseline scenarios since `setOverride` rejects baselines server-side) that opens an editor modal showing the current override list with add / edit / delete UI. Backend POST is upsert keyed on `(scenario_id, site_asset_id)` so editing a row re-sends the full draft for the same asset id — no new endpoints needed. |
 
 ## Scope
 

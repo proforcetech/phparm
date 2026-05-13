@@ -57,4 +57,24 @@ export default {
   createScenario(planId, payload) {
     return api.post(`/capital-plan/plans/${planId}/scenarios`, payload).then((res) => res.data)
   },
+  updateScenario(scenarioId, payload) {
+    return api.put(`/capital-plan/scenarios/${scenarioId}`, payload).then((res) => res.data)
+  },
+  deleteScenario(scenarioId) {
+    return api.delete(`/capital-plan/scenarios/${scenarioId}`).then((res) => res.data)
+  },
+
+  // UIG-11 — per-scenario overrides (a.k.a. "line items" in the React UI).
+  // Backend keys overrides by (scenario_id, site_asset_id) and treats POST
+  // as an upsert, so editing a row is "POST again with the same site_asset_id
+  // and the new field values" — the frontend just re-sends the full row.
+  listOverrides(scenarioId) {
+    return api.get(`/capital-plan/scenarios/${scenarioId}/overrides`).then((res) => res.data)
+  },
+  setOverride(scenarioId, payload) {
+    return api.post(`/capital-plan/scenarios/${scenarioId}/overrides`, payload).then((res) => res.data)
+  },
+  removeOverride(overrideId) {
+    return api.delete(`/capital-plan/overrides/${overrideId}`).then((res) => res.data)
+  },
 }

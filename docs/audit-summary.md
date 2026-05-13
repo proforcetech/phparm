@@ -56,13 +56,21 @@ R-XX recommendations are written up in
 
 ### UI gap backlog
 
-11 user-visible gaps catalogued in [audit-v2-ui-gaps.md](audit-v2-ui-gaps.md):
+All 11 user-visible gaps catalogued in
+[audit-v2-ui-gaps.md](audit-v2-ui-gaps.md) are now resolved:
 
-- 4 Blocking gaps reachable from live UI (UIG-1..UIG-4)
-- 3 Blocking gaps on public routes reachable only by direct URL (UIG-5..UIG-7)
-- 4 Degraded gaps where partial functionality ships (UIG-8..UIG-11)
-
-UI gaps are documentation only — no code changes shipped in Phase 5.
+- UIG-1, UIG-2, UIG-9 closed 2026-05-12 (technician portal real view,
+  admin dashboard dead CTA hidden, `DELETE /api/divisions/{id}` shipped).
+- UIG-3, UIG-4, UIG-8 closed 2026-05-13 (financial vendor stubs collapsed
+  into the canonical `/cp/procurement/vendors`; CSV importer relocated
+  to Settings → Modules).
+- UIG-5, UIG-6, UIG-7 closed 2026-05-13 by deletion after a
+  notification-template sweep confirmed zero inbound references to the
+  three orphaned public placeholder routes.
+- UIG-10 closed 2026-05-13 (cross-shop voice-notes "All" feed +
+  `voice_notes.view_global` permission).
+- UIG-11 closed 2026-05-13 (capital-plan per-scenario overrides editor
+  wired through to existing backend CRUD).
 
 ### Code hygiene
 
@@ -156,17 +164,13 @@ Net new from v2:
 
 This is a clean stop point.
 
-If work resumes, the highest-value next steps are:
+All v2 closeout work is complete: 14/15 findings resolved (1 partial,
+0 open), all 6 R-NN recommendations shipped, and all 11 UI gaps closed.
+Beyond this point, performance work should switch to production-traces-
+led profiling rather than further static cleanup.
 
-1. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
-
-UIG-1, UIG-2, UIG-9 closed 2026-05-12 (technician portal real view,
-admin dashboard CTA hidden, `DELETE /api/divisions/{id}` shipped). All
-three legacy v1 tests pass under PDO_SQLITE as of 2026-05-12. See
-`audit-v2-ui-gaps.md` for UI gap status.
-
-Beyond that, performance work should switch to production-traces-led
-profiling rather than further static cleanup.
+All three legacy v1 tests continue to pass under PDO_SQLITE as of
+2026-05-12. See `audit-v2-ui-gaps.md` for UI gap status.
 
 ## Related Documents
 
