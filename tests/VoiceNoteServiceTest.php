@@ -477,6 +477,72 @@ $tests['repo_listPendingTranscriptions_oldest_first'] = function () {
     vnAssertSame($third->id, $pending[1]->id);
 };
 
+// UIG-10 — global "All" feed.
+
+$tests['repo_listAll_returns_newest_first_across_authors'] = function () {
+    $f = makeVnFixture();
+    $a = $f['repo']->create(['author_user_id' => 7, 'audio_path' => 'a.mp3']);
+    $b = $f['repo']->create(['author_user_id' => 8, 'audio_path' => 'b.mp3']);
+    $c = $f['repo']->create(['author_user_id' => 9, 'audio_path' => 'c.mp3']);
+    $rows = $f['repo']->listAll();
+    vnAssertSame(3, count($rows), 'listAll spans every author');
+    vnAssertSame($c->id, $rows[0]->id, 'newest id first');
+    vnAssertSame($a->id, $rows[2]->id, 'oldest id last');
+};
+
+$tests['repo_listAll_honours_limit_and_offset'] = function () {
+    $f = makeVnFixture();
+    foreach (range(1, 5) as $i) {
+        $f['repo']->create(['author_user_id' => 7, 'audio_path' => "n{$i}.mp3"]);
+    }
+    $page1 = $f['repo']->listAll(2, 0);
+    $page2 = $f['repo']->listAll(2, 2);
+    vnAssertSame(2, count($page1));
+    vnAssertSame(2, count($page2));
+    vnAssertTrue($page1[0]->id !== $page2[0]->id, 'pages must be disjoint');
+    vnAssertTrue($page1[1]->id !== $page2[0]->id, 'page boundary respects offset');
+};
+
+$tests['service_listAll_requires_view_global_perm'] = function () {
+    $f = makeVnFixture();
+    $f['repo']->create(['author_user_id' => 7, 'audio_path' => 'a.mp3']);
+    $f['gate']->denials['voice_notes.view_global'] = true;
+    vnAssertThrows(
+        fn () => $f['service']->listAll(makeVnUser()),
+        UnauthorizedException::class,
+        'listAll without view_global must throw'
+    );
+};
+
+$tests['service_listAll_returns_repo_rows_when_permitted'] = function () {
+    $f = makeVnFixture();
+    $f['repo']->create(['author_user_id' => 7, 'audio_path' => 'a.mp3']);
+    $f['repo']->create(['author_user_id' => 8, 'audio_path' => 'b.mp3']);
+    $rows = $f['service']->listAll(makeVnUser());
+    vnAssertSame(2, count($rows));
+};
+
+$tests['controller_listAll_envelopes_under_data_key'] = function () {
+    $f = makeVnFixture();
+    $f['repo']->create(['author_user_id' => 7, 'audio_path' => 'a.mp3']);
+    $payload = $f['controller']->listAll(makeVnUser(), []);
+    vnAssertTrue(isset($payload['data']) && is_array($payload['data']),
+        'controller envelopes payload under data');
+    vnAssertSame(1, count($payload['data']));
+    vnAssertTrue(isset($payload['data'][0]['audio_path']),
+        'controller serialises the model rows');
+};
+
+$tests['controller_listAll_passes_limit_and_offset_through'] = function () {
+    $f = makeVnFixture();
+    foreach (range(1, 4) as $i) {
+        $f['repo']->create(['author_user_id' => 7, 'audio_path' => "n{$i}.mp3"]);
+    }
+    $payload = $f['controller']->listAll(makeVnUser(), ['limit' => '2', 'offset' => '1']);
+    vnAssertSame(2, count($payload['data']),
+        'controller honours limit query param');
+};
+
 $tests['repo_update_writes_writable_columns_only'] = function () {
     $f = makeVnFixture();
     $note = $f['repo']->create(['audio_path' => 'a.mp3']);

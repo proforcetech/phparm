@@ -111,6 +111,22 @@ class VoiceNoteService
         return $this->repo->listPendingTranscriptions($limit);
     }
 
+    /**
+     * UIG-10 — cross-shop global feed for the "All" tab. Distinct from
+     * .view because a field tech doesn't need a firehose of every voice
+     * note in the shop; only dispatch / manager / admin do. The plain
+     * .view permission still covers per-WO timelines and the actor's own
+     * "Mine" view, where access is naturally scoped by the surrounding
+     * record.
+     *
+     * @return array<int, VoiceNote>
+     */
+    public function listAll(User $actor, int $limit = 100, int $offset = 0): array
+    {
+        $this->gate->assert($actor, 'voice_notes.view_global');
+        return $this->repo->listAll($limit, $offset);
+    }
+
     public function getNote(User $actor, int $id): VoiceNote
     {
         $this->gate->assert($actor, 'voice_notes.view');

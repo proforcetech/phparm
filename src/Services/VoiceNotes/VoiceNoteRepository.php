@@ -103,6 +103,30 @@ class VoiceNoteRepository
     }
 
     /**
+     * Global cross-shop feed for the React "All" tab on /cp/voice-notes.
+     * Newest-first by id desc, capped to keep midnight backlogs from
+     * paging the whole table into a single response.
+     *
+     * UIG-10 — gated upstream on `voice_notes.view_global` (dispatch /
+     * manager / admin). Per-WO and per-author feeds keep their own
+     * narrower views; this is the firehose.
+     *
+     * @return array<int, VoiceNote>
+     */
+    public function listAll(int $limit = 100, int $offset = 0): array
+    {
+        $limit = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT ' . self::COLUMNS . " FROM voice_notes
+             ORDER BY id DESC
+             LIMIT {$limit} OFFSET {$offset}"
+        );
+        $stmt->execute();
+        return self::hydrateMany($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    }
+
+    /**
      * Cron worker scan path. Oldest-first so a backlog drains in arrival
      * order rather than starving early entries.
      *

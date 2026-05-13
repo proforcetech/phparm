@@ -128,17 +128,21 @@ export default function VoiceNotes({ forcedTab = null }) {
     } else if (activeTab === TAB_MINE) {
       promise = voiceNotesService.mine(params)
     } else {
-      // TODO: backend currently exposes only /voice-notes/my; the "All" tab
-      // shares that endpoint until a global feed exists. Pass scope hint so
-      // the backend can opt-in later without a frontend change.
-      promise = voiceNotesService.mine({ ...params, scope: 'all' })
+      // UIG-10 — cross-shop firehose. Backend gates on voice_notes.view_global
+      // (dispatch / manager / admin); a 403 here means the actor doesn't have
+      // the global view permission and should use the Mine tab instead.
+      promise = voiceNotesService.all(params)
     }
 
     promise
       .then((res) => setNotes(unwrap(res)))
       .catch((e) => {
         setNotes([])
-        setPageError(e?.response?.data?.message || e?.message || 'Failed to load voice notes')
+        if (e?.response?.status === 403 && activeTab === TAB_ALL) {
+          setPageError('You do not have permission to view all voice notes. Switch to the Mine tab to see your own.')
+        } else {
+          setPageError(e?.response?.data?.message || e?.message || 'Failed to load voice notes')
+        }
       })
       .finally(() => setLoading(false))
   }, [activeTab, tagFilter, entityFilter])

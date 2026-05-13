@@ -123,9 +123,12 @@ return [
                 // WO timeline + can manually re-trigger transcription on a
                 // failed note. Manage covers pin/unpin (operational notes
                 // float to the top) and deletion (cleanup of accidental
-                // recordings).
-                'voice_notes.view', 'voice_notes.create',
-                'voice_notes.transcribe', 'voice_notes.manage',
+                // recordings). UIG-10 — view_global is the cross-shop "All"
+                // firehose feed used by the React /cp/voice-notes page;
+                // dispatch needs it for triage. Field techs do not.
+                'voice_notes.view', 'voice_notes.view_global',
+                'voice_notes.create', 'voice_notes.transcribe',
+                'voice_notes.manage',
                 // Phase 10.8 of docs/expansion-plan.md: workorder kit/bundle
                 // installs. Dispatch sees planned installs across the shop
                 // (the prep-parts queue), can install/cancel on the tech's
@@ -269,8 +272,11 @@ return [
                 // Phase 10.7: managers cover dispatch on the voice-note
                 // surface — full perms so they can clean up old notes,
                 // re-trigger failed transcriptions, and manage tag taxonomy.
-                'voice_notes.view', 'voice_notes.create',
-                'voice_notes.transcribe', 'voice_notes.manage',
+                // UIG-10 — view_global is the cross-shop "All" firehose
+                // feed used by the React /cp/voice-notes page.
+                'voice_notes.view', 'voice_notes.view_global',
+                'voice_notes.create', 'voice_notes.transcribe',
+                'voice_notes.manage',
                 // Phase 10.8 of docs/expansion-plan.md: managers cover
                 // dispatch on the kit-install workflow when dispatch is
                 // off-shift; full perms so they can purge stale planned

@@ -9,6 +9,11 @@ export default {
   mine(params = {}) {
     return api.get('/voice-notes/my', { params }).then((res) => res.data)
   },
+  // UIG-10 — cross-shop firehose for the "All" tab. Backend gates on
+  // voice_notes.view_global; callers without that permission receive 403.
+  all(params = {}) {
+    return api.get('/voice-notes/all', { params }).then((res) => res.data)
+  },
   pending(params = {}) {
     return api.get('/voice-notes/pending', { params }).then((res) => res.data)
   },

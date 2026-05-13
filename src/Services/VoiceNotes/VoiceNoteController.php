@@ -65,6 +65,24 @@ class VoiceNoteController
     }
 
     /**
+     * UIG-10 — cross-shop "All" feed for the React voice-notes page.
+     * Gated upstream on `voice_notes.view_global`; technicians fall
+     * through to the per-WO timeline / their own "Mine" tab.
+     *
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function listAll(User $actor, array $query): array
+    {
+        $limit = (int) ($query['limit'] ?? 100);
+        $offset = (int) ($query['offset'] ?? 0);
+        $notes = $this->service->listAll($actor, $limit, $offset);
+        return [
+            'data' => array_map(static fn(VoiceNote $n) => $n->toArray(), $notes),
+        ];
+    }
+
+    /**
      * Cron-worker scan endpoint. Operators can also hit it manually to
      * inspect the backlog.
      *

@@ -87,6 +87,19 @@ return function (Router $router, RouteContext $ctx): void {
             }
         );
 
+        // UIG-10 — cross-shop firehose for the React "All" tab. Gated on
+        // voice_notes.view_global (dispatch / manager / admin) so a field
+        // tech doesn't get every voice note in the shop on a single page.
+        $router->get(
+            '/api/voice-notes/all',
+            function (Request $request) use ($controller) {
+                return Response::json($controller->listAll(
+                    $request->getAttribute('user'),
+                    $request->query()
+                ));
+            }
+        );
+
         $router->get(
             '/api/voice-notes/pending',
             function (Request $request) use ($controller) {
