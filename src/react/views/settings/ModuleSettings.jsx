@@ -52,6 +52,19 @@ const locationTemplate = {
   note: 'Locations should match the storage or bin names used by the team.',
 }
 
+const vendorTemplate = {
+  fileName: 'vendor-import-template.csv',
+  headers: ['name', 'description', 'is_parts_supplier'],
+  sampleRows: [
+    {
+      name: 'ACME Parts Co.',
+      description: 'Preferred brake supplier',
+      is_parts_supplier: 'true',
+    },
+  ],
+  note: 'Use true/false for the is_parts_supplier column. Seeds the parts-supplier dropdown (inventory_lookups). Full vendor master CRUD lives under /cp/procurement/vendors.',
+}
+
 function ModuleIcon({ moduleKey, className = 'w-6 h-6' }) {
   const path = moduleIcons[moduleKey] || moduleIcons.core
 
@@ -192,6 +205,9 @@ export default function ModuleSettings() {
           <Button variant="secondary" onClick={() => setImportTarget('locations')}>
             Import Locations CSV
           </Button>
+          <Button variant="secondary" onClick={() => setImportTarget('vendors')}>
+            Import Vendors CSV
+          </Button>
         </div>
       </div>
 
@@ -300,6 +316,16 @@ export default function ModuleSettings() {
         template={locationTemplate}
         confirmLabel="Import Locations"
         onUpload={(file, dryRun) => handleLookupImport('locations', file, dryRun)}
+      />
+
+      <CsvUploadModal
+        open={importTarget === 'vendors'}
+        onClose={() => setImportTarget(null)}
+        title="Import Vendors CSV"
+        description="Upload a CSV file to create or update parts-supplier lookup rows."
+        template={vendorTemplate}
+        confirmLabel="Import Vendors"
+        onUpload={(file, dryRun) => handleLookupImport('vendors', file, dryRun)}
       />
     </div>
   )

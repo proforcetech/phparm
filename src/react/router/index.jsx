@@ -1,4 +1,4 @@
-import { createBrowserRouter, redirect, Outlet } from 'react-router-dom'
+import { createBrowserRouter, Navigate, redirect, Outlet } from 'react-router-dom'
 
 import Login from '../views/auth/Login'
 import CustomerLogin from '../views/auth/CustomerLogin'
@@ -80,8 +80,6 @@ import TowingPricingMatrix from '../views/towing/TowingPricingMatrix'
 import FinancialEntries from '../views/financial/FinancialEntries'
 import Reconciliation from '../views/financial/Reconciliation'
 import AccountCategories from '../views/financial/AccountCategories'
-import FinancialVendors from '../views/financial/VendorList'
-import FinancialVendorForm from '../views/financial/VendorForm'
 import FinancialReports from '../views/financial/Reports'
 import CustomerRetentionReport from '../views/reports/CustomerRetentionReport'
 import Reports from '../views/Reports'
@@ -416,9 +414,11 @@ const protectedRoutes = [
   { path: '/cp/financial/entries', name: 'FinancialEntries', auth: 'requiresAuth', element: <FinancialEntries /> },
   { path: '/cp/financial/reconciliation', name: 'FinancialReconciliation', auth: 'requiresAuth', element: <Reconciliation /> },
   { path: '/cp/financial/categories', name: 'FinancialCategories', auth: 'requiresAuth', element: <AccountCategories /> },
-  { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <FinancialVendors /> },
-  { path: '/cp/financial/vendors/create', name: 'FinancialVendorCreate', auth: 'requiresAuth', element: <FinancialVendorForm /> },
-  { path: '/cp/financial/vendors/:id/edit', name: 'FinancialVendorEdit', auth: 'requiresAuth', element: <FinancialVendorForm /> },
+  // UIG-3 / UIG-4 / UIG-8 — the financial/vendors stubs were never wired
+  // up to a real backend; the canonical vendor master lives at
+  // /cp/procurement/vendors. Keep this path as a redirect so any
+  // bookmark / external link continues to land somewhere useful.
+  { path: '/cp/financial/vendors', name: 'FinancialVendors', auth: 'requiresAuth', element: <Navigate to="/cp/procurement/vendors" replace /> },
   { path: '/cp/reports', name: 'FinancialReports', auth: 'requiresAuth', element: <FinancialReports /> },
   { path: '/cp/reports/customer-retention', name: 'CustomerRetentionReport', auth: 'requiresAuth', element: <CustomerRetentionReport /> },
   { path: '/cp/reports/overview', name: 'Reports', auth: 'requiresAuth', element: <Reports /> },
