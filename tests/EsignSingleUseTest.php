@@ -44,8 +44,10 @@ $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $pdo->sqliteCreateFunction('NOW', static fn (): string => date('Y-m-d H:i:s'));
 
-// Post-migration 185 schema for contract_public_links. Estimate table
-// has the same shape on the columns under test.
+// Post-migration 189 schema for contract_public_links (adds R-04
+// document_hash_at_issue / document_snapshot_json columns on top of
+// the R-02b signer_email / signer_invitation_id columns). Estimate
+// table has the same shape on the columns under test.
 $pdo->exec(
     'CREATE TABLE contract_public_links (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +59,10 @@ $pdo->exec(
         revoked_at TEXT NULL,
         consumed_at TEXT NULL,
         consumed_by_signature_id INTEGER NULL,
+        signer_email TEXT NULL,
+        signer_invitation_id INTEGER NULL,
+        document_hash_at_issue TEXT NULL,
+        document_snapshot_json TEXT NULL,
         created_by_user_id INTEGER NULL,
         created_at TEXT NULL,
         updated_at TEXT NULL

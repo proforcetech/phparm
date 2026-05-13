@@ -890,6 +890,62 @@ class Middleware
     }
 
     /**
+     * Per-link rate limit for public contract / estimate sign URLs (R-02a).
+     *
+     * Buckets by IP + by link identifier so a single token being hammered
+     * cools down regardless of source IP. The link identifier is read from
+     * (in order): route attribute `shortCode`, query param `token`,
+     * query param `code` / `short_code`, body `token`, body `short_code`.
+     */
+    public static function publicLinkThrottle(
+        \App\Support\Security\PublicLinkRateLimiter $limiter
+    ): callable {
+        return function (Request $request, callable $next) use ($limiter) {
+            $ip = \App\Support\Security\PublicLinkRateLimiter::clientIp($request);
+            $linkId = self::resolvePublicLinkIdentifier($request);
+
+            $result = $limiter->hit($ip, $linkId);
+            if (!$result->allowed) {
+                return Response::json(
+                    $result->toPayload('Too many requests for this signing link. Please try again shortly.'),
+                    429
+                )
+                    ->withHeader('Retry-After', (string) $result->retryAfter)
+                    ->withHeader('X-RateLimit-Limit', (string) $limiter->getMaxAttemptsPerIp());
+            }
+
+            return $next($request);
+        };
+    }
+
+    private static function resolvePublicLinkIdentifier(Request $request): ?string
+    {
+        $candidates = [
+            $request->getAttribute('shortCode'),
+            $request->queryParam('token'),
+            $request->queryParam('code'),
+            $request->queryParam('short_code'),
+        ];
+
+        // Avoid parsing the body for GET/HEAD; only POST flows carry it.
+        $method = strtoupper($request->method());
+        if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+            $body = $request->body();
+            if (is_array($body)) {
+                $candidates[] = $body['token'] ?? null;
+                $candidates[] = $body['short_code'] ?? null;
+            }
+        }
+
+        foreach ($candidates as $value) {
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Resolve the rate limit key for a request.
      */
     private static function resolveRateLimitKey(Request $request): string

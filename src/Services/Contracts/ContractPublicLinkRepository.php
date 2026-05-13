@@ -16,8 +16,10 @@ class ContractPublicLinkRepository
 {
     private const COLUMNS = 'id, contract_id, token_hash, short_code,
         expires_at, last_accessed_at, revoked_at,
-        consumed_at, consumed_by_signature_id, created_by_user_id,
-        created_at, updated_at';
+        consumed_at, consumed_by_signature_id,
+        signer_email, signer_invitation_id,
+        document_hash_at_issue, document_snapshot_json,
+        created_by_user_id, created_at, updated_at';
 
     public function __construct(private readonly Connection $connection)
     {
@@ -28,12 +30,18 @@ class ContractPublicLinkRepository
         string $tokenHash,
         string $shortCode,
         ?string $expiresAt,
-        ?int $createdByUserId
+        ?int $createdByUserId,
+        ?string $signerEmail = null,
+        ?int $signerInvitationId = null,
+        ?string $documentHashAtIssue = null,
+        ?string $documentSnapshotJson = null
     ): ContractPublicLink {
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO contract_public_links
-             (contract_id, token_hash, short_code, expires_at, created_by_user_id)
-             VALUES (:cid, :hash, :short, :exp, :uid)'
+             (contract_id, token_hash, short_code, expires_at, created_by_user_id,
+              signer_email, signer_invitation_id,
+              document_hash_at_issue, document_snapshot_json)
+             VALUES (:cid, :hash, :short, :exp, :uid, :email, :inv, :doc_hash, :doc_json)'
         );
         $stmt->execute([
             'cid' => $contractId,
@@ -41,6 +49,10 @@ class ContractPublicLinkRepository
             'short' => $shortCode,
             'exp' => $expiresAt,
             'uid' => $createdByUserId,
+            'email' => $signerEmail,
+            'inv' => $signerInvitationId,
+            'doc_hash' => $documentHashAtIssue,
+            'doc_json' => $documentSnapshotJson,
         ]);
         $id = (int) $this->connection->pdo()->lastInsertId();
         $found = $this->findById($id);

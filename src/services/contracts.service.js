@@ -78,4 +78,17 @@ export default {
   captureInternalSignature(contractId, payload) {
     return api.post(`/contracts/${contractId}/signatures`, payload).then((res) => res.data)
   },
+
+  // R-02c: multi-party signer roster
+  listSigners(contractId, includeRevoked = true) {
+    return api
+      .get(`/contracts/${contractId}/signers`, { params: { include_revoked: includeRevoked ? 1 : 0 } })
+      .then((res) => res.data)
+  },
+  inviteSigner(contractId, payload) {
+    return api.post(`/contracts/${contractId}/signers`, payload).then((res) => res.data)
+  },
+  revokeSigner(contractId, signerId) {
+    return api.delete(`/contracts/${contractId}/signers/${signerId}`).then((res) => res.data)
+  },
 }

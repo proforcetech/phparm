@@ -287,6 +287,11 @@ return function (Router $router, array $config, $connection) {
         $securityConfig['auth_rate_limiting'] ?? [],
         $auditLogger
     );
+    $publicLinkLimiter = new \App\Support\Security\PublicLinkRateLimiter(
+        $rateLimiter,
+        $securityConfig['public_link_rate_limiting'] ?? [],
+        $auditLogger
+    );
 
     $rateLimitResponse = function (\App\Support\Security\LoginRateLimitResult $result, string $message, int $status = 429, string $error = 'rate_limited') {
         return Response::json($result->toPayload($message, $error), $status);
@@ -3868,7 +3873,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
 
             $baseUrl = rtrim($request->header('Origin') ?? $request->header('Referer') ?? 'http://localhost', '/');
-            $link = $linkService->issueLink($id, $baseUrl, $estimate->expiration_date, $user->id);
+            $body = $request->body();
+            $signerEmail = isset($body['signer_email']) && is_string($body['signer_email'])
+                ? $body['signer_email']
+                : null;
+            $signerInvitationId = isset($body['signer_invitation_id']) && is_numeric($body['signer_invitation_id'])
+                ? (int) $body['signer_invitation_id']
+                : null;
+            $link = $linkService->issueLink(
+                $id,
+                $baseUrl,
+                $estimate->expiration_date,
+                $user->id,
+                $signerEmail,
+                $signerInvitationId
+            );
 
             return Response::json([
                 'short_url' => $link['short_url'],
@@ -4140,16 +4159,19 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         } catch (\RuntimeException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
-    });
+    })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
     $router->post('/api/public/estimate/approve-job', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
+        // R-03 / AUD-065 — state-changing endpoints require the long token.
+        // Short codes (10 hex chars ≈ 40 bits) remain valid for the
+        // read-only fetchView path, but are rejected here to remove the
+        // brute-force surface against approve/reject/sign mutations.
         $token = $body['token'] ?? '';
-        $shortCode = $body['short_code'] ?? '';
         $jobId = (int) ($body['job_id'] ?? 0);
 
-        if ((!$token && !$shortCode) || !$jobId) {
-            return Response::badRequest(['error' => 'Token or short_code and job_id are required']);
+        if (!$token || !$jobId) {
+            return Response::badRequest(['error' => 'Token and job_id are required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -4166,22 +4188,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $request->header('USER_AGENT'),
                 $body['signer_name'] ?? null,
                 $body['signer_email'] ?? null,
-                $shortCode ?: null
+                null
             );
             return Response::json(['success' => $result]);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
-    });
+    })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
     $router->post('/api/public/estimate/reject-job', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
+        // R-03 / AUD-065 — long token only on state-changing endpoint.
         $token = $body['token'] ?? '';
-        $shortCode = $body['short_code'] ?? '';
         $jobId = (int) ($body['job_id'] ?? 0);
 
-        if ((!$token && !$shortCode) || !$jobId) {
-            return Response::badRequest(['error' => 'Token or short_code and job_id are required']);
+        if (!$token || !$jobId) {
+            return Response::badRequest(['error' => 'Token and job_id are required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -4199,21 +4221,21 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $body['signer_name'] ?? null,
                 $body['signer_email'] ?? null,
                 $body['rejection_reason'] ?? null,
-                $shortCode ?: null
+                null
             );
             return Response::json(['success' => $result]);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
-    });
+    })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
     $router->post('/api/public/estimate/signature', function (Request $request) use ($connection, $auditLogger) {
         $body = $request->body();
+        // R-03 / AUD-065 — long token only on state-changing endpoint.
         $token = $body['token'] ?? '';
-        $shortCode = $body['short_code'] ?? '';
 
-        if ((!$token && !$shortCode) || empty($body['name']) || empty($body['signature_data'])) {
-            return Response::badRequest(['error' => 'Token or short_code, name, and signature_data are required']);
+        if (!$token || empty($body['name']) || empty($body['signature_data'])) {
+            return Response::badRequest(['error' => 'Token, name, and signature_data are required']);
         }
 
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
@@ -4244,8 +4266,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $body['device_fingerprint'] ?? null,
                 !empty($body['legal_consent']),
                 $body['consent_text'] ?? null,
-                $shortCode ?: null,
-                $forensics
+                null,
+                $forensics,
+                !empty($body['accept_document_changes'])
             );
 
             // Auto-create workorder after signature is captured
@@ -4275,7 +4298,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         } catch (\RuntimeException $e) {
             return Response::json(['error' => $e->getMessage()], 400);
         }
-    });
+    })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
     // Short code redirect for estimates
     $router->get('/e/{shortCode}', function (Request $request) use ($connection) {
@@ -4298,7 +4321,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
         header('Location: ' . $baseUrl . '/estimate/view?code=' . $shortCode);
         exit;
-    });
+    })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
     // Also support fetching estimate by short code
     $router->get('/api/public/estimate/by-code/{shortCode}', function (Request $request) use ($connection, $auditLogger) {
@@ -4369,7 +4392,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             'has_signature' => $hasSignature,
             'terms' => $estimateTerms,
         ]);
-    });
+    })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
 // Invoice routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $config, $paymentConfig, $auditLogger) {
@@ -10407,6 +10430,7 @@ $router->delete('/api/cms/templates/{id}', function (Request $request) use ($cms
         pushNotifications: $pushNotifications,
         settingsRepository: $settingsRepository,
         policies: $policyRegistry,
+        publicLinkLimiter: $publicLinkLimiter,
     );
 
     foreach (['customer_retention', 'modules_and_user_groups', 'divisions', 'service_lines', 'property_management', 'custom_fields', 'branch_dashboards', 'crm', 'assets', 'asset_imports', 'asset_leases', 'asset_acquisitions', 'asset_decommissions', 'tickets', 'contracts', 'pm', 'portal', 'eta', 'fleet', 'capital_plan', 'subcontractors', 'subcontractor_portal', 'procurement', 'vendor_portal', 'workorder_change_orders', 'workorder_tech_requests', 'workorder_reassignments', 'ticket_triage', 'routing', 'voice_notes', 'workorder_kit_installs', 'retention', 'security_events', 'sso', 'trusted_devices', 'reporting', 'integrations', 'software_inventory', 'change_management', 'service_routes', 'security_credentials', 'pos_terminals', 'skills', 'dispatch_board', 'consolidated_billing', 'chain_rollup', 'trade_kpis'] as $routeModule) {

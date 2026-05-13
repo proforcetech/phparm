@@ -123,7 +123,20 @@ export default function ContractDetail() {
     changes: '',
   })
 
-  // Signing — links + signature audit
+  // Signing — signers (R-02c roster), legacy links, signature audit
+  const [signers, setSigners] = useState([])
+  const [signersLoading, setSignersLoading] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteForm, setInviteForm] = useState({
+    email: '',
+    name: '',
+    title: '',
+    expires_at: '',
+    send_email: true,
+    notes: '',
+  })
+  const [invitedResult, setInvitedResult] = useState(null)
   const [links, setLinks] = useState([])
   const [linksLoading, setLinksLoading] = useState(false)
   const [issueLinkOpen, setIssueLinkOpen] = useState(false)
@@ -202,6 +215,19 @@ export default function ContractDetail() {
     }
   }, [id, error])
 
+  const loadSigners = useCallback(async () => {
+    setSignersLoading(true)
+    try {
+      const res = await contractsService.listSigners(id, true)
+      setSigners(unwrap(res))
+    } catch {
+      error('Failed to load signers')
+      setSigners([])
+    } finally {
+      setSignersLoading(false)
+    }
+  }, [id, error])
+
   const loadSignatures = useCallback(async () => {
     setSignaturesLoading(true)
     try {
@@ -220,10 +246,11 @@ export default function ContractDetail() {
     if (tab === 'entitlements') loadEntitlements()
     if (tab === 'amendments') loadAmendments()
     if (tab === 'signing') {
+      loadSigners()
       loadLinks()
       loadSignatures()
     }
-  }, [tab, loadSites, loadEntitlements, loadAmendments, loadLinks, loadSignatures])
+  }, [tab, loadSites, loadEntitlements, loadAmendments, loadSigners, loadLinks, loadSignatures])
 
   // Load company sites for "Add Site" picker once contract + tab known
   useEffect(() => {
@@ -331,6 +358,57 @@ export default function ContractDetail() {
       loadLinks()
     } catch {
       error('Failed to revoke link')
+    }
+  }
+
+  const handleInviteSigner = async () => {
+    if (!inviteForm.email.trim() || !inviteForm.name.trim()) {
+      error('Signer name and email are required')
+      return
+    }
+    setInviteBusy(true)
+    try {
+      const payload = {
+        email: inviteForm.email.trim(),
+        name: inviteForm.name.trim(),
+        send_email: inviteForm.send_email,
+      }
+      if (inviteForm.title.trim()) payload.title = inviteForm.title.trim()
+      if (inviteForm.notes.trim()) payload.notes = inviteForm.notes.trim()
+      if (inviteForm.expires_at) payload.expires_at = inviteForm.expires_at
+      const res = await contractsService.inviteSigner(id, payload)
+      const data = res?.data ?? res
+      setInvitedResult(data)
+      setInviteOpen(false)
+      setInviteForm({ email: '', name: '', title: '', expires_at: '', send_email: true, notes: '' })
+      if (data?.email_sent) {
+        success(`Invitation sent to ${payload.email}`)
+      } else if (data?.email_error) {
+        error(`Invite created, but email failed: ${data.email_error}`)
+      } else {
+        success('Signer invited — copy the sign URL to share manually')
+      }
+      loadSigners()
+      loadLinks()
+    } catch (e) {
+      error(e?.response?.data?.message || 'Failed to invite signer')
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  const handleRevokeSigner = async (signer) => {
+    if (!signer?.id) return
+    if (!window.confirm(`Revoke invitation for ${signer.email}? Any bound signing link will also be revoked.`)) {
+      return
+    }
+    try {
+      await contractsService.revokeSigner(id, signer.id)
+      success('Signer revoked')
+      loadSigners()
+      loadLinks()
+    } catch (e) {
+      error(e?.response?.data?.message || 'Failed to revoke signer')
     }
   }
 
@@ -628,14 +706,91 @@ export default function ContractDetail() {
           <Card>
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="text-lg font-medium text-gray-900">Signing Links</h3>
+                <h3 className="text-lg font-medium text-gray-900">Signers</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Send a link by email so the customer can sign without signing in.
-                  The plaintext token is shown once when issued — store it safely.
+                  Invite one row per signer. Each invitation creates a private link
+                  bound to that signer&apos;s email — no one else can use it.
                 </p>
               </div>
-              <Button size="sm" onClick={() => setIssueLinkOpen(true)}>
-                New Link
+              <Button size="sm" onClick={() => setInviteOpen(true)}>
+                Invite Signer
+              </Button>
+            </div>
+            {signersLoading ? (
+              <div className="py-6 flex justify-center"><Loading /></div>
+            ) : signers.length === 0 ? (
+              <p className="text-gray-500 text-sm py-4">No signers invited yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invited</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Signed</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {signers.map((signer) => {
+                      const status = signer.status
+                        || (signer.revoked_at ? 'revoked' : signer.signed_at ? 'signed' : 'invited')
+                      return (
+                        <tr key={signer.id}>
+                          <td className="px-4 py-3 text-sm text-gray-500">{signer.display_order ?? '—'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <div className="font-medium">{signer.name}</div>
+                            {signer.title && (
+                              <div className="text-xs text-gray-500">{signer.title}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{signer.email}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(signer.invited_at)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(signer.signed_at)}</td>
+                          <td className="px-4 py-3 text-sm">
+                            {status === 'signed' ? (
+                              <Badge size="sm" variant="success">signed</Badge>
+                            ) : status === 'revoked' ? (
+                              <Badge size="sm" variant="danger">revoked</Badge>
+                            ) : (
+                              <Badge size="sm" variant="warning">invited</Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            {status === 'invited' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 hover:text-red-700"
+                                onClick={() => handleRevokeSigner(signer)}
+                              >
+                                Revoke
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">Legacy Signing Links</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Open (unbound) links — prefer the Signers panel above for new
+                  invitations. Use this only when you need an &ldquo;any signer&rdquo; link.
+                </p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setIssueLinkOpen(true)}>
+                Issue Open Link
               </Button>
             </div>
             {linksLoading ? (
@@ -648,6 +803,7 @@ export default function ContractDetail() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Short Code</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bound To</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expires</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Accessed</th>
@@ -659,16 +815,26 @@ export default function ContractDetail() {
                     {links.map((link) => {
                       const revoked = !!link.revoked_at
                       const expired = link.expires_at && new Date(link.expires_at) < new Date()
+                      const consumed = !!link.consumed_at
                       const shortUrl = `${window.location.origin}/c/${link.short_code}`
                       return (
                         <tr key={link.id}>
                           <td className="px-4 py-3 text-sm font-mono text-gray-900">{link.short_code}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {link.signer_email ? (
+                              <span title="Bound to this signer only">{link.signer_email}</span>
+                            ) : (
+                              <span className="italic text-gray-400">open</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(link.created_at)}</td>
                           <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(link.expires_at)}</td>
                           <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(link.last_accessed_at)}</td>
                           <td className="px-4 py-3 text-sm">
                             {revoked ? (
                               <Badge size="sm" variant="danger">revoked</Badge>
+                            ) : consumed ? (
+                              <Badge size="sm" variant="default">used</Badge>
                             ) : expired ? (
                               <Badge size="sm" variant="warning">expired</Badge>
                             ) : (
@@ -758,6 +924,115 @@ export default function ContractDetail() {
           </Card>
         </div>
       ) : null}
+
+      <Modal open={inviteOpen} title="Invite Signer" onClose={() => setInviteOpen(false)}>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            Send a signing invitation. The link is bound to this signer&apos;s email —
+            no one else can use it, even with the URL.
+          </p>
+          <Input
+            label="Signer Name"
+            value={inviteForm.name}
+            onUpdateModelValue={(v) => setInviteForm((f) => ({ ...f, name: v }))}
+            required
+          />
+          <Input
+            label="Email"
+            type="email"
+            value={inviteForm.email}
+            onUpdateModelValue={(v) => setInviteForm((f) => ({ ...f, email: v }))}
+            required
+          />
+          <Input
+            label="Title (optional)"
+            value={inviteForm.title}
+            onUpdateModelValue={(v) => setInviteForm((f) => ({ ...f, title: v }))}
+          />
+          <Input
+            label="Expires At (optional)"
+            type="datetime-local"
+            value={inviteForm.expires_at}
+            onUpdateModelValue={(v) => setInviteForm((f) => ({ ...f, expires_at: v }))}
+          />
+          <Textarea
+            label="Notes (optional, internal)"
+            value={inviteForm.notes}
+            onUpdateModelValue={(v) => setInviteForm((f) => ({ ...f, notes: v }))}
+            rows={2}
+          />
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={inviteForm.send_email}
+              onChange={(e) => setInviteForm((f) => ({ ...f, send_email: e.target.checked }))}
+              className="rounded border-gray-300"
+            />
+            Send invitation email automatically
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setInviteOpen(false)}>Cancel</Button>
+            <Button loading={inviteBusy} onClick={handleInviteSigner}>Send Invitation</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!invitedResult}
+        title="Signer Invited"
+        onClose={() => setInvitedResult(null)}
+      >
+        <div className="space-y-4">
+          <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            This is the only time the plaintext sign URL will be shown. Copy it now
+            if you need to share manually.
+            {invitedResult?.email_sent ? (
+              <div className="mt-1 font-medium">Invitation email was sent successfully.</div>
+            ) : invitedResult?.email_error ? (
+              <div className="mt-1 font-medium text-red-700">
+                Email delivery failed: {invitedResult.email_error}. Share the URL manually.
+              </div>
+            ) : (
+              <div className="mt-1 font-medium">Automatic email was disabled — share the URL manually.</div>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Signer</label>
+            <div className="text-sm text-gray-900">
+              {invitedResult?.signer?.name} &lt;{invitedResult?.signer?.email}&gt;
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Sign URL (short)</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={invitedResult?.short_url || ''}
+                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm font-mono bg-gray-50"
+              />
+              <Button size="sm" variant="secondary" onClick={() => handleCopy(invitedResult?.short_url)}>
+                Copy
+              </Button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Sign URL (secure / long token)</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={invitedResult?.secure_url || ''}
+                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm font-mono bg-gray-50"
+              />
+              <Button size="sm" variant="secondary" onClick={() => handleCopy(invitedResult?.secure_url)}>
+                Copy
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={() => setInvitedResult(null)}>Done</Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={issueLinkOpen} title="Issue Signing Link" onClose={() => setIssueLinkOpen(false)}>
         <div className="space-y-3">

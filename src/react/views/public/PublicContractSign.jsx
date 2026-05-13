@@ -59,7 +59,14 @@ export default function PublicContractSign() {
         : await contractsService.publicView(queryToken)
       const payload = result?.data ?? result
       setContract(payload?.contract ?? null)
-      setLink(payload?.link ?? null)
+      const linkPayload = payload?.link ?? null
+      setLink(linkPayload)
+      // R-02b/R-02d: when the link is bound to a specific signer, pre-fill
+      // the email field so the customer can't accidentally type a different
+      // address and burn an attempt against the bind check.
+      if (linkPayload?.signer_email) {
+        setSignerEmail(linkPayload.signer_email)
+      }
     } catch (err) {
       setLoadError(
         err.response?.data?.error
@@ -98,8 +105,13 @@ export default function PublicContractSign() {
         consent_text: CONSENT_TEXT,
         comment: comment.trim() || null,
       }
-      if (routeShortCode) payload.short_code = routeShortCode
-      else payload.token = queryToken
+      // R-03 / AUD-065 — signing requires the long token; short codes
+      // are accepted only on the read-only fetch + redirect paths.
+      if (!queryToken) {
+        setSubmitError('Open the signing link from your email to sign this contract.')
+        return
+      }
+      payload.token = queryToken
       await contractsService.publicSign(payload)
       setSubmitted(true)
     } catch (err) {
@@ -163,6 +175,13 @@ export default function PublicContractSign() {
             </p>
           )}
         </header>
+
+        {link?.signer_email && (
+          <Alert variant="info" closable={false}>
+            This signing link is bound to <strong>{link.signer_email}</strong>.
+            Only this signer can complete the signature.
+          </Alert>
+        )}
 
         <Card>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">
@@ -235,11 +254,12 @@ export default function PublicContractSign() {
                   disabled={submitting}
                 />
                 <Input
-                  label="Email (optional)"
+                  label={link?.signer_email ? 'Email (bound to this invitation)' : 'Email (optional)'}
                   type="email"
                   modelValue={signerEmail}
                   onUpdateModelValue={setSignerEmail}
-                  disabled={submitting}
+                  disabled={submitting || !!link?.signer_email}
+                  required={!!link?.signer_email}
                 />
                 <Input
                   label="Title (optional)"

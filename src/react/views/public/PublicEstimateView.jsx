@@ -305,9 +305,14 @@ export default function PublicEstimateView() {
   }
 
   const submitJobAction = async (jobId, status) => {
+    // R-03 / AUD-065 — state-changing endpoints accept only the long
+    // token. Short-code-only sessions are read-only; the user must
+    // open the original signing link from their notification to act.
+    if (!token) {
+      throw new Error('Open the signing link from your email to approve, reject, or sign this estimate.')
+    }
     const payload = {
       token,
-      short_code: shortCode,
       job_id: jobId,
       signer_name: signerName || undefined,
       signer_email: signerEmail || undefined,
@@ -363,12 +368,15 @@ export default function PublicEstimateView() {
       // user-initiated click is the most likely time browsers will allow it.
       const liveGeo = geo ?? (await captureGeo())
 
+      // R-03 / AUD-065 — signature capture requires the long token.
+      if (!token) {
+        throw new Error('Open the signing link from your email to sign this estimate.')
+      }
       // Capture the signature FIRST when require_signature is on so the
       // backend approve-job guard sees the signature row and lets the
       // sign-and-approve-all loop proceed.
       const submitSignature = () => api.post('/public/estimate/signature', {
         token,
-        short_code: shortCode,
         name: signerName,
         email: signerEmail || undefined,
         signature_data: signatureData,

@@ -14,6 +14,8 @@ class ContractSignature extends BaseModel
     public ?string $user_agent = null;
     public ?string $device_fingerprint = null;
     public ?string $document_hash = null;
+    public ?string $document_hash_at_issue = null;
+    public bool $document_changed_accepted = false;
     public ?string $signature_hash = null;
     public bool $legal_consent = false;
     public ?string $consent_text = null;

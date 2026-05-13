@@ -21,6 +21,8 @@ class EstimateSignature extends BaseModel
     public ?string $os_version = null;
     public ?string $device_fingerprint = null;
     public ?string $document_hash = null;
+    public ?string $document_hash_at_issue = null;
+    public bool $document_changed_accepted = false;
     public bool $legal_consent = false;
     public ?string $consent_text = null;
     public ?string $comment = null;

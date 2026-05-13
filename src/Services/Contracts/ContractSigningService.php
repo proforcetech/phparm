@@ -40,6 +40,16 @@ class ContractSigningService
     /** Short-code length taken off the token hash. */
     private const SHORT_CODE_LEN = 10;
 
+    /**
+     * R-02c — late-bound back-reference to the signer roster. We can't
+     * inject it through the constructor because ContractSignerService
+     * itself depends on this service (the invitation flow issues bound
+     * links through us), so the wiring layer sets this after both
+     * services are constructed. Optional — when null, capture works in
+     * the legacy "open link" mode and never touches the roster.
+     */
+    private ?ContractSignerService $signerService = null;
+
     public function __construct(
         private readonly ContractRepository $contracts,
         private readonly ContractPublicLinkRepository $links,
@@ -50,8 +60,22 @@ class ContractSigningService
     }
 
     /**
+     * Wire the signer roster service in after construction (see the
+     * $signerService property docblock for the circular-dep rationale).
+     */
+    public function setSignerService(?ContractSignerService $service): void
+    {
+        $this->signerService = $service;
+    }
+
+    /**
      * Issue a new signing link. Requires contracts.sign permission.
      * Returns the plaintext token once — only the hash is stored.
+     *
+     * When $signerEmail is non-null, the resulting link is *bound*: only a
+     * signature payload whose signer_email matches (case-insensitive,
+     * trimmed) will be accepted at capture time (R-02b). NULL keeps the
+     * legacy "open link" behavior.
      *
      * @return array{link: ContractPublicLink, token: string, short_url: string, secure_url: string}
      */
@@ -59,7 +83,9 @@ class ContractSigningService
         User $user,
         int $contractId,
         string $baseUrl,
-        ?string $expiresAt = null
+        ?string $expiresAt = null,
+        ?string $signerEmail = null,
+        ?int $signerInvitationId = null
     ): array {
         $this->gate->assert($user, 'contracts.sign');
         $contract = $this->requireContract($contractId);
@@ -73,12 +99,26 @@ class ContractSigningService
         $hash = hash('sha256', $token);
         $shortCode = substr($hash, 0, self::SHORT_CODE_LEN);
 
+        $normalizedEmail = self::normalizeEmail($signerEmail);
+
+        // R-04 — snapshot the document hash + JSON now so the capture-time
+        // verifier can detect mutation between issue and sign. Both are
+        // stored on the link row; legacy in-flight links predating this
+        // migration carry NULL for both columns and bypass enforcement
+        // (the audit recommendation accepts that as the upgrade path).
+        $snapshotJson = self::canonicalizeContractSnapshot($contract);
+        $documentHashAtIssue = hash('sha256', $snapshotJson);
+
         $link = $this->links->create(
             $contractId,
             $hash,
             $shortCode,
             $expiresAt,
-            $user->id ?? null
+            $user->id ?? null,
+            $normalizedEmail,
+            $signerInvitationId,
+            $documentHashAtIssue,
+            $snapshotJson
         );
 
         $this->audit->log(new AuditEntry(
@@ -86,7 +126,14 @@ class ContractSigningService
             'contract',
             $contractId,
             (int) ($user->id ?? 0),
-            ['link_id' => $link->id, 'short_code' => $shortCode, 'expires_at' => $expiresAt]
+            [
+                'link_id' => $link->id,
+                'short_code' => $shortCode,
+                'expires_at' => $expiresAt,
+                'signer_email' => $normalizedEmail,
+                'signer_invitation_id' => $signerInvitationId,
+                'document_hash_at_issue' => $documentHashAtIssue,
+            ]
         ));
 
         $base = rtrim($baseUrl, '/');
@@ -196,6 +243,85 @@ class ContractSigningService
             throw new InvalidArgumentException('legal_consent must be acknowledged');
         }
 
+        // R-02b — when the link was issued with a bound signer_email, the
+        // capture payload must declare the same address. We compare on the
+        // trimmed/lowercased forms so trivial casing/whitespace differences
+        // don't lock out a legitimate signer. A mismatch is logged as a
+        // security event because the alternative — a stranger trying to
+        // sign someone else's link — is the only realistic way to hit it.
+        if ($link->signer_email !== null) {
+            $bound = self::normalizeEmail($link->signer_email);
+            $declared = self::normalizeEmail($payload['signer_email'] ?? null);
+            if ($declared === null) {
+                $this->audit->log(new AuditEntry(
+                    'contract.signer_mismatch',
+                    'contract',
+                    $contract->id,
+                    null,
+                    [
+                        'link_id' => $link->id,
+                        'reason' => 'missing_signer_email',
+                        'expected_signer_email' => $bound,
+                        'ip_address' => $ipAddress,
+                    ]
+                ));
+                throw new InvalidArgumentException(
+                    'signer_email is required for this signing link.'
+                );
+            }
+            if ($declared !== $bound) {
+                $this->audit->log(new AuditEntry(
+                    'contract.signer_mismatch',
+                    'contract',
+                    $contract->id,
+                    null,
+                    [
+                        'link_id' => $link->id,
+                        'reason' => 'email_mismatch',
+                        'expected_signer_email' => $bound,
+                        'attempted_signer_email' => $declared,
+                        'ip_address' => $ipAddress,
+                    ]
+                ));
+                throw new RuntimeException(
+                    'This signing link is bound to a different signer.'
+                );
+            }
+        }
+
+        // R-04 — verify the document hasn't drifted between issue-time
+        // and capture-time. We compute the comparison BEFORE the atomic
+        // claim so a refused capture (default behaviour on mismatch)
+        // doesn't burn the link — the admin can re-issue without losing
+        // the audit trail. Only when the override is explicitly opted in
+        // do we proceed past the gate.
+        $currentDocumentHash = $this->hashContractSnapshot($contract);
+        $issueDocumentHash = $link->document_hash_at_issue;
+        $documentChangedAccepted = false;
+        if ($issueDocumentHash !== null && !hash_equals($issueDocumentHash, $currentDocumentHash)) {
+            $acceptChanges = !empty($payload['accept_document_changes']);
+            $this->audit->log(new AuditEntry(
+                $acceptChanges ? 'contract.document_changed_accepted' : 'contract.document_changed_refused',
+                'contract',
+                $contract->id,
+                null,
+                [
+                    'link_id' => $link->id,
+                    'document_hash_at_issue' => $issueDocumentHash,
+                    'document_hash_at_capture' => $currentDocumentHash,
+                    'ip_address' => $ipAddress,
+                ]
+            ));
+            if (!$acceptChanges) {
+                throw new RuntimeException(
+                    'This contract was modified after the signing link was sent. '
+                    . 'Request a fresh link from the issuer, or re-submit with '
+                    . 'accept_document_changes=true to acknowledge the changes.'
+                );
+            }
+            $documentChangedAccepted = true;
+        }
+
         // AUD-064 — atomic claim closes the race window between the
         // optimistic check above and the signature INSERT below. If two
         // requests for the same link arrive simultaneously, only one of
@@ -205,7 +331,6 @@ class ContractSigningService
         }
 
         $signedAt = date('Y-m-d H:i:s');
-        $documentHash = $this->hashContractSnapshot($contract);
         $signatureHash = hash('sha256', $signatureData . '|' . $name . '|' . $signedAt);
 
         $signature = $this->signatures->create([
@@ -217,7 +342,9 @@ class ContractSigningService
             'ip_address' => $ipAddress,
             'user_agent' => $userAgent,
             'device_fingerprint' => $payload['device_fingerprint'] ?? null,
-            'document_hash' => $documentHash,
+            'document_hash' => $currentDocumentHash,
+            'document_hash_at_issue' => $issueDocumentHash,
+            'document_changed_accepted' => $documentChangedAccepted,
             'signature_hash' => $signatureHash,
             'legal_consent' => (bool) $payload['legal_consent'],
             'consent_text' => $payload['consent_text'] ?? null,
@@ -258,6 +385,20 @@ class ContractSigningService
                 'activated' => $contract->signed_at === null,
             ]
         ));
+
+        // R-02c — if this link was bound to an invitation roster entry,
+        // stamp the signer row so the admin UI can show "Jane Doe ✓
+        // signed at …". The marker is idempotent at the repo level so a
+        // duplicate hook here (which shouldn't happen — the link's
+        // single-use claim above prevents it) would still leave the
+        // first signing fact intact.
+        if ($this->signerService !== null && $link->signer_invitation_id !== null) {
+            $this->signerService->markSignerCompleted(
+                $link->signer_invitation_id,
+                (int) $signature->id,
+                $signedAt
+            );
+        }
 
         return $signature;
     }
@@ -385,11 +526,44 @@ class ContractSigningService
 
     private function hashContractSnapshot(Contract $contract): string
     {
-        return hash('sha256', json_encode($contract->toArray(), JSON_UNESCAPED_SLASHES) ?: '');
+        return hash('sha256', self::canonicalizeContractSnapshot($contract));
+    }
+
+    /**
+     * R-04 — produce the canonical JSON snapshot used for both the
+     * issue-time hash and the stored snapshot blob. Strips the volatile
+     * timestamp columns and sorts keys so structurally-identical
+     * documents hash to the same value across PHP runs.
+     */
+    private static function canonicalizeContractSnapshot(Contract $contract): string
+    {
+        $data = $contract->toArray();
+        unset($data['updated_at'], $data['created_at']);
+        ksort($data);
+        return json_encode($data, JSON_UNESCAPED_SLASHES) ?: '';
     }
 
     private function generateToken(): string
     {
         return rtrim(strtr(base64_encode(random_bytes(self::TOKEN_BYTES)), '+/', '-_'), '=');
+    }
+
+    /**
+     * Canonicalize an email for storage / comparison. Returns null for empty
+     * input so callers can use the result directly as a "bound or open"
+     * marker. Casing and surrounding whitespace are stripped — domain part
+     * is case-insensitive per RFC and the local part is too in every real
+     * mailer we hit, so we treat the whole address as case-insensitive.
+     */
+    private static function normalizeEmail(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        return mb_strtolower($trimmed);
     }
 }

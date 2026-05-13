@@ -113,7 +113,11 @@ class SignFakeLinks extends ContractPublicLinkRepository
         string $tokenHash,
         string $shortCode,
         ?string $expiresAt,
-        ?int $createdByUserId
+        ?int $createdByUserId,
+        ?string $signerEmail = null,
+        ?int $signerInvitationId = null,
+        ?string $documentHashAtIssue = null,
+        ?string $documentSnapshotJson = null
     ): ContractPublicLink {
         $l = new ContractPublicLink();
         $l->id = $this->nextId++;
@@ -122,6 +126,10 @@ class SignFakeLinks extends ContractPublicLinkRepository
         $l->short_code = $shortCode;
         $l->expires_at = $expiresAt;
         $l->created_by_user_id = $createdByUserId;
+        $l->signer_email = $signerEmail;
+        $l->signer_invitation_id = $signerInvitationId;
+        $l->document_hash_at_issue = $documentHashAtIssue;
+        $l->document_snapshot_json = $documentSnapshotJson;
         $this->store[$l->id] = $l;
         return $l;
     }
@@ -216,6 +224,8 @@ class SignFakeSignatures extends ContractSignatureRepository
         $s->user_agent = $data['user_agent'] ?? null;
         $s->device_fingerprint = $data['device_fingerprint'] ?? null;
         $s->document_hash = $data['document_hash'] ?? null;
+        $s->document_hash_at_issue = $data['document_hash_at_issue'] ?? null;
+        $s->document_changed_accepted = !empty($data['document_changed_accepted']);
         $s->signature_hash = $data['signature_hash'] ?? null;
         $s->legal_consent = !empty($data['legal_consent']);
         $s->consent_text = $data['consent_text'] ?? null;
@@ -586,5 +596,140 @@ $e16['gate']->denied = ['contracts.view'];
 expectFail(function () use ($e16) {
     $e16['service']->listLinks(user(), $e16['contract']->id);
 }, 'listLinks denied without permission', 'denied');
+
+// R-04 — issueLink stamps document_hash_at_issue + snapshot JSON onto the link.
+$eR04a = signEnv();
+expectOk(function () use ($eR04a) {
+    $issued = $eR04a['service']->issueLink(user(), $eR04a['contract']->id, 'https://shop.example');
+    $row = $eR04a['links']->findById($issued['link']->id);
+    if ($row->document_hash_at_issue === null || strlen($row->document_hash_at_issue) !== 64) {
+        throw new RuntimeException('document_hash_at_issue missing or wrong length');
+    }
+    if ($row->document_snapshot_json === null || $row->document_snapshot_json === '') {
+        throw new RuntimeException('document_snapshot_json not stamped');
+    }
+    $issuedAudit = null;
+    foreach ($eR04a['audit']->entries as $entry) {
+        if ($entry->event === 'contract.link_issued') {
+            $issuedAudit = $entry;
+        }
+    }
+    if ($issuedAudit === null
+        || ($issuedAudit->context['document_hash_at_issue'] ?? null) !== $row->document_hash_at_issue) {
+        throw new RuntimeException('link_issued audit missing document_hash_at_issue');
+    }
+}, 'R-04 issueLink stamps document hash + snapshot on link');
+
+// R-04 — capture refused when contract changes after issue (no override).
+$eR04b = signEnv();
+$issuedR04b = $eR04b['service']->issueLink(user(), $eR04b['contract']->id, 'https://shop.example');
+$eR04b['contracts']->update($eR04b['contract']->id, ['title' => 'CHANGED AFTER ISSUE']);
+expectFail(function () use ($eR04b, $issuedR04b) {
+    $eR04b['service']->captureSignature(
+        $issuedR04b['token'],
+        [
+            'signer_name' => 'Late Signer',
+            'signature_data' => 'sig',
+            'legal_consent' => true,
+        ],
+        '203.0.113.10',
+        'UA'
+    );
+}, 'R-04 mismatch capture refused without opt-in', 'modified');
+
+// R-04 — refusal emits contract.document_changed_refused with both hashes.
+$refusedAudit = null;
+foreach ($eR04b['audit']->entries as $entry) {
+    if ($entry->event === 'contract.document_changed_refused') {
+        $refusedAudit = $entry;
+    }
+}
+expectOk(function () use ($refusedAudit, $issuedR04b) {
+    if ($refusedAudit === null) {
+        throw new RuntimeException('refusal audit not emitted');
+    }
+    $ctx = $refusedAudit->context;
+    if (empty($ctx['document_hash_at_issue']) || empty($ctx['document_hash_at_capture'])) {
+        throw new RuntimeException('refusal audit missing hashes');
+    }
+    if ($ctx['document_hash_at_issue'] === $ctx['document_hash_at_capture']) {
+        throw new RuntimeException('refusal audit hashes should differ');
+    }
+}, 'R-04 refusal audit captures both hashes');
+
+// R-04 — refusal does NOT consume the link; admin can still override.
+$eR04c = signEnv();
+$issuedR04c = $eR04c['service']->issueLink(user(), $eR04c['contract']->id, 'https://shop.example');
+$eR04c['contracts']->update($eR04c['contract']->id, ['title' => 'CHANGED AFTER ISSUE']);
+try {
+    $eR04c['service']->captureSignature(
+        $issuedR04c['token'],
+        [
+            'signer_name' => 'First Try',
+            'signature_data' => 'sig',
+            'legal_consent' => true,
+        ],
+        '203.0.113.11',
+        'UA'
+    );
+} catch (Throwable $expected) {
+    // expected refusal
+}
+expectOk(function () use ($eR04c, $issuedR04c) {
+    $sig = $eR04c['service']->captureSignature(
+        $issuedR04c['token'],
+        [
+            'signer_name' => 'Override Signer',
+            'signature_data' => 'sig',
+            'legal_consent' => true,
+            'accept_document_changes' => true,
+        ],
+        '203.0.113.12',
+        'UA'
+    );
+    if ($sig->id <= 0) {
+        throw new RuntimeException('override signature not persisted');
+    }
+    if ($sig->document_changed_accepted !== true) {
+        throw new RuntimeException('document_changed_accepted not stamped on signature');
+    }
+    if ($sig->document_hash_at_issue === null || $sig->document_hash === null) {
+        throw new RuntimeException('signature missing one of the hash fields');
+    }
+    if ($sig->document_hash_at_issue === $sig->document_hash) {
+        throw new RuntimeException('issue/capture hashes should differ in override case');
+    }
+    $acceptedAudit = null;
+    foreach ($eR04c['audit']->entries as $entry) {
+        if ($entry->event === 'contract.document_changed_accepted') {
+            $acceptedAudit = $entry;
+        }
+    }
+    if ($acceptedAudit === null) {
+        throw new RuntimeException('document_changed_accepted audit not emitted');
+    }
+}, 'R-04 override path captures + stamps signature with both hashes');
+
+// R-04 — unchanged contract signs cleanly with hashes equal.
+$eR04d = signEnv();
+$issuedR04d = $eR04d['service']->issueLink(user(), $eR04d['contract']->id, 'https://shop.example');
+expectOk(function () use ($eR04d, $issuedR04d) {
+    $sig = $eR04d['service']->captureSignature(
+        $issuedR04d['token'],
+        [
+            'signer_name' => 'Clean Signer',
+            'signature_data' => 'sig',
+            'legal_consent' => true,
+        ],
+        '203.0.113.13',
+        'UA'
+    );
+    if ($sig->document_changed_accepted !== false) {
+        throw new RuntimeException('document_changed_accepted should be false on clean sign');
+    }
+    if ($sig->document_hash_at_issue !== $sig->document_hash) {
+        throw new RuntimeException('issue/capture hashes should match on clean sign');
+    }
+}, 'R-04 unchanged contract signs cleanly with matching hashes');
 
 echo "All Phase 4.2 contract-signing tests passed.\n";

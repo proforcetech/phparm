@@ -132,6 +132,21 @@ Thank you.
 TEMPLATE,
 
         // Authentication templates
+        // Contract templates
+        'contract.signer_invitation' => <<<'TEMPLATE'
+Hello {{signer_name}},
+
+You have been invited to sign contract {{contract_number}} — {{contract_title}}.
+
+To review the contract terms and apply your electronic signature, follow the secure link below:
+
+{{sign_url}}
+
+{{expires_note}}
+
+This link is bound to your email address and may only be used by you. If you were not expecting this invitation, you can safely ignore the email.
+TEMPLATE,
+
         'auth.password_reset' => <<<'TEMPLATE'
 Hello,
 

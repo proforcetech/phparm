@@ -60,7 +60,7 @@ $registry->register(new AccessControlAdapter());
 
 $repo = new ThirdPartyIntegrationRepository($connection);
 $logs = new IntegrationSyncLogRepository($connection);
-$cipher = new FieldCipher();
+$cipher = new FieldCipher(FieldCipher::DOMAIN_INTEGRATION_CREDENTIALS);
 $service = new IntegrationService($repo, $logs, $registry, $cipher, $gate);
 
 echo sprintf("[%s] Integration sync runner started\n", date('Y-m-d H:i:s'));

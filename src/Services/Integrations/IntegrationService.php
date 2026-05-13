@@ -101,7 +101,7 @@ class IntegrationService
 
         if (!$this->cipher->isAvailable()) {
             throw new RuntimeException(
-                'FieldCipher is not configured — set SITE_CODES_ENCRYPTION_KEY before storing integration credentials.'
+                'FieldCipher is not configured — set INTEGRATION_CREDENTIALS_ENCRYPTION_KEY before storing integration credentials.'
             );
         }
 

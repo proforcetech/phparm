@@ -36,15 +36,42 @@ class EstimatePublicLinkService
         $this->approvalAudit = $approvalAudit;
     }
 
-    public function issueLink(int $estimateId, string $baseUrl, ?string $expiresAt = null, ?int $actorId = null): array
-    {
+    public function issueLink(
+        int $estimateId,
+        string $baseUrl,
+        ?string $expiresAt = null,
+        ?int $actorId = null,
+        ?string $signerEmail = null,
+        ?int $signerInvitationId = null
+    ): array {
         $token = $this->generateToken();
         $hash = hash('sha256', $token);
         $shortCode = substr($hash, 0, 10);
+        $normalizedEmail = self::normalizeEmail($signerEmail);
+
+        // R-04 — snapshot the document hash + JSON now. Without an
+        // estimate row at issue we can't verify drift later; if the
+        // estimate is missing here we fail loudly rather than issuing
+        // a link that would be unusable on capture.
+        $estimate = $this->estimates->find($estimateId);
+        if ($estimate === null) {
+            throw new RuntimeException('Estimate not found; cannot issue link.');
+        }
+        $snapshotJson = self::canonicalizeEstimateSnapshot($estimate->toArray());
+        $documentHashAtIssue = hash('sha256', $snapshotJson);
 
         $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO estimate_public_links (estimate_id, token_hash, short_code, expires_at, created_at, updated_at)
-            VALUES (:estimate_id, :token_hash, :short_code, :expires_at, NOW(), NOW())
+            INSERT INTO estimate_public_links (
+                estimate_id, token_hash, short_code, expires_at,
+                signer_email, signer_invitation_id,
+                document_hash_at_issue, document_snapshot_json,
+                created_at, updated_at
+            ) VALUES (
+                :estimate_id, :token_hash, :short_code, :expires_at,
+                :signer_email, :signer_invitation_id,
+                :document_hash_at_issue, :document_snapshot_json,
+                NOW(), NOW()
+            )
         SQL);
 
         $stmt->execute([
@@ -52,6 +79,10 @@ class EstimatePublicLinkService
             'token_hash' => $hash,
             'short_code' => $shortCode,
             'expires_at' => $expiresAt,
+            'signer_email' => $normalizedEmail,
+            'signer_invitation_id' => $signerInvitationId,
+            'document_hash_at_issue' => $documentHashAtIssue,
+            'document_snapshot_json' => $snapshotJson,
         ]);
 
         $linkId = (int) $this->connection->pdo()->lastInsertId();
@@ -59,6 +90,9 @@ class EstimatePublicLinkService
             'link_id' => $linkId,
             'short_code' => $shortCode,
             'expires_at' => $expiresAt,
+            'signer_email' => $normalizedEmail,
+            'signer_invitation_id' => $signerInvitationId,
+            'document_hash_at_issue' => $documentHashAtIssue,
         ]);
 
         return [
@@ -199,7 +233,8 @@ class EstimatePublicLinkService
         bool $legalConsent = false,
         ?string $consentText = null,
         ?string $shortCode = null,
-        array $forensics = []
+        array $forensics = [],
+        bool $acceptDocumentChanges = false
     ): EstimateSignature {
         $link = $this->resolveLink($token, $shortCode);
         $estimate = $this->estimates->find($link->estimate_id);
@@ -216,12 +251,92 @@ class EstimatePublicLinkService
             throw new RuntimeException('This estimate link has already been used to capture a signature.');
         }
 
+        // R-02b — signer email binding. When the link was issued with a
+        // bound signer_email the capture must present that same address
+        // (case-insensitive, trimmed). NULL preserves the legacy "open"
+        // link behaviour for backwards compatibility.
+        if ($link->signer_email !== null) {
+            $bound = self::normalizeEmail($link->signer_email);
+            $declared = self::normalizeEmail($email);
+            if ($declared === null) {
+                if ($this->audit !== null) {
+                    $this->audit->log(new AuditEntry(
+                        'estimate.signer_mismatch',
+                        'estimate',
+                        (string) $estimate->id,
+                        null,
+                        [
+                            'link_id' => $link->id,
+                            'reason' => 'missing_signer_email',
+                            'expected_signer_email' => $bound,
+                            'ip_address' => $ipAddress,
+                        ]
+                    ));
+                }
+                throw new InvalidArgumentException('signer_email is required for this signing link.');
+            }
+            if ($declared !== $bound) {
+                if ($this->audit !== null) {
+                    $this->audit->log(new AuditEntry(
+                        'estimate.signer_mismatch',
+                        'estimate',
+                        (string) $estimate->id,
+                        null,
+                        [
+                            'link_id' => $link->id,
+                            'reason' => 'email_mismatch',
+                            'expected_signer_email' => $bound,
+                            'attempted_signer_email' => $declared,
+                            'ip_address' => $ipAddress,
+                        ]
+                    ));
+                }
+                throw new RuntimeException('This signing link is bound to a different signer.');
+            }
+        }
+
         $signedAt = date('Y-m-d H:i:s');
 
         // Generate document hash for integrity verification
         $documentHash = $this->approvalAudit !== null
             ? $this->approvalAudit->generateDocumentHash($estimate->toArray())
             : null;
+
+        // R-04 — verify the issue-time snapshot against the current
+        // estimate. Mismatch defaults to refusal so a mid-flight edit
+        // can't silently change what the signer "agreed to". The
+        // override path requires explicit opt-in and audits the diff.
+        $issueDocumentHash = $link->document_hash_at_issue;
+        $documentChangedAccepted = false;
+        if ($issueDocumentHash !== null
+            && $documentHash !== null
+            && !hash_equals($issueDocumentHash, $documentHash)
+        ) {
+            if ($this->audit !== null) {
+                $this->audit->log(new AuditEntry(
+                    $acceptDocumentChanges
+                        ? 'estimate.document_changed_accepted'
+                        : 'estimate.document_changed_refused',
+                    'estimate',
+                    (string) $estimate->id,
+                    null,
+                    [
+                        'link_id' => $link->id,
+                        'document_hash_at_issue' => $issueDocumentHash,
+                        'document_hash_at_capture' => $documentHash,
+                        'ip_address' => $ipAddress,
+                    ]
+                ));
+            }
+            if (!$acceptDocumentChanges) {
+                throw new RuntimeException(
+                    'This estimate was modified after the signing link was sent. '
+                    . 'Request a fresh link from the issuer, or re-submit with '
+                    . 'accept_document_changes=true to acknowledge the changes.'
+                );
+            }
+            $documentChangedAccepted = true;
+        }
 
         // Generate signature hash
         $signatureHash = $this->approvalAudit !== null
@@ -244,6 +359,7 @@ class EstimatePublicLinkService
                 location_lat, location_lng, location_accuracy_m, location_captured_at,
                 browser_name, browser_version, os_name, os_version,
                 device_fingerprint, document_hash,
+                document_hash_at_issue, document_changed_accepted,
                 legal_consent, consent_text, comment, signed_at, created_at
             ) VALUES (
                 :estimate_id, :signer_name, :signer_email, :signature_data,
@@ -251,6 +367,7 @@ class EstimatePublicLinkService
                 :location_lat, :location_lng, :location_accuracy_m, :location_captured_at,
                 :browser_name, :browser_version, :os_name, :os_version,
                 :device_fingerprint, :document_hash,
+                :document_hash_at_issue, :document_changed_accepted,
                 :legal_consent, :consent_text, :comment, :signed_at, NOW()
             )
         SQL);
@@ -272,6 +389,8 @@ class EstimatePublicLinkService
             'os_version' => $osVersion,
             'device_fingerprint' => $deviceFingerprint,
             'document_hash' => $documentHash,
+            'document_hash_at_issue' => $issueDocumentHash,
+            'document_changed_accepted' => $documentChangedAccepted ? 1 : 0,
             'legal_consent' => $legalConsent ? 1 : 0,
             'consent_text' => $consentText,
             'comment' => $comment,
@@ -297,6 +416,8 @@ class EstimatePublicLinkService
             'os_version' => $osVersion,
             'device_fingerprint' => $deviceFingerprint,
             'document_hash' => $documentHash,
+            'document_hash_at_issue' => $issueDocumentHash,
+            'document_changed_accepted' => $documentChangedAccepted,
             'legal_consent' => $legalConsent,
             'consent_text' => $consentText,
             'comment' => $comment,
@@ -602,5 +723,38 @@ class EstimatePublicLinkService
             return null;
         }
         return date('Y-m-d H:i:s', $timestamp);
+    }
+
+    /**
+     * R-04 — produce a stable JSON representation of the estimate row used
+     * for hashing at link-issue time. Volatile fields (updated_at) would
+     * otherwise cause spurious mismatches even when the customer-visible
+     * content has not changed.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function canonicalizeEstimateSnapshot(array $data): string
+    {
+        unset($data['updated_at'], $data['created_at']);
+        ksort($data);
+        return json_encode($data, JSON_UNESCAPED_SLASHES) ?: '';
+    }
+
+    /**
+     * R-02b — canonicalize an email for binding comparison. Trim + lowercase
+     * via mb_strtolower so the same address typed in different casings on
+     * the invite vs. capture sides still matches. Returns null for empty
+     * or non-string input so callers can treat "no email" uniformly.
+     */
+    private static function normalizeEmail(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        return mb_strtolower($trimmed);
     }
 }

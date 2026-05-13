@@ -276,11 +276,17 @@ function intFixture(): array
     $logs = new IntegrationSyncLogRepository($conn);
     $events = new IntegrationWebhookEventRepository($conn);
 
-    // Seed a deterministic 32-byte key for FieldCipher.
+    // Seed deterministic 32-byte keys for both FieldCipher domains.
+    // R-06 / AUD-071 — integration credentials live under their own env
+    // var. We seed both so legacy v0 (site-codes-key) ciphertext written
+    // before the per-domain split keeps decrypting via the fallback path.
     $key = base64_encode(str_repeat("\x01", 32));
     $_ENV['SITE_CODES_ENCRYPTION_KEY'] = $key;
     putenv('SITE_CODES_ENCRYPTION_KEY=' . $key);
-    $cipher = new FieldCipher();
+    $intKey = base64_encode(str_repeat("\x02", 32));
+    $_ENV['INTEGRATION_CREDENTIALS_ENCRYPTION_KEY'] = $intKey;
+    putenv('INTEGRATION_CREDENTIALS_ENCRYPTION_KEY=' . $intKey);
+    $cipher = new FieldCipher(FieldCipher::DOMAIN_INTEGRATION_CREDENTIALS);
 
     $registry = new IntegrationAdapterRegistry();
     $fake = new FakeIntegrationAdapter('fake_provider', ThirdPartyIntegration::CATEGORY_ACCOUNTING);

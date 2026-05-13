@@ -58,7 +58,10 @@ return function (Router $router, RouteContext $ctx): void {
     $repo = new ThirdPartyIntegrationRepository($ctx->connection);
     $logs = new IntegrationSyncLogRepository($ctx->connection);
     $events = new IntegrationWebhookEventRepository($ctx->connection);
-    $cipher = new FieldCipher();
+    // R-06 / AUD-071 — third-party integration credentials live under
+    // their own domain key (INTEGRATION_CREDENTIALS_ENCRYPTION_KEY) so a
+    // leak of the CRM site-codes key does not expose API tokens.
+    $cipher = new FieldCipher(FieldCipher::DOMAIN_INTEGRATION_CREDENTIALS);
     $service = new IntegrationService($repo, $logs, $registry, $cipher, $ctx->gate);
     $webhooks = new IntegrationWebhookService($events, $repo, $registry, $ctx->gate);
     $controller = new IntegrationController($service, $webhooks, $registry, $repo, $ctx->gate);

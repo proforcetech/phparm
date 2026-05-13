@@ -8,6 +8,7 @@ use App\Support\Audit\AuditLogger;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\PolicyRegistry;
 use App\Support\Auth\RolePermissions;
+use App\Support\Security\PublicLinkRateLimiter;
 use App\Support\SettingsRepository;
 
 /**
@@ -33,6 +34,7 @@ final class RouteContext
         public readonly PushNotificationService $pushNotifications,
         public readonly SettingsRepository $settingsRepository,
         public readonly PolicyRegistry $policies,
+        public readonly ?PublicLinkRateLimiter $publicLinkLimiter = null,
     ) {
     }
 }

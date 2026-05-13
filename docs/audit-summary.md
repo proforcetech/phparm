@@ -96,6 +96,11 @@ the v2 code** or the new defenses silently degrade:
   (session binding, AUD-069)
 - `database/migrations/185_public_link_single_use.sql` — `consumed_at` columns
   on `contract_public_links` + `estimate_public_links` (AUD-064)
+- `database/migrations/187_public_link_signer_binding.sql` — `signer_email`
+  + `signer_invitation_id` columns on `contract_public_links` +
+  `estimate_public_links` (R-02b, AUD-064)
+- `database/migrations/188_contract_signers.sql` — `contract_signers`
+  roster table for the multi-party invitation flow (R-02c, AUD-064)
 
 Plus the two v1 carry-over migrations (`097_payment_webhook_events.sql`,
 `098_workorder_status_history_composite_index.sql`).
@@ -111,9 +116,22 @@ Other residuals from v1 still apply:
 Net new from v2:
 
 - 6 security findings opened in v2 had a designed-out follow-up in
-  `audit-v2-recommendations.md` (R-01..R-06). Two have since shipped
-  (R-01 / AUD-063 on 2026-05-12; R-05 / AUD-067 on 2026-05-11); the
-  remaining four (R-02, R-03, R-04, R-06) are still uncommitted.
+  `audit-v2-recommendations.md` (R-01..R-06). All six are now fully
+  shipped end-to-end: R-01 / AUD-063 on 2026-05-12; R-05 / AUD-067 on
+  2026-05-11; R-02 / AUD-064 on 2026-05-12 across four phases —
+  R-02a (per-IP + per-link rate limiting on public sign links), R-02b
+  (per-link signer-email binding, migration 187), R-02c
+  (`contract_signers` roster + invitation service, migration 188), and
+  R-02d (admin UI flip + bound-email display in the public sign view);
+  R-03 / AUD-065 on 2026-05-12 (state-changing public endpoints
+  require the long token, short codes demoted to read-only);
+  R-04 / AUD-066 on 2026-05-12 (migration 189 — issue-time
+  document hash + JSON snapshot on both contract and estimate public
+  links, capture-time mismatch refusal with audited override path);
+  and R-06 / AUD-071 on 2026-05-12 (per-domain encryption keys with a
+  versioned `0x01 || key_id_u32 || nonce || ct` envelope under
+  `crypto_aead_xchacha20poly1305_ietf` with the domain string bound as
+  AAD; one-shot `bin/crypto/rewrap_secrets.php` migration script).
 - One partially-resolved security finding (AUD-064) closed the immediate
   exploit window but defers the architectural cleanup (first-class
   multi-party signing + per-link rate limiting) to R-02 in the same
@@ -128,14 +146,8 @@ This is a clean stop point.
 
 If work resumes, the highest-value next steps are:
 
-1. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
-   signing + per-link rate limiting; largest remaining cost on the
-   recommendations doc.
-2. R-03 / R-04 (AUD-065 short-code entropy, AUD-066 issue-time document hash)
-   — smaller items related to the public link surface.
-3. R-06 (AUD-071 per-domain encryption keys + versioned ciphertext).
-4. AUD-077 (cron lock / per-minute parallelism).
-5. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
+1. AUD-077 (cron lock / per-minute parallelism).
+2. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
 
 UIG-1, UIG-2, UIG-9 closed 2026-05-12 (technician portal real view,
 admin dashboard CTA hidden, `DELETE /api/divisions/{id}` shipped). All

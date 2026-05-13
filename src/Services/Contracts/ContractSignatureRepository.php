@@ -18,7 +18,8 @@ class ContractSignatureRepository
 {
     private const COLUMNS = 'id, contract_id, signer_name, signer_email,
         signer_title, signature_data, ip_address, user_agent,
-        device_fingerprint, document_hash, signature_hash, legal_consent,
+        device_fingerprint, document_hash, document_hash_at_issue,
+        document_changed_accepted, signature_hash, legal_consent,
         consent_text, comment, signed_at, created_at';
 
     public function __construct(private readonly Connection $connection)
@@ -34,11 +35,13 @@ class ContractSignatureRepository
             'INSERT INTO contract_signatures (
                 contract_id, signer_name, signer_email, signer_title,
                 signature_data, ip_address, user_agent, device_fingerprint,
-                document_hash, signature_hash, legal_consent, consent_text,
+                document_hash, document_hash_at_issue, document_changed_accepted,
+                signature_hash, legal_consent, consent_text,
                 comment, signed_at
              ) VALUES (
                 :cid, :name, :email, :title, :sig_data, :ip, :ua, :fp,
-                :doc_hash, :sig_hash, :consent, :consent_text, :comment, :signed_at
+                :doc_hash, :doc_hash_issue, :doc_changed,
+                :sig_hash, :consent, :consent_text, :comment, :signed_at
              )'
         );
         $stmt->execute([
@@ -51,6 +54,8 @@ class ContractSignatureRepository
             'ua' => $data['user_agent'] ?? null,
             'fp' => $data['device_fingerprint'] ?? null,
             'doc_hash' => $data['document_hash'] ?? null,
+            'doc_hash_issue' => $data['document_hash_at_issue'] ?? null,
+            'doc_changed' => !empty($data['document_changed_accepted']) ? 1 : 0,
             'sig_hash' => $data['signature_hash'] ?? null,
             'consent' => !empty($data['legal_consent']) ? 1 : 0,
             'consent_text' => $data['consent_text'] ?? null,

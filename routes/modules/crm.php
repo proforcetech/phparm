@@ -38,7 +38,7 @@ return function (Router $router, RouteContext $ctx): void {
         new SiteContactRepository($ctx->connection),
         new BillingContactRepository($ctx->connection),
         new SiteBlackoutWindowRepository($ctx->connection),
-        new FieldCipher(),
+        new FieldCipher(FieldCipher::DOMAIN_SITE_CODES),
         $linkage,
         $ctx->gate,
         $ctx->auditLogger
