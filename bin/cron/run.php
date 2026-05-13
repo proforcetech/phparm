@@ -19,6 +19,7 @@
 require __DIR__ . '/../../vendor/autoload.php';
 
 use App\Database\Connection;
+use App\Support\Cron\CronDispatcher;
 use App\Support\Env;
 
 // Parse command line arguments
@@ -178,35 +179,74 @@ if (isset($options['job'])) {
 
     runJob($jobs[$jobKey], $quiet);
 } else {
-    // Run all due jobs
+    // Run all due jobs in parallel under a flock-based lock (AUD-077).
     $env = new Env(__DIR__ . '/../../.env');
     $lockFile = __DIR__ . '/../../storage/temp/cron.lock';
 
-    // Prevent concurrent runs (unless forced)
-    if (!$force && file_exists($lockFile)) {
-        $lockTime = (int) file_get_contents($lockFile);
-        if (time() - $lockTime < 300) { // 5 minute lock timeout
-            if (!$quiet) {
-                echo "Another cron process is running. Use --force to override.\n";
-            }
-            exit(0);
-        }
+    $lockDir = dirname($lockFile);
+    if (!is_dir($lockDir) && !@mkdir($lockDir, 0755, true) && !is_dir($lockDir)) {
+        fwrite(STDERR, "Could not create cron lock directory: {$lockDir}\n");
+        exit(1);
     }
 
-    // Create lock
-    file_put_contents($lockFile, time());
+    $lockFd = fopen($lockFile, 'c');
+    if ($lockFd === false) {
+        fwrite(STDERR, "Could not open cron lock file: {$lockFile}\n");
+        exit(1);
+    }
+
+    // flock() releases automatically when the FD closes (process exit,
+    // crash, or kill), so a dead runner cannot block the next tick the
+    // way the old timestamp-based lock could.
+    if (!flock($lockFd, LOCK_EX | LOCK_NB)) {
+        if (!$force) {
+            if (!$quiet) {
+                echo "Another cron process holds the lock. Use --force to override.\n";
+            }
+            fclose($lockFd);
+            exit(0);
+        }
+        flock($lockFd, LOCK_EX);
+    }
+
+    ftruncate($lockFd, 0);
+    fwrite($lockFd, (string) getmypid());
+    fflush($lockFd);
 
     try {
+        $due = [];
         foreach ($jobs as $key => $job) {
             if (isDue($job['schedule'])) {
-                runJob($job, $quiet);
+                $due[$key] = $job;
+            }
+        }
+        if (empty($due)) {
+            if (!$quiet) {
+                echo sprintf("[%s] No jobs due.\n", date('Y-m-d H:i:s'));
+            }
+        } else {
+            $logger = $quiet ? null : static function (string $line): void {
+                echo $line . "\n";
+            };
+            $dispatcher = new CronDispatcher($logger);
+            $results = $dispatcher->dispatch($due);
+            $failed = 0;
+            foreach ($results as $result) {
+                if ($result['exit_code'] !== 0 || $result['timed_out']) {
+                    $failed++;
+                }
+            }
+            if (!$quiet) {
+                echo sprintf("[%s] Tick complete: %d ok, %d failed (%d total)\n",
+                    date('Y-m-d H:i:s'),
+                    count($results) - $failed,
+                    $failed,
+                    count($results));
             }
         }
     } finally {
-        // Remove lock
-        if (file_exists($lockFile)) {
-            unlink($lockFile);
-        }
+        flock($lockFd, LOCK_UN);
+        fclose($lockFd);
     }
 }
 

@@ -1123,7 +1123,7 @@ Hot-path or trivial issues are fixed inline; larger or design-level items are de
 
 #### AUD-077
 
-- Status: `open`
+- Status: `resolved`
 - Category: `performance`
 - Severity: `low`
 - Location: `bin/cron/run.php:200-204`, `bin/cron/run.php:181-194`
@@ -1131,9 +1131,12 @@ Hot-path or trivial issues are fixed inline; larger or design-level items are de
 - Evidence: `run.php:200-204` — `foreach ($jobs as $key => $job) { if (isDue($job['schedule'])) { runJob($job, $quiet); } }` — single sequential loop, no `&`, no `proc_open` parallelism. `run.php:186-188` — lock check uses `time() - $lockTime < 300` and reads only the timestamp; if the holder process has died the lock survives until 5 min after creation.
 - Impact: Per-minute jobs can develop coordinated lateness during a slow run; in the worst case the per-minute SLA breach detector and POS stale-heartbeat sweeper miss multiple ticks if any earlier job in the dispatch order hangs. Stale lock files from crashed cron runs delay the next legitimate run by up to 5 minutes.
 - Recommended fix: (1) Switch the lock to PID-based using `flock()` on the lock file FD so the lock releases automatically when the holder process exits or is killed. (2) For per-minute jobs that are independent of each other, dispatch them via `proc_open` in parallel and wait at the end of the tick. (3) Add a per-job timeout (kill the child after N seconds and continue with the next job) so one runaway script doesn't block the rest of the sweep.
-- Actual fix:
-- Verification:
-- Residual risk:
+- Actual fix: All three sub-recommendations landed in `bin/cron/run.php` and a new `App\Support\Cron\CronDispatcher` class.
+  1. **Lock**: the timestamp-with-5min-staleness path is gone. The runner now opens `storage/temp/cron.lock` with mode `c`, takes `flock(LOCK_EX | LOCK_NB)`, writes its PID for diagnostics, and releases the lock by closing the FD in the `finally` block. The OS releases the lock automatically if the process is killed or crashes, so a dead runner can never delay the next tick. `--force` is preserved by falling back to `flock(LOCK_EX)` after a non-blocking miss.
+  2. **Parallelism**: the sequential `foreach { runJob() }` loop is replaced by `CronDispatcher::dispatch()`, which spawns due jobs via `proc_open(['php', $script], …)` with non-blocking stdout/stderr pipes, polls them every 100 ms, and caps concurrency at `CronDispatcher::DEFAULT_MAX_CONCURRENT` (4) so a midnight tick (where multiple daily jobs converge with the per-minute set) cannot oversubscribe the DB.
+  3. **Per-job timeout**: each spawn gets a deadline derived from its cron expression — 50 s for `* * * * *` (must finish before the next tick), `N*60-60 s` for `*/N`, 1800 s for hourly+. Jobs may opt into an explicit `timeout` field in the job spec to override the default. At the deadline the dispatcher sends SIGTERM, waits up to 5 s for a clean exit, then escalates to SIGKILL. The result row records `timed_out=true` and the (possibly-`-1`) exit code so the tick summary surfaces the failure instead of swallowing it.
+- Verification: `php tests/CronDispatcherTest.php` — 11/11 (`per-minute job defaults to 50s timeout`, `*/5 schedule defaults to 240s timeout (one-minute margin under cadence)`, `*/15 schedule defaults to 840s timeout`, `hourly + slower schedules fall back to 1800s`, `fast job reports exit 0 + non-trivial duration`, `failing job surfaces non-zero exit code`, `slow job is killed at timeout and marked timed_out=true`, `missing script is skipped without starting a process`, `parallel dispatch finishes near max(child) wall time, not sum(child)` (3× sleep(1) finished in ~1.0s wall, not ~3.0s), `maxConcurrent throttles parallelism — 4 sleep(1) jobs at concurrency=2 take ~2s`, `empty job set returns empty result without spawning anything`). `php -l bin/cron/run.php` and `php -l src/Support/Cron/CronDispatcher.php` both lint clean. `php bin/cron/run.php --list` and `--help` continue to work end-to-end without touching the lock. End-to-end smoke run with two synthetic jobs (one `sleep(1)`, one instant) confirmed parallel dispatch (1.1 s wall) under the live `flock()`-backed lock.
+- Residual risk: (a) The dispatcher does not pin children to a CPU set or memory cgroup; a runaway memory-hungry child can still pressure the host until SIGKILL fires at the timeout deadline. Production should keep the existing systemd / Docker memory caps. (b) Per-job timeouts are heuristic defaults — the daily 1800 s ceiling fits the existing cron set with margin, but a future job that needs longer must opt into an explicit `timeout` value or the dispatcher will SIGKILL it. (c) `--job=NAME` (single-job invocation) intentionally retains the original `exec()` flow with no timeout: operators occasionally invoke it for ad-hoc backfills that legitimately exceed the per-tick budget. The all-due tick path is the only one with a finding here.
 
 ### Template
 

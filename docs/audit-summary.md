@@ -13,9 +13,9 @@ Two audit cycles have completed against this repository:
 - **v2** (closed 2026-05-11): six-phase delta pass against the ~189k
   insertions / ~1.2k files added since the v1 closeout, plus two new categories
   (stale code identification, missing/stubbed UI inventory). Produced 15 new
-  findings (AUD-063..AUD-077) and 11 UI gap entries (UIG-1..UIG-11). 11 of 15
-  findings resolved or partially-resolved; 4 deferred to the recommendations
-  doc or carried open in the register.
+  findings (AUD-063..AUD-077) and 11 UI gap entries (UIG-1..UIG-11). All
+  15 findings now resolved or partially-resolved (R-01..R-06 shipped
+  2026-05-11/12; AUD-077 cron lock + parallelism shipped 2026-05-13).
 
 The CMS review work that began in v1 remains complete for findings confirmed
 in this workspace.
@@ -27,20 +27,25 @@ Combined register in [audit-findings.md](audit-findings.md):
 | Cycle | Total | Resolved | Partial | Open |
 | ----- | ----: | -------: | ------: | ---: |
 | v1    |    62 |       62 |       0 |    0 |
-| v2    |    15 |       10 |       1 |    4 |
-| **All** | **77** | **72** | **1** | **4** |
+| v2    |    15 |       14 |       1 |    0 |
+| **All** | **77** | **76** | **1** | **0** |
 
 v1 by category — Security 8, Error handling 6, Performance 48.
-v2 by category — Security 10 (6 resolved + 1 partial), Performance 5 (4 resolved).
+v2 by category — Security 10 (9 resolved + 1 partial), Performance 5 (5 resolved).
 
-### Open v2 findings (deferred or designed-out)
+### v2 closeout
 
-- **AUD-065** — short-code entropy on public e-sign links (~40 bits) — `R-03`
-- **AUD-066** — document hash computed at sign-time, not issue-time — `R-04`
-- **AUD-071** — single env key spans CRM site-codes + integration credentials —
-  `R-06`
-- **AUD-077** — cron runner serializes per-minute jobs and uses a stale-prone
-  file lock — register only
+All 15 v2 findings are now resolved or partially-resolved. The six R-NN
+recommendations from `audit-v2-recommendations.md` shipped between
+2026-05-11 and 2026-05-12 (R-01..R-06); AUD-077 (cron lock +
+per-minute parallelism) shipped 2026-05-13 with `flock()`-based
+locking, `proc_open` parallel dispatch capped at 4 concurrent jobs,
+and per-job timeouts derived from each job's cron expression
+(`App\Support\Cron\CronDispatcher`).
+
+The single partially-resolved entry remains AUD-064 (multi-party
+e-sign) where the immediate exploit window closed but the longer-term
+architectural cleanup is tracked under R-02 (now also shipped end-to-end).
 
 (AUD-063 voice-note upload pipeline shipped 2026-05-12 under R-01; AUD-067
 portal site-scoping shipped 2026-05-11 under R-05's strict policy. See each
@@ -136,9 +141,16 @@ Net new from v2:
   exploit window but defers the architectural cleanup (first-class
   multi-party signing + per-link rate limiting) to R-02 in the same
   recommendations doc.
-- The cron lock / per-minute parallelism issue (AUD-077) is the last
-  low-cost performance item; everything else is profiling-led structural
-  work as already noted in v1.
+- AUD-077 (cron runner lock + per-minute parallelism) shipped 2026-05-13:
+  `flock()` replaces the timestamp-based lock so a crashed runner no
+  longer blocks the next tick; due jobs dispatch via `proc_open()` in
+  parallel through `App\Support\Cron\CronDispatcher` (default
+  concurrency 4); each child gets a per-job timeout derived from its
+  cron expression (50 s for `* * * * *`, `N*60-60 s` for `*/N`,
+  1800 s for hourly+) with SIGTERM/SIGKILL escalation. Verified by
+  `tests/CronDispatcherTest.php` (11/11). With this finding closed
+  every remaining performance gap is profiling-led structural work
+  as already noted in v1.
 
 ## Recommended Stop Point
 
@@ -146,8 +158,7 @@ This is a clean stop point.
 
 If work resumes, the highest-value next steps are:
 
-1. AUD-077 (cron lock / per-minute parallelism).
-2. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
+1. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
 
 UIG-1, UIG-2, UIG-9 closed 2026-05-12 (technician portal real view,
 admin dashboard CTA hidden, `DELETE /api/divisions/{id}` shipped). All

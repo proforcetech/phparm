@@ -28,25 +28,23 @@ domains since the v1 closeout).
 
 | Status              | Count | IDs                                                                       |
 | ------------------- | ----- | ------------------------------------------------------------------------- |
-| Resolved            | 10    | AUD-063, AUD-067, AUD-068, AUD-069, AUD-070, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076 |
+| Resolved            | 14    | AUD-063, AUD-065, AUD-066, AUD-067, AUD-068, AUD-069, AUD-070, AUD-071, AUD-072, AUD-073, AUD-074, AUD-075, AUD-076, AUD-077 |
 | Partially resolved  | 1     | AUD-064 (immediate exploit closed; architectural follow-up deferred to recommendations) |
-| Open / deferred     | 4     | AUD-065, AUD-066, AUD-071, AUD-077                                        |
+| Open / deferred     | 0     | —                                                                          |
 
 By category:
 
 | Category    | Total | Resolved | Partial | Open |
 | ----------- | ----: | -------: | ------: | ---: |
-| Security    |    10 |        6 |       1 |    3 |
-| Performance |     5 |        4 |       0 |    1 |
+| Security    |    10 |        9 |       1 |    0 |
+| Performance |     5 |        5 |       0 |    0 |
 
-Open items have all been written up with full evidence + recommended fix in
-the register; three of them have escalated, designed-out replacement specs in
-[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-03, R-04, R-06).
-R-02 still covers the partially-resolved AUD-064. R-01 / AUD-063 (server-managed
-voice-note upload pipeline) shipped on 2026-05-12; R-05 / AUD-067 (portal
-site-scoping) shipped under the strict policy on 2026-05-11. The fourth
-(AUD-077, cron parallelism / lock hygiene) is a design tweak left in the
-register only.
+All v2 findings closed. The six R-NN recommendations from
+[audit-v2-recommendations.md](audit-v2-recommendations.md) shipped between
+2026-05-11 and 2026-05-12 (R-01..R-06). AUD-077 (cron parallelism +
+lock hygiene) shipped 2026-05-13 with `flock()`-based locking,
+`proc_open` parallel dispatch, and per-job timeouts derived from each
+job's cron expression (`App\Support\Cron\CronDispatcher`).
 
 Also recorded:
 
@@ -180,16 +178,19 @@ AUD-063 voice-note upload pipeline shipped on 2026-05-12 — see R-01 for
 the full surface: schema additions, the new `VoiceNoteUploadService`, MIME
 sniffing, ULID path generation, and the auth-gated streaming endpoint.)
 
-**Performance — 1 item open (AUD-077).** Cron runner has no PID-based lock
-and serializes per-minute jobs; a hung job can stall subsequent ticks for
-up to 5 minutes. Low severity but worth fixing before the per-minute job
-inventory grows further.
+**Performance — all closed.** AUD-077 (cron lock + per-minute parallelism)
+shipped 2026-05-13: the timestamp-with-stale-timeout lock was replaced
+with `flock()` on a held FD (auto-releases on process death), due jobs
+now dispatch through `App\Support\Cron\CronDispatcher` via `proc_open()`
+in parallel up to a default concurrency of 4, and each child gets a
+per-job timeout derived from its cron expression with SIGTERM/SIGKILL
+escalation. Verified by `tests/CronDispatcherTest.php` (11/11).
 
-**Architectural deferrals (recommendations doc).** Six of the open security
-items have a designed-out follow-up in
-[audit-v2-recommendations.md](audit-v2-recommendations.md) (R-01..R-06).
-None are committed; each describes an approach, files to touch, and
-trade-offs.
+**Architectural deferrals (recommendations doc).** All six R-NN
+follow-ups in [audit-v2-recommendations.md](audit-v2-recommendations.md)
+(R-01..R-06) have shipped end-to-end (2026-05-11 and 2026-05-12). The
+doc retains each entry as a record of the chosen approach and the
+trade-offs evaluated.
 
 **Operational from v1 still apply.** The v1 residuals (deployment
 validation of pending migrations; rotating older plaintext tokens that
@@ -218,20 +219,15 @@ delete missing — all reachable from primary navigation).
 
 This is a clean stop point.
 
-If work resumes from here, the highest-value next steps are, in order:
+If work resumes from here, the highest-value next steps are:
 
-1. Plan R-02 (AUD-064 architectural follow-up) — first-class multi-party
-   signing + per-link rate limiting. Cost-wise this is the largest remaining
-   item on the recommendations doc.
-2. R-03 / R-04 (AUD-065, AUD-066) on the public link surface.
-3. R-06 (AUD-071) per-domain encryption keys.
-4. AUD-077 cron lock / per-minute parallelism.
-5. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11).
-
-Profiling-led performance work remains the right next move beyond that —
-the broad query / bootstrap cleanup is exhausted. AUD-077 (cron lock /
-parallelism) is the last remaining low-hanging item without production
-traces.
+1. Remaining UI gaps (UIG-3..UIG-8, UIG-10, UIG-11) — see
+   [audit-v2-ui-gaps.md](audit-v2-ui-gaps.md). UIG-1, UIG-2, UIG-9 already
+   closed 2026-05-12.
+2. Profiling-led performance work — the broad query / bootstrap cleanup
+   is exhausted and the last low-hanging perf item (AUD-077, cron lock +
+   parallelism) shipped 2026-05-13. Anything further needs production
+   traces.
 
 ## Commits
 
