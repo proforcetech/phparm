@@ -1,6 +1,6 @@
 # Audit v2 — Phase 5: UI Gap Catalog
 
-**Date:** 2026-05-11 (catalog) / 2026-05-12 (UIG-1, UIG-2, UIG-9 closeouts) / 2026-05-13 (UIG-3, UIG-4, UIG-8 closeouts)
+**Date:** 2026-05-11 (catalog) / 2026-05-12 (UIG-1, UIG-2, UIG-9 closeouts) / 2026-05-13 (UIG-3, UIG-4, UIG-5, UIG-6, UIG-7, UIG-8 closeouts)
 **Plan:** [audit-v2-plan.md](audit-v2-plan.md)
 **Findings register:** [audit-findings.md](audit-findings.md) (UI gaps are **not**
 appended to the main register — they are a backlog, not security/correctness
@@ -16,7 +16,10 @@ defects, per the v2 plan's "Findings register conventions" section.)
 | UIG-3 | ✅ Resolved           | 2026-05-13  | `/cp/financial/vendors/create` route and `VendorForm.jsx` deleted (pure `PlaceholderPage` stub, never wired to a backend). |
 | UIG-4 | ✅ Resolved           | 2026-05-13  | `/cp/financial/vendors/:id/edit` route deleted (shared the same dead `VendorForm.jsx` component as UIG-3). |
 | UIG-8 | ✅ Resolved           | 2026-05-13  | `/cp/financial/vendors` route now redirects to `/cp/procurement/vendors` (the canonical vendor master from Phase 18 / S5). `VendorList.jsx` and the orphaned `financial-vendor.service.js` (called nonexistent `/api/financial/vendors` endpoints) deleted. The CSV importer that was the only working feature on the old page moved into `Settings → Modules → Import Inventory Lookups` alongside the existing Categories / Locations importers, since it seeds the `inventory_lookups` parts-supplier dropdown — a distinct dataset from the procurement vendor master. |
-| UIG-5, 6, 7, 10, 11 | Open    | —         | See backlog table below. |
+| UIG-5 | ✅ Resolved (deleted) | 2026-05-13  | Investigation found zero inbound references — no notification template, no QR / SMS URL builder, no PHP service generates `/customers/:id` links. Customer deep-links go through the authed `/cp/customers/:id` (`CustomerDetail.jsx`) surface. Public route + `CustomerPublicDetail.jsx` deleted. |
+| UIG-6 | ✅ Resolved (deleted) | 2026-05-13  | Same investigation as UIG-5: no inbound references to `/vehicles/:id`. Public route + `VehiclePublicDetail.jsx` deleted. |
+| UIG-7 | ✅ Resolved (deleted) | 2026-05-13  | Same investigation: no inbound references to `/vehicles/:id/edit`. Public route + `VehiclePublicEdit.jsx` deleted. The catalog disposition explicitly noted that any future public vehicle-edit surface needs a token-gated trust model designed before building — preserving the placeholder accomplishes nothing toward that goal. |
+| UIG-10, 11 | Open             | —         | See backlog table below. |
 
 ## Scope
 

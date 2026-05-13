@@ -36,14 +36,11 @@ import LeaveRequestsAdmin from '../views/time/LeaveRequestsAdmin'
 import CustomerList from '../views/customers/CustomerList'
 import CustomerForm from '../views/customers/CustomerForm'
 import CustomerDetail from '../views/customers/CustomerDetail'
-import CustomerPublicDetail from '../views/customers/CustomerPublicDetail'
 import VehicleMasterList from '../views/vehicle-master/VehicleMasterList'
 import VehicleMasterForm from '../views/vehicle-master/VehicleMasterForm'
 import VehicleList from '../views/vehicles/VehicleList'
 import VehicleForm from '../views/vehicles/VehicleForm'
 import VehicleDetail from '../views/vehicles/VehicleDetail'
-import VehiclePublicDetail from '../views/vehicles/VehiclePublicDetail'
-import VehiclePublicEdit from '../views/vehicles/VehiclePublicEdit'
 import InventoryList from '../views/inventory/InventoryList'
 import InventoryLookupManager from '../views/inventory/InventoryLookupManager'
 import InventoryForm from '../views/inventory/InventoryForm'
@@ -342,9 +339,14 @@ const publicRoutes = [
   { path: '/pay/:token', name: 'PublicPaymentPortal', auth: 'public', element: <PublicPaymentPortal /> },
   { path: '/c/:shortCode', name: 'PublicContractSignByCode', auth: 'public', element: <PublicContractSign /> },
   { path: '/contract/view', name: 'PublicContractSignByToken', auth: 'public', element: <PublicContractSign /> },
-  { path: '/customers/:id', name: 'CustomerPublicDetail', auth: 'public', element: <CustomerPublicDetail /> },
-  { path: '/vehicles/:id', name: 'VehiclePublicDetail', auth: 'public', element: <VehiclePublicDetail /> },
-  { path: '/vehicles/:id/edit', name: 'VehiclePublicEdit', auth: 'public', element: <VehiclePublicEdit /> },
+  // UIG-5 / UIG-6 / UIG-7 — the three public /customers/:id and
+  // /vehicles/:id[/edit] placeholders were Vue-mirror scaffolding
+  // never linked from anywhere. A grep over notification config,
+  // QR-token builders, and the PHP service layer found zero
+  // inbound references — all customer / vehicle deep-links go through
+  // the authed /cp/* surface instead. Removed 2026-05-13. A future
+  // public customer summary should be designed with a token-gated
+  // trust model (see UIG-7 disposition) before re-introducing.
   { path: '/sub-portal/:token', name: 'SubPortalToken', auth: 'public', element: <SubPortal /> },
   { path: '/sub-portal', name: 'SubPortal', auth: 'public', element: <SubPortal /> },
   { path: '/vendor-portal/:token', name: 'VendorPortalToken', auth: 'public', element: <VendorPortal /> },
