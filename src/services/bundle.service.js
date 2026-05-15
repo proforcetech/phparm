@@ -3,7 +3,7 @@ import api from './api'
 export default {
   async list(params = {}) {
     const response = await api.get('/bundles', { params })
-    return response.data
+    return response.data?.data ?? response.data ?? []
   },
 
   async get(id) {
@@ -28,6 +28,6 @@ export default {
 
   async fetchItemsForEstimate(id, params = {}) {
     const response = await api.get(`/estimates/bundles/${id}/items`, { params })
-    return response.data
+    return response.data?.items ?? response.data ?? []
   },
 }

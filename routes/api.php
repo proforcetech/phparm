@@ -3707,6 +3707,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 }
             }
 
+            // Enrich with site asset data for asset-based service lines
+            if (!empty($data['site_asset_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, name, code, serial_number, building, floor, room FROM site_assets WHERE id = :id');
+                $stmt->execute(['id' => $data['site_asset_id']]);
+                $siteAsset = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($siteAsset) {
+                    $data['site_asset'] = $siteAsset;
+                }
+            }
+
             // Enrich with technician data
             if (!empty($data['technician_id'])) {
                 $stmt = $connection->pdo()->prepare('SELECT id, name, email FROM users WHERE id = :id');

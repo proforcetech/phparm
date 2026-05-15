@@ -7,6 +7,7 @@ class SiteAsset extends BaseModel
     public int $id = 0;
     public int $site_id = 0;
     public ?int $division_id = null;
+    public ?int $service_line_id = null;
     public ?int $asset_type_id = null;
     public ?int $parent_asset_id = null;
     public string $name = '';

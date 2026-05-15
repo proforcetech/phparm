@@ -135,9 +135,12 @@ export default function SubjectPicker({
 
   const searchAssets = useCallback(async (query) => {
     const params = { query, limit: 25 }
+    if (effectiveServiceLineId) {
+      params.service_line_id = effectiveServiceLineId
+    }
     const res = await assetsService.search(params)
     return res?.data ?? []
-  }, [])
+  }, [effectiveServiceLineId])
 
   const handleAssetSelect = (asset) => {
     emit({ site_asset_id: asset?.id ?? null })
