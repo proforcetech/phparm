@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { createBrowserRouter, Navigate, redirect, Outlet } from 'react-router-dom'
 
 import Login from '../views/auth/Login'
@@ -81,44 +82,14 @@ import FinancialReports from '../views/financial/Reports'
 import CustomerRetentionReport from '../views/reports/CustomerRetentionReport'
 import Reports from '../views/Reports'
 import AuditLogs from '../views/audit/AuditLogs'
-import SettingsLayout from '../views/settings/SettingsLayout'
-import SettingsPage from '../views/settings/SettingsPage'
-import SettingsShopProfile from '../views/settings/SettingsShopProfile'
-import SettingsTerms from '../views/settings/SettingsTerms'
-import SettingsTemplates from '../views/settings/SettingsTemplates'
-import SettingsRejectionReasons from '../views/settings/SettingsRejectionReasons'
-import SettingsPricing from '../views/settings/SettingsPricing'
-import SettingsSecurity from '../views/settings/SettingsSecurity'
-import SettingsNotifications from '../views/settings/SettingsNotifications'
-import SettingsPayments from '../views/settings/SettingsPayments'
-import SettingsIntegrations from '../views/settings/SettingsIntegrations'
-import ServiceTypes from '../views/settings/ServiceTypes'
-import SettingsServiceLines from '../views/settings/SettingsServiceLines'
-import SettingsDispatch from '../views/settings/SettingsDispatch'
-import SettingsVinDecoder from '../views/settings/SettingsVinDecoder'
-import PropertyManagement from '../views/settings/PropertyManagement'
 import UsersList from '../views/users/UsersList'
 import UserForm from '../views/users/UserForm'
 import UserGroups from '../views/users/UserGroups'
 import RoleManagement from '../views/users/RoleManagement'
 import Security from '../views/auth/Security'
-import ModuleSettings from '../views/settings/ModuleSettings'
 import InspectionTemplates from '../views/inspections/TemplateManager'
 import TechnicianInspections from '../views/inspections/TechnicianInspections'
 import InspectionRecommendations from '../views/inspections/InspectionRecommendations'
-import CMSDashboard from '../views/cms/CMSDashboard'
-import CMSPageList from '../views/cms/CMSPageList'
-import CMSPageForm from '../views/cms/CMSPageForm'
-import CMSCategoryList from '../views/cms/CMSCategoryList'
-import CMSCategoryForm from '../views/cms/CMSCategoryForm'
-import CMSMenuList from '../views/cms/CMSMenuList'
-import CMSMenuForm from '../views/cms/CMSMenuForm'
-import CMSComponentList from '../views/cms/CMSComponentList'
-import CMSComponentForm from '../views/cms/CMSComponentForm'
-import CMSTemplateList from '../views/cms/CMSTemplateList'
-import CMSTemplateForm from '../views/cms/CMSTemplateForm'
-import CMSMediaLibrary from '../views/cms/CMSMediaLibrary'
-import NotFoundManager from '../views/cms/NotFoundManager'
 import CustomerPortalDashboard from '../views/customer-portal/Dashboard'
 import CustomerPortalInvoices from '../views/customer-portal/Invoices'
 import CustomerInvoiceDetail from '../views/customer-portal/InvoiceDetail'
@@ -317,6 +288,16 @@ const PortalShell = () => (
   </PortalThemeProvider>
 )
 
+const lazyElement = (loader) => {
+  const Component = lazy(loader)
+
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading route...</div>}>
+      <Component />
+    </Suspense>
+  )
+}
+
 const PublicLayout = () => (
   <div className="react-app">
     <Outlet />
@@ -434,24 +415,24 @@ const protectedRoutes = [
   { path: '/cp/inspections/templates', name: 'InspectionTemplates', auth: 'requiresAuth', element: <InspectionTemplates /> },
   { path: '/cp/inspections/work', name: 'TechnicianInspections', auth: 'requiresAuth', element: <TechnicianInspections /> },
   { path: '/cp/inspections/:id/recommendations', name: 'InspectionRecommendations', auth: 'requiresAuth', element: <InspectionRecommendations /> },
-  { path: '/cp/cms', name: 'CMSDashboard', auth: 'requiresAuth', element: <CMSDashboard /> },
-  { path: '/cp/cms/pages', name: 'CMSPageList', auth: 'requiresAuth', element: <CMSPageList /> },
-  { path: '/cp/cms/pages/create', name: 'CMSPageCreate', auth: 'requiresAuth', element: <CMSPageForm /> },
-  { path: '/cp/cms/pages/:id', name: 'CMSPageEdit', auth: 'requiresAuth', element: <CMSPageForm /> },
-  { path: '/cp/cms/categories', name: 'CMSCategoryList', auth: 'requiresAuth', element: <CMSCategoryList /> },
-  { path: '/cp/cms/categories/create', name: 'CMSCategoryCreate', auth: 'requiresAuth', element: <CMSCategoryForm /> },
-  { path: '/cp/cms/categories/:id', name: 'CMSCategoryEdit', auth: 'requiresAuth', element: <CMSCategoryForm /> },
-  { path: '/cp/cms/menus', name: 'CMSMenuList', auth: 'requiresAuth', element: <CMSMenuList /> },
-  { path: '/cp/cms/menus/create', name: 'CMSMenuCreate', auth: 'requiresAuth', element: <CMSMenuForm /> },
-  { path: '/cp/cms/menus/:id', name: 'CMSMenuEdit', auth: 'requiresAuth', element: <CMSMenuForm /> },
-  { path: '/cp/cms/media', name: 'CMSMediaLibrary', auth: 'requiresAuth', element: <CMSMediaLibrary /> },
-  { path: '/cp/cms/components', name: 'CMSComponentList', auth: 'requiresAuth', element: <CMSComponentList /> },
-  { path: '/cp/cms/components/create', name: 'CMSComponentCreate', auth: 'requiresAuth', element: <CMSComponentForm /> },
-  { path: '/cp/cms/components/:id', name: 'CMSComponentEdit', auth: 'requiresAuth', element: <CMSComponentForm /> },
-  { path: '/cp/cms/templates', name: 'CMSTemplateList', auth: 'requiresAuth', element: <CMSTemplateList /> },
-  { path: '/cp/cms/templates/create', name: 'CMSTemplateCreate', auth: 'requiresAuth', element: <CMSTemplateForm /> },
-  { path: '/cp/cms/templates/:id', name: 'CMSTemplateEdit', auth: 'requiresAuth', element: <CMSTemplateForm /> },
-  { path: '/cp/cms/404-manager', name: 'NotFoundManager', auth: 'requiresAuth', element: <NotFoundManager /> },
+  { path: '/cp/cms', name: 'CMSDashboard', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSDashboard')) },
+  { path: '/cp/cms/pages', name: 'CMSPageList', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSPageList')) },
+  { path: '/cp/cms/pages/create', name: 'CMSPageCreate', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSPageForm')) },
+  { path: '/cp/cms/pages/:id', name: 'CMSPageEdit', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSPageForm')) },
+  { path: '/cp/cms/categories', name: 'CMSCategoryList', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSCategoryList')) },
+  { path: '/cp/cms/categories/create', name: 'CMSCategoryCreate', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSCategoryForm')) },
+  { path: '/cp/cms/categories/:id', name: 'CMSCategoryEdit', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSCategoryForm')) },
+  { path: '/cp/cms/menus', name: 'CMSMenuList', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSMenuList')) },
+  { path: '/cp/cms/menus/create', name: 'CMSMenuCreate', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSMenuForm')) },
+  { path: '/cp/cms/menus/:id', name: 'CMSMenuEdit', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSMenuForm')) },
+  { path: '/cp/cms/media', name: 'CMSMediaLibrary', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSMediaLibrary')) },
+  { path: '/cp/cms/components', name: 'CMSComponentList', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSComponentList')) },
+  { path: '/cp/cms/components/create', name: 'CMSComponentCreate', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSComponentForm')) },
+  { path: '/cp/cms/components/:id', name: 'CMSComponentEdit', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSComponentForm')) },
+  { path: '/cp/cms/templates', name: 'CMSTemplateList', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSTemplateList')) },
+  { path: '/cp/cms/templates/create', name: 'CMSTemplateCreate', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSTemplateForm')) },
+  { path: '/cp/cms/templates/:id', name: 'CMSTemplateEdit', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/CMSTemplateForm')) },
+  { path: '/cp/cms/404-manager', name: 'NotFoundManager', auth: 'requiresAuth', element: lazyElement(() => import('../views/cms/NotFoundManager')) },
   // ── WOMS expansion stubs (Phase A foundation pass) ─────────────────
   // CRM
   { path: '/cp/crm/companies', name: 'CrmCompanies', auth: 'requiresAuth', element: <CompanyList /> },
@@ -595,22 +576,22 @@ const protectedRoutes = [
 ]
 
 const settingsRoutes = [
-  { path: '/cp/settings', name: 'Settings', element: <SettingsPage /> },
-  { path: '/cp/settings/profile', name: 'SettingsShopProfile', element: <SettingsShopProfile /> },
-  { path: '/cp/settings/terms', name: 'SettingsTerms', element: <SettingsTerms /> },
-  { path: '/cp/settings/templates', name: 'SettingsTemplates', element: <SettingsTemplates /> },
-  { path: '/cp/settings/rejection-reasons', name: 'SettingsRejectionReasons', element: <SettingsRejectionReasons /> },
-  { path: '/cp/settings/pricing', name: 'SettingsPricing', element: <SettingsPricing /> },
-  { path: '/cp/settings/security', name: 'SettingsSecurity', element: <SettingsSecurity /> },
-  { path: '/cp/settings/notifications', name: 'SettingsNotifications', element: <SettingsNotifications /> },
-  { path: '/cp/settings/payments', name: 'SettingsPayments', element: <SettingsPayments /> },
-  { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: <SettingsIntegrations /> },
-  { path: '/cp/settings/services', name: 'ServiceTypes', element: <ServiceTypes /> },
-  { path: '/cp/settings/service-lines', name: 'SettingsServiceLines', element: <SettingsServiceLines /> },
-  { path: '/cp/settings/modules', name: 'ModuleSettings', element: <ModuleSettings /> },
-  { path: '/cp/settings/dispatch', name: 'SettingsDispatch', element: <SettingsDispatch /> },
-  { path: '/cp/settings/vin-decoder', name: 'SettingsVinDecoder', element: <SettingsVinDecoder /> },
-  { path: '/cp/settings/property-management', name: 'PropertyManagement', element: <PropertyManagement /> },
+  { path: '/cp/settings', name: 'Settings', element: lazyElement(() => import('../views/settings/SettingsPage')) },
+  { path: '/cp/settings/profile', name: 'SettingsShopProfile', element: lazyElement(() => import('../views/settings/SettingsShopProfile')) },
+  { path: '/cp/settings/terms', name: 'SettingsTerms', element: lazyElement(() => import('../views/settings/SettingsTerms')) },
+  { path: '/cp/settings/templates', name: 'SettingsTemplates', element: lazyElement(() => import('../views/settings/SettingsTemplates')) },
+  { path: '/cp/settings/rejection-reasons', name: 'SettingsRejectionReasons', element: lazyElement(() => import('../views/settings/SettingsRejectionReasons')) },
+  { path: '/cp/settings/pricing', name: 'SettingsPricing', element: lazyElement(() => import('../views/settings/SettingsPricing')) },
+  { path: '/cp/settings/security', name: 'SettingsSecurity', element: lazyElement(() => import('../views/settings/SettingsSecurity')) },
+  { path: '/cp/settings/notifications', name: 'SettingsNotifications', element: lazyElement(() => import('../views/settings/SettingsNotifications')) },
+  { path: '/cp/settings/payments', name: 'SettingsPayments', element: lazyElement(() => import('../views/settings/SettingsPayments')) },
+  { path: '/cp/settings/integrations', name: 'SettingsIntegrations', element: lazyElement(() => import('../views/settings/SettingsIntegrations')) },
+  { path: '/cp/settings/services', name: 'ServiceTypes', element: lazyElement(() => import('../views/settings/ServiceTypes')) },
+  { path: '/cp/settings/service-lines', name: 'SettingsServiceLines', element: lazyElement(() => import('../views/settings/SettingsServiceLines')) },
+  { path: '/cp/settings/modules', name: 'ModuleSettings', element: lazyElement(() => import('../views/settings/ModuleSettings')) },
+  { path: '/cp/settings/dispatch', name: 'SettingsDispatch', element: lazyElement(() => import('../views/settings/SettingsDispatch')) },
+  { path: '/cp/settings/vin-decoder', name: 'SettingsVinDecoder', element: lazyElement(() => import('../views/settings/SettingsVinDecoder')) },
+  { path: '/cp/settings/property-management', name: 'PropertyManagement', element: lazyElement(() => import('../views/settings/PropertyManagement')) },
 ]
 
 const withAuthLoader = (route) => ({
@@ -642,24 +623,24 @@ const tenantChildren = tenantRoutes.map((route) => toChildRoute(route, '/tenant'
 
 adminChildren.push({
   path: 'settings',
-  element: <SettingsLayout />,
+  element: lazyElement(() => import('../views/settings/SettingsLayout')),
   children: [
-    { index: true, element: <SettingsPage /> },
-    { path: 'profile', element: <SettingsShopProfile /> },
-    { path: 'terms', element: <SettingsTerms /> },
-    { path: 'templates', element: <SettingsTemplates /> },
-    { path: 'rejection-reasons', element: <SettingsRejectionReasons /> },
-    { path: 'pricing', element: <SettingsPricing /> },
-    { path: 'security', element: <SettingsSecurity /> },
-    { path: 'notifications', element: <SettingsNotifications /> },
-    { path: 'payments', element: <SettingsPayments /> },
-    { path: 'integrations', element: <SettingsIntegrations /> },
-    { path: 'services', element: <ServiceTypes /> },
-    { path: 'service-lines', element: <SettingsServiceLines /> },
-    { path: 'modules', element: <ModuleSettings /> },
-    { path: 'dispatch', element: <SettingsDispatch /> },
-    { path: 'vin-decoder', element: <SettingsVinDecoder /> },
-    { path: 'property-management', element: <PropertyManagement /> },
+    { index: true, element: lazyElement(() => import('../views/settings/SettingsPage')) },
+    { path: 'profile', element: lazyElement(() => import('../views/settings/SettingsShopProfile')) },
+    { path: 'terms', element: lazyElement(() => import('../views/settings/SettingsTerms')) },
+    { path: 'templates', element: lazyElement(() => import('../views/settings/SettingsTemplates')) },
+    { path: 'rejection-reasons', element: lazyElement(() => import('../views/settings/SettingsRejectionReasons')) },
+    { path: 'pricing', element: lazyElement(() => import('../views/settings/SettingsPricing')) },
+    { path: 'security', element: lazyElement(() => import('../views/settings/SettingsSecurity')) },
+    { path: 'notifications', element: lazyElement(() => import('../views/settings/SettingsNotifications')) },
+    { path: 'payments', element: lazyElement(() => import('../views/settings/SettingsPayments')) },
+    { path: 'integrations', element: lazyElement(() => import('../views/settings/SettingsIntegrations')) },
+    { path: 'services', element: lazyElement(() => import('../views/settings/ServiceTypes')) },
+    { path: 'service-lines', element: lazyElement(() => import('../views/settings/SettingsServiceLines')) },
+    { path: 'modules', element: lazyElement(() => import('../views/settings/ModuleSettings')) },
+    { path: 'dispatch', element: lazyElement(() => import('../views/settings/SettingsDispatch')) },
+    { path: 'vin-decoder', element: lazyElement(() => import('../views/settings/SettingsVinDecoder')) },
+    { path: 'property-management', element: lazyElement(() => import('../views/settings/PropertyManagement')) },
   ],
 })
 

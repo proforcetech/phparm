@@ -49,6 +49,10 @@ const documentVaultService = {
     const response = await api.delete(`/document-vault/${id}`)
     return response.data
   },
+
+  downloadUrl(id) {
+    return `/api/document-vault/${id}/download`
+  },
 }
 
 export default documentVaultService

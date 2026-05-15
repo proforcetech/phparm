@@ -1138,6 +1138,48 @@ Hot-path or trivial issues are fixed inline; larger or design-level items are de
 - Verification: `php tests/CronDispatcherTest.php` — 11/11 (`per-minute job defaults to 50s timeout`, `*/5 schedule defaults to 240s timeout (one-minute margin under cadence)`, `*/15 schedule defaults to 840s timeout`, `hourly + slower schedules fall back to 1800s`, `fast job reports exit 0 + non-trivial duration`, `failing job surfaces non-zero exit code`, `slow job is killed at timeout and marked timed_out=true`, `missing script is skipped without starting a process`, `parallel dispatch finishes near max(child) wall time, not sum(child)` (3× sleep(1) finished in ~1.0s wall, not ~3.0s), `maxConcurrent throttles parallelism — 4 sleep(1) jobs at concurrency=2 take ~2s`, `empty job set returns empty result without spawning anything`). `php -l bin/cron/run.php` and `php -l src/Support/Cron/CronDispatcher.php` both lint clean. `php bin/cron/run.php --list` and `--help` continue to work end-to-end without touching the lock. End-to-end smoke run with two synthetic jobs (one `sleep(1)`, one instant) confirmed parallel dispatch (1.1 s wall) under the live `flock()`-backed lock.
 - Residual risk: (a) The dispatcher does not pin children to a CPU set or memory cgroup; a runaway memory-hungry child can still pressure the host until SIGKILL fires at the timeout deadline. Production should keep the existing systemd / Docker memory caps. (b) Per-job timeouts are heuristic defaults — the daily 1800 s ceiling fits the existing cron set with margin, but a future job that needs longer must opt into an explicit `timeout` value or the dispatcher will SIGKILL it. (c) `--job=NAME` (single-job invocation) intentionally retains the original `exec()` flow with no timeout: operators occasionally invoke it for ad-hoc backfills that legitimately exceed the per-tick budget. The all-due tick path is the only one with a finding here.
 
+#### AUD-078
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `medium`
+- Location: `routes/api.php:548`, `src/Services/EstimateRequest/PublicEstimatePhotoUploadValidator.php:7`
+- Summary: Public estimate-request photo uploads bypass the existing validator and store files using caller-controlled extensions.
+- Evidence: The live `/api/public/estimate-request` upload block reads `$_FILES['photos']` directly, takes the stored extension from `pathinfo($fileName, PATHINFO_EXTENSION)`, calls `move_uploaded_file()` before MIME inspection, and records the MIME type after persistence. `PublicEstimatePhotoUploadValidator` exists with an image allowlist and size cap, but repository search finds it only in the class, tests, and documentation, not in the route path.
+- Impact: A public unauthenticated endpoint can accept arbitrary files up to PHP/webserver limits and persist them with attacker-selected extensions. Depending on deployment file serving and downstream handling, this can enable storage abuse, malware hosting, or unsafe exposure. This is a regression from the intent documented in `AUD-005`; it is tracked separately rather than reopening the old entry.
+- Recommended fix: Normalize the multi-file `$_FILES['photos']` shape into validator-compatible entries, call `PublicEstimatePhotoUploadValidator::validate()` before moving each file, derive the saved extension from the validator MIME map, enforce the existing size and image allowlist, and add an integration/wiring test that proves the public route uses the validator rather than only testing the validator class.
+- Actual fix: `routes/api.php` now reads photos through `Request::file('photos')`, normalizes multi-file shape with `PublicEstimatePhotoUploadValidator::normalizeFiles()`, validates each photo before creating the estimate request, rejects invalid photos with a 400, derives the stored extension from server-detected MIME, sanitizes original-name metadata, and randomizes the stored basename. `PublicEstimatePhotoUploadValidatorTest` now covers multi-file normalization and filename sanitization, and `PublicEstimatePhotoUploadRouteWiringTest` asserts the public route remains wired to the validator.
+- Verification: `php -l routes/api.php`; `php -l src/Services/EstimateRequest/PublicEstimatePhotoUploadValidator.php`; `php tests/PublicEstimatePhotoUploadValidatorTest.php`; `php tests/PublicEstimatePhotoUploadRouteWiringTest.php`; `npm run build`.
+- Residual risk: Valid images are still persisted under `storage/uploads/estimate-requests`; retention and abuse monitoring should continue to watch repeated rejected uploads, but the original arbitrary-extension/public-validator bypass is closed.
+
+#### AUD-079
+
+- Status: `resolved`
+- Category: `security`
+- Severity: `medium`
+- Location: `routes/api.php:7163`, `routes/api.php:7247`
+- Summary: Document Vault upload stores manager-supplied files in the public web root using caller-controlled extensions before MIME validation.
+- Evidence: The create and update handlers require `documents.manage`, then write uploads to `public/uploads/document-vault`. Both paths derive the extension from the original filename, call `move_uploaded_file()` before MIME inspection, record the detected MIME after persistence, and do not enforce an explicit size cap or MIME/extension allowlist.
+- Impact: This is not public unauthenticated, but any compromised or over-privileged manager account can place arbitrary files under a directly addressable public path. The practical risk depends on webserver execution rules, but the application should not rely on webserver hardening to make uploaded vault documents safe.
+- Recommended fix: Move Document Vault uploads behind a shared hardened upload service: enforce file size and a narrow allowlist before moving, derive extensions from server-detected MIME, store outside the public web root, and serve downloads through an authenticated controller with safe `Content-Type` and `Content-Disposition` headers. If direct public storage must remain temporarily, add webserver rules that prevent script execution and force attachment download.
+- Actual fix: Added `App\Services\Documents\DocumentVaultUploadService`, which validates uploads with the existing strict image/PDF allowlist, derives extensions from server-detected MIME, stores new files under `storage/uploads/document-vault`, resolves legacy `/uploads/document-vault/...` rows for compatibility, and sanitizes download filenames. Document Vault create/update routes now use that service instead of writing to `public/uploads/document-vault`, list responses expose an authenticated `download_url`, a new `GET /api/document-vault/{id}/download` route serves files with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`, and deletes remove the stored file when possible.
+- Verification: `php -l routes/api.php`; `php -l src/Services/Documents/DocumentVaultUploadService.php`; `php tests/DocumentVaultUploadServiceTest.php`; `npm run build`.
+- Residual risk: Existing legacy files under `public/uploads/document-vault` may remain directly addressable until migrated or protected by webserver rules. The new resolver keeps them downloadable through the authenticated route during migration.
+
+#### AUD-080
+
+- Status: `in_progress`
+- Category: `performance`
+- Severity: `medium`
+- Location: `src/react/router/index.jsx:1`, `vite.config.js:40`
+- Summary: The React admin app builds into one oversized eager SPA chunk instead of route-level chunks.
+- Evidence: `npm run build` succeeds but emits Vite's chunk-size warning. The generated main JS chunk is about 3.5 MB minified and 825 kB gzip. `src/react/router/index.jsx` imports the route tree eagerly at module load, including admin, CMS, portals, reports, POS, settings, storage, and WOMS feature screens. Search found no `React.lazy`, `Suspense`, or dynamic import usage in the router.
+- Impact: Initial authenticated page loads pay parse/compile/download cost for many screens the user may never visit in the session. On slower devices or constrained field networks, this increases time-to-interactive and makes every new feature area worsen first-load performance.
+- Recommended fix: Introduce route-level lazy loading for non-critical authenticated feature routes, keep login/dashboard/core shell eager, and add a bundle-size budget check so the main entry cannot regress unnoticed. Start with heavy/low-frequency areas such as CMS, reports, settings subpages, storage, procurement, and WOMS expansion screens.
+- Actual fix: First remediation pass introduced `React.lazy`/`Suspense` route elements for the CMS and settings route groups in `src/react/router/index.jsx`. This splits those low-frequency screens into separate chunks while keeping login, dashboard, workorder, and core shell routes eager.
+- Verification: `npm run build` passes and now emits separate CMS/settings chunks. The main JS chunk dropped from about `3,514.09 kB` minified / `825.37 kB` gzip to about `2,831.31 kB` minified / `672.91 kB` gzip.
+- Residual risk: Vite still emits the chunk-size warning because the remaining eager admin surface is still large. Continue route-level splitting for reports, storage, procurement, fleet/assets, customer/ESS/tenant portals, and WOMS expansion screens before marking this resolved.
+
 ### Template
 
 #### AUD-XXX
