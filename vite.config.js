@@ -6,6 +6,28 @@ import path from 'path'
 // import { fileURLToPath } from 'url';
 // const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const getPackageName = (id) => {
+  const normalizedId = id.replaceAll('\\', '/')
+  const nodeModulesIndex = normalizedId.lastIndexOf('/node_modules/')
+
+  if (nodeModulesIndex === -1) {
+    return null
+  }
+
+  const packagePath = normalizedId.slice(nodeModulesIndex + '/node_modules/'.length)
+  const [firstSegment, secondSegment] = packagePath.split('/')
+
+  if (!firstSegment) {
+    return null
+  }
+
+  if (firstSegment.startsWith('@')) {
+    return secondSegment ? `${firstSegment}/${secondSegment}` : firstSegment
+  }
+
+  return firstSegment
+}
+
 export default defineConfig({
   plugins: [react()],
   publicDir: false,
@@ -47,40 +69,44 @@ export default defineConfig({
       },
       output: {
         manualChunks(id) {
-          if (!id.includes('node_modules')) {
+          const packageName = getPackageName(id)
+
+          if (!packageName) {
             return undefined
           }
 
           if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('/react-router-dom/') ||
-            id.includes('/@remix-run/')
+            packageName === 'react' ||
+            packageName === 'react-dom' ||
+            packageName === 'react-router' ||
+            packageName === 'react-router-dom' ||
+            packageName === 'scheduler' ||
+            packageName.startsWith('@remix-run/')
           ) {
             return 'vendor-react'
           }
 
-          if (id.includes('/@heroicons/')) {
+          if (packageName.startsWith('@heroicons/')) {
             return 'vendor-icons'
           }
 
-          if (id.includes('/@fullcalendar/')) {
+          if (packageName.startsWith('@fullcalendar/')) {
             return 'vendor-calendar'
           }
 
-          if (id.includes('/chart.js/') || id.includes('/react-chartjs-2/')) {
+          if (packageName === 'chart.js' || packageName === 'react-chartjs-2') {
             return 'vendor-charts'
           }
 
-          if (id.includes('/@dnd-kit/')) {
+          if (packageName.startsWith('@dnd-kit/')) {
             return 'vendor-dnd'
           }
 
-          if (id.includes('/react-quill-new/') || id.includes('/quill/')) {
+          if (packageName === 'react-quill-new' || packageName === 'quill') {
             return 'vendor-editor'
           }
 
-          if (id.includes('/tesseract.js/')) {
+          if (packageName === 'tesseract.js') {
             return 'vendor-ocr'
           }
 
