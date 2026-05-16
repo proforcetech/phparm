@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Bars3Icon, ChevronDownIcon } from '@heroicons/react/24/outline'
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 import OfflineStatusBadge from '../OfflineStatusBadge'
@@ -87,7 +87,11 @@ export default function Navbar({
                   <span className="sr-only">
                     {isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   </span>
-                  <Bars3Icon className="h-5 w-5" aria-hidden="true" />
+                  {isSidebarCollapsed ? (
+                    <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+                  ) : (
+                    <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+                  )}
                 </button>
               ) : null}
               <div className="flex-shrink-0 flex items-center">

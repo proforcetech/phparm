@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import Navbar from './Navbar'
@@ -11,10 +11,11 @@ import ErrorBoundary from '../ErrorBoundary'
 import { CmsPageProvider } from '../../stores/cmsPages'
 import { CmsMenuProvider } from '../../stores/cmsMenus'
 import { useAuthStore } from '../../stores/auth'
+import useSidebarCollapse from '../../hooks/useSidebarCollapse'
 
 export default function AdminLayout({ children }) {
   const sidebarRef = useRef(null)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const { isSidebarCollapsed, toggleSidebarCollapsed } = useSidebarCollapse('adminSidebarCollapsed')
   const { user, checkAuth } = useAuthStore()
 
   // Check authentication on mount to load user data
@@ -33,25 +34,6 @@ export default function AdminLayout({ children }) {
       loadUser()
     }
   }, [checkAuth, user])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const storedValue = window.localStorage.getItem('adminSidebarCollapsed')
-    if (storedValue === 'true') {
-      setIsSidebarCollapsed(true)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    window.localStorage.setItem('adminSidebarCollapsed', String(isSidebarCollapsed))
-  }, [isSidebarCollapsed])
 
   const toggleSidebar = () => {
     sidebarRef.current?.toggleSidebar()
@@ -74,14 +56,19 @@ export default function AdminLayout({ children }) {
       <Navbar
         showSidebarToggle
         isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebarCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
+        onToggleSidebarCollapsed={toggleSidebarCollapsed}
       />
       <PasswordExpirationBanner />
 
       <div className="flex">
-        <Sidebar ref={sidebarRef} type="admin" isCollapsed={isSidebarCollapsed} />
+        <Sidebar
+          ref={sidebarRef}
+          type="admin"
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={toggleSidebarCollapsed}
+        />
 
-        <div className={`flex-1 ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
+        <div className={`flex-1 transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
           <MobileHeader
             onToggleSidebar={toggleSidebar}
             title="Auto Repair Shop"

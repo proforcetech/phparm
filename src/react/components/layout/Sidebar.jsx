@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, ArrowUpTrayIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, BuildingStorefrontIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ChevronDownIcon, ChevronRightIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, ShoppingCartIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
+import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, ArrowUpTrayIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, BuildingStorefrontIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, ShoppingCartIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 import ServiceLineSwitcher from './ServiceLineSwitcher'
@@ -418,7 +418,7 @@ function SidebarTooltip({ label, children }) {
   )
 }
 
-const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
+const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false, onToggleCollapsed = null }, ref) {
   const { user, hasModuleAccess } = useAuthStore()
   const { pathname } = useLocation()
   const [isOpen, setIsOpen] = useState(true)
@@ -503,15 +503,19 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
 
   const renderMenuItem = (item, idx) => {
     if (item.divider) {
-      // Hide section headings entirely when collapsed — a thin separator
-      // would just add visual noise next to icons.
+      // On desktop collapsed navigation, headings become thin separators.
+      // Mobile keeps full headings because the drawer remains text-first.
       if (isCollapsed) {
         return (
-          <div
-            key={`divider-${idx}-${item.label}`}
-            className="hidden lg:block my-2 border-t border-gray-700"
-            aria-hidden="true"
-          />
+          <div key={`divider-${idx}-${item.label}`}>
+            <div className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 lg:hidden">
+              {item.label}
+            </div>
+            <div
+              className="hidden lg:block my-2 border-t border-gray-700"
+              aria-hidden="true"
+            />
+          </div>
         )
       }
       return (
@@ -541,38 +545,12 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       }))
     }
 
-    // Collapsed mode - show icon only with tooltip
-    if (isCollapsed) {
-      const menuLink = (
-        <Link
-          to={item.path}
-          className={`flex items-center justify-center p-3 rounded-md transition-colors ${
-            isCurrentActive
-              ? 'bg-gray-800 text-white'
-              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-          }`}
-          aria-label={item.label}
-        >
-          {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : null}
-        </Link>
-      )
-
-      return (
-        <div key={item.path} className="hidden lg:block">
-          <SidebarTooltip label={item.label}>
-            {menuLink}
-          </SidebarTooltip>
-        </div>
-      )
-    }
-
     const itemClasses = isCurrentActive
       ? 'bg-gray-800 text-white'
       : 'text-gray-300 hover:bg-gray-700 hover:text-white'
 
-    // Expanded mode - show full menu item
-    return (
-      <div key={item.path} className="space-y-0.5">
+    const renderExpandedMenuItem = () => (
+      <div className="space-y-0.5">
         {hasChildren ? (
           <div className={`group flex items-center rounded-md transition-colors ${itemClasses}`}>
             <Link
@@ -631,6 +609,42 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
         ) : null}
       </div>
     )
+
+    // Collapsed mode uses icons on desktop but keeps the mobile drawer fully readable.
+    if (isCollapsed) {
+      const menuLink = (
+        <Link
+          to={item.path}
+          className={`flex items-center justify-center p-3 rounded-md transition-colors ${
+            isCurrentActive
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          }`}
+          aria-label={item.label}
+        >
+          {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : null}
+        </Link>
+      )
+
+      return (
+        <div key={item.path}>
+          <div className="lg:hidden">
+            {renderExpandedMenuItem()}
+          </div>
+          <div className="hidden lg:block">
+            <SidebarTooltip label={item.label}>
+              {menuLink}
+            </SidebarTooltip>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div key={item.path}>
+        {renderExpandedMenuItem()}
+      </div>
+    )
   }
 
   return (
@@ -644,17 +658,28 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
         aria-label="Main sidebar navigation"
       >
         <div className="flex flex-col h-full">
-          <div className={`flex items-center h-16 bg-gray-800 ${isCollapsed ? 'lg:justify-center lg:px-2' : 'justify-between px-4'}`}>
+          <div className={`flex items-center h-16 bg-gray-800 ${isCollapsed ? 'px-4 lg:justify-center lg:px-2' : 'justify-between px-4'}`}>
             <span
               className={`text-lg font-semibold text-white ${isCollapsed ? 'lg:hidden' : ''}`}
             >
               Menu
             </span>
-            {isCollapsed && (
-              <span className="hidden lg:block text-lg font-semibold text-white">
-                M
-              </span>
-            )}
+            {onToggleCollapsed ? (
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                className="hidden rounded-md p-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 lg:inline-flex"
+                aria-label={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+                aria-pressed={isCollapsed}
+                title={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              >
+                {isCollapsed ? (
+                  <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+                ) : (
+                  <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={toggleSidebar}

@@ -7,9 +7,11 @@ import MobileHeader from './MobileHeader'
 import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
 import ErrorBoundary from '../ErrorBoundary'
 import { useAuthStore } from '../../stores/auth'
+import useSidebarCollapse from '../../hooks/useSidebarCollapse'
 
 export default function EssLayout({ children }) {
   const sidebarRef = useRef(null)
+  const { isSidebarCollapsed, toggleSidebarCollapsed } = useSidebarCollapse('essSidebarCollapsed')
   const { user, checkAuth } = useAuthStore()
 
   useEffect(() => {
@@ -32,12 +34,22 @@ export default function EssLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar homePath="/ess" homeLabel="ESS Portal" />
+      <Navbar
+        homePath="/ess"
+        homeLabel="ESS Portal"
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebarCollapsed={toggleSidebarCollapsed}
+      />
 
       <div className="flex">
-        <Sidebar ref={sidebarRef} type="ess" />
+        <Sidebar
+          ref={sidebarRef}
+          type="ess"
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={toggleSidebarCollapsed}
+        />
 
-        <div className="flex-1 lg:ml-64">
+        <div className={`flex-1 transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
           <MobileHeader
             onToggleSidebar={toggleSidebar}
             title="Employee Self-Service"
