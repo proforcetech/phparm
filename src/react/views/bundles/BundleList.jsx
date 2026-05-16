@@ -37,8 +37,8 @@ export default function BundleList() {
         active: filters.activeOnly ? 1 : undefined,
         service_line_id: filters.serviceLineId || undefined,
       }
-      const { data } = await bundleService.list(params)
-      setBundles(data)
+      const data = await bundleService.list(params)
+      setBundles(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to load bundles', error)
       setBundles([])

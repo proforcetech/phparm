@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, ArrowUpTrayIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, BuildingStorefrontIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, ShoppingCartIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
+import { AdjustmentsHorizontalIcon, ArchiveBoxIcon, ArrowUpTrayIcon, Bars3Icon, BellAlertIcon, BookOpenIcon, BuildingOffice2Icon, BuildingOfficeIcon, BuildingStorefrontIcon, CalendarIcon, ChartBarIcon, ChartPieIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardDocumentCheckIcon, ClipboardDocumentListIcon, ClockIcon, Cog6ToothIcon, CpuChipIcon, CreditCardIcon, CubeIcon, CurrencyDollarIcon, DocumentDuplicateIcon, DocumentTextIcon, ExclamationTriangleIcon, FingerPrintIcon, FolderIcon, GlobeAltIcon, HomeIcon, KeyIcon, LifebuoyIcon, MapIcon, MapPinIcon, MicrophoneIcon, PhotoIcon, PuzzlePieceIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, ShoppingCartIcon, Squares2X2Icon, TagIcon, TicketIcon, TrashIcon, TruckIcon, UserGroupIcon, UsersIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline'
 
 import { useAuthStore } from '../../stores/auth'
 import ServiceLineSwitcher from './ServiceLineSwitcher'
@@ -11,34 +11,91 @@ import ServiceLineSwitcher from './ServiceLineSwitcher'
 const sec = (label) => ({ divider: true, label })
 
 const adminMenuItems = [
-  sec('Service Delivery'),
   { path: '/cp/dashboard', label: 'Dashboard', icon: HomeIcon, moduleKey: 'core' },
-  { path: '/cp/tickets', label: 'Tickets', icon: TicketIcon, moduleKey: 'tickets',
+
+  sec('Service Delivery'),
+  {
+    path: '/cp/appointments',
+    label: 'Appointments',
+    icon: CalendarIcon,
+    moduleKey: 'appointments',
     children: [
-      { path: '/cp/tickets/triage', label: 'Triage Suggestions', icon: CpuChipIcon },
-      { path: '/cp/tickets/queues', label: 'Queues', icon: RectangleStackIcon },
+      { path: '/cp/appointments/calendar', label: 'Calendar', icon: CalendarIcon },
+      { path: '/cp/appointments/create', label: 'Book Appointment', icon: CalendarIcon },
+      { path: '/cp/appointments/availability-settings', label: 'Availability Settings', icon: Cog6ToothIcon },
     ],
   },
-  { path: '/cp/appointments', label: 'Appointments', icon: CalendarIcon, moduleKey: 'appointments' },
   { path: '/cp/estimates', label: 'Estimates', icon: DocumentTextIcon, moduleKey: 'estimates' },
   { path: '/cp/workorders', label: 'Workorders', icon: ClipboardDocumentListIcon, moduleKey: 'workorders' },
   { path: '/cp/invoices', label: 'Invoices', icon: DocumentTextIcon, moduleKey: 'invoicing' },
-  { path: '/cp/quick-sale', label: 'Quick Sale', icon: CreditCardIcon, moduleKey: 'invoicing' },
+  { path: '/cp/quick-sale', label: 'Quicksale', icon: CreditCardIcon, moduleKey: 'invoicing' },
+  { path: '/cp/eta/promises', label: 'ETA Promises', icon: BellAlertIcon, moduleKey: 'tickets' },
+  {
+    path: '/cp/inspections/work',
+    label: 'Inspections',
+    icon: ClipboardDocumentListIcon,
+    moduleKey: 'inspections',
+    children: [
+      {
+        path: '/cp/inspections/templates',
+        label: 'Inspection Templates',
+        icon: ClipboardDocumentCheckIcon,
+      },
+    ],
+  },
+  {
+    path: '/cp/pm/plans',
+    label: 'PM',
+    icon: BookOpenIcon,
+    moduleKey: 'pm',
+    children: [
+      { path: '/cp/pm/plans', label: 'PM Plans', icon: BookOpenIcon },
+      { path: '/cp/pm/schedules', label: 'PM Schedules', icon: CalendarIcon },
+      { path: '/cp/pm/compliance', label: 'PM Compliance', icon: ChartPieIcon },
+    ],
+  },
+
+  sec('Time Tracking'),
   { path: '/cp/time-logs', label: 'Time Logs', icon: ClockIcon, moduleKey: 'time_tracking' },
   { path: '/cp/leave-requests', label: 'Leave Requests', icon: ClipboardDocumentCheckIcon, moduleKey: 'time_tracking' },
-  { path: '/cp/eta/promises', label: 'ETA Promises', icon: BellAlertIcon, moduleKey: 'tickets' },
 
-  sec('Customers & Sites'),
+  sec('Personnel'),
+  { path: '/cp/skills/matrix', label: 'Skill Matrix', icon: UsersIcon, moduleKey: 'workforce' },
+
+  sec('Customer & Sites'),
   { path: '/cp/customers', label: 'Customers', icon: UserGroupIcon, moduleKey: 'core' },
   { path: '/cp/crm/companies', label: 'Companies', icon: BuildingOffice2Icon, moduleKey: 'crm' },
   { path: '/cp/crm/sites', label: 'Sites', icon: MapPinIcon, moduleKey: 'crm' },
   { path: '/cp/contracts', label: 'Contracts', icon: DocumentDuplicateIcon, moduleKey: 'contracts' },
-  { path: '/cp/vehicles', label: 'Vehicles', icon: TruckIcon, moduleKey: 'core' },
-  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
-  sec('Maintenance'),
-  { path: '/cp/pm/plans', label: 'PM Plans', icon: BookOpenIcon, moduleKey: 'pm' },
-  { path: '/cp/pm/schedules', label: 'PM Schedules', icon: CalendarIcon, moduleKey: 'pm' },
-  { path: '/cp/pm/compliance', label: 'PM Compliance', icon: ChartPieIcon, moduleKey: 'pm' },
+  {
+    path: '/cp/vehicles',
+    label: 'Vehicles',
+    icon: TruckIcon,
+    moduleKey: 'core',
+    children: [
+      { path: '/cp/vehicle-master', label: 'Vehicle Master', icon: TruckIcon },
+    ],
+  },
+  {
+    path: '/cp/tickets',
+    label: 'Tickets',
+    icon: TicketIcon,
+    moduleKey: 'tickets',
+    children: [
+      { path: '/cp/tickets/triage', label: 'Triage Suggestions', icon: CpuChipIcon },
+      { path: '/cp/tickets/queues', label: 'Queues', icon: RectangleStackIcon },
+      { path: '/cp/tickets/sla-policies', label: 'SLA Policies', icon: ClockIcon },
+      { path: '/cp/tickets/routing-rules', label: 'Routing Rules', icon: MapIcon },
+      { path: '/cp/tickets/escalation-rules', label: 'Escalation Rules', icon: BellAlertIcon },
+      { path: '/cp/tickets/categories', label: 'Categories', icon: FolderIcon },
+      { path: '/cp/tickets/close-reasons', label: 'Close Reasons', icon: ClipboardDocumentCheckIcon },
+      { path: '/cp/tickets/resolution-codes', label: 'Resolution Codes', icon: ClipboardDocumentCheckIcon },
+      { path: '/cp/tickets/failure-codes', label: 'Failure Codes', icon: ExclamationTriangleIcon },
+    ],
+  },
+  { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
+
+  sec('Inventory & Purchasing'),
   {
     path: '/cp/inventory',
     label: 'Inventory',
@@ -50,9 +107,13 @@ const adminMenuItems = [
         label: 'Inventory Alerts',
         icon: CubeIcon,
       },
+      { path: '/cp/inventory/stock-orders', label: 'Stock Orders', icon: ClipboardDocumentListIcon },
+      { path: '/cp/inventory/pull-requests', label: 'Pull Requests', icon: ClipboardDocumentCheckIcon },
+      { path: '/cp/inventory/categories', label: 'Categories', icon: FolderIcon },
+      { path: '/cp/inventory/vendors', label: 'Vendor Lookups', icon: BuildingStorefrontIcon },
+      { path: '/cp/inventory/locations', label: 'Locations', icon: MapPinIcon },
     ],
   },
-  { path: '/cp/warranty', label: 'Warranty Claims', icon: ShieldCheckIcon, moduleKey: 'warranty' },
   { path: '/cp/procurement/purchase-orders', label: 'Purchase Orders', icon: ShoppingCartIcon, moduleKey: 'inventory' },
   { path: '/cp/procurement/vendors', label: 'Vendors', icon: BuildingStorefrontIcon, moduleKey: 'inventory' },
   { path: '/cp/vendor-portal-tokens', label: 'Vendor Portal Tokens', icon: BuildingStorefrontIcon, moduleKey: 'inventory' },
@@ -67,10 +128,21 @@ const adminMenuItems = [
   { path: '/cp/fleet/units', label: 'Fleet Units', icon: TruckIcon, moduleKey: 'fleet' },
   { path: '/cp/fleet/external-repairs', label: 'External Repairs', icon: LifebuoyIcon, moduleKey: 'fleet' },
   { path: '/cp/fleet/reports', label: 'Fleet Reports', icon: ChartBarIcon, moduleKey: 'fleet' },
-  { path: '/cp/routing/route-plans', label: 'Route Plans', icon: MapIcon, moduleKey: 'routing' },
-  { path: '/cp/routing/geo-fences', label: 'Geo-Fences', icon: MapPinIcon, moduleKey: 'routing' },
   { path: '/cp/capital-plan/aging', label: 'Asset Aging', icon: ChartPieIcon, moduleKey: 'capital_plan' },
   { path: '/cp/capital-plan/plans', label: 'Capital Plans', icon: CurrencyDollarIcon, moduleKey: 'capital_plan' },
+
+  sec('Dispatching'),
+  { path: '/cp/routing/geo-fences', label: 'Geo-Fences', icon: MapPinIcon, moduleKey: 'routing' },
+  {
+    path: '/cp/routing/service-routes',
+    label: 'Service Routes',
+    icon: MapIcon,
+    moduleKey: 'routing',
+    children: [
+      { path: '/cp/routing/route-plans', label: 'Route Plans', icon: MapIcon },
+      { path: '/cp/my-routes', label: 'My Routes', icon: MapPinIcon },
+    ],
+  },
   {
     path: '/cp/dispatch',
     label: 'Dispatch',
@@ -78,9 +150,9 @@ const adminMenuItems = [
     moduleKey: 'towing',
     children: [
       {
-        path: '/cp/dispatch',
+        path: '/cp/dispatch-board',
         label: 'Dispatch Board',
-        icon: TruckIcon,
+        icon: RectangleGroupIcon,
       },
       {
         path: '/cp/driver/truck-checklists',
@@ -97,11 +169,19 @@ const adminMenuItems = [
         label: 'Checklist Templates',
         icon: ClipboardDocumentCheckIcon,
       },
+      {
+        path: '/cp/driver/job-intake',
+        label: 'Driver Job Intake',
+        icon: TruckIcon,
+      },
     ],
   },
+
+  sec('Towing & Roadside Assistance'),
+  { path: '/cp/towing/pricing', label: 'Towing Pricing Matrix', icon: CurrencyDollarIcon, moduleKey: 'towing' },
   {
     path: '/cp/storage/impound-intake',
-    label: 'Storage',
+    label: 'Vehicle Storage',
     icon: ArchiveBoxIcon,
     moduleKey: 'impound',
     children: [
@@ -115,32 +195,50 @@ const adminMenuItems = [
         label: 'Inventory Spot-Checks',
         icon: ClipboardDocumentCheckIcon,
       },
+      { path: '/cp/storage/ledger', label: 'Storage Fee Ledger', icon: DocumentTextIcon },
+      { path: '/cp/storage/notices', label: 'Notice Generation', icon: DocumentDuplicateIcon },
+      { path: '/cp/storage/release-checklist', label: 'Release Checklist', icon: ClipboardDocumentCheckIcon },
+      { path: '/cp/storage/auction-management', label: 'Auction Management', icon: CurrencyDollarIcon },
     ],
   },
+
+  sec('Communications'),
   { path: '/cp/document-vault', label: 'Document Vault', icon: DocumentDuplicateIcon, moduleKey: 'documents' },
-  { path: '/cp/voice-notes', label: 'Voice Notes', icon: MicrophoneIcon, moduleKey: 'voice_notes' },
+  {
+    path: '/cp/voice-notes',
+    label: 'Voice Notes',
+    icon: MicrophoneIcon,
+    moduleKey: 'voice_notes',
+    children: [
+      { path: '/cp/voice-notes/pending', label: 'Pending Notes', icon: ClockIcon },
+    ],
+  },
+
+  sec('Third-Party'),
   { path: '/cp/subcontractors', label: 'Subcontractors', icon: BuildingOfficeIcon, moduleKey: 'subcontractors' },
   { path: '/cp/sub-portal-tokens', label: 'Sub Portal Tokens', icon: BuildingOfficeIcon, moduleKey: 'subcontractors' },
 
-  sec('Finance'),
+  sec('Finance & Reports'),
+  { path: '/cp/financial/categories', label: 'Account Categories', icon: FolderIcon, moduleKey: 'financial' },
   { path: '/cp/financial/entries', label: 'Purchases & Expenses', icon: DocumentTextIcon, moduleKey: 'financial' },
   { path: '/cp/financial/reconciliation', label: 'Reconciliation', icon: ClipboardDocumentCheckIcon, moduleKey: 'financial' },
-  { path: '/cp/financial/categories', label: 'Account Categories', icon: FolderIcon, moduleKey: 'financial' },
-  { path: '/cp/reports', label: 'Reports', icon: ChartBarIcon, moduleKey: 'reports' },
-  { path: '/cp/branches/dashboards', label: 'Branch Dashboards', icon: BuildingOfficeIcon, moduleKey: 'reports' },
   {
-    path: '/cp/inspections/work',
-    label: 'Inspections',
-    icon: ClipboardDocumentListIcon,
-    moduleKey: 'inspections',
+    path: '/cp/reports',
+    label: 'Reports',
+    icon: ChartBarIcon,
+    moduleKey: 'reports',
     children: [
-      {
-        path: '/cp/inspections/templates',
-        label: 'Inspection Templates',
-        icon: ClipboardDocumentCheckIcon,
-      },
+      { path: '/cp/reports/overview', label: 'Overview', icon: ChartBarIcon },
+      { path: '/cp/reports/customer-retention', label: 'Customer Retention', icon: UserGroupIcon, moduleKey: 'customer_retention' },
     ],
   },
+  { path: '/cp/branches/dashboards', label: 'Branch Dashboards', icon: BuildingOfficeIcon, moduleKey: 'reports' },
+  { path: '/cp/billing/consolidated', label: 'Consolidated Statements', icon: DocumentDuplicateIcon, moduleKey: 'invoicing' },
+  { path: '/cp/chain-rollup', label: 'Chain Rollup', icon: BuildingOffice2Icon, moduleKey: 'crm' },
+  { path: '/cp/trade-kpis', label: 'Trade KPI', icon: ChartPieIcon, moduleKey: 'reports' },
+  { path: '/cp/capital-plan/scoring-models', label: 'Capital Scoring Models', icon: ChartPieIcon, moduleKey: 'capital_plan' },
+
+  sec('Content Management'),
   { 
     path: '/cp/cms', 
     label: 'CMS Dashboard',
@@ -164,11 +262,6 @@ const adminMenuItems = [
         icon: Bars3Icon,
       },
       {
-        path: '/cp/cms/media',
-        label: 'Media Library',
-        icon: PhotoIcon,
-      },
-      {
         path: '/cp/cms/components',
         label: 'CMS Components',
         icon: Squares2X2Icon,
@@ -179,6 +272,11 @@ const adminMenuItems = [
         icon: RectangleGroupIcon,
       },
       {
+        path: '/cp/cms/media',
+        label: 'Media Library',
+        icon: PhotoIcon,
+      },
+      {
         path: '/cp/cms/404-manager',
         label: '404 Manager',
         icon: ExclamationTriangleIcon,
@@ -186,20 +284,49 @@ const adminMenuItems = [
     ],
   },
   sec('Admin & Integrations'),
+  { path: '/cp/custom-fields', label: 'Custom Fields', icon: AdjustmentsHorizontalIcon, moduleKey: 'custom_fields' },
   { path: '/cp/divisions', label: 'Divisions', icon: BuildingOffice2Icon, moduleKey: 'divisions' },
   { path: '/cp/integrations', label: 'Integrations', icon: PuzzlePieceIcon, moduleKey: 'integrations' },
   { path: '/cp/sso/providers', label: 'SSO Providers', icon: KeyIcon, moduleKey: 'sso' },
   { path: '/cp/security-events', label: 'Security Events', icon: FingerPrintIcon, moduleKey: 'security' },
   { path: '/cp/security/credentials', label: 'Security Credentials', icon: KeyIcon, moduleKey: 'security' },
+  { path: '/cp/security', label: 'Security Center', icon: ShieldCheckIcon, moduleKey: 'security' },
+  { path: '/cp/it/software', label: 'Software Inventory', icon: CpuChipIcon, moduleKey: 'software_inventory' },
+  { path: '/cp/it/change-management', label: 'Change Management', icon: ClipboardDocumentListIcon, moduleKey: 'change_management' },
   { path: '/cp/pos/terminals', label: 'POS Terminals', icon: CreditCardIcon, moduleKey: 'pos' },
-  { path: '/cp/skills/matrix', label: 'Skill Matrix', icon: UsersIcon, moduleKey: 'workforce' },
-  { path: '/cp/dispatch-board', label: 'Dispatch Board', icon: RectangleGroupIcon, moduleKey: 'dispatch' },
-  { path: '/cp/billing/consolidated', label: 'Consolidated Statements', icon: DocumentDuplicateIcon, moduleKey: 'invoices' },
-  { path: '/cp/chain-rollup', label: 'Chain Rollup', icon: BuildingOffice2Icon, moduleKey: 'crm' },
-  { path: '/cp/trade-kpis', label: 'Trade KPIs', icon: ChartPieIcon, moduleKey: 'reports' },
-  { path: '/cp/retention/policies', label: 'Retention Policies', icon: TrashIcon, moduleKey: 'retention' },
-  { path: '/cp/custom-fields', label: 'Custom Fields', icon: AdjustmentsHorizontalIcon, moduleKey: 'custom_fields' },
-  { path: '/cp/settings', label: 'Settings', icon: Cog6ToothIcon },
+  { path: '/cp/bundles', label: 'Preset Bundles', icon: RectangleStackIcon, moduleKey: 'bundles' },
+  {
+    path: '/cp/retention/policies',
+    label: 'Retention Policies',
+    icon: TrashIcon,
+    moduleKey: 'retention',
+    children: [
+      { path: '/cp/retention/runs', label: 'Retention Runs', icon: ClockIcon },
+    ],
+  },
+  { path: '/cp/audit', label: 'Audit Logs', icon: DocumentTextIcon, moduleKey: 'security' },
+  {
+    path: '/cp/settings',
+    label: 'Settings',
+    icon: Cog6ToothIcon,
+    children: [
+      { path: '/cp/settings/profile', label: 'Shop Profile', icon: BuildingStorefrontIcon },
+      { path: '/cp/settings/terms', label: 'Terms', icon: DocumentTextIcon },
+      { path: '/cp/settings/templates', label: 'Templates', icon: DocumentDuplicateIcon },
+      { path: '/cp/settings/rejection-reasons', label: 'Rejection Reasons', icon: ClipboardDocumentCheckIcon },
+      { path: '/cp/settings/pricing', label: 'Pricing', icon: CurrencyDollarIcon },
+      { path: '/cp/settings/security', label: 'Security', icon: ShieldCheckIcon },
+      { path: '/cp/settings/notifications', label: 'Notifications', icon: BellAlertIcon },
+      { path: '/cp/settings/payments', label: 'Payments', icon: CreditCardIcon },
+      { path: '/cp/settings/integrations', label: 'Settings Integrations', icon: PuzzlePieceIcon },
+      { path: '/cp/settings/services', label: 'Services', icon: ClipboardDocumentListIcon },
+      { path: '/cp/settings/service-lines', label: 'Service Lines', icon: RectangleStackIcon },
+      { path: '/cp/settings/modules', label: 'Modules', icon: Squares2X2Icon },
+      { path: '/cp/settings/dispatch', label: 'Dispatch Settings', icon: TruckIcon },
+      { path: '/cp/settings/vin-decoder', label: 'VIN Decoder', icon: TruckIcon },
+      { path: '/cp/settings/property-management', label: 'Property Management', icon: BuildingOfficeIcon },
+    ],
+  },
   {
     path: '/cp/users',
     label: 'Users',
@@ -291,10 +418,11 @@ function SidebarTooltip({ label, children }) {
   )
 }
 
-const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false }, ref) {
+const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = false, onToggleCollapsed = null }, ref) {
   const { user, hasModuleAccess } = useAuthStore()
   const { pathname } = useLocation()
   const [isOpen, setIsOpen] = useState(true)
+  const [openGroups, setOpenGroups] = useState({})
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
@@ -328,18 +456,27 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       return technicianMenuItems
     }
 
-    // Admin users see everything as-is.
-    const items = user?.role?.toLowerCase() === 'admin'
+    const canAccessItem = (item) => {
+      if (!item.moduleKey) {
+        return true
+      }
+      return hasModuleAccess(item.moduleKey)
+    }
+
+    const isAdmin = user?.role?.toLowerCase() === 'admin'
+    const items = isAdmin
       ? adminMenuItems
-      : adminMenuItems.filter((item) => {
-          if (item.divider) {
-            return true
-          }
-          if (!item.moduleKey) {
-            return true
-          }
-          return hasModuleAccess(item.moduleKey)
-        })
+      : adminMenuItems
+          .filter((item) => item.divider || canAccessItem(item))
+          .map((item) => {
+            if (!item.children?.length) {
+              return item
+            }
+            return {
+              ...item,
+              children: item.children.filter(canAccessItem),
+            }
+          })
 
     // Prune dividers that would otherwise headline an empty section.
     return items.filter((item, idx) => {
@@ -366,15 +503,19 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
 
   const renderMenuItem = (item, idx) => {
     if (item.divider) {
-      // Hide section headings entirely when collapsed — a thin separator
-      // would just add visual noise next to icons.
+      // On desktop collapsed navigation, headings become thin separators.
+      // Mobile keeps full headings because the drawer remains text-first.
       if (isCollapsed) {
         return (
-          <div
-            key={`divider-${idx}-${item.label}`}
-            className="hidden lg:block my-2 border-t border-gray-700"
-            aria-hidden="true"
-          />
+          <div key={`divider-${idx}-${item.label}`}>
+            <div className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 lg:hidden">
+              {item.label}
+            </div>
+            <div
+              className="hidden lg:block my-2 border-t border-gray-700"
+              aria-hidden="true"
+            />
+          </div>
         )
       }
       return (
@@ -391,8 +532,85 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
     const isActive = isActiveRoute(pathname, item.path)
     const isChildActive = item.children?.some((child) => isActiveRoute(pathname, child.path))
     const isCurrentActive = isActive || isChildActive
+    const hasChildren = item.children?.length > 0
+    const groupKey = item.path || `${item.label}-${idx}`
+    const isGroupOpen = hasChildren ? (openGroups[groupKey] ?? Boolean(isChildActive)) : false
 
-    // Collapsed mode - show icon only with tooltip
+    const toggleGroup = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      setOpenGroups((prev) => ({
+        ...prev,
+        [groupKey]: !(prev[groupKey] ?? Boolean(isChildActive)),
+      }))
+    }
+
+    const itemClasses = isCurrentActive
+      ? 'bg-gray-800 text-white'
+      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+
+    const renderExpandedMenuItem = () => (
+      <div className="space-y-0.5">
+        {hasChildren ? (
+          <div className={`group flex items-center rounded-md transition-colors ${itemClasses}`}>
+            <Link
+              to={item.path}
+              className="flex min-w-0 flex-1 items-center px-4 py-2 text-sm font-medium"
+            >
+              {Icon ? <Icon className="h-5 w-5 mr-3 flex-shrink-0" aria-hidden="true" /> : null}
+              <span className="truncate">{item.label}</span>
+            </Link>
+            <button
+              type="button"
+              onClick={toggleGroup}
+              className="mr-1 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              aria-expanded={isGroupOpen}
+              aria-label={`${isGroupOpen ? 'Collapse' : 'Expand'} ${item.label}`}
+            >
+              {isGroupOpen ? (
+                <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        ) : (
+          <Link
+            to={item.path}
+            className={`flex items-center rounded-md px-4 py-2 text-sm font-medium transition-colors ${itemClasses}`}
+          >
+            {Icon ? <Icon className="h-5 w-5 mr-3 flex-shrink-0" aria-hidden="true" /> : null}
+            <span className="truncate">{item.label}</span>
+          </Link>
+        )}
+
+        {hasChildren && isGroupOpen ? (
+          <div className="ml-8 space-y-0.5 border-l border-gray-700 pl-2">
+            {item.children.map((child) => {
+              const ChildIcon = child.icon
+              const isChildItemActive = isActiveRoute(pathname, child.path)
+
+              return (
+                <Link
+                  key={child.path}
+                  to={child.path}
+                  className={`flex items-center rounded-md px-2 py-1.5 text-xs transition-colors ${
+                    isChildItemActive
+                      ? 'bg-gray-800 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
+                >
+                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-2 flex-shrink-0" aria-hidden="true" /> : null}
+                  <span className="truncate">{child.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    )
+
+    // Collapsed mode uses icons on desktop but keeps the mobile drawer fully readable.
     if (isCollapsed) {
       const menuLink = (
         <Link
@@ -409,52 +627,22 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
       )
 
       return (
-        <div key={item.path} className="hidden lg:block">
-          <SidebarTooltip label={item.label}>
-            {menuLink}
-          </SidebarTooltip>
+        <div key={item.path}>
+          <div className="lg:hidden">
+            {renderExpandedMenuItem()}
+          </div>
+          <div className="hidden lg:block">
+            <SidebarTooltip label={item.label}>
+              {menuLink}
+            </SidebarTooltip>
+          </div>
         </div>
       )
     }
 
-    // Expanded mode - show full menu item
     return (
-      <div key={item.path} className="space-y-1">
-        <Link
-          to={item.path}
-          className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            isCurrentActive
-              ? 'bg-gray-800 text-white'
-              : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-          }`}
-        >
-          {Icon ? <Icon className="h-5 w-5 mr-3" aria-hidden="true" /> : null}
-          <span>{item.label}</span>
-        </Link>
-
-        {item.children?.length ? (
-          <div className="ml-6 space-y-1">
-            {item.children.map((child) => {
-              const ChildIcon = child.icon
-              const isChildItemActive = isActiveRoute(pathname, child.path)
-
-              return (
-                <Link
-                  key={child.path}
-                  to={child.path}
-                  className={`flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
-                    isChildItemActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  {ChildIcon ? <ChildIcon className="h-4 w-4 mr-3" aria-hidden="true" /> : null}
-                  <span>{child.label}</span>
-                </Link>
-              )
-            })}
-          </div>
-        ) : null}
+      <div key={item.path}>
+        {renderExpandedMenuItem()}
       </div>
     )
   }
@@ -470,17 +658,28 @@ const Sidebar = forwardRef(function Sidebar({ type = 'admin', isCollapsed = fals
         aria-label="Main sidebar navigation"
       >
         <div className="flex flex-col h-full">
-          <div className={`flex items-center h-16 bg-gray-800 ${isCollapsed ? 'lg:justify-center lg:px-2' : 'justify-between px-4'}`}>
+          <div className={`flex items-center h-16 bg-gray-800 ${isCollapsed ? 'px-4 lg:justify-center lg:px-2' : 'justify-between px-4'}`}>
             <span
               className={`text-lg font-semibold text-white ${isCollapsed ? 'lg:hidden' : ''}`}
             >
               Menu
             </span>
-            {isCollapsed && (
-              <span className="hidden lg:block text-lg font-semibold text-white">
-                M
-              </span>
-            )}
+            {onToggleCollapsed ? (
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                className="hidden rounded-md p-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 lg:inline-flex"
+                aria-label={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+                aria-pressed={isCollapsed}
+                title={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              >
+                {isCollapsed ? (
+                  <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+                ) : (
+                  <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={toggleSidebar}

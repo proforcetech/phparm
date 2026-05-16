@@ -44,7 +44,7 @@ export default function ServiceLineSwitcher({ isCollapsed = false }) {
   // collapsed on large screens. We still need a control so the user can
   // change lines; we shrink it to fit.
   const containerClasses = isCollapsed
-    ? 'hidden lg:block px-1 pt-3 pb-2'
+    ? 'px-3 pt-3 pb-2 lg:px-1'
     : 'px-3 pt-3 pb-2'
 
   return (
@@ -56,7 +56,14 @@ export default function ServiceLineSwitcher({ isCollapsed = false }) {
         >
           Service Line
         </label>
-      ) : null}
+      ) : (
+        <label
+          htmlFor="service-line-switcher"
+          className="block text-[11px] uppercase tracking-wider text-gray-400 mb-1 lg:hidden"
+        >
+          Service Line
+        </label>
+      )}
       <select
         id="service-line-switcher"
         value={currentServiceLineId ?? ''}

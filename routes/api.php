@@ -539,46 +539,50 @@ return function (Router $router, array $config, $connection) {
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
         ];
 
+        $photoUploads = [];
+        $photos = $request->file('photos');
+        if (is_array($photos)) {
+            foreach (\App\Services\EstimateRequest\PublicEstimatePhotoUploadValidator::normalizeFiles($photos) as $photoFile) {
+                $uploadError = (int) ($photoFile['error'] ?? UPLOAD_ERR_OK);
+                if ($uploadError === UPLOAD_ERR_NO_FILE && empty($photoFile['tmp_name'])) {
+                    continue;
+                }
+
+                try {
+                    $photoUploads[] = \App\Services\EstimateRequest\PublicEstimatePhotoUploadValidator::validate($photoFile);
+                } catch (\InvalidArgumentException $e) {
+                    return Response::badRequest('Invalid photo upload: ' . $e->getMessage());
+                }
+            }
+        }
+
         try {
             // Create estimate request
             $repository = new \App\Services\EstimateRequest\EstimateRequestRepository($connection);
             $estimateRequest = $repository->create($requestData);
 
             // Handle file uploads if present
-            if (!empty($_FILES['photos'])) {
+            if ($photoUploads !== []) {
                 $uploadDir = __DIR__ . '/../storage/uploads/estimate-requests/';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0755, true);
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                    throw new \RuntimeException('Unable to prepare estimate photo upload directory');
                 }
 
-                $files = $_FILES['photos'];
-                $fileCount = is_array($files['name']) ? count($files['name']) : 1;
+                foreach ($photoUploads as $photoUpload) {
+                    $safeFileName = 'request_' . $estimateRequest->id . '_' . bin2hex(random_bytes(16)) . '.' . $photoUpload['extension'];
+                    $filePath = $uploadDir . $safeFileName;
 
-                for ($i = 0; $i < min($fileCount, 5); $i++) {
-                    $fileName = is_array($files['name']) ? $files['name'][$i] : $files['name'];
-                    $fileTmpName = is_array($files['tmp_name']) ? $files['tmp_name'][$i] : $files['tmp_name'];
-                    $fileSize = is_array($files['size']) ? $files['size'][$i] : $files['size'];
-                    $fileError = is_array($files['error']) ? $files['error'][$i] : $files['error'];
-
-                    if ($fileError === UPLOAD_ERR_OK) {
-                        $fileExt = pathinfo($fileName, PATHINFO_EXTENSION);
-                        $safeFileName = 'request_' . $estimateRequest->id . '_' . uniqid() . '.' . $fileExt;
-                        $filePath = $uploadDir . $safeFileName;
-
-                        if (move_uploaded_file($fileTmpName, $filePath)) {
-                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                            $mimeType = finfo_file($finfo, $filePath);
-                            finfo_close($finfo);
-
-                            $repository->addMedia(
-                                $estimateRequest->id,
-                                'uploads/estimate-requests/' . $safeFileName,
-                                $fileName,
-                                $mimeType,
-                                $fileSize
-                            );
-                        }
+                    if (!move_uploaded_file($photoUpload['tmp_name'], $filePath)) {
+                        throw new \RuntimeException('Unable to store uploaded photo');
                     }
+
+                    $repository->addMedia(
+                        $estimateRequest->id,
+                        'uploads/estimate-requests/' . $safeFileName,
+                        $photoUpload['original_name'],
+                        $photoUpload['mime_type'],
+                        $photoUpload['size']
+                    );
                 }
             }
 
@@ -3704,6 +3708,16 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 $vehicle = $stmt->fetch(\PDO::FETCH_ASSOC);
                 if ($vehicle) {
                     $data['vehicle'] = $vehicle;
+                }
+            }
+
+            // Enrich with site asset data for asset-based service lines
+            if (!empty($data['site_asset_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, name, code, serial_number, building, floor, room FROM site_assets WHERE id = :id');
+                $stmt->execute(['id' => $data['site_asset_id']]);
+                $siteAsset = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($siteAsset) {
+                    $data['site_asset'] = $siteAsset;
                 }
             }
 
@@ -7040,6 +7054,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
 
     // Document Vault routes
     $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+        $documentVaultUploads = new \App\Services\Documents\DocumentVaultUploadService();
+
         $router->get('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.view')) {
@@ -7105,6 +7121,10 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $stmt = $connection->pdo()->prepare($sql);
             $stmt->execute($params);
             $data = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            foreach ($data as &$row) {
+                $row['download_url'] = '/api/document-vault/' . (int) $row['id'] . '/download';
+            }
+            unset($row);
 
             return Response::json([
                 'data' => $data,
@@ -7145,7 +7165,44 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             ]);
         });
 
-        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger) {
+        $router->get('/api/document-vault/{id}/download', function (Request $request) use ($connection, $gate, $auditLogger, $documentVaultUploads) {
+            $user = $request->getAttribute('user');
+            if (!$gate->can($user, 'documents.view')) {
+                return Response::forbidden('Permission denied');
+            }
+
+            $id = (int) $request->getAttribute('id');
+            $stmt = $connection->pdo()->prepare(
+                'SELECT id, file_name, file_path, mime_type FROM document_vault_documents WHERE id = :id'
+            );
+            $stmt->execute(['id' => $id]);
+            $document = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$document) {
+                return Response::notFound('Document not found');
+            }
+
+            $absolutePath = $documentVaultUploads->resolveStoredPath((string) ($document['file_path'] ?? ''));
+            if ($absolutePath === null) {
+                return Response::notFound('Document file not found');
+            }
+
+            $content = file_get_contents($absolutePath);
+            if ($content === false) {
+                return Response::serverError('Unable to read document file');
+            }
+
+            $filename = $documentVaultUploads->safeDownloadName($document['file_name'] ?? null);
+            $mimeType = $documentVaultUploads->safeDownloadMime($document['mime_type'] ?? null);
+
+            return Response::make($content, 200, [
+                'Content-Type' => $mimeType,
+                'Content-Length' => (string) strlen($content),
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        });
+
+        $router->post('/api/document-vault', function (Request $request) use ($connection, $gate, $auditLogger, $documentVaultUploads) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -7164,26 +7221,13 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 return Response::badRequest('A document file is required');
             }
 
-            $uploadDir = dirname(__DIR__) . '/public/uploads/document-vault';
-            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
-                return Response::serverError('Unable to prepare upload directory');
+            try {
+                $storedFile = $documentVaultUploads->store($file);
+            } catch (\InvalidArgumentException $e) {
+                return Response::badRequest('Document upload rejected: ' . $e->getMessage());
+            } catch (\RuntimeException $e) {
+                return Response::serverError($e->getMessage());
             }
-
-            $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
-            $filename = 'doc_' . uniqid('', true) . ($extension ? '.' . $extension : '');
-            $destination = $uploadDir . '/' . $filename;
-
-            if (!move_uploaded_file($file['tmp_name'], $destination)) {
-                return Response::serverError('Unable to store document');
-            }
-
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = $finfo ? finfo_file($finfo, $destination) : null;
-            if ($finfo) {
-                finfo_close($finfo);
-            }
-
-            $relativePath = '/uploads/document-vault/' . $filename;
 
             $stmt = $connection->pdo()->prepare(
                 'INSERT INTO document_vault_documents
@@ -7203,17 +7247,17 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 'issued_date' => $body['issued_date'] ?? null,
                 'expiration_date' => $body['expiration_date'] ?? null,
                 'notes' => $body['notes'] ?? null,
-                'file_name' => $file['name'] ?? $filename,
-                'file_path' => $relativePath,
-                'mime_type' => $mimeType,
-                'file_size' => $file['size'] ?? null,
+                'file_name' => $storedFile['file_name'],
+                'file_path' => $storedFile['file_path'],
+                'mime_type' => $storedFile['mime_type'],
+                'file_size' => $storedFile['file_size'],
                 'uploaded_by' => $user->id,
             ]);
 
             return Response::created(['success' => true]);
         });
 
-        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
+        $router->put('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger, $documentVaultUploads) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
@@ -7245,33 +7289,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             }
 
             if (is_array($file) && !empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
-                $uploadDir = dirname(__DIR__) . '/public/uploads/document-vault';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
-                    return Response::serverError('Unable to prepare upload directory');
-                }
-
-                $extension = strtolower(pathinfo((string) ($file['name'] ?? 'upload'), PATHINFO_EXTENSION));
-                $filename = 'doc_' . uniqid('', true) . ($extension ? '.' . $extension : '');
-                $destination = $uploadDir . '/' . $filename;
-
-                if (!move_uploaded_file($file['tmp_name'], $destination)) {
-                    return Response::serverError('Unable to store document');
-                }
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mimeType = $finfo ? finfo_file($finfo, $destination) : null;
-                if ($finfo) {
-                    finfo_close($finfo);
+                try {
+                    $storedFile = $documentVaultUploads->store($file);
+                } catch (\InvalidArgumentException $e) {
+                    return Response::badRequest('Document upload rejected: ' . $e->getMessage());
+                } catch (\RuntimeException $e) {
+                    return Response::serverError($e->getMessage());
                 }
 
                 $updates[] = 'file_name = :file_name';
                 $updates[] = 'file_path = :file_path';
                 $updates[] = 'mime_type = :mime_type';
                 $updates[] = 'file_size = :file_size';
-                $params['file_name'] = $file['name'] ?? $filename;
-                $params['file_path'] = '/uploads/document-vault/' . $filename;
-                $params['mime_type'] = $mimeType;
-                $params['file_size'] = $file['size'] ?? null;
+                $params['file_name'] = $storedFile['file_name'];
+                $params['file_path'] = $storedFile['file_path'];
+                $params['mime_type'] = $storedFile['mime_type'];
+                $params['file_size'] = $storedFile['file_size'];
             }
 
             if (empty($updates)) {
@@ -7287,15 +7320,22 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json(['success' => true]);
         });
 
-        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger) {
+        $router->delete('/api/document-vault/{id}', function (Request $request) use ($connection, $gate, $auditLogger, $documentVaultUploads) {
             $user = $request->getAttribute('user');
             if (!$gate->can($user, 'documents.manage')) {
                 return Response::forbidden('Permission denied');
             }
 
             $id = (int) $request->getAttribute('id');
+            $lookup = $connection->pdo()->prepare('SELECT file_path FROM document_vault_documents WHERE id = :id');
+            $lookup->execute(['id' => $id]);
+            $filePath = (string) ($lookup->fetchColumn() ?: '');
+
             $stmt = $connection->pdo()->prepare('DELETE FROM document_vault_documents WHERE id = :id');
             $stmt->execute(['id' => $id]);
+            if ($stmt->rowCount() > 0 && $filePath !== '') {
+                $documentVaultUploads->deleteStoredPath($filePath);
+            }
 
             return Response::noContent();
         });

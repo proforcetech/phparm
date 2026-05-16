@@ -45,6 +45,48 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
       },
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/react-router-dom/') ||
+            id.includes('/@remix-run/')
+          ) {
+            return 'vendor-react'
+          }
+
+          if (id.includes('/@heroicons/')) {
+            return 'vendor-icons'
+          }
+
+          if (id.includes('/@fullcalendar/')) {
+            return 'vendor-calendar'
+          }
+
+          if (id.includes('/chart.js/') || id.includes('/react-chartjs-2/')) {
+            return 'vendor-charts'
+          }
+
+          if (id.includes('/@dnd-kit/')) {
+            return 'vendor-dnd'
+          }
+
+          if (id.includes('/react-quill-new/') || id.includes('/quill/')) {
+            return 'vendor-editor'
+          }
+
+          if (id.includes('/tesseract.js/')) {
+            return 'vendor-ocr'
+          }
+
+          return 'vendor'
+        },
+      },
     },
   },
 })

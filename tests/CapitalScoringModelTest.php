@@ -58,6 +58,7 @@ function csmSetUpDatabase(): PDO
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         site_id INTEGER NOT NULL,
         division_id INTEGER NULL,
+        service_line_id INTEGER NULL,
         asset_type_id INTEGER NULL,
         parent_asset_id INTEGER NULL,
         name TEXT NOT NULL,

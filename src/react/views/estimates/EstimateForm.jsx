@@ -77,6 +77,7 @@ export default function EstimateForm() {
 
   const isEditing = Boolean(id)
   const today = new Date().toISOString().substring(0, 10)
+  const selectedServiceLineId = form.service_line_id ?? currentServiceLineId ?? null
 
   const createEmptyLineItem = useCallback(() => ({
     type: 'LABOR',
@@ -171,8 +172,8 @@ export default function EstimateForm() {
     setBundleLoading(true)
     try {
       const params = { active: 1 }
-      if (currentServiceLineId) {
-        params.service_line_id = currentServiceLineId
+      if (selectedServiceLineId) {
+        params.service_line_id = selectedServiceLineId
       }
       const data = await bundleService.list(params)
       setBundles(Array.isArray(data) ? data : [])
@@ -182,7 +183,7 @@ export default function EstimateForm() {
     } finally {
       setBundleLoading(false)
     }
-  }, [currentServiceLineId])
+  }, [selectedServiceLineId])
 
   const loadPricingSettings = useCallback(async () => {
     try {
@@ -211,6 +212,19 @@ export default function EstimateForm() {
   useEffect(() => {
     loadBundles()
   }, [loadBundles])
+
+  useEffect(() => {
+    if (!isEditing && !form.service_line_id && currentServiceLineId) {
+      setForm((prev) => ({
+        ...prev,
+        service_line_id: prev.service_line_id ?? currentServiceLineId,
+      }))
+    }
+  }, [currentServiceLineId, form.service_line_id, isEditing])
+
+  useEffect(() => {
+    setBundleSelection('')
+  }, [selectedServiceLineId])
 
   useEffect(() => {
     if (!isEditing && form.line_items.length === 0 && pricingSettings.laborRate !== null) {

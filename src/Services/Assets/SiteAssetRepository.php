@@ -17,7 +17,7 @@ use RuntimeException;
  */
 class SiteAssetRepository
 {
-    private const COLUMNS = 'id, site_id, division_id, asset_type_id, parent_asset_id,
+    private const COLUMNS = 'id, site_id, division_id, service_line_id, asset_type_id, parent_asset_id,
         name, code, status, install_date, decommissioned_at, notes,
         manufacturer, model_number, serial_number, vendor,
         warranty_start, warranty_end, purchase_cents, custom_fields,
@@ -47,6 +47,10 @@ class SiteAssetRepository
         if (!empty($filters['asset_type_id'])) {
             $where[] = 'asset_type_id = :asset_type_id';
             $params['asset_type_id'] = (int) $filters['asset_type_id'];
+        }
+        if (!empty($filters['service_line_id'])) {
+            $where[] = '(service_line_id IS NULL OR service_line_id = :service_line_id)';
+            $params['service_line_id'] = (int) $filters['service_line_id'];
         }
         if (!empty($filters['status'])) {
             $where[] = 'status = :status';
@@ -161,7 +165,7 @@ class SiteAssetRepository
     public function create(array $data): SiteAsset
     {
         $stmt = $this->connection->pdo()->prepare(
-            'INSERT INTO site_assets (site_id, division_id, asset_type_id, parent_asset_id,
+            'INSERT INTO site_assets (site_id, division_id, service_line_id, asset_type_id, parent_asset_id,
                 name, code, status, install_date, decommissioned_at, notes,
                 manufacturer, model_number, serial_number, vendor,
                 warranty_start, warranty_end, purchase_cents, custom_fields,
@@ -169,7 +173,7 @@ class SiteAssetRepository
                 ip_address, mac_address, subnet, vlan,
                 condition_score, expected_life_years, replacement_estimate_cents,
                 last_inspected_at, replace_by_date)
-             VALUES (:site_id, :division_id, :asset_type_id, :parent_asset_id,
+             VALUES (:site_id, :division_id, :service_line_id, :asset_type_id, :parent_asset_id,
                 :name, :code, :status, :install_date, :decommissioned_at, :notes,
                 :manufacturer, :model_number, :serial_number, :vendor,
                 :warranty_start, :warranty_end, :purchase_cents, :custom_fields,
@@ -181,6 +185,7 @@ class SiteAssetRepository
         $stmt->execute([
             'site_id' => (int) $data['site_id'],
             'division_id' => $data['division_id'] ?? null,
+            'service_line_id' => !empty($data['service_line_id']) ? (int) $data['service_line_id'] : null,
             'asset_type_id' => $data['asset_type_id'] ?? null,
             'parent_asset_id' => $data['parent_asset_id'] ?? null,
             'name' => $data['name'],
@@ -249,6 +254,10 @@ class SiteAssetRepository
                 $fields[] = "{$col} = :{$col}";
                 $params[$col] = $data[$col];
             }
+        }
+        if (array_key_exists('service_line_id', $data)) {
+            $fields[] = 'service_line_id = :service_line_id';
+            $params['service_line_id'] = !empty($data['service_line_id']) ? (int) $data['service_line_id'] : null;
         }
         if (array_key_exists('mac_address', $data)) {
             $fields[] = 'mac_address = :mac_address';

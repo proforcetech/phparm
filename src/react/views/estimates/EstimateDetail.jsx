@@ -19,6 +19,21 @@ const formatVehicleLabel = (vehicle) => {
   return base || `Vehicle #${vehicle.id}`
 }
 
+const formatAssetLabel = (asset) => {
+  if (!asset) return ''
+  const code = asset.code ? `[${asset.code}] ` : ''
+  return `${code}${asset.name || `Asset #${asset.id}`}`
+}
+
+const formatAssetSubtext = (asset) => {
+  if (!asset) return ''
+  const parts = []
+  if (asset.serial_number) parts.push(`SN: ${asset.serial_number}`)
+  const location = [asset.building, asset.floor, asset.room].filter(Boolean).join(' / ')
+  if (location) parts.push(location)
+  return parts.join(' • ')
+}
+
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -323,6 +338,15 @@ export default function EstimateDetail() {
                   </Link>
                 </p>
               </div>
+              {estimate.service_line ? (
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Service Line</label>
+                  <p className="mt-1 text-sm text-gray-900">
+                    {estimate.service_line.icon ? `${estimate.service_line.icon} ` : ''}
+                    {estimate.service_line.name}
+                  </p>
+                </div>
+              ) : null}
               {estimate.service_line?.subject_column === 'vehicle_id' && estimate.vehicle_id ? (
                 <div>
                   <label className="text-sm font-medium text-gray-500">
@@ -336,6 +360,24 @@ export default function EstimateDetail() {
                       {formatVehicleLabel(estimate.vehicle) || `Vehicle #${estimate.vehicle_id}`}
                     </Link>
                   </p>
+                </div>
+              ) : null}
+              {estimate.service_line?.subject_column === 'site_asset_id' && estimate.site_asset_id ? (
+                <div>
+                  <label className="text-sm font-medium text-gray-500">
+                    {estimate.service_line?.subject_label || 'Asset'}
+                  </label>
+                  <p className="mt-1 text-sm text-gray-900">
+                    <Link
+                      to={`/cp/assets/${estimate.site_asset_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      {formatAssetLabel(estimate.site_asset) || `Asset #${estimate.site_asset_id}`}
+                    </Link>
+                  </p>
+                  {formatAssetSubtext(estimate.site_asset) ? (
+                    <p className="mt-0.5 text-xs text-gray-500">{formatAssetSubtext(estimate.site_asset)}</p>
+                  ) : null}
                 </div>
               ) : null}
               {estimate.technician_id ? (

@@ -30,6 +30,18 @@ $results[] = [
     'passed' => $valid['mime_type'] === 'image/jpeg' && $valid['extension'] === 'jpg',
 ];
 
+$sanitized = PublicEstimatePhotoUploadValidator::validate([
+    'name' => '../photo.JPG',
+    'tmp_name' => $imagePath,
+    'size' => filesize($imagePath),
+    'error' => UPLOAD_ERR_OK,
+], false);
+
+$results[] = [
+    'scenario' => 'original filename metadata is sanitized',
+    'passed' => $sanitized['original_name'] === '.._photo.JPG',
+];
+
 $textRejected = false;
 try {
     PublicEstimatePhotoUploadValidator::validate([
@@ -62,6 +74,21 @@ try {
 $results[] = [
     'scenario' => 'oversized image is rejected',
     'passed' => $oversizedRejected,
+];
+
+$normalized = PublicEstimatePhotoUploadValidator::normalizeFiles([
+    'name' => ['first.jpg', 'second.png', 'third.gif'],
+    'type' => ['image/jpeg', 'image/png', 'image/gif'],
+    'tmp_name' => ['/tmp/first', '/tmp/second', '/tmp/third'],
+    'error' => [UPLOAD_ERR_OK, UPLOAD_ERR_OK, UPLOAD_ERR_OK],
+    'size' => [10, 20, 30],
+], 2);
+
+$results[] = [
+    'scenario' => 'multi-file upload shape is normalized and capped',
+    'passed' => count($normalized) === 2
+        && $normalized[0]['name'] === 'first.jpg'
+        && $normalized[1]['tmp_name'] === '/tmp/second',
 ];
 
 @unlink($imagePath);

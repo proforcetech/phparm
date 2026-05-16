@@ -104,6 +104,7 @@ return function (Router $router, RouteContext $ctx): void {
                 (int) $request->getAttribute('id'),
                 [
                     'asset_type_id' => $request->queryParam('asset_type_id'),
+                    'service_line_id' => $request->queryParam('service_line_id'),
                     'status' => $request->queryParam('status'),
                     'parent_asset_id' => $request->queryParam('parent_asset_id'),
                     'query' => $request->queryParam('query'),
@@ -128,6 +129,7 @@ return function (Router $router, RouteContext $ctx): void {
                 $request->getAttribute('user'),
                 [
                     'site_id' => $request->queryParam('site_id'),
+                    'service_line_id' => $request->queryParam('service_line_id'),
                     'asset_type_id' => $request->queryParam('asset_type_id'),
                     'status' => $request->queryParam('status'),
                     'query' => $request->queryParam('query'),

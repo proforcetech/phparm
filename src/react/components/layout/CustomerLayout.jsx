@@ -7,9 +7,11 @@ import MobileHeader from './MobileHeader'
 import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
 import ErrorBoundary from '../ErrorBoundary'
 import { useAuthStore } from '../../stores/auth'
+import useSidebarCollapse from '../../hooks/useSidebarCollapse'
 
 export default function CustomerLayout({ children }) {
   const sidebarRef = useRef(null)
+  const { isSidebarCollapsed, toggleSidebarCollapsed } = useSidebarCollapse('customerSidebarCollapsed')
   const { user, checkAuth } = useAuthStore()
 
   useEffect(() => {
@@ -32,12 +34,20 @@ export default function CustomerLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
+      <Navbar
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebarCollapsed={toggleSidebarCollapsed}
+      />
 
       <div className="flex">
-        <Sidebar ref={sidebarRef} type="customer" />
+        <Sidebar
+          ref={sidebarRef}
+          type="customer"
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={toggleSidebarCollapsed}
+        />
 
-        <div className="flex-1 lg:ml-64">
+        <div className={`flex-1 transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
           <MobileHeader
             onToggleSidebar={toggleSidebar}
             title="Customer Portal"

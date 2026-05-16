@@ -361,8 +361,12 @@ export default function DocumentVault() {
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {doc.file_path ? (
-                        <a className="text-primary-600 hover:text-primary-700" href={doc.file_path} target="_blank" rel="noreferrer">
-                          View file
+                        <a
+                          className="text-primary-600 hover:text-primary-700"
+                          href={doc.download_url || documentVaultService.downloadUrl(doc.id)}
+                          rel="noreferrer"
+                        >
+                          Download file
                         </a>
                       ) : '—'}
                     </td>
