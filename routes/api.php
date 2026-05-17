@@ -3594,8 +3594,44 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
     });
 
+    $createWorkorderConversionServices = static function () use ($connection, $auditLogger): array {
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService(
+            $connection,
+            new \App\Services\Messaging\MessagingService($connection)
+        );
+        $financialEntryService = new \App\Services\Financial\FinancialEntryService($connection, $auditLogger);
+        $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
+        $coreReturnSvc = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
+        $pullRequestRepository = new \App\Services\Inventory\InventoryPullRequestRepository(
+            $connection,
+            $auditLogger,
+            $messagingNotifications
+        );
+        $stockOrderRepository = new \App\Services\Inventory\InventoryStockOrderRepository(
+            $connection,
+            $financialEntryService,
+            $auditLogger,
+            $messagingNotifications
+        );
+        $workorderService = new \App\Services\Workorder\WorkorderService(
+            $connection,
+            $workorderRepository,
+            $coreReturnSvc,
+            new \App\Services\Inventory\InventoryPullRequestService($pullRequestRepository),
+            new \App\Services\Inventory\InventoryStockOrderService($stockOrderRepository),
+            $auditLogger,
+            $messagingNotifications,
+            new \App\Services\Customer\CustomerRepository($connection),
+            new \App\Services\ServiceLine\SubjectResolver(
+                new \App\Services\ServiceLine\ServiceLineRepository($connection)
+            )
+        );
+
+        return [$workorderRepository, $workorderService];
+    };
+
     // Estimate routes
-    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger) {
+    $router->group([Middleware::auth()], function (Router $router) use ($connection, $gate, $auditLogger, $createWorkorderConversionServices) {
 
         $bundleController = new \App\Services\Estimate\BundleController(
             new \App\Services\Estimate\BundleService(
@@ -3814,7 +3850,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             return Response::json($data);
         });
 
-        $router->post('/api/estimates/{id}/approve', function (Request $request) use ($estimateController, $connection, $auditLogger, $gate) {
+        $router->post('/api/estimates/{id}/approve', function (Request $request) use ($estimateController, $createWorkorderConversionServices) {
             $user = $request->getAttribute('user');
             $id = (int) $request->getAttribute('id');
             $reason = $request->body()['reason'] ?? null;
@@ -3824,9 +3860,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             // Auto-create workorder after approval
             if ($data) {
                 try {
-                    $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
-                    $coreReturnSvc = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-                    $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $coreReturnSvc, $auditLogger);
+                    [$workorderRepository, $workorderService] = $createWorkorderConversionServices();
 
                     // Check if workorder already exists
                     $existingWorkorder = $workorderRepository->findByEstimateId($id);
@@ -3834,7 +3868,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                         $workorder = $workorderService->createFromEstimate($id, null, $user->id);
                         $data['workorder'] = $workorder->toArray();
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     // Log error but don't fail the approval
                     error_log('Auto workorder creation failed: ' . $e->getMessage());
                 }
@@ -4243,7 +4277,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         }
     })->middleware(Middleware::publicLinkThrottle($publicLinkLimiter));
 
-    $router->post('/api/public/estimate/signature', function (Request $request) use ($connection, $auditLogger) {
+    $router->post('/api/public/estimate/signature', function (Request $request) use ($connection, $auditLogger, $createWorkorderConversionServices) {
         $body = $request->body();
         // R-03 / AUD-065 — long token only on state-changing endpoint.
         $token = $body['token'] ?? '';
@@ -4289,9 +4323,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $estimateId = $signature->estimate_id;
             $workorderCreated = null;
             try {
-                $workorderRepository = new \App\Services\Workorder\WorkorderRepository($connection, $auditLogger);
-                $coreReturnSvc = new \App\Services\Inventory\CoreReturnService($connection, $auditLogger);
-                $workorderService = new \App\Services\Workorder\WorkorderService($connection, $workorderRepository, $coreReturnSvc, $auditLogger);
+                [$workorderRepository, $workorderService] = $createWorkorderConversionServices();
 
                 // Check if workorder already exists
                 $existingWorkorder = $workorderRepository->findByEstimateId($estimateId);
@@ -4299,7 +4331,7 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                     $workorder = $workorderService->createFromEstimate($estimateId, null, null);
                     $workorderCreated = $workorder->id;
                 }
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 // Log error but don't fail the signature capture
                 error_log('Auto workorder creation after signature failed: ' . $e->getMessage());
             }
