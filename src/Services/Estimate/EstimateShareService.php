@@ -76,14 +76,15 @@ class EstimateShareService
             throw new \InvalidArgumentException('Estimate not found');
         }
 
-        // Generate the public link - use short URL for SMS
+        // Generate the public link. State-changing customer actions require
+        // the secure token URL; short codes are view-only.
         $link = $this->links->issueLink($estimateId, $baseUrl, $estimate->expiration_date);
 
         // Get template from settings or use default
         $bodyTemplate = $this->getSetting('templates.estimate.sms_body', 'Hi {customer}, your estimate #{estimate_number} for {total} is ready. View: {link} - {shop_name}');
 
         // Build the variables for template substitution
-        $variables = $this->buildTemplateVariables($estimate, $link['short_url']);
+        $variables = $this->buildTemplateVariables($estimate, $link['secure_url']);
 
         // Replace variables in template
         $message = $this->replaceVariables($bodyTemplate, $variables);
@@ -101,7 +102,7 @@ class EstimateShareService
         return [
             'success' => true,
             'recipient' => $phone,
-            'link' => $link['short_url'],
+            'link' => $link['secure_url'],
         ];
     }
 

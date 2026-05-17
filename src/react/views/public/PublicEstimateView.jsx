@@ -215,6 +215,7 @@ export default function PublicEstimateView() {
   const query = useMemo(() => new URLSearchParams(location.search), [location.search])
 
   const requireSignature = Boolean(estimate?.require_signature)
+  const isReadOnlyShortLink = !token && Boolean(shortCode)
 
   const loadEstimate = useCallback(async () => {
     setLoading(true)
@@ -334,7 +335,7 @@ export default function PublicEstimateView() {
       success('Job approved.')
     } catch (approveError) {
       console.error('Failed to approve job:', approveError)
-      error(approveError.response?.data?.error || 'Failed to approve job.')
+      error(approveError.response?.data?.error || approveError.message || 'Failed to approve job.')
     }
   }
 
@@ -344,7 +345,7 @@ export default function PublicEstimateView() {
       success('Job rejected.')
     } catch (rejectError) {
       console.error('Failed to reject job:', rejectError)
-      error(rejectError.response?.data?.error || 'Failed to reject job.')
+      error(rejectError.response?.data?.error || rejectError.message || 'Failed to reject job.')
     }
   }
 
@@ -412,7 +413,7 @@ export default function PublicEstimateView() {
       loadEstimate()
     } catch (signatureError) {
       console.error('Failed to sign estimate:', signatureError)
-      error(signatureError.response?.data?.error || 'Failed to sign estimate.')
+      error(signatureError.response?.data?.error || signatureError.message || 'Failed to sign estimate.')
     } finally {
       setSubmitting(false)
     }
@@ -457,6 +458,12 @@ export default function PublicEstimateView() {
               {statusLabels[estimate.status] || estimate.status}
             </Badge>
           </div>
+
+          {isReadOnlyShortLink ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              This short link is view-only. To approve, reject, or sign this estimate, open the secure approval link from your message or ask the shop to resend it.
+            </div>
+          ) : null}
 
           <div className="grid gap-6 md:grid-cols-2">
             <div className="rounded-xl border border-gray-200 p-4">
@@ -559,7 +566,7 @@ export default function PublicEstimateView() {
                     variant="primary"
                     size="sm"
                     onClick={() => handleApproveJob(job.id)}
-                    disabled={job.customer_status === 'approved' || (requireSignature && !hasSignature)}
+                    disabled={isReadOnlyShortLink || job.customer_status === 'approved' || (requireSignature && !hasSignature)}
                   >
                     Approve Job
                   </Button>
@@ -567,7 +574,7 @@ export default function PublicEstimateView() {
                     variant="danger"
                     size="sm"
                     onClick={() => handleRejectJob(job.id)}
-                    disabled={job.customer_status === 'rejected' || (requireSignature && !hasSignature)}
+                    disabled={isReadOnlyShortLink || job.customer_status === 'rejected' || (requireSignature && !hasSignature)}
                   >
                     Reject Job
                   </Button>
@@ -698,7 +705,7 @@ export default function PublicEstimateView() {
               <Button
                 variant="primary"
                 onClick={handleSignEstimate}
-                disabled={hasSignature || submitting || !jobs.length}
+                disabled={isReadOnlyShortLink || hasSignature || submitting || !jobs.length}
                 loading={submitting}
               >
                 Approve & Sign Estimate

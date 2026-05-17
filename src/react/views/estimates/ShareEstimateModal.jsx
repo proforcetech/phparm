@@ -41,7 +41,7 @@ export default function ShareEstimateModal({ open, estimate, onClose }) {
       .then((response) => {
         if (cancelled) return
         const data = response?.data ?? {}
-        setShareUrl(data.short_url || data.secure_url || '')
+        setShareUrl(data.secure_url || data.short_url || '')
       })
       .catch((error) => {
         if (cancelled) return
@@ -134,7 +134,7 @@ export default function ShareEstimateModal({ open, estimate, onClose }) {
         {tab === 'link' ? (
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
-              Anyone with this short link can view the estimate.
+              Anyone with this secure link can view and respond to the estimate.
             </p>
             {linkError ? <Alert variant="danger">{linkError}</Alert> : null}
             <div className="flex gap-2">
@@ -194,7 +194,7 @@ export default function ShareEstimateModal({ open, estimate, onClose }) {
         {tab === 'sms' ? (
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
-              Text the short link to the customer's mobile.
+              Text the secure approval link to the customer's mobile.
             </p>
             {sendError ? <Alert variant="danger">{sendError}</Alert> : null}
             <div>

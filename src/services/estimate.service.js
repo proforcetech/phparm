@@ -121,8 +121,8 @@ export default {
 
   /**
    * Issue a public sharing link for the estimate without sending it.
-   * Returns { short_url, secure_url } — short_url is a /e/{code} redirect
-   * suitable for SMS or copy-to-clipboard.
+   * Returns { short_url, secure_url }. secure_url is required for customer
+   * approve/reject/sign actions; short_url is view-only.
    * @param {number} id - Estimate ID
    * @returns {Promise}
    */
