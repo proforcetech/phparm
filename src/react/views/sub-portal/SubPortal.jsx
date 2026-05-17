@@ -14,10 +14,10 @@ import subPortalService from '../../../services/sub-portal.service'
 /**
  * Phase 18 / C2 — public subcontractor self-service portal.
  *
- * Mounted OUTSIDE the staff app shell at /sub-portal/:token (or
- * /sub-portal?token=...). The token is the entire credential — the staff
- * user issued it and handed it to the sub by side channel. We attach it
- * to subPortalService and never call the shared `api` axios instance.
+ * Mounted OUTSIDE the staff app shell at /sub-portal, /sub-portal/:token,
+ * or /sub-portal?token=.... Link tokens still work, and subcontractors can
+ * also sign in with email/password. We attach the resulting portal token to
+ * subPortalService and never call the shared `api` axios instance.
  *
  * UX is intentionally minimal — meant to work on a phone in the field:
  *   - top bar shows who you're logged in as
@@ -59,11 +59,14 @@ export default function SubPortal() {
   const { token: routeToken } = useParams()
   const [search] = useSearchParams()
   const queryToken = search.get('token')
-  const token = (routeToken || queryToken || '').trim()
+  const urlToken = (routeToken || queryToken || '').trim()
 
   const [me, setMe] = useState(null)
   const [authError, setAuthError] = useState('')
   const [loadingMe, setLoadingMe] = useState(true)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginBusy, setLoginBusy] = useState(false)
 
   const [assignments, setAssignments] = useState([])
   const [loadingAssignments, setLoadingAssignments] = useState(false)
@@ -88,24 +91,63 @@ export default function SubPortal() {
   const [noteText, setNoteText] = useState('')
 
   useEffect(() => {
+    const token = urlToken || subPortalService.getToken()
     if (!token) {
-      setAuthError('No token provided. Use the link your dispatcher sent you.')
+      setAuthError('')
       setLoadingMe(false)
       return
     }
     subPortalService.setToken(token)
     setLoadingMe(true)
+    setAuthError('')
     subPortalService
       .me()
       .then((res) => setMe(res?.data ?? null))
-      .catch((e) => setAuthError(
-        e?.response?.data?.message
-        || (e?.response?.status === 401 ? 'Token is invalid or expired.' : '')
-        || e?.message
-        || 'Could not load portal.'
-      ))
+      .catch((e) => {
+        if (!urlToken) subPortalService.clearToken()
+        setMe(null)
+        setAuthError(
+          e?.response?.data?.message
+          || (e?.response?.status === 401 ? 'Session is invalid or expired.' : '')
+          || e?.message
+          || 'Could not load portal.'
+        )
+      })
       .finally(() => setLoadingMe(false))
-  }, [token])
+  }, [urlToken])
+
+  const submitLogin = async (event) => {
+    event.preventDefault()
+    setLoginBusy(true)
+    setAuthError('')
+    try {
+      const res = await subPortalService.login(loginEmail.trim(), loginPassword)
+      const session = res?.data ?? res ?? null
+      if (session?.subcontractor) {
+        setMe({ subcontractor: session.subcontractor, token: session.token })
+      } else {
+        const refreshed = await subPortalService.me()
+        setMe(refreshed?.data ?? null)
+      }
+      setLoginPassword('')
+    } catch (e) {
+      subPortalService.clearToken()
+      setAuthError(e?.response?.data?.message || e?.message || 'Unable to sign in.')
+    } finally {
+      setLoginBusy(false)
+      setLoadingMe(false)
+    }
+  }
+
+  const logout = () => {
+    subPortalService.clearToken()
+    setMe(null)
+    setAssignments([])
+    setOpenId(null)
+    setOpenAssignment(null)
+    setPods([])
+    setAuthError('')
+  }
 
   const loadAssignments = useCallback(() => {
     if (!me) return
@@ -270,17 +312,39 @@ export default function SubPortal() {
     )
   }
 
-  if (authError || !me) {
+  if (!me) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <Card className="max-w-md w-full">
-          <div className="p-6 space-y-3">
+          <form onSubmit={submitLogin} className="p-6 space-y-4">
             <h1 className="text-xl font-semibold">Subcontractor portal</h1>
-            <Alert variant="danger">{authError || 'Could not load portal.'}</Alert>
-            <p className="text-sm text-gray-500">
-              Ask your dispatcher to send you a fresh portal link.
-            </p>
-          </div>
+            {authError && <Alert variant="danger">{authError}</Alert>}
+            <Input
+              label="Email"
+              type="email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              required
+              autocomplete="email"
+              placeholder="you@company.com"
+            />
+            <Input
+              label="Password"
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              required
+              autocomplete="current-password"
+            />
+            <Button
+              type="submit"
+              fullWidth
+              loading={loginBusy}
+              disabled={loginBusy || !loginEmail.trim() || !loginPassword}
+            >
+              Sign in
+            </Button>
+          </form>
         </Card>
       </div>
     )
@@ -297,7 +361,10 @@ export default function SubPortal() {
             <h1 className="text-lg font-semibold">{sub.company_name}</h1>
             {sub.contact_name && <div className="text-sm text-gray-500">{sub.contact_name}</div>}
           </div>
-          <Badge variant="success">Active</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="success">Active</Badge>
+            <Button variant="ghost" size="sm" onClick={logout}>Sign out</Button>
+          </div>
         </div>
       </header>
 

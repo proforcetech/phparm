@@ -66,6 +66,29 @@ class SubcontractorPortalController
     // ─────────────────────────────────────────── self-service surface ──
 
     /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function login(array $payload, ?string $clientIp = null): array
+    {
+        $email = isset($payload['email']) ? (string) $payload['email'] : '';
+        $password = isset($payload['password']) ? (string) $payload['password'] : '';
+        $resolved = $this->service->authenticateCredentials($email, $password, $clientIp);
+        if ($resolved === null) {
+            throw new \App\Support\Auth\UnauthorizedException('Invalid credentials');
+        }
+
+        return [
+            'data' => [
+                'access_token' => $resolved['plaintext'],
+                'token_type' => 'Bearer',
+                'token' => self::tokenToArray($resolved['token']),
+                'subcontractor' => self::subToPublicArray($resolved['subcontractor']),
+            ],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function me(SubcontractorPortalToken $token, Subcontractor $sub): array
