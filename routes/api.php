@@ -4732,6 +4732,24 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
                 }
             }
 
+            if (!empty($data['site_asset_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, site_id, name, code, status FROM site_assets WHERE id = :id');
+                $stmt->execute(['id' => $data['site_asset_id']]);
+                $asset = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($asset) {
+                    $data['site_asset'] = $asset;
+                }
+            }
+
+            if (!empty($data['fleet_unit_id'])) {
+                $stmt = $connection->pdo()->prepare('SELECT id, company_id, unit_number, unit_type, year, make, model, license_plate, status FROM fleet_units WHERE id = :id');
+                $stmt->execute(['id' => $data['fleet_unit_id']]);
+                $fleetUnit = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($fleetUnit) {
+                    $data['fleet_unit'] = $fleetUnit;
+                }
+            }
+
             return Response::json($data);
         });
 

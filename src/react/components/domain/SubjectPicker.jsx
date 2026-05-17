@@ -54,6 +54,7 @@ function formatAssetSubtext(asset) {
  * only honors the column the line cares about.
  */
 export default function SubjectPicker({
+  availableServiceLines = null,
   serviceLineId,
   vehicleId,
   siteAssetId,
@@ -61,8 +62,10 @@ export default function SubjectPicker({
   onChange,
   disabled = false,
   required: requiredProp,
+  showServiceLineSelector = true,
 }) {
   const { serviceLines, currentServiceLineId } = useAuthStore()
+  const lineOptions = availableServiceLines ?? serviceLines
 
   const effectiveServiceLineId = useMemo(() => {
     if (serviceLineId !== null && serviceLineId !== undefined) return serviceLineId
@@ -70,8 +73,8 @@ export default function SubjectPicker({
   }, [serviceLineId, currentServiceLineId])
 
   const activeLine = useMemo(
-    () => serviceLines.find((l) => l.id === effectiveServiceLineId) ?? null,
-    [serviceLines, effectiveServiceLineId]
+    () => lineOptions.find((l) => l.id === effectiveServiceLineId) ?? null,
+    [lineOptions, effectiveServiceLineId]
   )
   const rule = getRuleForLine(activeLine)
   const isRequired = requiredProp ?? rule.required
@@ -152,18 +155,18 @@ export default function SubjectPicker({
     }
   }
 
-  const hasServiceLines = Array.isArray(serviceLines) && serviceLines.length > 0
+  const hasServiceLines = Array.isArray(lineOptions) && lineOptions.length > 0
 
   return (
     <div className="space-y-3">
-      {hasServiceLines ? (
+      {showServiceLineSelector && hasServiceLines ? (
         <div>
           <label className="block text-sm font-medium text-gray-700">Service Line</label>
           <Select
             value={effectiveServiceLineId ?? ''}
             onChange={handleServiceLineChange}
-            disabled={disabled || serviceLines.length <= 1}
-            options={serviceLines.map((line) => ({
+            disabled={disabled || lineOptions.length <= 1}
+            options={lineOptions.map((line) => ({
               value: line.id,
               label: `${line.icon ? line.icon + ' ' : ''}${line.name}`,
             }))}

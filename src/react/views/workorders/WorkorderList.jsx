@@ -11,6 +11,7 @@ import Select from '../../components/ui/Select'
 import Table from '../../components/ui/Table'
 import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
+import { useAuthStore } from '../../stores/auth'
 import { useToast } from '../../stores/toast'
 
 const pageSize = 50
@@ -114,6 +115,8 @@ export default function WorkorderList() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { success, error } = useToast()
+  const { hasPermission } = useAuthStore()
+  const canCreateDirect = hasPermission('workorders.create_direct')
 
   const [loading, setLoading] = useState(false)
   const [workorders, setWorkorders] = useState([])
@@ -426,6 +429,11 @@ export default function WorkorderList() {
           <h1 className="text-2xl font-bold text-gray-900">Workorders</h1>
           <p className="mt-1 text-sm text-gray-500">Manage active repair workorders</p>
         </div>
+        {canCreateDirect ? (
+          <Button onClick={() => navigate('/cp/workorders/create')}>
+            New Workorder
+          </Button>
+        ) : null}
       </div>
 
       <div className="mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -568,7 +576,7 @@ export default function WorkorderList() {
                     </svg>
                   </Button>
                 ) : null}
-                {row.status === 'completed' ? (
+                {row.customer_id && row.status === 'completed' ? (
                   <Button
                     variant="ghost"
                     size="sm"

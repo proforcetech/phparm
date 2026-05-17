@@ -162,9 +162,9 @@ return [
                 // "who has access where?" when triaging an after-hours
                 // alarm. Manage stays with managers/admins.
                 'security_credentials.view',
-                // Direct workorder creation (no estimate) for B2B customers
-                // under contract. Granted as a narrow capability so it does
-                // not require the broader workorders.manage gate.
+                // Direct workorder creation (no estimate) for contracted B2B
+                // customers and internal company work. Granted as a narrow
+                // capability so it does not require broader WO management.
                 'workorders.create_direct',
             ],
         ],

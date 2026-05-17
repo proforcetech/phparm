@@ -82,16 +82,18 @@ export default {
   },
 
   /**
-   * Create a direct workorder for a B2B customer with an active contract.
-   * Bypasses the estimate stage. Backend enforces:
+   * Create a direct workorder, bypassing the estimate stage. Backend enforces:
    *   - workorders.create_direct permission
-   *   - customer.company_id is set
-   *   - active contract covering the chosen service_line_id
-   *   - subject FK matches the service_line's subject_column rule
+   *   - contract mode: customer.company_id is set and has an active contract
+   *     covering the chosen service_line_id
+   *   - internal mode: is_internal/work_context=internal stores customer_id NULL
+   *   - subject FK matches the service_line's subject_column rule for
+   *     customer/contract work
    *
    * Payload mirrors WorkorderService::createDirect — minimum:
-   *   { customer_id, service_line_id, jobs: [{ title, items: [...] }],
-   *     vehicle_id?|site_asset_id?, branch_id?, type?, priority?, ... }
+   *   { service_line_id, jobs: [{ title, items: [...] }],
+   *     customer_id? or is_internal?, vehicle_id?|site_asset_id?|fleet_unit_id?,
+   *     branch_id?, type?, priority?, ... }
    *
    * @param {Object} payload
    * @returns {Promise}

@@ -68,7 +68,7 @@ class Workorder extends BaseModel
     public int $id;
     public string $number;
     public ?int $estimate_id = null;
-    public int $customer_id;
+    public ?int $customer_id = null;
     // Subject FKs — exactly one is populated based on service_line_id; the
     // others are NULL. SubjectResolver enforces the per-line "must have a
     // subject" rule. Auto-repair lines require vehicle_id; property lines

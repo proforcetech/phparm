@@ -157,9 +157,10 @@ class WorkorderController
     /**
      * POST /api/workorders/direct
      *
-     * Creates a workorder for a B2B customer under contract, bypassing the
-     * estimate stage. The contract gate lives in WorkorderService::createDirect
-     * — this method just enforces the role/branch checks and forwards.
+     * Creates a contracted customer or internal company workorder, bypassing
+     * the estimate stage. The eligibility gates live in
+     * WorkorderService::createDirect — this method just enforces the
+     * role/branch checks and forwards.
      *
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
