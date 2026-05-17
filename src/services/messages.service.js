@@ -5,6 +5,11 @@ export const messagingService = {
     const response = await api.get('/messages/threads')
     return response.data
   },
+  async listParticipants(query = '') {
+    const params = query ? { query } : {}
+    const response = await api.get('/messages/participants', { params })
+    return response.data
+  },
   async createThread(payload) {
     const response = await api.post('/messages/threads', payload)
     return response.data

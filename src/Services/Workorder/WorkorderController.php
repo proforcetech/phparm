@@ -121,6 +121,14 @@ class WorkorderController
         $data['jobs'] = $this->repository->getJobsWithItems($id);
         $data['status_history'] = array_map(fn($h) => $h->toArray(), $this->repository->getStatusHistory($id));
         $data['sub_estimates'] = array_map(fn($e) => $e->toArray(), $this->service->getSubEstimates($id));
+        if ($user->role !== 'customer') {
+            $data['internal_note_entries'] = array_map(
+                fn($note) => $note->toArray(),
+                $this->repository->getInternalNotes($id)
+            );
+        } else {
+            unset($data['internal_notes']);
+        }
 
         return $data;
     }
@@ -562,6 +570,73 @@ class WorkorderController
 
         return [
             'timeline' => $timeline,
+        ];
+    }
+
+    /**
+     * GET /api/workorders/{id}/internal-notes
+     * @param array<string, mixed> $params
+     * @return array<string, mixed>
+     */
+    public function internalNotes(User $user, int $id, array $params = []): array
+    {
+        $this->assertViewAccess($user);
+
+        if ($user->role === 'customer') {
+            throw new UnauthorizedException('Internal workorder notes are staff-only.');
+        }
+
+        $workorder = $this->repository->find($id);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found');
+        }
+
+        $this->assertBranchAccess($user, $workorder->branch_id);
+
+        $limit = isset($params['limit']) ? max(1, min(100, (int) $params['limit'])) : 50;
+        $offset = isset($params['offset']) ? max(0, (int) $params['offset']) : 0;
+
+        return [
+            'data' => array_map(
+                fn($note) => $note->toArray(),
+                $this->repository->getInternalNotes($id, $limit, $offset)
+            ),
+        ];
+    }
+
+    /**
+     * POST /api/workorders/{id}/internal-notes
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function addInternalNote(User $user, int $id, array $payload): array
+    {
+        $this->assertManageAccess($user);
+
+        $workorder = $this->repository->find($id);
+        if ($workorder === null) {
+            throw new InvalidArgumentException('Workorder not found');
+        }
+
+        $this->assertBranchAccess($user, $workorder->branch_id);
+
+        $body = trim((string) ($payload['body'] ?? $payload['note'] ?? ''));
+        if ($body === '') {
+            throw new InvalidArgumentException('body is required');
+        }
+        if (strlen($body) > 5000) {
+            throw new InvalidArgumentException('Internal note must be 5,000 characters or fewer.');
+        }
+
+        $context = isset($payload['context']) && $payload['context'] !== ''
+            ? substr((string) $payload['context'], 0, 80)
+            : null;
+
+        $note = $this->repository->createInternalNote($id, $user->id, $body, $context);
+
+        return [
+            'data' => $note->toArray(),
+            'message' => 'Internal note added',
         ];
     }
 

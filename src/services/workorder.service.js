@@ -235,6 +235,26 @@ export default {
   },
 
   /**
+   * Get staff-only internal notes for a workorder
+   * @param {number} id - Workorder ID
+   * @returns {Promise}
+   */
+  getInternalNotes(id) {
+    return api.get(`/workorders/${id}/internal-notes`)
+  },
+
+  /**
+   * Add a staff-only internal note to a workorder
+   * @param {number} id - Workorder ID
+   * @param {string} body - Note body
+   * @param {string|null} context - Optional workflow context label
+   * @returns {Promise}
+   */
+  createInternalNote(id, body, context = null) {
+    return api.post(`/workorders/${id}/internal-notes`, { body, context })
+  },
+
+  /**
    * Update job status within workorder
    * @param {number} workorderId - Workorder ID
    * @param {number} jobId - Job ID

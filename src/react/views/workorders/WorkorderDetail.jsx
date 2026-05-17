@@ -11,7 +11,6 @@ import Loading from '../../components/ui/Loading'
 import Modal from '../../components/ui/Modal'
 import Select from '../../components/ui/Select'
 import Textarea from '../../components/ui/Textarea'
-import ChatWidget from '../../components/chat/ChatWidget'
 import Timeline from '../../components/Timeline'
 import workorderService from '../../../services/workorder.service'
 import userService from '../../../services/user.service'
@@ -186,6 +185,7 @@ export default function WorkorderDetail() {
   const [jobs, setJobs] = useState([])
   const [subEstimates, setSubEstimates] = useState([])
   const [timelineEvents, setTimelineEvents] = useState([])
+  const [internalNotes, setInternalNotes] = useState([])
   const [technicians, setTechnicians] = useState([])
   const [pullRequests, setPullRequests] = useState([])
   const [bundles, setBundles] = useState([])
@@ -212,6 +212,7 @@ export default function WorkorderDetail() {
   const [creatingSubEstimate, setCreatingSubEstimate] = useState(false)
   const [creatingPullRequest, setCreatingPullRequest] = useState(false)
   const [markingGoa, setMarkingGoa] = useState(false)
+  const [addingInternalNote, setAddingInternalNote] = useState(false)
 
   const [convertForm, setConvertForm] = useState({ due_date: '' })
   const [assignForm, setAssignForm] = useState({ technician_id: '' })
@@ -240,6 +241,7 @@ export default function WorkorderDetail() {
     tax_rate: 0,
     jobs: [createSubEstimateJob()],
   })
+  const [internalNoteBody, setInternalNoteBody] = useState('')
 
   const completedJobsCount = useMemo(() => {
     return jobs.filter((job) => ['completed', 'goa'].includes(job.status)).length
@@ -281,6 +283,15 @@ export default function WorkorderDetail() {
     }
   }, [id])
 
+  const loadInternalNotes = useCallback(async () => {
+    try {
+      const response = await workorderService.getInternalNotes(id)
+      setInternalNotes(response.data?.data || [])
+    } catch (noteError) {
+      console.error('Failed to load internal notes:', noteError)
+    }
+  }, [id])
+
   const loadWorkorder = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
@@ -290,6 +301,7 @@ export default function WorkorderDetail() {
       setWorkorder(data)
       setJobs(data.jobs || [])
       setSubEstimates(data.sub_estimates || [])
+      setInternalNotes(data.internal_note_entries || [])
       setPriorityForm({ priority: data.priority || 'normal' })
       setAssignForm({ technician_id: data.assigned_technician_id || '' })
       loadTimeline()
@@ -337,7 +349,8 @@ export default function WorkorderDetail() {
     loadTechnicians()
     loadPullRequests()
     loadBundles()
-  }, [loadBundles, loadPullRequests, loadTechnicians, loadWorkorder])
+    loadInternalNotes()
+  }, [loadBundles, loadInternalNotes, loadPullRequests, loadTechnicians, loadWorkorder])
 
   const updateStatus = async (status, notes = null) => {
     if (!workorder) return
@@ -853,6 +866,34 @@ export default function WorkorderDetail() {
     } catch (cancelError) {
       console.error('Failed to cancel request:', cancelError)
       toastError('Failed to cancel request')
+    }
+  }
+
+  const addInternalNote = async () => {
+    if (!workorder) return
+    const body = internalNoteBody.trim()
+    if (!body) {
+      toastError('Enter an internal note')
+      return
+    }
+
+    setAddingInternalNote(true)
+    try {
+      const response = await workorderService.createInternalNote(workorder.id, body)
+      const note = response.data?.data
+      if (note) {
+        setInternalNotes((prev) => [note, ...prev])
+      } else {
+        loadInternalNotes()
+      }
+      setInternalNoteBody('')
+      success('Internal note added')
+      loadTimeline()
+    } catch (noteError) {
+      console.error('Failed to add internal note:', noteError)
+      toastError(noteError.response?.data?.error || 'Failed to add internal note')
+    } finally {
+      setAddingInternalNote(false)
     }
   }
 
@@ -1394,13 +1435,55 @@ export default function WorkorderDetail() {
             </div>
           </Card>
 
-          <div>
-            <ChatWidget
-              variant="embedded"
-              title="Dispatch Chat"
-              subtitle="Coordinate updates with dispatch"
-            />
-          </div>
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">Internal Notes</h3>
+              <Badge variant="secondary" size="sm">{internalNotes.length}</Badge>
+            </div>
+
+            <div className="space-y-3">
+              <Textarea
+                rows={3}
+                maxlength={5000}
+                modelValue={internalNoteBody}
+                placeholder="Add an internal note..."
+                disabled={addingInternalNote}
+                onUpdateModelValue={setInternalNoteBody}
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={addInternalNote}
+                  disabled={!internalNoteBody.trim() || addingInternalNote}
+                  loading={addingInternalNote}
+                >
+                  {addingInternalNote ? 'Adding...' : 'Add Note'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {internalNotes.length === 0 ? (
+                <div className="rounded-md border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+                  No internal notes yet
+                </div>
+              ) : (
+                internalNotes.map((note) => (
+                  <div key={note.id} className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-gray-900">
+                        {note.author_name || 'Staff'}
+                      </span>
+                      <span className="shrink-0 text-xs text-gray-500">
+                        {formatDateTime(note.created_at)}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-gray-700">{note.body}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
 
           <Card>
             <div className="mb-4">

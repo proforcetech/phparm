@@ -25,7 +25,8 @@ class MessagingService
     public function listThreads(int $participantId): array
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT t.id, t.subject, t.created_by, t.created_at, t.updated_at,
+            'SELECT t.id, t.subject, t.ticket_id, t.workorder_id, t.created_by, t.created_at, t.updated_at,
+                mnt.scope_type, mnt.scope_id,
                 (SELECT m.body FROM message_messages m WHERE m.thread_id = t.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
                 (SELECT m.created_at FROM message_messages m WHERE m.thread_id = t.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_at,
                 (SELECT COUNT(*)
@@ -37,6 +38,7 @@ class MessagingService
                 ) AS unread_count
             FROM message_threads t
             JOIN message_participants p ON p.thread_id = t.id
+            LEFT JOIN message_notification_threads mnt ON mnt.thread_id = t.id
             WHERE p.participant_id = :participant_id
             ORDER BY COALESCE(last_message_at, t.created_at) DESC'
         );
@@ -69,7 +71,7 @@ class MessagingService
 
         $stmt = $this->connection->pdo()->prepare(
             'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
-                    u.first_name, u.last_name
+                    u.name, u.email
              FROM message_messages m
              JOIN users u ON u.id = m.sender_id
              WHERE m.thread_id = :thread_id
@@ -103,7 +105,7 @@ class MessagingService
                 if ($lastReadMessageId >= $messageId) {
                     $readBy[] = [
                         'id' => (int) $participant['id'],
-                        'name' => $participant['name'] ?? trim(($participant['first_name'] ?? '') . ' ' . ($participant['last_name'] ?? '')),
+                        'name' => $participant['name'] ?? $participant['email'] ?? 'Staff',
                     ];
                 }
             }
@@ -132,6 +134,7 @@ class MessagingService
         if (!in_array($creatorId, $normalizedParticipants, true)) {
             $normalizedParticipants[] = $creatorId;
         }
+        $this->assertStaffParticipants($normalizedParticipants);
 
         $pdo = $this->connection->pdo();
         $pdo->beginTransaction();
@@ -186,7 +189,7 @@ class MessagingService
 
         $messageStmt = $this->connection->pdo()->prepare(
             'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
-                    u.first_name, u.last_name
+                    u.name, u.email
              FROM message_messages m
              JOIN users u ON u.id = m.sender_id
              WHERE m.thread_id = :thread_id
@@ -230,7 +233,7 @@ class MessagingService
 
         $messageStmt = $pdo->prepare(
             'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
-                    u.first_name, u.last_name
+                    u.name, u.email
              FROM message_messages m
              JOIN users u ON u.id = m.sender_id
              WHERE m.thread_id = :thread_id
@@ -349,6 +352,46 @@ class MessagingService
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAvailableParticipants(int $requesterId, ?string $query = null): array
+    {
+        $where = [
+            'id != :requester_id',
+            'active = 1',
+            "role NOT IN ('customer', 'portal_user')",
+        ];
+        $params = [
+            'requester_id' => $requesterId,
+        ];
+
+        $query = trim((string) $query);
+        if ($query !== '') {
+            $where[] = '(LOWER(name) LIKE :query OR LOWER(email) LIKE :query OR LOWER(role) LIKE :query)';
+            $params['query'] = '%' . strtolower($query) . '%';
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT id, name, email, role
+             FROM users
+             WHERE ' . implode(' AND ', $where) . '
+             ORDER BY name ASC, email ASC
+             LIMIT 50'
+        );
+        $stmt->execute($params);
+
+        return array_map(
+            static fn ($row) => [
+                'id' => (int) $row['id'],
+                'name' => (string) ($row['name'] ?: $row['email']),
+                'email' => (string) $row['email'],
+                'role' => (string) $row['role'],
+            ],
+            $stmt->fetchAll(PDO::FETCH_ASSOC)
+        );
+    }
+
+    /**
      * @param array<int, int> $threadIds
      * @return array<int, array<int, array<string, mixed>>>
      */
@@ -360,11 +403,11 @@ class MessagingService
 
         $placeholders = implode(',', array_fill(0, count($threadIds), '?'));
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT p.thread_id, u.id, u.first_name, u.last_name, u.role
+            'SELECT p.thread_id, u.id, u.name, u.email, u.role
              FROM message_participants p
              JOIN users u ON u.id = p.participant_id
              WHERE p.thread_id IN (' . $placeholders . ')
-             ORDER BY u.first_name ASC, u.last_name ASC'
+             ORDER BY u.name ASC, u.email ASC'
         );
         $stmt->execute($threadIds);
 
@@ -373,10 +416,9 @@ class MessagingService
             $threadId = (int) $row['thread_id'];
             $participants[$threadId][] = [
                 'id' => (int) $row['id'],
-                'first_name' => $row['first_name'],
-                'last_name' => $row['last_name'],
+                'name' => (string) ($row['name'] ?: $row['email']),
+                'email' => (string) $row['email'],
                 'role' => $row['role'],
-                'name' => trim($row['first_name'] . ' ' . $row['last_name']),
             ];
         }
 
@@ -456,7 +498,7 @@ class MessagingService
     private function resolveUserName(int $userId): string
     {
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT first_name, last_name, name FROM users WHERE id = :id'
+            'SELECT name, email FROM users WHERE id = :id'
         );
         $stmt->execute(['id' => $userId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -467,7 +509,7 @@ class MessagingService
 
         $name = trim((string) ($row['name'] ?? ''));
         if ($name === '') {
-            $name = trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? ''));
+            $name = trim((string) ($row['email'] ?? ''));
         }
 
         return $name !== '' ? $name : 'Someone';
@@ -594,6 +636,33 @@ class MessagingService
 
         if (!$stmt->fetchColumn()) {
             throw new UnauthorizedException('User is not a participant in this thread');
+        }
+    }
+
+    /**
+     * @param array<int, int> $participantIds
+     */
+    private function assertStaffParticipants(array $participantIds): void
+    {
+        $participantIds = array_values(array_unique(array_filter(array_map('intval', $participantIds))));
+        if ($participantIds === []) {
+            throw new InvalidArgumentException('At least one participant is required');
+        }
+
+        $placeholders = implode(',', array_fill(0, count($participantIds), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT id
+             FROM users
+             WHERE active = 1
+               AND role NOT IN ('customer', 'portal_user')
+               AND id IN (" . $placeholders . ')'
+        );
+        $stmt->execute($participantIds);
+        $allowed = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $missing = array_diff($participantIds, $allowed);
+
+        if ($missing !== []) {
+            throw new InvalidArgumentException('All message participants must be active internal users.');
         }
     }
 }

@@ -120,6 +120,12 @@ class WarrantyController
 
         $customerId = $this->customerIdOrFail($user);
         $claim = $this->service->submit($data, $customerId, $user->id);
+
+        $this->messagingNotifications?->dispatch('warranty.claim_submitted', [
+            'claim_id' => $claim->id,
+            'actor_id' => $user->id,
+        ]);
+
         return $claim->toArray();
     }
 

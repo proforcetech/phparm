@@ -14,6 +14,15 @@ class MessagingNotificationService
      * @var array<string, array<string, mixed>>
      */
     private array $eventMap = [
+        'warranty.claim_submitted' => [
+            'subject' => 'Warranty Claim #{claim_id}',
+            'message' => 'Customer submitted warranty claim #{claim_id}.',
+            'scope_type' => 'warranty_claim',
+            'scope_id' => 'claim_id',
+            'participants' => [
+                'roles' => ['admin', 'manager'],
+            ],
+        ],
         'warranty.status_changed' => [
             'subject' => 'Warranty Claim #{claim_id}',
             'message' => '{actor} updated warranty claim #{claim_id} to {status}{message_note}.',
@@ -45,6 +54,46 @@ class MessagingNotificationService
         'estimate.link_sent' => [
             'subject' => 'Estimate #{estimate_number}',
             'message' => '{actor} sent estimate #{estimate_number} to {recipient} via {channel}.',
+            'scope_type' => 'estimate',
+            'scope_id' => 'estimate_id',
+            'participants' => [
+                'roles' => ['admin', 'manager'],
+                'include_ids' => ['technician_id'],
+            ],
+        ],
+        'estimate.job_public_approved' => [
+            'subject' => 'Estimate #{estimate_number}',
+            'message' => 'Customer approved job #{job_id} on estimate #{estimate_number}{message_note}.',
+            'scope_type' => 'estimate',
+            'scope_id' => 'estimate_id',
+            'participants' => [
+                'roles' => ['admin', 'manager'],
+                'include_ids' => ['technician_id'],
+            ],
+        ],
+        'estimate.job_public_rejected' => [
+            'subject' => 'Estimate #{estimate_number}',
+            'message' => 'Customer rejected job #{job_id} on estimate #{estimate_number}{message_note}.',
+            'scope_type' => 'estimate',
+            'scope_id' => 'estimate_id',
+            'participants' => [
+                'roles' => ['admin', 'manager'],
+                'include_ids' => ['technician_id'],
+            ],
+        ],
+        'estimate.signature_captured' => [
+            'subject' => 'Estimate #{estimate_number}',
+            'message' => 'Customer signature captured on estimate #{estimate_number} by {signer}.',
+            'scope_type' => 'estimate',
+            'scope_id' => 'estimate_id',
+            'participants' => [
+                'roles' => ['admin', 'manager'],
+                'include_ids' => ['technician_id'],
+            ],
+        ],
+        'estimate.public_comment_added' => [
+            'subject' => 'Estimate #{estimate_number}',
+            'message' => 'Customer commented on estimate #{estimate_number}: "{message}"',
             'scope_type' => 'estimate',
             'scope_id' => 'estimate_id',
             'participants' => [
@@ -154,6 +203,24 @@ class MessagingNotificationService
                 'roles' => ['parts', 'parts_manager'],
             ],
         ],
+        'inventory.stock_order.created' => [
+            'subject' => 'Inventory Stock Orders',
+            'message' => '{actor} created stock order #{stock_order_id}: {description} (Qty {quantity_ordered}).',
+            'scope_type' => 'department',
+            'scope_value' => 'inventory',
+            'participants' => [
+                'roles' => ['admin', 'manager', 'parts', 'parts_manager'],
+            ],
+        ],
+        'inventory.stock_order.received' => [
+            'subject' => 'Inventory Stock Orders',
+            'message' => '{actor} received stock order #{stock_order_id}: {description} (Qty {quantity_received}).',
+            'scope_type' => 'department',
+            'scope_value' => 'inventory',
+            'participants' => [
+                'roles' => ['admin', 'manager', 'parts', 'parts_manager'],
+            ],
+        ],
         'roadside.assistance.requested' => [
             'subject' => 'Roadside Assistance',
             'message' => 'New roadside assistance request #{request_id} received for {customer}.',
@@ -261,7 +328,7 @@ class MessagingNotificationService
 
         $participantIds = array_values(array_unique(array_filter($participantIds)));
 
-        return $participantIds;
+        return $this->filterInternalUsers($participantIds);
     }
 
     /**
@@ -279,7 +346,7 @@ class MessagingNotificationService
 
     private function defaultSenderId(): ?int
     {
-        $stmt = $this->connection->pdo()->prepare('SELECT id FROM users WHERE role IN (\'admin\', \'manager\') ORDER BY id ASC LIMIT 1');
+        $stmt = $this->connection->pdo()->prepare('SELECT id FROM users WHERE active = 1 AND role IN (\'admin\', \'manager\') ORDER BY id ASC LIMIT 1');
         $stmt->execute();
         $id = $stmt->fetchColumn();
 
@@ -287,7 +354,7 @@ class MessagingNotificationService
             return (int) $id;
         }
 
-        $fallback = $this->connection->pdo()->query('SELECT id FROM users ORDER BY id ASC LIMIT 1')->fetchColumn();
+        $fallback = $this->connection->pdo()->query('SELECT id FROM users WHERE active = 1 AND role NOT IN (\'customer\', \'portal_user\') ORDER BY id ASC LIMIT 1')->fetchColumn();
 
         return $fallback !== false ? (int) $fallback : null;
     }
@@ -298,7 +365,7 @@ class MessagingNotificationService
         $stmt->execute(['id' => $userId]);
         $role = $stmt->fetchColumn();
 
-        return $role !== false && $role !== 'customer';
+        return $role !== false && !in_array($role, ['customer', 'portal_user'], true);
     }
 
     /**
@@ -463,9 +530,33 @@ class MessagingNotificationService
 
         $placeholders = implode(',', array_fill(0, count($roles), '?'));
         $stmt = $this->connection->pdo()->prepare(
-            'SELECT id FROM users WHERE role IN (' . $placeholders . ')'
+            'SELECT id FROM users WHERE active = 1 AND role IN (' . $placeholders . ')'
         );
         $stmt->execute($roles);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * @param array<int, int> $userIds
+     * @return array<int, int>
+     */
+    private function filterInternalUsers(array $userIds): array
+    {
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
+        if ($userIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT id
+             FROM users
+             WHERE active = 1
+               AND role NOT IN ('customer', 'portal_user')
+               AND id IN (" . $placeholders . ')'
+        );
+        $stmt->execute($userIds);
 
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }

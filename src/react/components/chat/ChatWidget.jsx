@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowPathIcon,
+  ChatBubbleLeftRightIcon,
+  PaperAirplaneIcon,
+  PaperClipIcon,
+  PlusIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline'
 
 import { messagingService } from '../../../services/messages.service'
 import { useAuthStore } from '../../stores/auth.jsx'
 import { useUIStore } from '../../stores/ui.jsx'
 
+const CUSTOMER_SCOPES = new Set(['warranty_claim', 'appointment', 'estimate', 'invoice', 'workorder', 'ticket'])
+
 export default function ChatWidget({
   variant = 'floating',
   title = 'Staff Chat',
-  subtitle = 'Internal conversations',
+  subtitle = 'Internal conversations and alerts',
   className = '',
 }) {
   const { isStaff, user } = useAuthStore()
@@ -20,16 +30,24 @@ export default function ChatWidget({
   const [unreadTotal, setUnreadTotal] = useState(0)
   const [sending, setSending] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
+  const [showNewThread, setShowNewThread] = useState(false)
+  const [participants, setParticipants] = useState([])
+  const [participantQuery, setParticipantQuery] = useState('')
+  const [selectedParticipants, setSelectedParticipants] = useState([])
+  const [newThreadSubject, setNewThreadSubject] = useState('')
+  const [newThreadMessage, setNewThreadMessage] = useState('')
+  const [creatingThread, setCreatingThread] = useState(false)
   const pollingRef = useRef(null)
   const unreadCountsRef = useRef(new Map())
   const threadStateRef = useRef({ last_message_id: 0, last_read_update: null })
 
   const currentUserId = user?.id
+  const userRole = user?.role?.toLowerCase()
+  const isInternalUser = Boolean(isStaff && userRole !== 'customer' && userRole !== 'portal_user')
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
     [threads, selectedThreadId]
   )
-
   const unreadNotifications = useMemo(
     () => chatNotifications.filter((notification) => !notification.read),
     [chatNotifications]
@@ -40,8 +58,41 @@ export default function ChatWidget({
     setIsOpen((prev) => !prev)
   }
 
-  const senderName = (message) => {
-    return `${message.first_name ?? ''} ${message.last_name ?? ''}`.trim() || 'Staff'
+  const participantName = (participant) => participant?.name || participant?.email || 'Staff'
+
+  const senderName = (message) => message?.name || message?.email || 'Staff'
+
+  const roleLabel = (role) => {
+    if (!role) return 'Staff'
+    return role
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+
+  const scopeMeta = (thread) => {
+    if (thread?.scope_type === 'department') {
+      return {
+        label: 'System',
+        className: 'bg-amber-100 text-amber-700',
+      }
+    }
+
+    if (
+      CUSTOMER_SCOPES.has(thread?.scope_type) ||
+      thread?.ticket_id ||
+      thread?.workorder_id
+    ) {
+      return {
+        label: 'Customer',
+        className: 'bg-emerald-100 text-emerald-700',
+      }
+    }
+
+    return {
+      label: 'Internal',
+      className: 'bg-slate-100 text-slate-700',
+    }
   }
 
   const threadLabel = useCallback(
@@ -53,11 +104,7 @@ export default function ChatWidget({
       const participants = thread.participants || []
       const otherNames = participants
         .filter((participant) => participant.id !== currentUserId)
-        .map(
-          (participant) =>
-            participant.name ||
-            `${participant.first_name ?? ''} ${participant.last_name ?? ''}`.trim()
-        )
+        .map(participantName)
         .filter(Boolean)
 
       return otherNames.join(', ') || `Thread #${thread.id}`
@@ -90,12 +137,19 @@ export default function ChatWidget({
     setPendingFiles((prev) => prev.filter((_, index) => index !== indexToRemove))
   }
 
+  const resetNewThread = () => {
+    setSelectedParticipants([])
+    setNewThreadSubject('')
+    setNewThreadMessage('')
+    setParticipantQuery('')
+  }
+
   const refreshThreads = useCallback(async () => {
     try {
       const data = await messagingService.listThreads()
       setThreads(data)
 
-      if (!selectedThreadId && data.length) {
+      if (!selectedThreadId && data.length && !showNewThread) {
         setSelectedThreadId(data[0].id)
         return data[0].id
       }
@@ -107,7 +161,7 @@ export default function ChatWidget({
       }
       return selectedThreadId
     }
-  }, [selectedThreadId])
+  }, [selectedThreadId, showNewThread])
 
   const refreshUnreadCounts = useCallback(async () => {
     try {
@@ -127,7 +181,7 @@ export default function ChatWidget({
               const label = thread ? threadLabel(thread) : `Thread #${threadId}`
               const delta = count - previousCount
               addChatNotification({
-                title: 'New chat message',
+                title: 'New message',
                 body: `${label} has ${delta} new message${delta > 1 ? 's' : ''}.`,
                 threadId,
               })
@@ -149,35 +203,6 @@ export default function ChatWidget({
       }
     }
   }, [addChatNotification, isOpen, selectedThreadId, threadLabel, threads])
-
-  const refreshThreadState = useCallback(
-    async (threadId, { silent } = {}) => {
-      if (!threadId) return
-
-      try {
-        const nextState = await messagingService.threadState(threadId)
-        const previousState = threadStateRef.current
-        const hasPrevious = previousState.last_message_id || previousState.last_read_update
-        const hasChanged =
-          nextState.last_message_id !== previousState.last_message_id ||
-          nextState.last_read_update !== previousState.last_read_update
-
-        threadStateRef.current = nextState
-
-        if (hasPrevious && hasChanged && !silent) {
-          await loadMessages(threadId)
-          await markRead(threadId)
-          await refreshThreads()
-          await refreshUnreadCounts()
-        }
-      } catch (error) {
-        if (error.response?.status === 429) {
-          console.warn('Rate limited on thread state fetch, will retry on next poll')
-        }
-      }
-    },
-    [loadMessages, markRead, refreshThreads, refreshUnreadCounts]
-  )
 
   const loadMessages = useCallback(async (threadId) => {
     if (!threadId) {
@@ -210,11 +235,89 @@ export default function ChatWidget({
     [refreshUnreadCounts]
   )
 
+  const refreshThreadState = useCallback(
+    async (threadId, { silent } = {}) => {
+      if (!threadId) return
+
+      try {
+        const nextState = await messagingService.threadState(threadId)
+        const previousState = threadStateRef.current
+        const hasPrevious = previousState.last_message_id || previousState.last_read_update
+        const hasChanged =
+          nextState.last_message_id !== previousState.last_message_id ||
+          nextState.last_read_update !== previousState.last_read_update
+
+        threadStateRef.current = nextState
+
+        if (hasPrevious && hasChanged && !silent) {
+          await loadMessages(threadId)
+          await markRead(threadId)
+          await refreshThreads()
+          await refreshUnreadCounts()
+        }
+      } catch (error) {
+        if (error.response?.status === 429) {
+          console.warn('Rate limited on thread state fetch, will retry on next poll')
+        }
+      }
+    },
+    [loadMessages, markRead, refreshThreads, refreshUnreadCounts]
+  )
+
+  const loadParticipants = useCallback(async () => {
+    try {
+      const data = await messagingService.listParticipants(participantQuery.trim())
+      setParticipants(data)
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn('Rate limited on participants fetch, will retry on next poll')
+      }
+    }
+  }, [participantQuery])
+
   const selectThread = async (thread) => {
+    setShowNewThread(false)
     setSelectedThreadId(thread.id)
     await loadMessages(thread.id)
     await markRead(thread.id)
     await refreshThreadState(thread.id, { silent: true })
+  }
+
+  const startNewThread = () => {
+    setShowNewThread(true)
+    setSelectedThreadId(null)
+    setMessages([])
+    loadParticipants()
+  }
+
+  const toggleParticipant = (participantId) => {
+    setSelectedParticipants((prev) =>
+      prev.includes(participantId)
+        ? prev.filter((id) => id !== participantId)
+        : [...prev, participantId]
+    )
+  }
+
+  const createThread = async () => {
+    if (!selectedParticipants.length || !newThreadMessage.trim()) return
+
+    setCreatingThread(true)
+    try {
+      const thread = await messagingService.createThread({
+        participant_ids: selectedParticipants,
+        subject: newThreadSubject.trim() || null,
+        message: newThreadMessage.trim(),
+      })
+      resetNewThread()
+      setShowNewThread(false)
+      setThreads((prev) => [thread, ...prev.filter((item) => item.id !== thread.id)])
+      setSelectedThreadId(thread.id)
+      await loadMessages(thread.id)
+      await markRead(thread.id)
+      await refreshThreads()
+    } finally {
+      setCreatingThread(false)
+    }
   }
 
   const sendMessage = async () => {
@@ -240,6 +343,16 @@ export default function ChatWidget({
   }
 
   useEffect(() => {
+    if (!isOpen || !showNewThread) return undefined
+
+    const timer = setTimeout(() => {
+      loadParticipants()
+    }, 200)
+
+    return () => clearTimeout(timer)
+  }, [isOpen, loadParticipants, showNewThread])
+
+  useEffect(() => {
     if (!isOpen) return
 
     const handleOpen = async () => {
@@ -252,10 +365,10 @@ export default function ChatWidget({
     }
 
     handleOpen()
-  }, [isOpen, loadMessages, markRead, refreshThreads])
+  }, [isOpen, loadMessages, markRead, refreshThreadState, refreshThreads])
 
   useEffect(() => {
-    if (!isStaff) return undefined
+    if (!isInternalUser) return undefined
 
     const initialize = async () => {
       await refreshThreads()
@@ -279,25 +392,26 @@ export default function ChatWidget({
         clearInterval(pollingRef.current)
       }
     }
-  }, [isOpen, isStaff, refreshThreadState, refreshThreads, refreshUnreadCounts, selectedThreadId])
+  }, [isInternalUser, isOpen, refreshThreadState, refreshThreads, refreshUnreadCounts, selectedThreadId])
 
-  if (!isStaff) {
+  if (!isInternalUser) {
     return null
   }
 
   return (
     <div className={isFloating ? 'fixed bottom-6 right-6 z-50' : `w-full ${className}`}>
       {isFloating && unreadNotifications.length ? (
-        <div className="mb-3 flex max-h-60 w-72 flex-col gap-2 overflow-y-auto">
+        <div className="mb-3 flex max-h-60 w-80 flex-col gap-2 overflow-y-auto">
           {unreadNotifications.slice(0, 3).map((notification) => (
             <button
               key={notification.id}
               type="button"
-              className="rounded-2xl border border-blue-100 bg-white px-3 py-2 text-left text-sm text-gray-700 shadow-lg transition hover:border-blue-200 hover:bg-blue-50"
+              className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-left text-sm text-gray-700 shadow-lg transition hover:border-blue-200 hover:bg-blue-50"
               onClick={async () => {
                 markChatNotificationRead(notification.id)
                 if (notification.threadId) {
                   setIsOpen(true)
+                  setShowNewThread(false)
                   setSelectedThreadId(notification.threadId)
                   await loadMessages(notification.threadId)
                   await markRead(notification.threadId)
@@ -312,6 +426,7 @@ export default function ChatWidget({
           ))}
         </div>
       ) : null}
+
       {isFloating ? (
         <button
           type="button"
@@ -319,13 +434,7 @@ export default function ChatWidget({
           onClick={toggleOpen}
         >
           <span className="sr-only">Open chat</span>
-          <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M8 10h8M8 14h5M21 12c0 4.418-4.03 8-9 8a9.72 9.72 0 0 1-4-.84L3 20l1.09-3.27A7.8 7.8 0 0 1 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8Z"
-            />
-          </svg>
+          <ChatBubbleLeftRightIcon className="h-6 w-6" />
           {unreadTotal > 0 ? (
             <span className="absolute -right-1 -top-1 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold">
               {unreadTotal}
@@ -342,12 +451,12 @@ export default function ChatWidget({
 
       {isOpen ? (
         <div
-          className={`${isFloating ? 'mt-4 h-[32rem] w-[22rem] shadow-2xl' : 'h-[32rem] shadow-sm'} flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white`}
+          className={`${isFloating ? 'mt-4 h-[34rem] w-[27rem] max-w-[calc(100vw-2rem)] shadow-2xl' : 'h-[34rem] shadow-sm'} flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white`}
         >
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">{title}</p>
-              <p className="text-xs text-gray-500">{subtitle}</p>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-gray-900">{title}</p>
+              <p className="truncate text-xs text-gray-500">{subtitle}</p>
             </div>
             {isFloating ? (
               <button
@@ -356,48 +465,67 @@ export default function ChatWidget({
                 onClick={() => setIsOpen(false)}
               >
                 <span className="sr-only">Close</span>
-                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    fillRule="evenodd"
-                    d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414Z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <XMarkIcon className="h-5 w-5" />
               </button>
             ) : null}
           </div>
 
           <div className="flex flex-1 overflow-hidden">
-            <aside className="w-40 border-r border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-between px-3 py-2">
+            <aside className="w-44 shrink-0 border-r border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <span className="text-xs font-semibold uppercase text-gray-500">Threads</span>
-                <button type="button" className="text-xs text-blue-600" onClick={refreshThreads}>
-                  Refresh
-                </button>
-              </div>
-              <div className="h-full overflow-y-auto">
-                {threads.map((thread) => (
+                <div className="flex items-center gap-1">
                   <button
-                    key={thread.id}
                     type="button"
-                    className={`flex w-full flex-col gap-1 border-b border-gray-100 px-3 py-2 text-left text-xs transition hover:bg-white ${
-                      selectedThreadId === thread.id
-                        ? 'bg-white text-gray-900'
-                        : 'text-gray-600'
-                    }`}
-                    onClick={() => selectThread(thread)}
+                    className="rounded-full p-1 text-gray-500 transition hover:bg-white hover:text-blue-600"
+                    onClick={refreshThreads}
+                    title="Refresh"
                   >
-                    <span className="font-semibold">{threadLabel(thread)}</span>
-                    <span className="truncate text-[11px] text-gray-500">
-                      {thread.last_message || 'No messages yet'}
-                    </span>
-                    {thread.unread_count ? (
-                      <span className="mt-1 inline-flex w-fit items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                        {thread.unread_count} new
-                      </span>
-                    ) : null}
+                    <span className="sr-only">Refresh</span>
+                    <ArrowPathIcon className="h-4 w-4" />
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    className="rounded-full bg-blue-600 p-1 text-white transition hover:bg-blue-700"
+                    onClick={startNewThread}
+                    title="New conversation"
+                  >
+                    <span className="sr-only">New conversation</span>
+                    <PlusIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="h-full overflow-y-auto pb-10">
+                {threads.map((thread) => {
+                  const meta = scopeMeta(thread)
+                  return (
+                    <button
+                      key={thread.id}
+                      type="button"
+                      className={`flex w-full flex-col gap-1 border-b border-gray-100 px-3 py-2 text-left text-xs transition hover:bg-white ${
+                        selectedThreadId === thread.id && !showNewThread
+                          ? 'bg-white text-gray-900'
+                          : 'text-gray-600'
+                      }`}
+                      onClick={() => selectThread(thread)}
+                    >
+                      <span className="line-clamp-2 font-semibold">{threadLabel(thread)}</span>
+                      <span className="flex flex-wrap items-center gap-1">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${meta.className}`}>
+                          {meta.label}
+                        </span>
+                        {thread.unread_count ? (
+                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                            {thread.unread_count} new
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="truncate text-[11px] text-gray-500">
+                        {thread.last_message || 'No messages yet'}
+                      </span>
+                    </button>
+                  )
+                })}
                 {!threads.length ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">
                     No conversations yet.
@@ -406,122 +534,222 @@ export default function ChatWidget({
               </div>
             </aside>
 
-            <section className="flex flex-1 flex-col">
-              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
-                {!selectedThread ? (
-                  <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                    Select a thread to view messages.
-                  </div>
-                ) : null}
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${
-                      message.sender_id === currentUserId ? 'justify-end' : 'justify-start'
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                        message.sender_id === currentUserId
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      <p className="text-[11px] font-semibold opacity-80">
-                        {message.sender_id === currentUserId ? 'You' : senderName(message)}
-                      </p>
-                      <p className="whitespace-pre-wrap">{message.body}</p>
-                      {message.attachments?.length ? (
-                        <div className="mt-2 space-y-1">
-                          {message.attachments.map((attachment) => (
-                            <a
-                              key={attachment.id}
-                              href={attachment.file_path}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={`flex items-center gap-2 rounded-lg px-2 py-1 text-xs ${
-                                message.sender_id === currentUserId
-                                  ? 'bg-blue-500/30 text-white'
-                                  : 'bg-white text-gray-700'
-                              }`}
-                            >
-                              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M8 2a2 2 0 0 0-2 2v8a4 4 0 1 0 8 0V5a2 2 0 1 0-4 0v7a1 1 0 1 0 2 0V6h2v6a3 3 0 1 1-6 0V4h2v8a2 2 0 1 0 4 0V5a1 1 0 1 0-2 0v7H8V4a2 2 0 0 0-2-2z" />
-                              </svg>
-                              <span className="truncate">{attachment.file_name}</span>
-                              {attachment.size_bytes ? (
-                                <span className="opacity-70">({formatFileSize(attachment.size_bytes)})</span>
-                              ) : null}
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="mt-1 flex items-center justify-between text-[10px] opacity-70">
-                        <span>{formatTimestamp(message.created_at)}</span>
-                        {message.sender_id === currentUserId && message.recipient_count ? (
-                          <span>
-                            {message.read_count === message.recipient_count
-                              ? `Read by ${message.read_by?.map((reader) => reader.name).join(', ') || 'all'}`
-                              : `${message.read_count}/${message.recipient_count} read`}
-                          </span>
-                        ) : null}
-                      </div>
+            <section className="flex min-w-0 flex-1 flex-col">
+              {showNewThread ? (
+                <div className="flex h-full flex-col overflow-y-auto px-4 py-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">New conversation</p>
+                      <p className="text-xs text-gray-500">Choose internal users and send the first message.</p>
                     </div>
+                    <button
+                      type="button"
+                      className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100"
+                      onClick={() => {
+                        setShowNewThread(false)
+                        resetNewThread()
+                        if (threads.length) {
+                          setSelectedThreadId(threads[0].id)
+                        }
+                      }}
+                    >
+                      <span className="sr-only">Cancel</span>
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
                   </div>
-                ))}
-              </div>
 
-              <form
-                className="border-t border-gray-200 px-3 py-2"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  sendMessage()
-                }}
-              >
-                {pendingFiles.length ? (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {pendingFiles.map((file, index) => (
-                      <span
-                        key={`${file.name}-${index}`}
-                        className="flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                      >
-                        <span className="max-w-[140px] truncate">{file.name}</span>
+                  <input
+                    type="text"
+                    value={participantQuery}
+                    onChange={(event) => setParticipantQuery(event.target.value)}
+                    className="mb-2 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    placeholder="Search people"
+                  />
+
+                  <div className="mb-3 max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+                    {participants.map((participant) => {
+                      const selected = selectedParticipants.includes(participant.id)
+                      return (
                         <button
+                          key={participant.id}
                           type="button"
-                          className="text-gray-400 hover:text-gray-600"
-                          onClick={() => removePendingFile(index)}
+                          className={`flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left text-sm last:border-b-0 ${
+                            selected ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                          onClick={() => toggleParticipant(participant.id)}
                         >
-                          ×
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{participantName(participant)}</span>
+                            <span className="block truncate text-xs text-gray-500">
+                              {participant.email} - {roleLabel(participant.role)}
+                            </span>
+                          </span>
+                          <span
+                            className={`h-4 w-4 shrink-0 rounded-full border ${
+                              selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
+                            }`}
+                          />
                         </button>
-                      </span>
+                      )
+                    })}
+                    {!participants.length ? (
+                      <div className="px-3 py-6 text-center text-xs text-gray-400">
+                        No internal users found.
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <input
+                    type="text"
+                    value={newThreadSubject}
+                    onChange={(event) => setNewThreadSubject(event.target.value)}
+                    className="mb-2 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    placeholder="Subject"
+                  />
+                  <textarea
+                    value={newThreadMessage}
+                    onChange={(event) => setNewThreadMessage(event.target.value)}
+                    className="min-h-[7rem] flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    placeholder="Message"
+                  />
+                  <div className="mt-3 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                      onClick={() => {
+                        setShowNewThread(false)
+                        resetNewThread()
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                      disabled={!selectedParticipants.length || !newThreadMessage.trim() || creatingThread}
+                      onClick={createThread}
+                    >
+                      <PaperAirplaneIcon className="h-4 w-4" />
+                      Send
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
+                    {!selectedThread ? (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                        Select a thread to view messages.
+                      </div>
+                    ) : null}
+                    {messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`flex ${
+                          message.sender_id === currentUserId ? 'justify-end' : 'justify-start'
+                        }`}
+                      >
+                        <div
+                          className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
+                            message.sender_id === currentUserId
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          <p className="text-[11px] font-semibold opacity-80">
+                            {message.sender_id === currentUserId ? 'You' : senderName(message)}
+                          </p>
+                          <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                          {message.attachments?.length ? (
+                            <div className="mt-2 space-y-1">
+                              {message.attachments.map((attachment) => (
+                                <a
+                                  key={attachment.id}
+                                  href={attachment.file_path}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className={`flex items-center gap-2 rounded-lg px-2 py-1 text-xs ${
+                                    message.sender_id === currentUserId
+                                      ? 'bg-blue-500/30 text-white'
+                                      : 'bg-white text-gray-700'
+                                  }`}
+                                >
+                                  <PaperClipIcon className="h-4 w-4" />
+                                  <span className="truncate">{attachment.file_name}</span>
+                                  {attachment.size_bytes ? (
+                                    <span className="opacity-70">({formatFileSize(attachment.size_bytes)})</span>
+                                  ) : null}
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="mt-1 flex items-center justify-between gap-3 text-[10px] opacity-70">
+                            <span>{formatTimestamp(message.created_at)}</span>
+                            {message.sender_id === currentUserId && message.recipient_count ? (
+                              <span className="truncate">
+                                {message.read_count === message.recipient_count
+                                  ? `Read by ${message.read_by?.map((reader) => reader.name).join(', ') || 'all'}`
+                                  : `${message.read_count}/${message.recipient_count} read`}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                ) : null}
-                <div className="flex items-center gap-2">
-                  <label className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-100">
-                    <span className="sr-only">Attach files</span>
-                    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M8 2a2 2 0 0 0-2 2v8a4 4 0 1 0 8 0V5a2 2 0 1 0-4 0v7a1 1 0 1 0 2 0V6h2v6a3 3 0 1 1-6 0V4h2v8a2 2 0 1 0 4 0V5a1 1 0 1 0-2 0v7H8V4a2 2 0 0 0-2-2z" />
-                    </svg>
-                    <input type="file" multiple className="hidden" onChange={handleFileChange} />
-                  </label>
-                  <input
-                    value={newMessage}
-                    onChange={(event) => setNewMessage(event.target.value)}
-                    type="text"
-                    disabled={!selectedThread}
-                    className="flex-1 rounded-full border border-gray-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
-                    placeholder="Type a message"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                    disabled={!selectedThread || sending}
+
+                  <form
+                    className="border-t border-gray-200 px-3 py-2"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      sendMessage()
+                    }}
                   >
-                    Send
-                  </button>
-                </div>
-              </form>
+                    {pendingFiles.length ? (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {pendingFiles.map((file, index) => (
+                          <span
+                            key={`${file.name}-${index}`}
+                            className="flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
+                          >
+                            <span className="max-w-[140px] truncate">{file.name}</span>
+                            <button
+                              type="button"
+                              className="text-gray-400 hover:text-gray-600"
+                              onClick={() => removePendingFile(index)}
+                            >
+                              <XMarkIcon className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center gap-2">
+                      <label className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-100">
+                        <span className="sr-only">Attach files</span>
+                        <PaperClipIcon className="h-5 w-5" />
+                        <input type="file" multiple className="hidden" onChange={handleFileChange} />
+                      </label>
+                      <input
+                        value={newMessage}
+                        onChange={(event) => setNewMessage(event.target.value)}
+                        type="text"
+                        disabled={!selectedThread}
+                        className="min-w-0 flex-1 rounded-full border border-gray-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+                        placeholder="Type a message"
+                      />
+                      <button
+                        type="submit"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                        disabled={!selectedThread || sending}
+                      >
+                        <span className="sr-only">Send</span>
+                        <PaperAirplaneIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </section>
           </div>
         </div>

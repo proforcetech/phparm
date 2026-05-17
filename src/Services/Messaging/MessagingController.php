@@ -23,9 +23,7 @@ class MessagingController
      */
     public function threads(User $user): array
     {
-        if (!$this->gate->can($user, 'messages.view')) {
-            throw new UnauthorizedException('Cannot view messages');
-        }
+        $this->assertInternalUser($user);
 
         return $this->service->listThreads($user->id);
     }
@@ -35,9 +33,7 @@ class MessagingController
      */
     public function messages(User $user, int $threadId): array
     {
-        if (!$this->gate->can($user, 'messages.view')) {
-            throw new UnauthorizedException('Cannot view messages');
-        }
+        $this->assertInternalUser($user);
 
         return $this->service->listMessages($threadId, $user->id);
     }
@@ -48,9 +44,7 @@ class MessagingController
      */
     public function createThread(User $user, array $payload): array
     {
-        if (!$this->gate->can($user, 'messages.create')) {
-            throw new UnauthorizedException('Cannot create threads');
-        }
+        $this->assertInternalUser($user);
 
         $participants = $payload['participant_ids'] ?? null;
         if (!is_array($participants) || $participants === []) {
@@ -69,9 +63,7 @@ class MessagingController
      */
     public function postMessage(User $user, int $threadId, array $payload): array
     {
-        if (!$this->gate->can($user, 'messages.send')) {
-            throw new UnauthorizedException('Cannot send messages');
-        }
+        $this->assertInternalUser($user);
 
         if (!isset($payload['body'])) {
             throw new InvalidArgumentException('body is required');
@@ -87,9 +79,7 @@ class MessagingController
      */
     public function postMessageWithAttachments(User $user, int $threadId, array $payload, array $files): array
     {
-        if (!$this->gate->can($user, 'messages.send')) {
-            throw new UnauthorizedException('Cannot send messages');
-        }
+        $this->assertInternalUser($user);
 
         $body = isset($payload['body']) ? (string) $payload['body'] : null;
         $attachments = $this->storeAttachments($threadId, $files);
@@ -102,9 +92,7 @@ class MessagingController
      */
     public function markRead(User $user, int $threadId): array
     {
-        if (!$this->gate->can($user, 'messages.view')) {
-            throw new UnauthorizedException('Cannot update message status');
-        }
+        $this->assertInternalUser($user);
 
         $this->service->markRead($threadId, $user->id);
 
@@ -118,9 +106,7 @@ class MessagingController
      */
     public function unreadCounts(User $user): array
     {
-        if (!$this->gate->can($user, 'messages.view')) {
-            throw new UnauthorizedException('Cannot view unread counts');
-        }
+        $this->assertInternalUser($user);
 
         return $this->service->unreadCounts($user->id);
     }
@@ -130,11 +116,22 @@ class MessagingController
      */
     public function threadState(User $user, int $threadId): array
     {
-        if (!$this->gate->can($user, 'messages.view')) {
-            throw new UnauthorizedException('Cannot view message status');
-        }
+        $this->assertInternalUser($user);
 
         return $this->service->threadState($threadId, $user->id);
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    public function participants(User $user, array $filters = []): array
+    {
+        $this->assertInternalUser($user);
+
+        $query = isset($filters['query']) ? (string) $filters['query'] : null;
+
+        return $this->service->listAvailableParticipants($user->id, $query);
     }
 
     /**
@@ -210,5 +207,13 @@ class MessagingController
         }
 
         return $normalized;
+    }
+
+    private function assertInternalUser(User $user): void
+    {
+        $role = strtolower((string) $user->role);
+        if ($role === 'customer' || $role === 'portal_user') {
+            throw new UnauthorizedException('Cannot access internal messages');
+        }
     }
 }

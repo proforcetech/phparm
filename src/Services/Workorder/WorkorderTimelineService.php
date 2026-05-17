@@ -9,6 +9,7 @@ use PDO;
 class WorkorderTimelineService
 {
     private Connection $connection;
+    private ?bool $hasInternalNotesTable = null;
 
     public function __construct(Connection $connection)
     {
@@ -27,6 +28,9 @@ class WorkorderTimelineService
         $events = array_merge($events, $this->buildStatusEvents($workorderId, $isCustomerView));
         $events = array_merge($events, $this->buildMessageEvents($workorderId));
         $events = array_merge($events, $this->buildPhotoEvents($workorderId));
+        if (!$isCustomerView) {
+            $events = array_merge($events, $this->buildInternalNoteEvents($workorderId));
+        }
 
         if ($estimateIds !== []) {
             $events = array_merge($events, $this->buildApprovalEvents($estimateIds, $estimates));
@@ -256,6 +260,75 @@ class WorkorderTimelineService
         }
 
         return $events;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildInternalNoteEvents(int $workorderId): array
+    {
+        if (!$this->internalNotesTableExists()) {
+            return [];
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT win.id,
+                   win.body,
+                   win.context,
+                   win.created_at,
+                   u.name AS author_name
+              FROM workorder_internal_notes win
+         LEFT JOIN users u ON u.id = win.author_user_id
+             WHERE win.workorder_id = :workorder_id
+          ORDER BY win.created_at ASC
+        SQL);
+        $stmt->execute(['workorder_id' => $workorderId]);
+
+        $events = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $author = trim((string) ($row['author_name'] ?? ''));
+            $context = trim((string) ($row['context'] ?? ''));
+            $details = [];
+            if ($author !== '') {
+                $details[] = 'Added by ' . $author;
+            }
+            if ($context !== '') {
+                $details[] = $context;
+            }
+            $details[] = (string) $row['body'];
+
+            $events[] = [
+                'id' => 'internal-note-' . $row['id'],
+                'type' => 'note',
+                'title' => 'Internal note added',
+                'description' => implode(' · ', $details),
+                'created_at' => $row['created_at'],
+                'meta' => [
+                    'author_name' => $row['author_name'],
+                    'context' => $row['context'],
+                ],
+            ];
+        }
+
+        return $events;
+    }
+
+    private function internalNotesTableExists(): bool
+    {
+        if ($this->hasInternalNotesTable !== null) {
+            return $this->hasInternalNotesTable;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = 'workorder_internal_notes'
+        SQL);
+        $stmt->execute();
+        $this->hasInternalNotesTable = (int) $stmt->fetchColumn() > 0;
+
+        return $this->hasInternalNotesTable;
     }
 
     /**

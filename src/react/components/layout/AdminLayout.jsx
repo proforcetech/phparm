@@ -8,6 +8,7 @@ import TwoFactorSetupWizard from '../auth/TwoFactorSetupWizard'
 import PasswordRotationOverlay from '../auth/PasswordRotationOverlay'
 import PasswordExpirationBanner from '../auth/PasswordExpirationBanner'
 import ErrorBoundary from '../ErrorBoundary'
+import ChatWidget from '../chat/ChatWidget'
 import { CmsPageProvider } from '../../stores/cmsPages'
 import { CmsMenuProvider } from '../../stores/cmsMenus'
 import { useAuthStore } from '../../stores/auth'
@@ -86,6 +87,7 @@ export default function AdminLayout({ children }) {
         </div>
       </div>
       {user?.two_factor_setup_pending && !user?.two_factor_enabled ? <TwoFactorSetupWizard /> : null}
+      <ChatWidget />
     </div>
   )
 }
