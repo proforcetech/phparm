@@ -131,6 +131,7 @@ const protectedRoutes = [
   { path: '/cp/estimates/:id', name: 'EstimateDetail', auth: 'requiresAuth', element: lazyElement(() => import('../views/estimates/EstimateDetail')) },
   { path: '/cp/estimates/:id/edit', name: 'EstimateEdit', auth: 'requiresAuth', element: lazyElement(() => import('../views/estimates/EstimateEdit')) },
   { path: '/cp/workorders', name: 'WorkorderList', auth: 'requiresAuth', element: lazyElement(() => import('../views/workorders/WorkorderList')) },
+  { path: '/cp/workorders/create', name: 'WorkorderCreate', auth: 'requiresAuth', element: lazyElement(() => import('../views/workorders/WorkorderCreate')) },
   { path: '/cp/workorders/:id', name: 'WorkorderDetail', auth: 'requiresAuth', element: lazyElement(() => import('../views/workorders/WorkorderDetail')) },
   { path: '/cp/workorders/:id/qc-check', name: 'QCChecklist', auth: 'requiresAuth', element: lazyElement(() => import('../views/workorders/QCChecklist')) },
   { path: '/cp/dispatch', name: 'Dispatch', auth: 'requiresAuth', element: lazyElement(() => import('../views/dispatch/DispatchView')) },

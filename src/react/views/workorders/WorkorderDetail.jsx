@@ -932,7 +932,7 @@ export default function WorkorderDetail() {
               Mark Complete
             </Button>
           ) : null}
-          {['completed', 'goa'].includes(workorder.status) ? (
+          {workorder.customer_id && ['completed', 'goa'].includes(workorder.status) ? (
             <Button onClick={() => setShowConvertModal(true)}>
               <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -945,7 +945,7 @@ export default function WorkorderDetail() {
               Mark GOA
             </Button>
           ) : null}
-          {['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
+          {workorder.estimate_id && ['pending', 'in_progress', 'on_hold'].includes(workorder.status) ? (
             <Button variant="outline" onClick={() => setShowSubEstimateModal(true)}>
               <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -989,29 +989,51 @@ export default function WorkorderDetail() {
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Customer & Vehicle</h3>
+              <h3 className="text-lg font-medium text-gray-900">Work Context</h3>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-500">Customer</label>
                 <p className="mt-1 text-sm text-gray-900">
-                  <Link
-                    to={`/cp/customers/${workorder.customer_id}`}
-                    className="text-primary-600 hover:text-primary-800"
-                  >
-                    {workorder.customer?.name || `Customer #${workorder.customer_id}`}
-                  </Link>
+                  {workorder.customer_id ? (
+                    <Link
+                      to={`/cp/customers/${workorder.customer_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      {workorder.customer?.name || `Customer #${workorder.customer_id}`}
+                    </Link>
+                  ) : (
+                    <span className="text-gray-900">Internal company</span>
+                  )}
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-500">Vehicle</label>
+                <label className="text-sm font-medium text-gray-500">Subject</label>
                 <p className="mt-1 text-sm text-gray-900">
-                  <Link
-                    to={`/cp/vehicles/${workorder.vehicle_id}`}
-                    className="text-primary-600 hover:text-primary-800"
-                  >
-                    {workorder.vehicle?.display_name || `Vehicle #${workorder.vehicle_id}`}
-                  </Link>
+                  {workorder.vehicle_id ? (
+                    <Link
+                      to={`/cp/vehicles/${workorder.vehicle_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      {workorder.vehicle?.display_name || `Vehicle #${workorder.vehicle_id}`}
+                    </Link>
+                  ) : workorder.site_asset_id ? (
+                    <Link
+                      to={`/cp/assets/${workorder.site_asset_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      {workorder.site_asset?.name || `Asset #${workorder.site_asset_id}`}
+                    </Link>
+                  ) : workorder.fleet_unit_id ? (
+                    <Link
+                      to={`/cp/fleet/units/${workorder.fleet_unit_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      {workorder.fleet_unit?.unit_number || `Fleet Unit #${workorder.fleet_unit_id}`}
+                    </Link>
+                  ) : (
+                    <span className="text-gray-400 italic">None</span>
+                  )}
                 </p>
               </div>
               <div>
@@ -1027,12 +1049,16 @@ export default function WorkorderDetail() {
               <div>
                 <label className="text-sm font-medium text-gray-500">Source Estimate</label>
                 <p className="mt-1 text-sm text-gray-900">
-                  <Link
-                    to={`/cp/estimates/${workorder.estimate_id}`}
-                    className="text-primary-600 hover:text-primary-800"
-                  >
-                    View Estimate
-                  </Link>
+                  {workorder.estimate_id ? (
+                    <Link
+                      to={`/cp/estimates/${workorder.estimate_id}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      View Estimate
+                    </Link>
+                  ) : (
+                    <span>Direct</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -1378,7 +1404,7 @@ export default function WorkorderDetail() {
 
           <Card>
             <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Customer Communication Hub</h3>
+              <h3 className="text-lg font-medium text-gray-900">Communication Hub</h3>
             </div>
             <Timeline events={timelineEvents} />
           </Card>

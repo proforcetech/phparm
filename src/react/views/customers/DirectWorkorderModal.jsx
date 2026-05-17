@@ -228,10 +228,12 @@ export default function DirectWorkorderModal({ open, customer, onClose, onCreate
 
         {activeLine ? (
           <SubjectPicker
+            availableServiceLines={serviceLines}
             serviceLineId={form.service_line_id}
             vehicleId={form.vehicle_id}
             siteAssetId={form.site_asset_id}
             customerId={customer.id}
+            showServiceLineSelector={false}
             onChange={handleSubjectChange}
           />
         ) : null}

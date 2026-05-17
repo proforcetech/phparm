@@ -800,7 +800,9 @@ class WorkorderRepository
             'estimate_id' => isset($row['estimate_id']) && $row['estimate_id'] !== null
                 ? (int) $row['estimate_id']
                 : null,
-            'customer_id' => (int) $row['customer_id'],
+            'customer_id' => isset($row['customer_id']) && $row['customer_id'] !== null
+                ? (int) $row['customer_id']
+                : null,
             'vehicle_id' => isset($row['vehicle_id']) && $row['vehicle_id'] !== null
                 ? (int) $row['vehicle_id']
                 : null,

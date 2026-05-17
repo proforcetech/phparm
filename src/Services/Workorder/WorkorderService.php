@@ -182,17 +182,22 @@ class WorkorderService
     }
 
     /**
-     * Create a workorder directly, bypassing the estimate stage. Restricted to
-     * customers whose company holds an active contract for the requested
-     * service line — the eligibility check is the product gate, not the
-     * schema (estimate_id is just NULL in the row, see migration 174).
+     * Create a workorder directly, bypassing the estimate stage. The two
+     * permitted paths are contracted B2B customer work and internal company
+     * work. Contract work requires a customer whose company holds an active
+     * contract for the requested service line; internal work is stored with
+     * customer_id NULL so it stays staff-only.
      *
      * Payload shape:
-     *   customer_id (int, required)
+     *   customer_id (int, required unless is_internal/work_context=internal)
+     *   is_internal / work_context=internal (optional) — creates staff-only
+     *     work with no customer/contract gate
      *   service_line_id (int, required) — drives both the contract check and
      *     the subject-FK validation via SubjectResolver
-     *   vehicle_id / site_asset_id (int|null) — at least one must be set if
-     *     the service line declares a required subject column
+     *   vehicle_id / site_asset_id (int|null) — for contract work, at least
+     *     one must be set if the service line declares a required subject
+     *     column
+     *   fleet_unit_id (int|null) — optional internal fleet unit reference
      *   branch_id, priority, type, assigned_technician_id (optional)
      *   mileage_in (int|null) — per-visit odometer at arrival, only meaningful
      *     for vehicle subjects (Phase 174)
@@ -217,8 +222,23 @@ class WorkorderService
             );
         }
 
-        $customerId = isset($payload['customer_id']) ? (int) $payload['customer_id'] : 0;
-        if ($customerId <= 0) {
+        $workContext = strtolower(trim((string) (
+            $payload['work_context'] ?? $payload['billing_context'] ?? $payload['direct_work_type'] ?? 'contract'
+        )));
+        $internalFlag = filter_var(
+            $payload['is_internal'] ?? false,
+            FILTER_VALIDATE_BOOLEAN,
+            FILTER_NULL_ON_FAILURE
+        );
+        $isInternal = $internalFlag === true || in_array($workContext, ['internal', 'internal_company'], true);
+
+        $customerId = isset($payload['customer_id']) && $payload['customer_id'] !== ''
+            ? (int) $payload['customer_id']
+            : null;
+        if ($isInternal) {
+            $customerId = null;
+        }
+        if (!$isInternal && ($customerId === null || $customerId <= 0)) {
             throw new InvalidArgumentException('customer_id is required.');
         }
 
@@ -236,21 +256,26 @@ class WorkorderService
         if ($serviceLine === null) {
             throw new InvalidArgumentException("Service line {$serviceLineId} not found.");
         }
-        $this->subjectResolver->validateSubject($serviceLine, $payload);
+        if (!$isInternal) {
+            $this->subjectResolver->validateSubject($serviceLine, $payload);
+        }
 
-        $customer = $this->customers->find($customerId);
-        if ($customer === null) {
-            throw new InvalidArgumentException("Customer {$customerId} not found.");
-        }
-        if ($customer->company_id === null) {
-            throw new InvalidArgumentException(
-                'Direct workorders require a B2B customer linked to a company.'
-            );
-        }
-        if (!$this->customers->hasActiveContractForServiceLine($customerId, $serviceLineId)) {
-            throw new InvalidArgumentException(
-                'Direct workorders require an active contract covering this service line for the customer\'s company.'
-            );
+        $customer = null;
+        if (!$isInternal) {
+            $customer = $this->customers->find((int) $customerId);
+            if ($customer === null) {
+                throw new InvalidArgumentException("Customer {$customerId} not found.");
+            }
+            if ($customer->company_id === null) {
+                throw new InvalidArgumentException(
+                    'Direct workorders require a B2B customer linked to a company.'
+                );
+            }
+            if (!$this->customers->hasActiveContractForServiceLine((int) $customerId, $serviceLineId)) {
+                throw new InvalidArgumentException(
+                    'Direct workorders require an active contract covering this service line for the customer\'s company.'
+                );
+            }
         }
 
         $type = $payload['type'] ?? Workorder::TYPE_CORRECTIVE;
@@ -276,6 +301,9 @@ class WorkorderService
         $subjectColumns = $this->subjectResolver->extractSubjectColumns($serviceLine, $payload);
         $vehicleId = $subjectColumns['vehicle_id'] ?? null;
         $siteAssetId = $subjectColumns['site_asset_id'] ?? null;
+        $fleetUnitId = isset($payload['fleet_unit_id']) && $payload['fleet_unit_id'] !== ''
+            ? (int) $payload['fleet_unit_id']
+            : null;
 
         $callOutFee = (float) ($payload['call_out_fee'] ?? 0);
         $mileageTotal = (float) ($payload['mileage_total'] ?? 0);
@@ -292,13 +320,13 @@ class WorkorderService
 
             $stmt = $pdo->prepare(<<<SQL
                 INSERT INTO workorders (
-                    number, estimate_id, customer_id, vehicle_id, site_asset_id, service_line_id,
+                    number, estimate_id, customer_id, vehicle_id, fleet_unit_id, site_asset_id, service_line_id,
                     branch_id, status, type, priority,
                     assigned_technician_id, subtotal, tax, call_out_fee, mileage_total,
                     discounts, shop_fee, hazmat_disposal_fee, grand_total,
                     mileage_in, internal_notes, customer_notes, created_at, updated_at
                 ) VALUES (
-                    :number, NULL, :customer_id, :vehicle_id, :site_asset_id, :service_line_id,
+                    :number, NULL, :customer_id, :vehicle_id, :fleet_unit_id, :site_asset_id, :service_line_id,
                     :branch_id, :status, :type, :priority,
                     :technician_id, 0, 0, :call_out_fee, :mileage_total,
                     :discounts, :shop_fee, :hazmat_disposal_fee, 0,
@@ -310,6 +338,7 @@ class WorkorderService
                 'number' => $workorderNumber,
                 'customer_id' => $customerId,
                 'vehicle_id' => $vehicleId,
+                'fleet_unit_id' => $fleetUnitId,
                 'site_asset_id' => $siteAssetId,
                 'service_line_id' => $serviceLineId,
                 'branch_id' => $branchId,
@@ -338,17 +367,21 @@ class WorkorderService
                 null,
                 Workorder::STATUS_PENDING,
                 $actorId,
-                'Workorder created directly under contract.'
+                $isInternal
+                    ? 'Internal workorder created directly.'
+                    : 'Workorder created directly under contract.'
             );
 
             $pdo->commit();
 
             $workorder = $this->repository->find($workorderId);
             $this->log('workorder.created_direct', $workorderId, $actorId, [
+                'work_context' => $isInternal ? 'internal' : 'contract',
                 'customer_id' => $customerId,
-                'company_id' => $customer->company_id,
+                'company_id' => $customer?->company_id,
                 'service_line_id' => $serviceLineId,
                 'service_line_slug' => $serviceLine->slug,
+                'fleet_unit_id' => $fleetUnitId,
                 'jobs_count' => count($jobs),
             ]);
 
@@ -440,6 +473,9 @@ class WorkorderService
         $validStatuses = [Workorder::STATUS_COMPLETED, Workorder::STATUS_READY_FOR_PICKUP, Workorder::STATUS_GOA];
         if (!in_array($workorder->status, $validStatuses, true)) {
             throw new InvalidArgumentException('Only completed, ready-for-pickup, or GOA workorders can be converted to invoices.');
+        }
+        if ($workorder->customer_id === null) {
+            throw new InvalidArgumentException('Internal workorders cannot be converted to invoices.');
         }
 
         // Validate QC if enabled
@@ -618,6 +654,10 @@ class WorkorderService
      */
     private function autoInvoiceForCompletion(Workorder $workorder, ?int $actorId, ?string $dueDate): ?Invoice
     {
+        if ($workorder->customer_id === null) {
+            $this->log('workorder.auto_invoice_skipped_internal', $workorder->id, $actorId);
+            return null;
+        }
         if ($this->findInvoiceByWorkorderId($workorder->id) !== null) {
             return null;
         }
@@ -1362,7 +1402,9 @@ class WorkorderService
             return;
         }
 
-        $payerName = $billingParty === 'motor_club' ? 'Motor Club' : $this->getCustomerName($workorder->customer_id);
+        $payerName = $billingParty === 'motor_club'
+            ? 'Motor Club'
+            : $this->getCustomerName($workorder->customer_id);
         $reference = 'workorder-' . $workorder->id;
         $entryService = new FinancialEntryService($this->connection, $this->audit);
         $entryService->create([
@@ -1372,7 +1414,7 @@ class WorkorderService
             'purchase_order' => 'goa',
             'amount' => $amount,
             'entry_date' => date('Y-m-d'),
-            'vendor' => $payerName ?: 'Customer',
+            'vendor' => $payerName ?: 'Internal Company',
             'description' => sprintf(
                 'GOA fee for workorder %s billed to %s.',
                 $workorder->number,
@@ -1382,9 +1424,9 @@ class WorkorderService
         ], $actorId ?? 0);
     }
 
-    private function getCustomerName(int $customerId): ?string
+    private function getCustomerName(?int $customerId): ?string
     {
-        if ($customerId === 0) {
+        if ($customerId === null || $customerId === 0) {
             return null;
         }
 
