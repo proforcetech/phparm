@@ -332,6 +332,7 @@ return function (Router $router, array $config, $connection) {
         '/api/time-tracking*' => ['max' => 240, 'decay' => 60],
         '/api/messages/unread' => ['max' => 600, 'decay' => 60],
         '/api/messages*' => ['max' => 300, 'decay' => 60],
+        '/api/workorders*' => ['max' => 300, 'decay' => 60],
     ]));
 
     // Apply CSRF protection to all state-changing API endpoints
