@@ -37,10 +37,8 @@ use PDO;
  *   * thread scope re-validates linkage: a thread must be linked to a
  *     ticket or workorder that passes the above checks, AND the portal
  *     user must already be a participant. Portal users can START a
- *     thread on their own ticket/workorder; staff join by posting
- *     (MessagingService.postMessage auto-adds the sender as participant
- *     if they weren't already… actually it does NOT, staff adds them
- *     explicitly — but this is a staff-side concern, out of portal scope).
+ *     thread on their own ticket/workorder; the service adds internal
+ *     recipients so staff see portal-originated messages in the staff inbox.
  *
  * Internal-message filtering: listMessages hides rows where
  * is_internal=1. Portal writes are always is_internal=0. Staff still
@@ -384,6 +382,7 @@ class PortalMessagingService
                 'UPDATE message_threads SET updated_at = CURRENT_TIMESTAMP WHERE id = :tid'
             );
             $touch->execute(['tid' => $threadId]);
+            $this->ensureInternalParticipants($threadId, $thread['ticket_id'], $thread['workorder_id']);
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -533,6 +532,7 @@ class PortalMessagingService
                  VALUES (:tid, :uid, CURRENT_TIMESTAMP)'
             );
             $part->execute(['tid' => $threadId, 'uid' => $user->id]);
+            $this->ensureInternalParticipants($threadId, $link['ticket_id'], $link['workorder_id']);
 
             $msg = $pdo->prepare(
                 'INSERT INTO message_messages
@@ -580,6 +580,77 @@ class PortalMessagingService
             'created_by' => $user->id,
             'initial_message' => $this->fetchMessageById($messageId),
         ];
+    }
+
+    private function ensureInternalParticipants(int $threadId, ?int $ticketId, ?int $workorderId): void
+    {
+        $participantIds = $this->internalParticipantIds($ticketId, $workorderId);
+        if ($participantIds === []) {
+            return;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'INSERT IGNORE INTO message_participants (thread_id, participant_id, created_at)
+             VALUES (:thread_id, :participant_id, CURRENT_TIMESTAMP)'
+        );
+
+        foreach ($participantIds as $participantId) {
+            $stmt->execute([
+                'thread_id' => $threadId,
+                'participant_id' => $participantId,
+            ]);
+        }
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function internalParticipantIds(?int $ticketId, ?int $workorderId): array
+    {
+        $ids = [];
+
+        $roleStmt = $this->connection->pdo()->prepare(
+            "SELECT id FROM users WHERE active = 1 AND role IN ('admin', 'manager')"
+        );
+        $roleStmt->execute();
+        $ids = array_merge($ids, array_map('intval', $roleStmt->fetchAll(PDO::FETCH_COLUMN)));
+
+        if ($workorderId !== null) {
+            $techStmt = $this->connection->pdo()->prepare(
+                'SELECT assigned_technician_id FROM workorders WHERE id = :id'
+            );
+            $techStmt->execute(['id' => $workorderId]);
+            $technicianId = $techStmt->fetchColumn();
+            if ($technicianId !== false && $technicianId !== null) {
+                $ids[] = (int) $technicianId;
+            }
+        }
+
+        return $this->filterInternalUserIds($ids);
+    }
+
+    /**
+     * @param array<int, int> $ids
+     * @return array<int, int>
+     */
+    private function filterInternalUserIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if ($ids === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT id
+             FROM users
+             WHERE active = 1
+               AND role NOT IN ('customer', 'portal_user')
+               AND id IN (" . $placeholders . ')'
+        );
+        $stmt->execute($ids);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }
 
     /**

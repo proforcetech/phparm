@@ -4225,7 +4225,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
         $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
-        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit, $messagingNotifications);
 
         try {
             $result = $linkService->approveJob(
@@ -4257,7 +4258,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
         $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
-        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit, $messagingNotifications);
 
         try {
             $result = $linkService->rejectJob(
@@ -4289,7 +4291,8 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $estimateRepository = new \App\Services\Estimate\EstimateRepository($connection, $auditLogger);
         $estimateEditor = new \App\Services\Estimate\EstimateEditorService($connection, $auditLogger, new \App\Services\ServiceLine\SubjectResolver(new \App\Services\ServiceLine\ServiceLineRepository($connection)));
         $approvalAudit = new \App\Services\Approval\ApprovalAuditService($connection);
-        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit);
+        $messagingNotifications = new \App\Services\Messaging\MessagingNotificationService($connection, new \App\Services\Messaging\MessagingService($connection));
+        $linkService = new \App\Services\Estimate\EstimatePublicLinkService($connection, $estimateRepository, $estimateEditor, $auditLogger, $approvalAudit, $messagingNotifications);
 
         $forensics = [
             'geo_lat' => $body['geo_lat'] ?? null,
@@ -4839,6 +4842,24 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
             $id = (int) $request->getAttribute('id');
             $data = $workorderController->timeline($user, $id);
             return Response::json($data);
+        });
+
+        $router->get('/api/workorders/{id}/internal-notes', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $params = [
+                'limit' => $request->queryParam('limit'),
+                'offset' => $request->queryParam('offset'),
+            ];
+            $data = $workorderController->internalNotes($user, $id, $params);
+            return Response::json($data);
+        });
+
+        $router->post('/api/workorders/{id}/internal-notes', function (Request $request) use ($workorderController) {
+            $user = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $data = $workorderController->addInternalNote($user, $id, $request->body());
+            return Response::created($data);
         });
 
         $router->patch('/api/workorders/{id}/jobs/{jobId}/status', function (Request $request) use ($workorderController, $trackingService) {
@@ -5428,6 +5449,14 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         });
 
         // Messaging routes (staff only)
+        $router->get('/api/messages/participants', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $data = $messagingController->participants($user, [
+                'query' => $request->queryParam('query'),
+            ]);
+            return Response::json($data);
+        })->middleware(Middleware::auth());
+
         $router->get('/api/messages/threads', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->threads($user);

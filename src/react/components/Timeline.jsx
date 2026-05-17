@@ -3,6 +3,7 @@ import Badge from './ui/Badge'
 const iconStyles = {
   status: 'bg-blue-500',
   message: 'bg-indigo-500',
+  note: 'bg-slate-500',
   photo: 'bg-emerald-500',
   approval: 'bg-purple-500',
   estimate: 'bg-amber-500',
@@ -11,6 +12,7 @@ const iconStyles = {
 const iconPaths = {
   status: 'M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z',
   message: 'M8 10h8M8 14h4M21 12c0 4.418-4.03 8-9 8a9.77 9.77 0 01-4.39-1.02L3 20l1.28-3.2A7.42 7.42 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  note: 'M7 4h10a2 2 0 012 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 012-2zm2 5h6M9 13h4',
   photo: 'M4 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 7l2-2 3 3 2-2 3 3',
   approval: 'M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z',
   estimate: 'M9 7h6m-6 4h6m-6 4h6',
@@ -30,6 +32,9 @@ const formatDateTime = (date) => {
 const renderMeta = (event) => {
   if (event.type === 'message' && event.meta?.sender_role) {
     return <Badge variant="secondary">Message</Badge>
+  }
+  if (event.type === 'note') {
+    return <Badge variant="secondary">Internal</Badge>
   }
   if (event.type === 'photo' && event.meta?.category) {
     return <Badge variant="secondary">{event.meta.category}</Badge>

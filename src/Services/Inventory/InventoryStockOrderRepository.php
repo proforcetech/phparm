@@ -146,8 +146,14 @@ class InventoryStockOrderRepository
         ]);
 
         $id = (int) $this->connection->pdo()->lastInsertId();
+        $order = $this->find($id);
 
-        return $this->find($id);
+        $this->messagingNotifications?->dispatch('inventory.stock_order.created', [
+            'stock_order_id' => $id,
+            'actor_id' => $actorId,
+        ]);
+
+        return $order;
     }
 
     /**

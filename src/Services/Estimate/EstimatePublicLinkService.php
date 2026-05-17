@@ -8,6 +8,7 @@ use App\Models\EstimateJob;
 use App\Models\EstimatePublicLink;
 use App\Models\EstimateSignature;
 use App\Services\Approval\ApprovalAuditService;
+use App\Services\Messaging\MessagingNotificationService;
 use App\Support\Audit\AuditEntry;
 use App\Support\Audit\AuditLogger;
 use InvalidArgumentException;
@@ -21,19 +22,22 @@ class EstimatePublicLinkService
     private EstimateEditorService $editor;
     private ?AuditLogger $audit;
     private ?ApprovalAuditService $approvalAudit;
+    private ?MessagingNotificationService $messagingNotifications;
 
     public function __construct(
         Connection $connection,
         EstimateRepository $estimates,
         EstimateEditorService $editor,
         ?AuditLogger $audit = null,
-        ?ApprovalAuditService $approvalAudit = null
+        ?ApprovalAuditService $approvalAudit = null,
+        ?MessagingNotificationService $messagingNotifications = null
     ) {
         $this->connection = $connection;
         $this->estimates = $estimates;
         $this->editor = $editor;
         $this->audit = $audit;
         $this->approvalAudit = $approvalAudit;
+        $this->messagingNotifications = $messagingNotifications;
     }
 
     public function issueLink(
@@ -157,6 +161,11 @@ class EstimatePublicLinkService
             $this->persistJobComment($estimateId, $jobId, $comment, 'approved');
             $this->propagateEstimateStatus($estimateId);
             $this->log('estimate.job_public_approved', $estimateId, null, ['job_id' => $jobId]);
+            $this->messagingNotifications?->dispatch('estimate.job_public_approved', [
+                'estimate_id' => $estimateId,
+                'job_id' => $jobId,
+                'message' => trim((string) ($comment ?? '')),
+            ]);
 
             // Log in approval audit trail
             if ($this->approvalAudit !== null && $ipAddress !== null) {
@@ -197,6 +206,11 @@ class EstimatePublicLinkService
             $this->persistJobRejection($estimateId, $jobId, $rejectionReason, $comment, $signerName, $signerEmail, $ipAddress);
             $this->propagateEstimateStatus($estimateId);
             $this->log('estimate.job_public_rejected', $estimateId, null, ['job_id' => $jobId]);
+            $this->messagingNotifications?->dispatch('estimate.job_public_rejected', [
+                'estimate_id' => $estimateId,
+                'job_id' => $jobId,
+                'message' => trim((string) ($comment ?? $rejectionReason ?? '')),
+            ]);
 
             // Log in approval audit trail
             if ($this->approvalAudit !== null && $ipAddress !== null) {
@@ -428,6 +442,10 @@ class EstimatePublicLinkService
         $this->attachSignatureToLink($link->id, $signatureId);
 
         $this->log('estimate.signature_captured', $estimate->id, null, ['signer' => $name]);
+        $this->messagingNotifications?->dispatch('estimate.signature_captured', [
+            'estimate_id' => $estimate->id,
+            'signer' => $name,
+        ]);
 
         // Log in approval audit trail
         if ($this->approvalAudit !== null && $ipAddress !== null) {
@@ -461,6 +479,10 @@ class EstimatePublicLinkService
         ]);
 
         $this->log('estimate.public_comment_added', $link->estimate_id, null, ['comment' => $comment]);
+        $this->messagingNotifications?->dispatch('estimate.public_comment_added', [
+            'estimate_id' => $link->estimate_id,
+            'message' => $comment,
+        ]);
 
         return true;
     }

@@ -4,6 +4,7 @@ namespace App\Services\Workorder;
 
 use App\Database\Connection;
 use App\Models\Workorder;
+use App\Models\WorkorderInternalNote;
 use App\Models\WorkorderJob;
 use App\Models\WorkorderItem;
 use App\Models\WorkorderStatusHistory;
@@ -17,6 +18,7 @@ class WorkorderRepository
 {
     private Connection $connection;
     private ?AuditLogger $audit;
+    private ?bool $hasInternalNotesTable = null;
 
     public function __construct(Connection $connection, ?AuditLogger $audit = null)
     {
@@ -734,6 +736,134 @@ class WorkorderRepository
             fn($row) => new WorkorderStatusHistory($row),
             $stmt->fetchAll(PDO::FETCH_ASSOC)
         );
+    }
+
+    /**
+     * @return array<int, WorkorderInternalNote>
+     */
+    public function getInternalNotes(int $workorderId, int $limit = 50, int $offset = 0): array
+    {
+        if (!$this->internalNotesTableExists()) {
+            return [];
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT win.id,
+                   win.workorder_id,
+                   win.author_user_id,
+                   u.name AS author_name,
+                   win.body,
+                   win.context,
+                   win.created_at,
+                   win.updated_at
+              FROM workorder_internal_notes win
+         LEFT JOIN users u ON u.id = win.author_user_id
+             WHERE win.workorder_id = :workorder_id
+          ORDER BY win.created_at DESC, win.id DESC
+             LIMIT :limit OFFSET :offset
+        SQL);
+        $stmt->bindValue(':workorder_id', $workorderId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return array_map(
+            fn($row) => new WorkorderInternalNote($row),
+            $stmt->fetchAll(PDO::FETCH_ASSOC)
+        );
+    }
+
+    public function createInternalNote(
+        int $workorderId,
+        int $authorUserId,
+        string $body,
+        ?string $context = null
+    ): WorkorderInternalNote {
+        if (!$this->internalNotesTableExists()) {
+            throw new InvalidArgumentException('Internal note storage is not available. Run database migrations.');
+        }
+
+        $pdo = $this->connection->pdo();
+        $stmt = $pdo->prepare(<<<SQL
+            INSERT INTO workorder_internal_notes (
+                workorder_id,
+                author_user_id,
+                body,
+                context,
+                created_at,
+                updated_at
+            ) VALUES (
+                :workorder_id,
+                :author_user_id,
+                :body,
+                :context,
+                NOW(),
+                NOW()
+            )
+        SQL);
+        $stmt->execute([
+            'workorder_id' => $workorderId,
+            'author_user_id' => $authorUserId,
+            'body' => $body,
+            'context' => $context,
+        ]);
+
+        $noteId = (int) $pdo->lastInsertId();
+        $note = $this->findInternalNote($noteId);
+        if ($note === null) {
+            throw new InvalidArgumentException('Failed to create internal note.');
+        }
+
+        $this->log('workorder.internal_note_added', $workorderId, $authorUserId, [
+            'note_id' => $noteId,
+            'context' => $context,
+        ]);
+
+        return $note;
+    }
+
+    private function findInternalNote(int $id): ?WorkorderInternalNote
+    {
+        if (!$this->internalNotesTableExists()) {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT win.id,
+                   win.workorder_id,
+                   win.author_user_id,
+                   u.name AS author_name,
+                   win.body,
+                   win.context,
+                   win.created_at,
+                   win.updated_at
+              FROM workorder_internal_notes win
+         LEFT JOIN users u ON u.id = win.author_user_id
+             WHERE win.id = :id
+             LIMIT 1
+        SQL);
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ? new WorkorderInternalNote($row) : null;
+    }
+
+    private function internalNotesTableExists(): bool
+    {
+        if ($this->hasInternalNotesTable !== null) {
+            return $this->hasInternalNotesTable;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(<<<SQL
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = 'workorder_internal_notes'
+        SQL);
+        $stmt->execute();
+        $this->hasInternalNotesTable = (int) $stmt->fetchColumn() > 0;
+
+        return $this->hasInternalNotesTable;
     }
 
     private function recordStatusHistory(
