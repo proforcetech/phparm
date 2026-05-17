@@ -16,7 +16,7 @@ import { useToast } from '../../stores/toast.jsx'
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
-  { value: 'blocked', label: 'Blocked' },
+  { value: 'suspended', label: 'Suspended' },
 ]
 
 const TABS = [
@@ -54,7 +54,7 @@ function formatDateTime(value) {
 function statusVariant(status) {
   const v = String(status || '').toLowerCase()
   if (v === 'active') return 'success'
-  if (v === 'blocked') return 'danger'
+  if (v === 'blocked' || v === 'suspended') return 'danger'
   if (['done', 'completed', 'closed'].includes(v)) return 'success'
   if (['pending', 'in_progress', 'in-progress', 'open'].includes(v)) return 'warning'
   if (['cancelled', 'canceled', 'failed'].includes(v)) return 'danger'
@@ -91,14 +91,16 @@ export default function SubcontractorDetail() {
         setSub(data)
         if (data) {
           setForm({
-            name: data.name || '',
+            name: data.company_name || data.name || '',
             contact_name: data.contact_name || data.primary_contact || '',
             contact_email: data.contact_email || data.email || '',
             contact_phone: data.contact_phone || data.phone || '',
-            address: data.address || '',
+            address: data.address_line1 || data.address || '',
             trades: tradesToInput(data.trades),
             notes: data.notes || '',
             status: data.status || 'active',
+            portal_login_enabled: !!data.portal_login_enabled,
+            portal_password: '',
           })
         }
       })
@@ -135,15 +137,17 @@ export default function SubcontractorDetail() {
     setSaving(true)
     const trades = parseTrades(form.trades)
     const payload = {
-      name: form.name.trim(),
+      company_name: form.name.trim(),
       contact_name: form.contact_name.trim() || undefined,
-      contact_email: form.contact_email.trim() || undefined,
-      contact_phone: form.contact_phone.trim() || undefined,
-      address: form.address.trim() || undefined,
+      email: form.contact_email.trim() || undefined,
+      phone: form.contact_phone.trim() || undefined,
+      address_line1: form.address.trim() || undefined,
       trades: trades.length ? trades : undefined,
       notes: form.notes.trim() || undefined,
       status: form.status || 'active',
+      portal_login_enabled: !!form.portal_login_enabled,
     }
+    if (form.portal_password.trim()) payload.portal_password = form.portal_password
     try {
       await subcontractorsService.update(id, payload)
       toast.success('Subcontractor updated')
@@ -194,7 +198,7 @@ export default function SubcontractorDetail() {
             &larr; Subcontractors
           </Link>
           <div className="flex items-center gap-3 mt-1">
-            <h1 className="text-xl font-semibold">{sub.name}</h1>
+            <h1 className="text-xl font-semibold">{sub.company_name || sub.name}</h1>
             <Badge variant={statusVariant(sub.status)}>{sub.status || 'unknown'}</Badge>
           </div>
           {tradeBadges.length > 0 && (
@@ -281,6 +285,34 @@ export default function SubcontractorDetail() {
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             />
+            <div className="rounded-md border border-gray-200 p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={!!form.portal_login_enabled}
+                    onChange={(e) => setForm((f) => ({ ...f, portal_login_enabled: e.target.checked }))}
+                  />
+                  Enable subcontractor portal login
+                </label>
+                <Badge variant={sub.portal_password_set ? 'success' : 'secondary'}>
+                  {sub.portal_password_set ? 'Password set' : 'No password'}
+                </Badge>
+              </div>
+              {form.portal_login_enabled && (
+                <Input
+                  label="New portal password"
+                  type="password"
+                  value={form.portal_password}
+                  onChange={(e) => setForm((f) => ({ ...f, portal_password: e.target.value }))}
+                  required={!sub.portal_password_set}
+                  autocomplete="new-password"
+                  helperText={sub.portal_password_set
+                    ? 'Leave blank to keep the existing password.'
+                    : 'At least 8 characters.'}
+                />
+              )}
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={load} disabled={saving}>Reset</Button>
               <Button onClick={submitUpdate} loading={saving}>Save changes</Button>

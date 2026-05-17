@@ -21,7 +21,9 @@ use RuntimeException;
  *   1) Staff-side issuance (issueToken / listTokens / revokeToken) — guarded
  *      by subcontractors.manage. Returns the plaintext token exactly once.
  *   2) Self-service (everything taking $token: SubcontractorPortalToken) —
- *      no User; the token IS the auth, scoped to one subcontractor row.
+ *      no User; the token is the portal access credential, scoped to one
+ *      subcontractor row. Link tokens and email/password login both resolve
+ *      to this same token boundary.
  *      Every method that reads or mutates an assignment validates the
  *      assignment.subcontractor_id == token.subcontractor_id. Cross-tenant
  *      access via guessed assignment IDs is impossible because of that check.
@@ -33,6 +35,7 @@ use RuntimeException;
 class SubcontractorPortalService
 {
     private const TOKEN_PLAINTEXT_PREFIX = 'sub_';
+    private const CREDENTIAL_SESSION_DAYS = 30;
 
     public function __construct(
         private readonly SubcontractorRepository $subRepo,
@@ -132,6 +135,58 @@ class SubcontractorPortalService
         }
         $this->tokenRepo->recordUse($token->id, $clientIp);
         return ['token' => $token, 'subcontractor' => $sub];
+    }
+
+    /**
+     * Credential login uses the subcontractor's email + portal password and
+     * returns a short-lived portal token for the existing self-service API.
+     *
+     * @return array{token: SubcontractorPortalToken, subcontractor: Subcontractor, plaintext: string}|null
+     */
+    public function authenticateCredentials(
+        string $email,
+        string $password,
+        ?string $clientIp = null
+    ): ?array {
+        $cleanEmail = trim($email);
+        if ($cleanEmail === '' || !filter_var($cleanEmail, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        if ($password === '') {
+            return null;
+        }
+
+        $resolved = $this->subRepo->findPortalLoginByEmail($cleanEmail);
+        if ($resolved === null) {
+            return null;
+        }
+
+        $sub = $resolved['subcontractor'];
+        if ($sub->status !== Subcontractor::STATUS_ACTIVE || !$sub->portal_login_enabled) {
+            return null;
+        }
+        if (!password_verify($password, $resolved['password_hash'])) {
+            return null;
+        }
+
+        $plaintext = self::generatePlaintext();
+        $expiresAt = (new DateTimeImmutable('+' . self::CREDENTIAL_SESSION_DAYS . ' days'))
+            ->format('Y-m-d H:i:s');
+        $token = $this->tokenRepo->create(
+            $sub->id,
+            $plaintext,
+            'Credential login',
+            $expiresAt,
+            null,
+        );
+        $this->subRepo->recordPortalLogin($sub->id, $clientIp);
+        $this->tokenRepo->recordUse($token->id, $clientIp);
+
+        return [
+            'token' => $token,
+            'subcontractor' => $sub,
+            'plaintext' => $plaintext,
+        ];
     }
 
     /**

@@ -40,6 +40,10 @@ class Subcontractor extends BaseModel
     public string $status = self::STATUS_ACTIVE;
     public ?string $insurance_expires_at = null;
     public ?string $notes = null;
+    public bool $portal_login_enabled = false;
+    public bool $portal_password_set = false;
+    public ?string $portal_password_updated_at = null;
+    public ?string $portal_last_login_at = null;
     public ?string $created_at = null;
     public ?string $updated_at = null;
 

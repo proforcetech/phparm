@@ -26,9 +26,11 @@ use App\Support\Http\Router;
  *        DELETE /api/subcontractor-portal-tokens/{id}      revoke
  *        GET    /api/subcontractor-assignments/{id}/pods   staff view of POD bundle
  *
- *   2) Sub-facing self-service — bearer token only, NO staff JWT. The token
- *      identifies the sub; the assignment.subcontractor_id check on every
- *      mutation prevents cross-tenant access if a token leaks.
+ *   2) Sub-facing self-service — credential login or bearer token, NO staff
+ *      JWT. Both auth methods resolve to a portal token that identifies the
+ *      sub; the assignment.subcontractor_id check on every mutation prevents
+ *      cross-tenant access if a token leaks.
+ *        POST   /api/sub-portal/login
  *        GET    /api/sub-portal/me
  *        GET    /api/sub-portal/assignments[?status=...]
  *        GET    /api/sub-portal/assignments/{id}
@@ -116,7 +118,7 @@ return function (Router $router, RouteContext $ctx): void {
         );
     });
 
-    // ─────────────────────────────────────── token-authenticated routes ────
+    // ───────────────────────────── credential / token-authenticated routes ─
 
     $extractToken = static function (Request $request): ?string {
         $bearer = $request->bearerToken();
@@ -134,11 +136,17 @@ return function (Router $router, RouteContext $ctx): void {
         return null;
     };
 
-    $router->group([Middleware::throttle(60, 60)], function (Router $router) use ($service, $controller, $extractToken) {
+    $router->group([Middleware::throttleWithOverrides(60, 60, [
+        '/api/sub-portal/login' => ['max' => 10, 'decay' => 60],
+    ])], function (Router $router) use ($service, $controller, $extractToken) {
+        $router->post('/api/sub-portal/login', function (Request $request) use ($controller) {
+            return Response::json($controller->login($request->body(), $request->getClientIp()));
+        });
+
         $auth = static function (Request $request) use ($service, $extractToken): array {
             $plaintext = $extractToken($request);
             if ($plaintext === null) {
-                throw new \App\Support\Auth\UnauthorizedException('Subcontractor portal token required');
+                throw new \App\Support\Auth\UnauthorizedException('Subcontractor portal login required');
             }
             $resolved = $service->authenticate($plaintext, $request->getClientIp());
             if ($resolved === null) {

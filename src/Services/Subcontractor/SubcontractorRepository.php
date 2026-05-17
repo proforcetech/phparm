@@ -21,7 +21,8 @@ class SubcontractorRepository
     private const SUBCONTRACTOR_COLUMNS = 'id, company_name, contact_name, email, phone,
         address_line1, address_line2, city, state, postal_code, country,
         tax_id, payment_terms, hourly_rate_cents, status, insurance_expires_at,
-        notes, created_at, updated_at';
+        notes, portal_login_enabled, portal_password_hash, portal_password_updated_at,
+        portal_last_login_at, created_at, updated_at';
 
     private const ASSIGNMENT_COLUMNS = 'id, subcontractor_id, workorder_id, status,
         description, internal_notes, estimated_cost_cents, actual_cost_cents,
@@ -84,6 +85,40 @@ class SubcontractorRepository
     }
 
     /**
+     * @return array{subcontractor: Subcontractor, password_hash: string}|null
+     */
+    public function findPortalLoginByEmail(string $email): ?array
+    {
+        $clean = trim($email);
+        if ($clean === '') {
+            return null;
+        }
+
+        $stmt = $this->connection->pdo()->prepare(
+            'SELECT ' . self::SUBCONTRACTOR_COLUMNS . ' FROM subcontractors
+             WHERE LOWER(email) = LOWER(:email)
+               AND portal_login_enabled = 1
+               AND portal_password_hash IS NOT NULL
+             LIMIT 2'
+        );
+        $stmt->execute(['email' => $clean]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (count($rows) !== 1) {
+            return null;
+        }
+
+        $hash = (string) ($rows[0]['portal_password_hash'] ?? '');
+        if ($hash === '') {
+            return null;
+        }
+
+        return [
+            'subcontractor' => self::hydrateSubcontractor($rows[0]),
+            'password_hash' => $hash,
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function createSubcontractor(array $data): Subcontractor
@@ -93,12 +128,14 @@ class SubcontractorRepository
              (company_name, contact_name, email, phone,
               address_line1, address_line2, city, state, postal_code, country,
               tax_id, payment_terms, hourly_rate_cents, status,
-              insurance_expires_at, notes)
+              insurance_expires_at, notes, portal_login_enabled, portal_password_hash,
+              portal_password_updated_at)
              VALUES
              (:company_name, :contact_name, :email, :phone,
               :address_line1, :address_line2, :city, :state, :postal_code, :country,
               :tax_id, :payment_terms, :hourly_rate_cents, :status,
-              :insurance_expires_at, :notes)'
+              :insurance_expires_at, :notes, :portal_login_enabled, :portal_password_hash,
+              :portal_password_updated_at)'
         );
         $stmt->execute(self::writableSubParams($data));
         $id = (int) $this->connection->pdo()->lastInsertId();
@@ -117,7 +154,8 @@ class SubcontractorRepository
         $writable = ['company_name', 'contact_name', 'email', 'phone',
             'address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country',
             'tax_id', 'payment_terms', 'hourly_rate_cents', 'status',
-            'insurance_expires_at', 'notes'];
+            'insurance_expires_at', 'notes', 'portal_login_enabled', 'portal_password_hash',
+            'portal_password_updated_at'];
         $fields = [];
         $params = ['id' => $id];
         foreach ($writable as $col) {
@@ -142,6 +180,19 @@ class SubcontractorRepository
     {
         $stmt = $this->connection->pdo()->prepare('DELETE FROM subcontractors WHERE id = :id');
         $stmt->execute(['id' => $id]);
+    }
+
+    public function recordPortalLogin(int $subcontractorId, ?string $ip): void
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            'UPDATE subcontractors
+             SET portal_last_login_at = NOW(), portal_last_login_ip = :ip
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $subcontractorId,
+            'ip' => $ip === null || $ip === '' ? null : substr($ip, 0, 45),
+        ]);
     }
 
     // ────────────────────────────────────────────── division approvals (M2M) ─
@@ -331,6 +382,9 @@ class SubcontractorRepository
      */
     private static function hydrateSubcontractor(array $row): Subcontractor
     {
+        $row['portal_password_set'] = isset($row['portal_password_hash'])
+            && (string) $row['portal_password_hash'] !== '';
+        unset($row['portal_password_hash'], $row['portal_last_login_ip']);
         return new Subcontractor($row);
     }
 
@@ -351,7 +405,8 @@ class SubcontractorRepository
         $cols = ['company_name', 'contact_name', 'email', 'phone',
             'address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country',
             'tax_id', 'payment_terms', 'hourly_rate_cents', 'status',
-            'insurance_expires_at', 'notes'];
+            'insurance_expires_at', 'notes', 'portal_login_enabled', 'portal_password_hash',
+            'portal_password_updated_at'];
         $out = [];
         foreach ($cols as $c) {
             $out[$c] = self::castSubColumn($c, $data[$c] ?? null);
@@ -366,6 +421,7 @@ class SubcontractorRepository
         }
         return match ($col) {
             'hourly_rate_cents' => self::nullableInt($value),
+            'portal_login_enabled' => $value ? 1 : 0,
             'company_name' => (string) ($value ?? ''),
             'status' => self::normalizeStatus($value),
             default => $value === null ? null : (string) $value,

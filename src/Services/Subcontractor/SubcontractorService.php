@@ -66,7 +66,7 @@ class SubcontractorService
     public function createSubcontractor(User $actor, array $data): Subcontractor
     {
         $this->gate->assert($actor, 'subcontractors.manage');
-        $this->validateSubcontractorPayload($data, true);
+        $data = $this->prepareSubcontractorPayload($data, true);
 
         $sub = $this->repo->createSubcontractor($data);
         if (array_key_exists('division_ids', $data) && is_array($data['division_ids'])) {
@@ -82,10 +82,11 @@ class SubcontractorService
     public function updateSubcontractor(User $actor, int $id, array $data): Subcontractor
     {
         $this->gate->assert($actor, 'subcontractors.manage');
-        if ($this->repo->findSubcontractor($id) === null) {
+        $existing = $this->repo->findSubcontractor($id);
+        if ($existing === null) {
             throw new InvalidArgumentException("Subcontractor {$id} not found");
         }
-        $this->validateSubcontractorPayload($data, false);
+        $data = $this->prepareSubcontractorPayload($data, false, $existing);
 
         $sub = $this->repo->updateSubcontractor($id, $data);
         if (array_key_exists('division_ids', $data) && is_array($data['division_ids'])) {
@@ -285,8 +286,65 @@ class SubcontractorService
 
     /**
      * @param array<string, mixed> $data
+     * @return array<string, mixed>
      */
-    private function validateSubcontractorPayload(array $data, bool $forCreate): void
+    private function prepareSubcontractorPayload(
+        array $data,
+        bool $forCreate,
+        ?Subcontractor $existing = null
+    ): array {
+        $data = $this->normalizeSubcontractorAliases($data);
+        unset($data['portal_password_hash']);
+
+        $portalPasswordWasProvided = array_key_exists('portal_password', $data)
+            && trim((string) $data['portal_password']) !== '';
+        if ($portalPasswordWasProvided) {
+            $password = (string) $data['portal_password'];
+            if (strlen($password) < 8) {
+                throw new InvalidArgumentException('portal_password must be at least 8 characters');
+            }
+            $data['portal_password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+            $data['portal_password_updated_at'] = date('Y-m-d H:i:s');
+        }
+        unset($data['portal_password']);
+
+        $this->validateSubcontractorPayload($data, $forCreate, $existing, $portalPasswordWasProvided);
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function normalizeSubcontractorAliases(array $data): array
+    {
+        $aliases = [
+            'name' => 'company_name',
+            'contact_email' => 'email',
+            'contact_phone' => 'phone',
+            'address' => 'address_line1',
+        ];
+        foreach ($aliases as $from => $to) {
+            if (array_key_exists($from, $data) && !array_key_exists($to, $data)) {
+                $data[$to] = $data[$from];
+            }
+            unset($data[$from]);
+        }
+        if (($data['status'] ?? null) === 'blocked') {
+            $data['status'] = Subcontractor::STATUS_SUSPENDED;
+        }
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function validateSubcontractorPayload(
+        array $data,
+        bool $forCreate,
+        ?Subcontractor $existing = null,
+        bool $portalPasswordWasProvided = false
+    ): void
     {
         if ($forCreate && empty($data['company_name'])) {
             throw new InvalidArgumentException('company_name is required');
@@ -320,6 +378,25 @@ class SubcontractorService
             && (int) $data['hourly_rate_cents'] < 0
         ) {
             throw new InvalidArgumentException('hourly_rate_cents must be non-negative');
+        }
+
+        $portalLoginEnabled = array_key_exists('portal_login_enabled', $data)
+            ? (bool) $data['portal_login_enabled']
+            : (bool) ($existing?->portal_login_enabled ?? false);
+        if (!$portalLoginEnabled) {
+            return;
+        }
+
+        $email = array_key_exists('email', $data)
+            ? trim((string) ($data['email'] ?? ''))
+            : trim((string) ($existing?->email ?? ''));
+        if ($email === '') {
+            throw new InvalidArgumentException('email is required to enable portal login');
+        }
+
+        $passwordIsSet = $portalPasswordWasProvided || (bool) ($existing?->portal_password_set ?? false);
+        if (!$passwordIsSet) {
+            throw new InvalidArgumentException('portal_password is required to enable portal login');
         }
     }
 }

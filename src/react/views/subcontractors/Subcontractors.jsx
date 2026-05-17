@@ -17,13 +17,13 @@ const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
-  { value: 'blocked', label: 'Blocked' },
+  { value: 'suspended', label: 'Suspended' },
 ]
 
 function statusVariant(status) {
   const v = String(status || '').toLowerCase()
   if (v === 'active') return 'success'
-  if (v === 'blocked') return 'danger'
+  if (v === 'blocked' || v === 'suspended') return 'danger'
   if (v === 'inactive') return 'default'
   return 'default'
 }
@@ -59,6 +59,8 @@ const emptyForm = {
   trades: '',
   notes: '',
   status: 'active',
+  portal_login_enabled: false,
+  portal_password: '',
 }
 
 export default function Subcontractors() {
@@ -110,14 +112,16 @@ export default function Subcontractors() {
     setBusy(true)
     const trades = parseTrades(form.trades)
     const payload = {
-      name: form.name.trim(),
+      company_name: form.name.trim(),
       contact_name: form.contact_name.trim() || undefined,
-      contact_email: form.contact_email.trim() || undefined,
-      contact_phone: form.contact_phone.trim() || undefined,
+      email: form.contact_email.trim() || undefined,
+      phone: form.contact_phone.trim() || undefined,
       trades: trades.length ? trades : undefined,
       notes: form.notes.trim() || undefined,
       status: form.status || 'active',
+      portal_login_enabled: !!form.portal_login_enabled,
     }
+    if (form.portal_password.trim()) payload.portal_password = form.portal_password
     try {
       await subcontractorsService.create(payload)
       toast.success('Subcontractor created')
@@ -195,7 +199,7 @@ export default function Subcontractors() {
                       className="border-t cursor-pointer hover:bg-gray-50"
                       onClick={() => navigate(`/cp/subcontractors/${s.id}`)}
                     >
-                      <td className="p-2 font-medium">{s.name}</td>
+                      <td className="p-2 font-medium">{s.company_name || s.name}</td>
                       <td className="p-2">
                         {s.primary_contact || s.contact_name || <span className="text-gray-400">—</span>}
                       </td>
@@ -275,6 +279,27 @@ export default function Subcontractors() {
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
           />
+          <div className="rounded-md border border-gray-200 p-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={!!form.portal_login_enabled}
+                onChange={(e) => setForm((f) => ({ ...f, portal_login_enabled: e.target.checked }))}
+              />
+              Enable subcontractor portal login
+            </label>
+            {form.portal_login_enabled && (
+              <Input
+                label="Portal password"
+                type="password"
+                value={form.portal_password}
+                onChange={(e) => setForm((f) => ({ ...f, portal_password: e.target.value }))}
+                required
+                autocomplete="new-password"
+                helperText="At least 8 characters."
+              />
+            )}
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={busy}>Cancel</Button>
             <Button onClick={submitCreate} loading={busy}>Create</Button>

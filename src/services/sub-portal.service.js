@@ -4,8 +4,10 @@ import env from '@/config/env'
 /**
  * Subcontractor self-service portal client (Phase 18 / C2).
  *
- * The portal is unauthenticated to the staff JWT stack — the bearer token
- * IS the credential. We deliberately do NOT use the shared `api` axios
+ * The portal is unauthenticated to the staff JWT stack. Subcontractors can
+ * arrive with a staff-issued link token or sign in with email/password; both
+ * flows produce the same bearer token for this client. We deliberately do
+ * NOT use the shared `api` axios
  * instance because:
  *   - the shared instance attaches the staff JWT cookie / CSRF, which
  *     would mix two auth domains in one request;
@@ -13,18 +15,33 @@ import env from '@/config/env'
  *     on 401, which would break a sub whose token actually IS expired.
  *
  * Instead this exports a tiny axios instance that only knows about the
- * sub-portal token. The token is held in module scope after `setToken`
- * and re-attached to every call.
+ * sub-portal token. The token is held in module scope/localStorage after
+ * `setToken` and re-attached to every call.
  */
 
-let bearerToken = ''
+const TOKEN_KEY = 'subPortal.access_token'
 
-export function setToken(token) {
+function readStoredToken() {
+  if (typeof window === 'undefined' || !window.localStorage) return ''
+  return window.localStorage.getItem(TOKEN_KEY) || ''
+}
+
+let bearerToken = readStoredToken()
+
+export function setToken(token, persist = true) {
   bearerToken = (token || '').trim()
+  if (typeof window !== 'undefined' && window.localStorage) {
+    if (bearerToken && persist) window.localStorage.setItem(TOKEN_KEY, bearerToken)
+    else if (!bearerToken) window.localStorage.removeItem(TOKEN_KEY)
+  }
 }
 
 export function getToken() {
   return bearerToken
+}
+
+export function clearToken() {
+  setToken('')
 }
 
 const client = axios.create({
@@ -48,6 +65,15 @@ function unwrap(p) {
 const subPortalService = {
   setToken,
   getToken,
+  clearToken,
+
+  async login(email, password) {
+    const payload = { email, password }
+    const result = await unwrap(client.post('/sub-portal/login', payload))
+    const token = result?.data?.access_token || result?.access_token || ''
+    if (token) setToken(token)
+    return result
+  },
 
   me() {
     return unwrap(client.get('/sub-portal/me'))
