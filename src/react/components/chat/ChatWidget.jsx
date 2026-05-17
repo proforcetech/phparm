@@ -13,6 +13,8 @@ import { useAuthStore } from '../../stores/auth.jsx'
 import { useUIStore } from '../../stores/ui.jsx'
 
 const CUSTOMER_SCOPES = new Set(['warranty_claim', 'appointment', 'estimate', 'invoice', 'workorder', 'ticket'])
+const POLL_INTERVAL_MS = 15000
+const RATE_LIMIT_BACKOFF_MS = 60000
 
 export default function ChatWidget({
   variant = 'floating',
@@ -38,6 +40,9 @@ export default function ChatWidget({
   const [newThreadMessage, setNewThreadMessage] = useState('')
   const [creatingThread, setCreatingThread] = useState(false)
   const pollingRef = useRef(null)
+  const pollingInFlightRef = useRef(false)
+  const rateLimitUntilRef = useRef(0)
+  const threadsRef = useRef([])
   const unreadCountsRef = useRef(new Map())
   const threadStateRef = useRef({ last_message_id: 0, last_read_update: null })
 
@@ -57,6 +62,25 @@ export default function ChatWidget({
   const toggleOpen = () => {
     setIsOpen((prev) => !prev)
   }
+
+  const isRateLimited = useCallback(() => Date.now() < rateLimitUntilRef.current, [])
+
+  const trackRateLimit = useCallback((error, context) => {
+    if (error.response?.status !== 429) {
+      return false
+    }
+
+    const headerValue = error.response?.headers?.['retry-after']
+    const payloadValue = error.response?.data?.retry_after
+    const retryAfterSeconds = Number(headerValue ?? payloadValue)
+    const backoffMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds * 1000
+      : RATE_LIMIT_BACKOFF_MS
+
+    rateLimitUntilRef.current = Math.max(rateLimitUntilRef.current, Date.now() + backoffMs)
+    console.warn(`Rate limited on ${context}, backing off before retry`)
+    return true
+  }, [])
 
   const participantName = (participant) => participant?.name || participant?.email || 'Staff'
 
@@ -145,8 +169,13 @@ export default function ChatWidget({
   }
 
   const refreshThreads = useCallback(async () => {
+    if (isRateLimited()) {
+      return selectedThreadId
+    }
+
     try {
       const data = await messagingService.listThreads()
+      threadsRef.current = data
       setThreads(data)
 
       if (!selectedThreadId && data.length && !showNewThread) {
@@ -156,14 +185,16 @@ export default function ChatWidget({
 
       return selectedThreadId
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on threads fetch, will retry on next poll')
-      }
+      trackRateLimit(error, 'threads fetch')
       return selectedThreadId
     }
-  }, [selectedThreadId, showNewThread])
+  }, [isRateLimited, selectedThreadId, showNewThread, trackRateLimit])
 
   const refreshUnreadCounts = useCallback(async () => {
+    if (isRateLimited()) {
+      return
+    }
+
     try {
       const data = await messagingService.unreadCounts()
       const nextTotal = data.total || 0
@@ -177,7 +208,7 @@ export default function ChatWidget({
           lookup.forEach((count, threadId) => {
             const previousCount = previousLookup.get(threadId) ?? 0
             if (count > previousCount && (!isOpen || threadId !== selectedThreadId)) {
-              const thread = threads.find((item) => item.id === threadId)
+              const thread = threadsRef.current.find((item) => item.id === threadId)
               const label = thread ? threadLabel(thread) : `Thread #${threadId}`
               const delta = count - previousCount
               addChatNotification({
@@ -190,23 +221,26 @@ export default function ChatWidget({
         }
 
         unreadCountsRef.current = lookup
-        setThreads((prev) =>
-          prev.map((thread) => ({
+        setThreads((prev) => {
+          const nextThreads = prev.map((thread) => ({
             ...thread,
             unread_count: lookup.get(thread.id) ?? thread.unread_count ?? 0,
           }))
-        )
+          threadsRef.current = nextThreads
+          return nextThreads
+        })
       }
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on unread counts fetch, will retry on next poll')
-      }
+      trackRateLimit(error, 'unread counts fetch')
     }
-  }, [addChatNotification, isOpen, selectedThreadId, threadLabel, threads])
+  }, [addChatNotification, isOpen, isRateLimited, selectedThreadId, threadLabel, trackRateLimit])
 
   const loadMessages = useCallback(async (threadId) => {
     if (!threadId) {
       setMessages([])
+      return
+    }
+    if (isRateLimited()) {
       return
     }
 
@@ -214,30 +248,28 @@ export default function ChatWidget({
       const data = await messagingService.listMessages(threadId)
       setMessages(data)
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on messages fetch, will retry on next poll')
-      }
+      trackRateLimit(error, 'messages fetch')
     }
-  }, [])
+  }, [isRateLimited, trackRateLimit])
 
   const markRead = useCallback(
     async (threadId) => {
       if (!threadId) return
+      if (isRateLimited()) return
       try {
         await messagingService.markRead(threadId)
         await refreshUnreadCounts()
       } catch (error) {
-        if (error.response?.status === 429) {
-          console.warn('Rate limited on mark read, will retry on next poll')
-        }
+        trackRateLimit(error, 'mark read')
       }
     },
-    [refreshUnreadCounts]
+    [isRateLimited, refreshUnreadCounts, trackRateLimit]
   )
 
   const refreshThreadState = useCallback(
     async (threadId, { silent } = {}) => {
       if (!threadId) return
+      if (isRateLimited()) return
 
       try {
         const nextState = await messagingService.threadState(threadId)
@@ -256,24 +288,24 @@ export default function ChatWidget({
           await refreshUnreadCounts()
         }
       } catch (error) {
-        if (error.response?.status === 429) {
-          console.warn('Rate limited on thread state fetch, will retry on next poll')
-        }
+        trackRateLimit(error, 'thread state fetch')
       }
     },
-    [loadMessages, markRead, refreshThreads, refreshUnreadCounts]
+    [isRateLimited, loadMessages, markRead, refreshThreads, refreshUnreadCounts, trackRateLimit]
   )
 
   const loadParticipants = useCallback(async () => {
+    if (isRateLimited()) {
+      return
+    }
+
     try {
       const data = await messagingService.listParticipants(participantQuery.trim())
       setParticipants(data)
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on participants fetch, will retry on next poll')
-      }
+      trackRateLimit(error, 'participants fetch')
     }
-  }, [participantQuery])
+  }, [isRateLimited, participantQuery, trackRateLimit])
 
   const selectThread = async (thread) => {
     setShowNewThread(false)
@@ -310,7 +342,11 @@ export default function ChatWidget({
       })
       resetNewThread()
       setShowNewThread(false)
-      setThreads((prev) => [thread, ...prev.filter((item) => item.id !== thread.id)])
+      setThreads((prev) => {
+        const nextThreads = [thread, ...prev.filter((item) => item.id !== thread.id)]
+        threadsRef.current = nextThreads
+        return nextThreads
+      })
       setSelectedThreadId(thread.id)
       await loadMessages(thread.id)
       await markRead(thread.id)
@@ -378,21 +414,30 @@ export default function ChatWidget({
     initialize()
 
     pollingRef.current = setInterval(async () => {
-      await refreshUnreadCounts()
-      if (isOpen) {
-        await refreshThreads()
-        if (selectedThreadId) {
-          await refreshThreadState(selectedThreadId)
-        }
+      if (pollingInFlightRef.current || isRateLimited()) {
+        return
       }
-    }, 5000)
+
+      pollingInFlightRef.current = true
+      try {
+        await refreshUnreadCounts()
+        if (isOpen) {
+          await refreshThreads()
+          if (selectedThreadId) {
+            await refreshThreadState(selectedThreadId)
+          }
+        }
+      } finally {
+        pollingInFlightRef.current = false
+      }
+    }, POLL_INTERVAL_MS)
 
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current)
       }
     }
-  }, [isInternalUser, isOpen, refreshThreadState, refreshThreads, refreshUnreadCounts, selectedThreadId])
+  }, [isInternalUser, isOpen, isRateLimited, refreshThreadState, refreshThreads, refreshUnreadCounts, selectedThreadId])
 
   if (!isInternalUser) {
     return null

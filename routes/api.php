@@ -330,7 +330,8 @@ return function (Router $router, array $config, $connection) {
     // Apply global rate limiting (60 requests per minute per IP+path)
     $router->middleware(Middleware::throttleWithOverrides(60, 60, [
         '/api/time-tracking*' => ['max' => 240, 'decay' => 60],
-        '/api/messages*' => ['max' => 120, 'decay' => 60],
+        '/api/messages/unread' => ['max' => 600, 'decay' => 60],
+        '/api/messages*' => ['max' => 300, 'decay' => 60],
     ]));
 
     // Apply CSRF protection to all state-changing API endpoints
