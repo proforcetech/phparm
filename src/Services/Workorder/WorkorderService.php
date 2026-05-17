@@ -32,6 +32,8 @@ class WorkorderService
     private ?MessagingNotificationService $messagingNotifications;
     private ?CustomerRepository $customers;
     private ?SubjectResolver $subjectResolver;
+    /** @var array<string, bool>|null */
+    private ?array $workorderItemColumns = null;
 
     public function __construct(
         Connection $connection,
@@ -1029,35 +1031,106 @@ class WorkorderService
                 }
             }
 
-            $stmt = $pdo->prepare(<<<SQL
-                INSERT INTO workorder_items (
-                    workorder_job_id, branch_id, estimate_item_id, type, sku, inventory_item_id, description,
-                    quantity, unit_price, list_price, core_price, taxable, line_total, position
-                ) VALUES (
-                    :workorder_job_id, :branch_id, :estimate_item_id, :type, :sku, :inventory_item_id, :description,
-                    :quantity, :unit_price, :list_price, :core_price, :taxable, :line_total, :position
-                )
-            SQL);
-
-            $stmt->execute([
-                'workorder_job_id' => $workorderJobId,
-                'branch_id' => $branchId,
-                'estimate_item_id' => (int) $item['id'],
-                'type' => $item['type'],
-                'sku' => $item['sku'] ?? null,
-                'inventory_item_id' => $item['inventory_item_id'] ?? null,
-                'description' => $item['description'],
-                'quantity' => (float) $item['quantity'],
-                'unit_price' => (float) $item['unit_price'],
-                'list_price' => isset($item['list_price']) ? (float) $item['list_price'] : null,
-                'core_price' => $corePrice,
-                'taxable' => (int) $item['taxable'],
-                'line_total' => (float) $item['line_total'],
-                'position' => $position,
-            ]);
+            $this->insertWorkorderItem($workorderJobId, $branchId, $item, $position, (int) $item['id'], $corePrice);
 
             $position++;
         }
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function getWorkorderItemColumns(): array
+    {
+        if ($this->workorderItemColumns !== null) {
+            return $this->workorderItemColumns;
+        }
+
+        $stmt = $this->connection->pdo()->query(<<<SQL
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'workorder_items'
+        SQL);
+
+        $columns = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $column) {
+            $columns[(string) $column] = true;
+        }
+
+        $this->workorderItemColumns = $columns;
+
+        return $this->workorderItemColumns;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function insertWorkorderItem(
+        int $workorderJobId,
+        ?int $branchId,
+        array $item,
+        int $position,
+        ?int $estimateItemId = null,
+        ?float $corePrice = null
+    ): void {
+        $columns = $this->getWorkorderItemColumns();
+        $quantity = (float) ($item['quantity'] ?? 0);
+        $unitPrice = (float) ($item['unit_price'] ?? 0);
+        $lineTotal = isset($item['line_total']) && $item['line_total'] !== ''
+            ? (float) $item['line_total']
+            : $quantity * $unitPrice;
+
+        $values = [
+            'workorder_job_id' => $workorderJobId,
+            'type' => (string) ($item['type'] ?? 'LABOR'),
+            'description' => (string) ($item['description'] ?? ''),
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'taxable' => !empty($item['taxable']) ? 1 : 0,
+            'line_total' => $lineTotal,
+        ];
+
+        if (isset($columns['branch_id'])) {
+            $values['branch_id'] = $branchId;
+        }
+        if (isset($columns['estimate_item_id'])) {
+            $values['estimate_item_id'] = $estimateItemId;
+        }
+        if (isset($columns['sku'])) {
+            $values['sku'] = $item['sku'] ?? null;
+        }
+        if (isset($columns['inventory_item_id'])) {
+            $values['inventory_item_id'] = isset($item['inventory_item_id']) && $item['inventory_item_id'] !== ''
+                ? (int) $item['inventory_item_id']
+                : null;
+        }
+        if (isset($columns['list_price'])) {
+            $values['list_price'] = isset($item['list_price']) && $item['list_price'] !== ''
+                ? (float) $item['list_price']
+                : null;
+        }
+        if (isset($columns['core_price'])) {
+            $values['core_price'] = $corePrice ?? (
+                isset($item['core_price']) && $item['core_price'] !== ''
+                    ? (float) $item['core_price']
+                    : null
+            );
+        }
+        if (isset($columns['position'])) {
+            $values['position'] = $position;
+        }
+
+        $columnNames = array_keys($values);
+        $placeholders = array_map(static fn (string $column): string => ':' . $column, $columnNames);
+        $sql = sprintf(
+            'INSERT INTO workorder_items (%s) VALUES (%s)',
+            implode(', ', $columnNames),
+            implode(', ', $placeholders)
+        );
+
+        $stmt = $this->connection->pdo()->prepare($sql);
+        $stmt->execute($values);
     }
 
     private function createInventoryRequestsForWorkorderParts(
@@ -1067,22 +1140,38 @@ class WorkorderService
     ): void
     {
         $pdo = $this->connection->pdo();
+        $itemColumns = $this->getWorkorderItemColumns();
+        $inventoryItemSelect = isset($itemColumns['inventory_item_id'])
+            ? 'wi.inventory_item_id'
+            : 'NULL AS inventory_item_id';
+        $skuSelect = isset($itemColumns['sku'])
+            ? 'wi.sku'
+            : 'NULL AS sku';
+        $inventorySelect = isset($itemColumns['inventory_item_id'])
+            ? 'ii.stock_quantity,
+                ii.cost,
+                ii.sale_price,
+                ii.vendor'
+            : 'NULL AS stock_quantity,
+                NULL AS cost,
+                NULL AS sale_price,
+                NULL AS vendor';
+        $inventoryJoin = isset($itemColumns['inventory_item_id'])
+            ? 'LEFT JOIN inventory_items ii ON wi.inventory_item_id = ii.id'
+            : '';
 
         $stmt = $pdo->prepare(<<<SQL
             SELECT
                 wi.workorder_job_id,
-                wi.inventory_item_id,
-                wi.sku,
+                {$inventoryItemSelect},
+                {$skuSelect},
                 wi.description,
                 wi.quantity,
                 wi.unit_price,
-                ii.stock_quantity,
-                ii.cost,
-                ii.sale_price,
-                ii.vendor
+                {$inventorySelect}
             FROM workorder_items wi
             JOIN workorder_jobs wj ON wi.workorder_job_id = wj.id
-            LEFT JOIN inventory_items ii ON wi.inventory_item_id = ii.id
+            {$inventoryJoin}
             WHERE wj.workorder_id = :workorder_id
               AND UPPER(wi.type) = 'PART'
             ORDER BY wi.id ASC
@@ -1656,36 +1745,7 @@ class WorkorderService
 
             $itemPosition = 0;
             foreach ($items as $item) {
-                $quantity = (float) ($item['quantity'] ?? 0);
-                $unitPrice = (float) ($item['unit_price'] ?? 0);
-                $lineTotal = $quantity * $unitPrice;
-
-                $itemStmt = $pdo->prepare(<<<SQL
-                    INSERT INTO workorder_items (
-                        workorder_job_id, branch_id, type, sku, inventory_item_id, description,
-                        quantity, unit_price, list_price, taxable, line_total, position
-                    ) VALUES (
-                        :workorder_job_id, :branch_id, :type, :sku, :inventory_item_id, :description,
-                        :quantity, :unit_price, :list_price, :taxable, :line_total, :position
-                    )
-                SQL);
-
-                $itemStmt->execute([
-                    'workorder_job_id' => $workorderJobId,
-                    'branch_id' => $branchId,
-                    'type' => (string) ($item['type'] ?? 'LABOR'),
-                    'sku' => $item['sku'] ?? null,
-                    'inventory_item_id' => isset($item['inventory_item_id']) && $item['inventory_item_id'] !== ''
-                        ? (int) $item['inventory_item_id']
-                        : null,
-                    'description' => (string) ($item['description'] ?? ''),
-                    'quantity' => $quantity,
-                    'unit_price' => $unitPrice,
-                    'list_price' => isset($item['list_price']) ? (float) $item['list_price'] : null,
-                    'taxable' => !empty($item['taxable']) ? 1 : 0,
-                    'line_total' => $lineTotal,
-                    'position' => $itemPosition,
-                ]);
+                $this->insertWorkorderItem($workorderJobId, $branchId, $item, $itemPosition);
 
                 $itemPosition++;
             }
