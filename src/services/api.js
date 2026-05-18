@@ -20,6 +20,14 @@ let sessionExpirationPromise = null
 let cachedCsrfToken = null
 let csrfTokenFetchPromise = null
 
+function buildApiUrl(path) {
+  const baseUrl = env.API_BASE_URL || '/api'
+  const normalizedBase = baseUrl.replace(/\/+$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+
+  return `${normalizedBase}${normalizedPath}`
+}
+
 function normalizeRequestPath(url = '') {
   if (!url) return ''
 
@@ -77,15 +85,15 @@ function shouldHandleSessionExpiration(error) {
  * 3. XSRF-TOKEN cookie (may not work through dev proxy)
  * 4. Fetch from /api/csrf-token endpoint
  */
-async function getCsrfToken() {
+async function getCsrfToken({ forceFetch = false } = {}) {
   // Return cached token if available
-  if (cachedCsrfToken) {
+  if (!forceFetch && cachedCsrfToken) {
     return cachedCsrfToken
   }
 
   // Try meta tag first
   const metaToken = document.querySelector('meta[name="csrf-token"]')?.content
-  if (metaToken) {
+  if (!forceFetch && metaToken) {
     cachedCsrfToken = metaToken
     return metaToken
   }
@@ -98,7 +106,7 @@ async function getCsrfToken() {
         .find(row => row.startsWith('XSRF-TOKEN='))
         ?.split('=')[1] || ''
     )
-    if (cookieToken) {
+    if (!forceFetch && cookieToken) {
       cachedCsrfToken = cookieToken
       return cookieToken
     }
@@ -108,7 +116,7 @@ async function getCsrfToken() {
 
   // Fetch from endpoint - this is the most reliable method when using a dev proxy
   if (!csrfTokenFetchPromise) {
-    csrfTokenFetchPromise = axios.get(`${env.API_BASE_URL}/api/csrf-token`, {
+    csrfTokenFetchPromise = axios.get(buildApiUrl('/csrf-token'), {
       withCredentials: true
     })
       .then(response => {
@@ -155,7 +163,7 @@ export function unregisterStepUpHandler(handler) {
  */
 export async function refreshCsrfToken() {
   clearCsrfToken()
-  return getCsrfToken()
+  return getCsrfToken({ forceFetch: true })
 }
 
 /**

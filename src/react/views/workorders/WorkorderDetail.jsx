@@ -349,8 +349,7 @@ export default function WorkorderDetail() {
     loadTechnicians()
     loadPullRequests()
     loadBundles()
-    loadInternalNotes()
-  }, [loadBundles, loadInternalNotes, loadPullRequests, loadTechnicians, loadWorkorder])
+  }, [loadBundles, loadPullRequests, loadTechnicians, loadWorkorder])
 
   const updateStatus = async (status, notes = null) => {
     if (!workorder) return

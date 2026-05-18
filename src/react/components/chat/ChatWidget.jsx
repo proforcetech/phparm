@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Pusher from 'pusher-js'
 import {
   ArrowPathIcon,
   ChatBubbleLeftRightIcon,
@@ -8,11 +9,13 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 
+import api from '../../../services/api'
 import { messagingService } from '../../../services/messages.service'
 import { useAuthStore } from '../../stores/auth.jsx'
 import { useUIStore } from '../../stores/ui.jsx'
 
 const CUSTOMER_SCOPES = new Set(['warranty_claim', 'appointment', 'estimate', 'invoice', 'workorder', 'ticket'])
+const RATE_LIMIT_BACKOFF_MS = 60000
 
 export default function ChatWidget({
   variant = 'floating',
@@ -37,9 +40,14 @@ export default function ChatWidget({
   const [newThreadSubject, setNewThreadSubject] = useState('')
   const [newThreadMessage, setNewThreadMessage] = useState('')
   const [creatingThread, setCreatingThread] = useState(false)
-  const pollingRef = useRef(null)
+  const [realtimeStatus, setRealtimeStatus] = useState('disabled')
+  const rateLimitUntilRef = useRef(0)
+  const threadsRef = useRef([])
   const unreadCountsRef = useRef(new Map())
   const threadStateRef = useRef({ last_message_id: 0, last_read_update: null })
+  const isOpenRef = useRef(isOpen)
+  const selectedThreadIdRef = useRef(selectedThreadId)
+  const showNewThreadRef = useRef(showNewThread)
 
   const currentUserId = user?.id
   const userRole = user?.role?.toLowerCase()
@@ -53,10 +61,68 @@ export default function ChatWidget({
     [chatNotifications]
   )
   const isFloating = variant === 'floating'
+  const websocketConfig = useMemo(
+    () => ({
+      key: import.meta.env.VITE_PUSHER_KEY,
+      cluster: import.meta.env.VITE_PUSHER_CLUSTER,
+      host: import.meta.env.VITE_PUSHER_HOST,
+      channel: currentUserId ? `private-messages-user-${currentUserId}` : null,
+      wsPort: Number(import.meta.env.VITE_PUSHER_PORT || 6001),
+      forceTLS: (import.meta.env.VITE_PUSHER_FORCE_TLS || 'false') === 'true',
+    }),
+    [currentUserId]
+  )
 
   const toggleOpen = () => {
-    setIsOpen((prev) => !prev)
+    setIsOpen((prev) => {
+      const next = !prev
+      isOpenRef.current = next
+      return next
+    })
   }
+
+  useEffect(() => {
+    isOpenRef.current = isOpen
+  }, [isOpen])
+
+  useEffect(() => {
+    selectedThreadIdRef.current = selectedThreadId
+  }, [selectedThreadId])
+
+  useEffect(() => {
+    showNewThreadRef.current = showNewThread
+  }, [showNewThread])
+
+  const parseRealtimePayload = useCallback((data) => {
+    if (typeof data !== 'string') {
+      return data || null
+    }
+
+    try {
+      return JSON.parse(data)
+    } catch {
+      return null
+    }
+  }, [])
+
+  const isRateLimited = useCallback(() => Date.now() < rateLimitUntilRef.current, [])
+
+  const trackRateLimit = useCallback((error, context) => {
+    if (error.response?.status !== 429) {
+      return false
+    }
+
+    const headerValue = error.response?.headers?.['retry-after']
+    const payloadValue = error.response?.data?.retry_after
+    const retryAfterSeconds = Number(headerValue ?? payloadValue)
+    const backoffMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds * 1000
+      : RATE_LIMIT_BACKOFF_MS
+
+    rateLimitUntilRef.current = Math.max(rateLimitUntilRef.current, Date.now() + backoffMs)
+    console.warn(`Rate limited on ${context}, backing off before retry`)
+    return true
+  }, [])
 
   const participantName = (participant) => participant?.name || participant?.email || 'Staff'
 
@@ -68,6 +134,16 @@ export default function ChatWidget({
       .split('_')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
+  }
+
+  const realtimeMeta = () => {
+    if (realtimeStatus === 'connected') {
+      return { label: 'Live', className: 'bg-emerald-500' }
+    }
+    if (realtimeStatus === 'connecting') {
+      return { label: 'Connecting', className: 'bg-amber-500' }
+    }
+    return { label: 'Offline', className: 'bg-gray-400' }
   }
 
   const scopeMeta = (thread) => {
@@ -145,68 +221,98 @@ export default function ChatWidget({
   }
 
   const refreshThreads = useCallback(async () => {
+    if (isRateLimited()) {
+      return selectedThreadIdRef.current
+    }
+
     try {
       const data = await messagingService.listThreads()
+      threadsRef.current = data
       setThreads(data)
 
-      if (!selectedThreadId && data.length && !showNewThread) {
+      if (!selectedThreadIdRef.current && data.length && !showNewThreadRef.current) {
         setSelectedThreadId(data[0].id)
+        selectedThreadIdRef.current = data[0].id
         return data[0].id
       }
 
-      return selectedThreadId
+      return selectedThreadIdRef.current
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on threads fetch, will retry on next poll')
-      }
-      return selectedThreadId
+      trackRateLimit(error, 'threads fetch')
+      return selectedThreadIdRef.current
     }
-  }, [selectedThreadId, showNewThread])
+  }, [isRateLimited, trackRateLimit])
 
-  const refreshUnreadCounts = useCallback(async () => {
-    try {
-      const data = await messagingService.unreadCounts()
-      const nextTotal = data.total || 0
+  const upsertThread = useCallback((thread) => {
+    if (!thread?.id) return
+
+    setThreads((prev) => {
+      const nextThreads = [thread, ...prev.filter((item) => item.id !== thread.id)]
+      threadsRef.current = nextThreads
+      return nextThreads
+    })
+  }, [])
+
+  const applyUnreadSnapshot = useCallback(
+    (data, { notify = true } = {}) => {
+      const nextTotal = data?.total || 0
       setUnreadTotal(nextTotal)
 
-      if (Array.isArray(data.threads)) {
-        const lookup = new Map(data.threads.map((item) => [item.thread_id, item.unread_count]))
-        const previousLookup = unreadCountsRef.current
-
-        if (previousLookup.size > 0) {
-          lookup.forEach((count, threadId) => {
-            const previousCount = previousLookup.get(threadId) ?? 0
-            if (count > previousCount && (!isOpen || threadId !== selectedThreadId)) {
-              const thread = threads.find((item) => item.id === threadId)
-              const label = thread ? threadLabel(thread) : `Thread #${threadId}`
-              const delta = count - previousCount
-              addChatNotification({
-                title: 'New message',
-                body: `${label} has ${delta} new message${delta > 1 ? 's' : ''}.`,
-                threadId,
-              })
-            }
-          })
-        }
-
-        unreadCountsRef.current = lookup
-        setThreads((prev) =>
-          prev.map((thread) => ({
-            ...thread,
-            unread_count: lookup.get(thread.id) ?? thread.unread_count ?? 0,
-          }))
-        )
+      if (!Array.isArray(data?.threads)) {
+        return
       }
-    } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on unread counts fetch, will retry on next poll')
+
+      const lookup = new Map(data.threads.map((item) => [Number(item.thread_id), Number(item.unread_count) || 0]))
+      const previousLookup = unreadCountsRef.current
+
+      if (notify && previousLookup.size > 0) {
+        lookup.forEach((count, threadId) => {
+          const previousCount = previousLookup.get(threadId) ?? 0
+          if (count > previousCount && (!isOpenRef.current || threadId !== selectedThreadIdRef.current)) {
+            const thread = threadsRef.current.find((item) => Number(item.id) === threadId)
+            const label = thread ? threadLabel(thread) : `Thread #${threadId}`
+            const delta = count - previousCount
+            addChatNotification({
+              title: 'New message',
+              body: `${label} has ${delta} new message${delta > 1 ? 's' : ''}.`,
+              threadId,
+            })
+          }
+        })
       }
+
+      unreadCountsRef.current = lookup
+      setThreads((prev) => {
+        const nextThreads = prev.map((thread) => ({
+          ...thread,
+          unread_count: lookup.get(Number(thread.id)) ?? thread.unread_count ?? 0,
+        }))
+        threadsRef.current = nextThreads
+        return nextThreads
+      })
+    },
+    [addChatNotification, threadLabel]
+  )
+
+  const refreshUnreadCounts = useCallback(async () => {
+    if (isRateLimited()) {
+      return
     }
-  }, [addChatNotification, isOpen, selectedThreadId, threadLabel, threads])
+
+    try {
+      const data = await messagingService.unreadCounts()
+      applyUnreadSnapshot(data)
+    } catch (error) {
+      trackRateLimit(error, 'unread counts fetch')
+    }
+  }, [applyUnreadSnapshot, isRateLimited, trackRateLimit])
 
   const loadMessages = useCallback(async (threadId) => {
     if (!threadId) {
       setMessages([])
+      return
+    }
+    if (isRateLimited()) {
       return
     }
 
@@ -214,30 +320,28 @@ export default function ChatWidget({
       const data = await messagingService.listMessages(threadId)
       setMessages(data)
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on messages fetch, will retry on next poll')
-      }
+      trackRateLimit(error, 'messages fetch')
     }
-  }, [])
+  }, [isRateLimited, trackRateLimit])
 
   const markRead = useCallback(
     async (threadId) => {
       if (!threadId) return
+      if (isRateLimited()) return
       try {
         await messagingService.markRead(threadId)
         await refreshUnreadCounts()
       } catch (error) {
-        if (error.response?.status === 429) {
-          console.warn('Rate limited on mark read, will retry on next poll')
-        }
+        trackRateLimit(error, 'mark read')
       }
     },
-    [refreshUnreadCounts]
+    [isRateLimited, refreshUnreadCounts, trackRateLimit]
   )
 
   const refreshThreadState = useCallback(
     async (threadId, { silent } = {}) => {
       if (!threadId) return
+      if (isRateLimited()) return
 
       try {
         const nextState = await messagingService.threadState(threadId)
@@ -256,28 +360,30 @@ export default function ChatWidget({
           await refreshUnreadCounts()
         }
       } catch (error) {
-        if (error.response?.status === 429) {
-          console.warn('Rate limited on thread state fetch, will retry on next poll')
-        }
+        trackRateLimit(error, 'thread state fetch')
       }
     },
-    [loadMessages, markRead, refreshThreads, refreshUnreadCounts]
+    [isRateLimited, loadMessages, markRead, refreshThreads, refreshUnreadCounts, trackRateLimit]
   )
 
   const loadParticipants = useCallback(async () => {
+    if (isRateLimited()) {
+      return
+    }
+
     try {
       const data = await messagingService.listParticipants(participantQuery.trim())
       setParticipants(data)
     } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn('Rate limited on participants fetch, will retry on next poll')
-      }
+      trackRateLimit(error, 'participants fetch')
     }
-  }, [participantQuery])
+  }, [isRateLimited, participantQuery, trackRateLimit])
 
   const selectThread = async (thread) => {
     setShowNewThread(false)
+    showNewThreadRef.current = false
     setSelectedThreadId(thread.id)
+    selectedThreadIdRef.current = thread.id
     await loadMessages(thread.id)
     await markRead(thread.id)
     await refreshThreadState(thread.id, { silent: true })
@@ -285,7 +391,9 @@ export default function ChatWidget({
 
   const startNewThread = () => {
     setShowNewThread(true)
+    showNewThreadRef.current = true
     setSelectedThreadId(null)
+    selectedThreadIdRef.current = null
     setMessages([])
     loadParticipants()
   }
@@ -310,8 +418,14 @@ export default function ChatWidget({
       })
       resetNewThread()
       setShowNewThread(false)
-      setThreads((prev) => [thread, ...prev.filter((item) => item.id !== thread.id)])
+      showNewThreadRef.current = false
+      setThreads((prev) => {
+        const nextThreads = [thread, ...prev.filter((item) => item.id !== thread.id)]
+        threadsRef.current = nextThreads
+        return nextThreads
+      })
       setSelectedThreadId(thread.id)
+      selectedThreadIdRef.current = thread.id
       await loadMessages(thread.id)
       await markRead(thread.id)
       await refreshThreads()
@@ -376,23 +490,139 @@ export default function ChatWidget({
     }
 
     initialize()
+  }, [isInternalUser, refreshThreads, refreshUnreadCounts])
 
-    pollingRef.current = setInterval(async () => {
-      await refreshUnreadCounts()
-      if (isOpen) {
-        await refreshThreads()
-        if (selectedThreadId) {
-          await refreshThreadState(selectedThreadId)
-        }
+  useEffect(() => {
+    if (!isInternalUser || !currentUserId || !websocketConfig.key || !websocketConfig.channel) {
+      setRealtimeStatus(websocketConfig.key ? 'disabled' : 'unconfigured')
+      return undefined
+    }
+
+    setRealtimeStatus('connecting')
+
+    const pusher = new Pusher(websocketConfig.key, {
+      cluster: websocketConfig.cluster || undefined,
+      wsHost: websocketConfig.host || undefined,
+      wsPort: websocketConfig.wsPort,
+      wssPort: websocketConfig.wsPort,
+      forceTLS: websocketConfig.forceTLS,
+      enabledTransports: ['ws', 'wss'],
+      disableStats: true,
+      authorizer: (channel) => ({
+        authorize: async (socketId, callback) => {
+          try {
+            const response = await api.post('/messages/realtime/auth', {
+              socket_id: socketId,
+              channel_name: channel.name,
+            })
+            callback(null, response.data)
+          } catch (error) {
+            callback(error, null)
+          }
+        },
+      }),
+    })
+
+    const channel = pusher.subscribe(websocketConfig.channel)
+
+    const handleMessageCreated = async (data) => {
+      const payload = parseRealtimePayload(data)
+      if (!payload?.thread_id) return
+
+      if (payload.thread) {
+        upsertThread(payload.thread)
       }
-    }, 5000)
+      if (payload.unread) {
+        applyUnreadSnapshot(payload.unread)
+      }
 
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current)
+      const message = payload.message
+      const threadId = Number(payload.thread_id)
+      if (!message?.id || !Number.isFinite(threadId)) {
+        return
+      }
+
+      const activeThreadOpen =
+        isOpenRef.current &&
+        !showNewThreadRef.current &&
+        Number(selectedThreadIdRef.current) === threadId
+
+      if (!activeThreadOpen) {
+        return
+      }
+
+      setMessages((prev) => {
+        if (prev.some((item) => Number(item.id) === Number(message.id))) {
+          return prev
+        }
+        return [...prev, message]
+      })
+
+      if (Number(message.sender_id) !== Number(currentUserId)) {
+        await markRead(threadId)
       }
     }
-  }, [isInternalUser, isOpen, refreshThreadState, refreshThreads, refreshUnreadCounts, selectedThreadId])
+
+    const handleMessageRead = async (data) => {
+      const payload = parseRealtimePayload(data)
+      if (!payload?.thread_id) return
+
+      if (payload.unread) {
+        applyUnreadSnapshot(payload.unread, { notify: false })
+      }
+      if (payload.state) {
+        threadStateRef.current = payload.state
+      }
+
+      const threadId = Number(payload.thread_id)
+      const activeThreadOpen =
+        isOpenRef.current &&
+        !showNewThreadRef.current &&
+        Number(selectedThreadIdRef.current) === threadId
+
+      if (activeThreadOpen && Number(payload.participant_id) !== Number(currentUserId)) {
+        await loadMessages(threadId)
+      }
+    }
+
+    const handleConnected = () => {
+      setRealtimeStatus('connected')
+      refreshThreads()
+      refreshUnreadCounts()
+    }
+    const handleDisconnected = () => setRealtimeStatus('unavailable')
+
+    channel.bind('message.created', handleMessageCreated)
+    channel.bind('message.read', handleMessageRead)
+    channel.bind('pusher:subscription_error', handleDisconnected)
+    pusher.connection.bind('connected', handleConnected)
+    pusher.connection.bind('error', handleDisconnected)
+    pusher.connection.bind('unavailable', handleDisconnected)
+    pusher.connection.bind('disconnected', handleDisconnected)
+
+    return () => {
+      channel.unbind('message.created', handleMessageCreated)
+      channel.unbind('message.read', handleMessageRead)
+      channel.unbind('pusher:subscription_error', handleDisconnected)
+      pusher.connection.unbind('connected', handleConnected)
+      pusher.connection.unbind('error', handleDisconnected)
+      pusher.connection.unbind('unavailable', handleDisconnected)
+      pusher.connection.unbind('disconnected', handleDisconnected)
+      pusher.unsubscribe(websocketConfig.channel)
+      pusher.disconnect()
+    }
+  }, [
+    applyUnreadSnapshot,
+    currentUserId,
+    isInternalUser,
+    loadMessages,
+    markRead,
+    parseRealtimePayload,
+    refreshThreads,
+    refreshUnreadCounts,
+    upsertThread,
+    websocketConfig,
+  ])
 
   if (!isInternalUser) {
     return null
@@ -411,8 +641,11 @@ export default function ChatWidget({
                 markChatNotificationRead(notification.id)
                 if (notification.threadId) {
                   setIsOpen(true)
+                  isOpenRef.current = true
                   setShowNewThread(false)
+                  showNewThreadRef.current = false
                   setSelectedThreadId(notification.threadId)
+                  selectedThreadIdRef.current = notification.threadId
                   await loadMessages(notification.threadId)
                   await markRead(notification.threadId)
                   await refreshThreadState(notification.threadId, { silent: true })
@@ -456,13 +689,22 @@ export default function ChatWidget({
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-gray-900">{title}</p>
-              <p className="truncate text-xs text-gray-500">{subtitle}</p>
+              <p className="flex items-center gap-2 truncate text-xs text-gray-500">
+                <span className="truncate">{subtitle}</span>
+                <span className="inline-flex shrink-0 items-center gap-1">
+                  <span className={`h-2 w-2 rounded-full ${realtimeMeta().className}`} />
+                  <span>{realtimeMeta().label}</span>
+                </span>
+              </p>
             </div>
             {isFloating ? (
               <button
                 type="button"
                 className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100"
-                onClick={() => setIsOpen(false)}
+                onClick={() => {
+                  setIsOpen(false)
+                  isOpenRef.current = false
+                }}
               >
                 <span className="sr-only">Close</span>
                 <XMarkIcon className="h-5 w-5" />
@@ -545,13 +787,15 @@ export default function ChatWidget({
                     <button
                       type="button"
                       className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100"
-                      onClick={() => {
-                        setShowNewThread(false)
-                        resetNewThread()
-                        if (threads.length) {
-                          setSelectedThreadId(threads[0].id)
-                        }
-                      }}
+                    onClick={() => {
+                      setShowNewThread(false)
+                      showNewThreadRef.current = false
+                      resetNewThread()
+                      if (threads.length) {
+                        setSelectedThreadId(threads[0].id)
+                        selectedThreadIdRef.current = threads[0].id
+                      }
+                    }}
                     >
                       <span className="sr-only">Cancel</span>
                       <XMarkIcon className="h-5 w-5" />
@@ -618,6 +862,7 @@ export default function ChatWidget({
                       className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                       onClick={() => {
                         setShowNewThread(false)
+                        showNewThreadRef.current = false
                         resetNewThread()
                       }}
                     >

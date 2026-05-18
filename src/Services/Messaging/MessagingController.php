@@ -5,17 +5,20 @@ namespace App\Services\Messaging;
 use App\Models\User;
 use App\Support\Auth\AccessGate;
 use App\Support\Auth\UnauthorizedException;
+use App\Support\Realtime\PusherBroadcaster;
 use InvalidArgumentException;
 
 class MessagingController
 {
     private MessagingService $service;
     private AccessGate $gate;
+    private PusherBroadcaster $realtime;
 
-    public function __construct(MessagingService $service, AccessGate $gate)
+    public function __construct(MessagingService $service, AccessGate $gate, ?PusherBroadcaster $realtime = null)
     {
         $this->service = $service;
         $this->gate = $gate;
+        $this->realtime = $realtime ?? new PusherBroadcaster();
     }
 
     /**
@@ -109,6 +112,34 @@ class MessagingController
         $this->assertInternalUser($user);
 
         return $this->service->unreadCounts($user->id);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{auth: string}
+     */
+    public function realtimeAuth(User $user, array $payload): array
+    {
+        $this->assertInternalUser($user);
+
+        $socketId = trim((string) ($payload['socket_id'] ?? ''));
+        $channelName = trim((string) ($payload['channel_name'] ?? ''));
+        $expectedChannel = 'private-messages-user-' . (int) $user->id;
+
+        if ($socketId === '' || $channelName === '') {
+            throw new InvalidArgumentException('socket_id and channel_name are required');
+        }
+
+        if ($channelName !== $expectedChannel) {
+            throw new UnauthorizedException('Cannot subscribe to this messaging channel');
+        }
+
+        $auth = $this->realtime->authenticatePrivateChannel($socketId, $channelName);
+        if ($auth === null) {
+            throw new InvalidArgumentException('Realtime messaging is not configured.');
+        }
+
+        return $auth;
     }
 
     /**
