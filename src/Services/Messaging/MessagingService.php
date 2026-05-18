@@ -5,6 +5,7 @@ namespace App\Services\Messaging;
 use App\Database\Connection;
 use App\Services\Notification\PushNotificationService;
 use App\Support\Auth\UnauthorizedException;
+use App\Support\Realtime\PusherBroadcaster;
 use InvalidArgumentException;
 use PDO;
 
@@ -12,11 +13,17 @@ class MessagingService
 {
     private Connection $connection;
     private ?PushNotificationService $pushNotifications;
+    private PusherBroadcaster $realtime;
 
-    public function __construct(Connection $connection, ?PushNotificationService $pushNotifications = null)
+    public function __construct(
+        Connection $connection,
+        ?PushNotificationService $pushNotifications = null,
+        ?PusherBroadcaster $realtime = null
+    )
     {
         $this->connection = $connection;
         $this->pushNotifications = $pushNotifications;
+        $this->realtime = $realtime ?? new PusherBroadcaster();
     }
 
     /**
@@ -84,40 +91,7 @@ class MessagingService
             return [];
         }
 
-        $messageIds = array_map(static fn ($message) => (int) $message['id'], $messages);
-        $attachmentsByMessage = $this->attachmentsForMessages($messageIds);
-        $participants = $this->participantsForThreads([$threadId])[$threadId] ?? [];
-        $readStatus = $this->readStatusForThread($threadId);
-
-        foreach ($messages as &$message) {
-            $messageId = (int) $message['id'];
-            $senderId = (int) $message['sender_id'];
-            $recipientCount = 0;
-            $readBy = [];
-
-            foreach ($participants as $participant) {
-                if ((int) $participant['id'] === $senderId) {
-                    continue;
-                }
-
-                $recipientCount++;
-                $lastReadMessageId = $readStatus[(int) $participant['id']]['last_read_message_id'] ?? 0;
-                if ($lastReadMessageId >= $messageId) {
-                    $readBy[] = [
-                        'id' => (int) $participant['id'],
-                        'name' => $participant['name'] ?? $participant['email'] ?? 'Staff',
-                    ];
-                }
-            }
-
-            $message['attachments'] = $attachmentsByMessage[$messageId] ?? [];
-            $message['recipient_count'] = $recipientCount;
-            $message['read_count'] = count($readBy);
-            $message['read_by'] = $readBy;
-        }
-        unset($message);
-
-        return $messages;
+        return $this->hydrateMessages($threadId, $messages);
     }
 
     /**
@@ -166,7 +140,15 @@ class MessagingService
 
         $pdo->commit();
 
-        return $this->getThread($threadId, $creatorId);
+        $thread = $this->getThread($threadId, $creatorId);
+        if ($initialMessage !== null && $initialMessage !== '') {
+            $message = $this->latestMessageForThread($threadId);
+            if ($message !== []) {
+                $this->broadcastMessageCreated($threadId, $message);
+            }
+        }
+
+        return $thread;
     }
 
     /**
@@ -187,22 +169,13 @@ class MessagingService
         );
         $stmt->execute(['thread_id' => $threadId]);
 
-        $messageStmt = $this->connection->pdo()->prepare(
-            'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
-                    u.name, u.email
-             FROM message_messages m
-             JOIN users u ON u.id = m.sender_id
-             WHERE m.thread_id = :thread_id
-             ORDER BY m.created_at DESC, m.id DESC
-             LIMIT 1'
-        );
-        $messageStmt->execute(['thread_id' => $threadId]);
-
-        $message = $messageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $message = $this->latestMessageForThread($threadId);
 
         if ($sendPush) {
             $this->notifyChatParticipants($threadId, $senderId, $body);
         }
+
+        $this->broadcastMessageCreated($threadId, $message);
 
         return $message;
     }
@@ -253,8 +226,14 @@ class MessagingService
 
         $pdo->commit();
 
+        $message = $this->latestMessageForThread($threadId);
+
         if ($sendPush) {
             $this->notifyChatParticipants($threadId, $senderId, $messageBody);
+        }
+
+        if ($message !== []) {
+            $this->broadcastMessageCreated($threadId, $message);
         }
 
         return $message;
@@ -294,6 +273,7 @@ class MessagingService
                 'last_read_at' => $lastReadAt,
                 'id' => $existingId,
             ]);
+            $this->broadcastReadState($threadId, $participantId);
             return;
         }
 
@@ -307,6 +287,8 @@ class MessagingService
             'last_read_message_id' => $lastReadMessageId,
             'last_read_at' => $lastReadAt,
         ]);
+
+        $this->broadcastReadState($threadId, $participantId);
     }
 
     /**
@@ -441,6 +423,130 @@ class MessagingService
             'id' => $threadId,
             'participants' => $this->participantsForThreads([$threadId])[$threadId] ?? [],
         ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function hydrateMessages(int $threadId, array $messages): array
+    {
+        if ($messages === []) {
+            return [];
+        }
+
+        $messageIds = array_map(static fn ($message) => (int) $message['id'], $messages);
+        $attachmentsByMessage = $this->attachmentsForMessages($messageIds);
+        $participants = $this->participantsForThreads([$threadId])[$threadId] ?? [];
+        $readStatus = $this->readStatusForThread($threadId);
+
+        foreach ($messages as &$message) {
+            $messageId = (int) $message['id'];
+            $senderId = (int) $message['sender_id'];
+            $recipientCount = 0;
+            $readBy = [];
+
+            foreach ($participants as $participant) {
+                if ((int) $participant['id'] === $senderId) {
+                    continue;
+                }
+
+                $recipientCount++;
+                $lastReadMessageId = $readStatus[(int) $participant['id']]['last_read_message_id'] ?? 0;
+                if ($lastReadMessageId >= $messageId) {
+                    $readBy[] = [
+                        'id' => (int) $participant['id'],
+                        'name' => $participant['name'] ?? $participant['email'] ?? 'Staff',
+                    ];
+                }
+            }
+
+            $message['id'] = $messageId;
+            $message['thread_id'] = (int) $message['thread_id'];
+            $message['sender_id'] = $senderId;
+            $message['attachments'] = $attachmentsByMessage[$messageId] ?? [];
+            $message['recipient_count'] = $recipientCount;
+            $message['read_count'] = count($readBy);
+            $message['read_by'] = $readBy;
+        }
+        unset($message);
+
+        return $messages;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function latestMessageForThread(int $threadId): array
+    {
+        $messageStmt = $this->connection->pdo()->prepare(
+            'SELECT m.id, m.thread_id, m.sender_id, m.body, m.created_at,
+                    u.name, u.email
+             FROM message_messages m
+             JOIN users u ON u.id = m.sender_id
+             WHERE m.thread_id = :thread_id
+             ORDER BY m.created_at DESC, m.id DESC
+             LIMIT 1'
+        );
+        $messageStmt->execute(['thread_id' => $threadId]);
+        $message = $messageStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$message) {
+            return [];
+        }
+
+        return $this->hydrateMessages($threadId, [$message])[0] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function broadcastMessageCreated(int $threadId, array $message): void
+    {
+        if ($message === [] || !$this->realtime->isConfigured()) {
+            return;
+        }
+
+        $participants = $this->participantsForThreads([$threadId])[$threadId] ?? [];
+        foreach ($participants as $participant) {
+            $participantId = (int) $participant['id'];
+            $this->realtime->trigger(
+                [$this->userChannel($participantId)],
+                'message.created',
+                [
+                    'thread_id' => $threadId,
+                    'thread' => $this->getThread($threadId, $participantId),
+                    'message' => $message,
+                    'unread' => $this->unreadCounts($participantId),
+                ]
+            );
+        }
+    }
+
+    private function broadcastReadState(int $threadId, int $participantId): void
+    {
+        if (!$this->realtime->isConfigured()) {
+            return;
+        }
+
+        $participants = $this->participantsForThreads([$threadId])[$threadId] ?? [];
+        foreach ($participants as $participant) {
+            $recipientId = (int) $participant['id'];
+            $this->realtime->trigger(
+                [$this->userChannel($recipientId)],
+                'message.read',
+                [
+                    'thread_id' => $threadId,
+                    'participant_id' => $participantId,
+                    'state' => $this->threadState($threadId, $recipientId),
+                    'unread' => $this->unreadCounts($recipientId),
+                ]
+            );
+        }
+    }
+
+    private function userChannel(int $userId): string
+    {
+        return 'private-messages-user-' . $userId;
     }
 
     private function insertMessage(int $threadId, int $senderId, string $body): void

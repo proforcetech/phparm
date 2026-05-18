@@ -235,6 +235,7 @@ return function (Router $router, array $config, $connection) {
     $settingsRepository = new \App\Support\SettingsRepository($connection);
     $settingsRepository->seedDefaults($config['settings']['defaults']);
     $pushNotifications = new \App\Services\Notification\PushNotificationService($connection);
+    $messageRealtime = new \App\Support\Realtime\PusherBroadcaster();
 
     $recaptchaConfigLoader = function () use ($settingsRepository, $config): array {
         $fallback = $config['recaptcha'] ?? [];
@@ -5039,8 +5040,9 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
     );
 
     $messagingController = new \App\Services\Messaging\MessagingController(
-        new \App\Services\Messaging\MessagingService($connection, $pushNotifications),
-        $gate
+        new \App\Services\Messaging\MessagingService($connection, $pushNotifications, $messageRealtime),
+        $gate,
+        $messageRealtime
     );
 
     $maskedSmsConfig = require __DIR__ . '/../config/notifications.php';
@@ -5515,6 +5517,12 @@ $router->get('/api/vehicles/{id}', function (Request $request) use ($vehicleCont
         $router->get('/api/messages/unread', function (Request $request) use ($messagingController) {
             $user = $request->getAttribute('user');
             $data = $messagingController->unreadCounts($user);
+            return Response::json($data);
+        })->middleware(Middleware::auth());
+
+        $router->post('/api/messages/realtime/auth', function (Request $request) use ($messagingController) {
+            $user = $request->getAttribute('user');
+            $data = $messagingController->realtimeAuth($user, $request->body());
             return Response::json($data);
         })->middleware(Middleware::auth());
 
