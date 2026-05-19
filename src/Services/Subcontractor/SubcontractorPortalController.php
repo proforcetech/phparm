@@ -22,8 +22,10 @@ use InvalidArgumentException;
  */
 class SubcontractorPortalController
 {
-    public function __construct(private readonly SubcontractorPortalService $service)
-    {
+    public function __construct(
+        private readonly SubcontractorPortalService $service,
+        private readonly ?SubcontractorPortalPasswordSetupService $passwordSetupService = null,
+    ) {
     }
 
     // ─────────────────────────────────────── staff token management ────
@@ -78,6 +80,46 @@ class SubcontractorPortalController
             throw new \App\Support\Auth\UnauthorizedException('Invalid credentials');
         }
 
+        return [
+            'data' => [
+                'access_token' => $resolved['plaintext'],
+                'token_type' => 'Bearer',
+                'token' => self::tokenToArray($resolved['token']),
+                'subcontractor' => self::subToPublicArray($resolved['subcontractor']),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function inspectPasswordSetup(string $token): array
+    {
+        $resolved = $this->passwordSetup()->inspectToken($token);
+        return [
+            'data' => [
+                'subcontractor' => self::subToPublicArray($resolved['subcontractor']),
+                'expires_at' => $resolved['expires_at'],
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function completePasswordSetup(array $payload, ?string $clientIp = null): array
+    {
+        $token = isset($payload['token']) ? (string) $payload['token'] : '';
+        $password = isset($payload['password']) ? (string) $payload['password'] : '';
+        $confirmation = isset($payload['password_confirmation'])
+            ? (string) $payload['password_confirmation']
+            : null;
+        if ($confirmation !== null && $confirmation !== '' && $confirmation !== $password) {
+            throw new InvalidArgumentException('Password confirmation does not match.');
+        }
+
+        $resolved = $this->passwordSetup()->completeSetup($token, $password, $clientIp);
         return [
             'data' => [
                 'access_token' => $resolved['plaintext'],
@@ -271,5 +313,13 @@ class SubcontractorPortalController
         // useful internally for dedupe + integrity but noise on a sub's UI.
         unset($out['sha256']);
         return $out;
+    }
+
+    private function passwordSetup(): SubcontractorPortalPasswordSetupService
+    {
+        if ($this->passwordSetupService === null) {
+            throw new \RuntimeException('Subcontractor portal password setup service is not configured.');
+        }
+        return $this->passwordSetupService;
     }
 }

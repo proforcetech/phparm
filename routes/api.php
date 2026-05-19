@@ -350,6 +350,7 @@ return function (Router $router, array $config, $connection) {
         '/api/auth/verify-email',
         '/api/auth/accept-invite',
         '/api/auth/refresh',
+        '/api/sub-portal/*',
         '/api/health',
         '/health',
     ];

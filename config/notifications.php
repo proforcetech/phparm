@@ -194,6 +194,21 @@ This link will expire in {{expiry_hours}} hours.
 If you were not expecting this invitation, you can ignore this email.
 TEMPLATE,
 
+        // Subcontractor portal templates
+        'subcontractor.portal_password_setup' => <<<'TEMPLATE'
+Hello {{contact_name}},
+
+{{shop_name}} has enabled subcontractor portal access for {{company_name}}.
+
+Set your portal password using this secure link:
+
+{{setup_url}}
+
+This link will expire in {{expiry_hours}} hours.
+
+If you were not expecting this email, you can ignore it.
+TEMPLATE,
+
         // Reminder campaign templates (dynamic body)
         'reminder.campaign' => '{{body}}',
         'reminder.campaign.sms' => '{{body}}',

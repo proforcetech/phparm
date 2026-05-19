@@ -88,7 +88,7 @@ class NotificationDispatcher
         $driverConfig = $this->config['mail']['drivers'][$driverName] ?? [];
 
         return match ($driverName) {
-            'log' => new LogMailDriver(),
+            'log' => new LogMailDriver($this->logs),
             'smtp' => new SmtpMailDriver($driverConfig),
             default => throw new InvalidArgumentException("Unsupported mail driver: {$driverName}"),
         };
@@ -100,7 +100,7 @@ class NotificationDispatcher
         $driverConfig = $this->config['sms']['drivers'][$driverName] ?? [];
 
         return match ($driverName) {
-            'log' => new LogSmsDriver(),
+            'log' => new LogSmsDriver($this->logs),
             'twilio' => new TwilioSmsDriver($driverConfig),
             default => throw new InvalidArgumentException("Unsupported SMS driver: {$driverName}"),
         };

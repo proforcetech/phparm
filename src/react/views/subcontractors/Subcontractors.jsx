@@ -60,7 +60,6 @@ const emptyForm = {
   notes: '',
   status: 'active',
   portal_login_enabled: false,
-  portal_password: '',
 }
 
 export default function Subcontractors() {
@@ -109,6 +108,10 @@ export default function Subcontractors() {
       toast.error('Name is required')
       return
     }
+    if (form.portal_login_enabled && !form.contact_email.trim()) {
+      toast.error('Contact email is required for portal access')
+      return
+    }
     setBusy(true)
     const trades = parseTrades(form.trades)
     const payload = {
@@ -121,10 +124,15 @@ export default function Subcontractors() {
       status: form.status || 'active',
       portal_login_enabled: !!form.portal_login_enabled,
     }
-    if (form.portal_password.trim()) payload.portal_password = form.portal_password
     try {
-      await subcontractorsService.create(payload)
-      toast.success('Subcontractor created')
+      const res = await subcontractorsService.create(payload)
+      if (form.portal_login_enabled && res?.portal_setup_email_sent === false) {
+        toast.error('Subcontractor created, but the setup email was not sent')
+      } else if (form.portal_login_enabled) {
+        toast.success('Subcontractor created and setup link sent')
+      } else {
+        toast.success('Subcontractor created')
+      }
       setCreateOpen(false)
       setForm(emptyForm)
       load()
@@ -250,6 +258,7 @@ export default function Subcontractors() {
             <Input
               label="Contact email"
               type="email"
+              required={!!form.portal_login_enabled}
               value={form.contact_email}
               onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
             />
@@ -289,15 +298,9 @@ export default function Subcontractors() {
               Enable subcontractor portal login
             </label>
             {form.portal_login_enabled && (
-              <Input
-                label="Portal password"
-                type="password"
-                value={form.portal_password}
-                onChange={(e) => setForm((f) => ({ ...f, portal_password: e.target.value }))}
-                required
-                autocomplete="new-password"
-                helperText="At least 8 characters."
-              />
+              <p className="text-sm text-gray-500">
+                A secure password setup link will be sent to the contact email.
+              </p>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-2">

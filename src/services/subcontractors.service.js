@@ -20,6 +20,9 @@ export default {
   update(id, payload) {
     return api.put(`/subcontractors/${id}`, payload).then((res) => res.data)
   },
+  sendPortalPasswordSetup(id) {
+    return api.post(`/subcontractors/${id}/portal-password-setup`, {}).then((res) => res.data)
+  },
   delete(id) {
     return api.delete(`/subcontractors/${id}`).then((res) => res.data)
   },

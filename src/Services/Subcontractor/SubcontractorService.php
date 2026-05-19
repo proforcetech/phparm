@@ -308,7 +308,7 @@ class SubcontractorService
         }
         unset($data['portal_password']);
 
-        $this->validateSubcontractorPayload($data, $forCreate, $existing, $portalPasswordWasProvided);
+        $this->validateSubcontractorPayload($data, $forCreate, $existing);
         return $data;
     }
 
@@ -342,8 +342,7 @@ class SubcontractorService
     private function validateSubcontractorPayload(
         array $data,
         bool $forCreate,
-        ?Subcontractor $existing = null,
-        bool $portalPasswordWasProvided = false
+        ?Subcontractor $existing = null
     ): void
     {
         if ($forCreate && empty($data['company_name'])) {
@@ -394,9 +393,5 @@ class SubcontractorService
             throw new InvalidArgumentException('email is required to enable portal login');
         }
 
-        $passwordIsSet = $portalPasswordWasProvided || (bool) ($existing?->portal_password_set ?? false);
-        if (!$passwordIsSet) {
-            throw new InvalidArgumentException('portal_password is required to enable portal login');
-        }
     }
 }

@@ -1,6 +1,9 @@
 <?php
 
 use App\Services\Subcontractor\SubcontractorController;
+use App\Services\Subcontractor\SubcontractorPortalPasswordSetupRepository;
+use App\Services\Subcontractor\SubcontractorPortalPasswordSetupService;
+use App\Services\Subcontractor\SubcontractorPortalTokenRepository;
 use App\Services\Subcontractor\SubcontractorRepository;
 use App\Services\Subcontractor\SubcontractorService;
 use App\Support\Http\Middleware;
@@ -8,6 +11,9 @@ use App\Support\Http\Request;
 use App\Support\Http\Response;
 use App\Support\Http\RouteContext;
 use App\Support\Http\Router;
+use App\Support\Notifications\NotificationDispatcher;
+use App\Support\Notifications\NotificationLogRepository;
+use App\Support\Notifications\TemplateEngine;
 
 /**
  * Subcontractor endpoints (Phase 10.1 of docs/expansion-plan.md).
@@ -27,8 +33,41 @@ return function (Router $router, RouteContext $ctx): void {
     $repo = new SubcontractorRepository($ctx->connection);
     $service = new SubcontractorService($repo, $ctx->gate);
     $controller = new SubcontractorController($service);
+    $notificationsConfig = $ctx->config['notifications'] ?? (require __DIR__ . '/../../config/notifications.php');
+    $setupService = new SubcontractorPortalPasswordSetupService(
+        $repo,
+        new SubcontractorPortalPasswordSetupRepository($ctx->connection),
+        new SubcontractorPortalTokenRepository($ctx->connection),
+        $ctx->gate,
+        new NotificationDispatcher(
+            $notificationsConfig,
+            new TemplateEngine(),
+            new NotificationLogRepository($ctx->connection),
+            $ctx->auditLogger,
+        ),
+    );
 
-    $router->group([Middleware::auth()], function (Router $router) use ($controller) {
+    $baseUrlResolver = static function (Request $request): string {
+        $configured = trim((string) env('APP_URL', ''));
+        if ($configured !== '') {
+            return rtrim($configured, '/');
+        }
+        $scheme = $request->header('X-Forwarded-Proto') ?? 'https';
+        $host = $request->header('Host') ?? 'localhost';
+        return rtrim($scheme . '://' . $host, '/');
+    };
+
+    $shopNameResolver = static function () use ($ctx): string {
+        return (string) $ctx->settingsRepository->get('shop.name', 'Auto Repair Shop');
+    };
+
+    $router->group([Middleware::auth()], function (Router $router) use (
+        $controller,
+        $service,
+        $setupService,
+        $baseUrlResolver,
+        $shopNameResolver
+    ) {
         // ── subcontractor master CRUD ──────────────────────────────────────
         $router->get('/api/subcontractors', function (Request $request) use ($controller) {
             $filters = [
@@ -55,11 +94,29 @@ return function (Router $router, RouteContext $ctx): void {
             ));
         });
 
-        $router->post('/api/subcontractors', function (Request $request) use ($controller) {
-            return Response::created($controller->createSubcontractor(
+        $router->post('/api/subcontractors', function (Request $request) use (
+            $controller,
+            $setupService,
+            $baseUrlResolver,
+            $shopNameResolver
+        ) {
+            $body = $request->body();
+            $response = $controller->createSubcontractor(
                 $request->getAttribute('user'),
-                $request->body()
-            ));
+                $body
+            );
+            $sub = $response['data'] ?? [];
+            if (!empty($sub['portal_login_enabled']) && empty($sub['portal_password_set'])) {
+                $response['portal_setup'] = $setupService->sendSetupLink(
+                    $request->getAttribute('user'),
+                    (int) $sub['id'],
+                    $baseUrlResolver($request),
+                    $shopNameResolver(),
+                );
+                $response['portal_setup_email_sent'] = $response['portal_setup']['email_sent'];
+                $response['portal_setup_email_error'] = $response['portal_setup']['email_error'];
+            }
+            return Response::created($response);
         });
 
         $router->get('/api/subcontractors/{id}', function (Request $request) use ($controller) {
@@ -69,13 +126,58 @@ return function (Router $router, RouteContext $ctx): void {
             ));
         });
 
-        $router->put('/api/subcontractors/{id}', function (Request $request) use ($controller) {
-            return Response::json($controller->updateSubcontractor(
+        $router->put('/api/subcontractors/{id}', function (Request $request) use (
+            $controller,
+            $service,
+            $setupService,
+            $baseUrlResolver,
+            $shopNameResolver
+        ) {
+            $actor = $request->getAttribute('user');
+            $id = (int) $request->getAttribute('id');
+            $before = $service->findSubcontractor($actor, $id);
+            $body = $request->body();
+            $response = $controller->updateSubcontractor(
                 $request->getAttribute('user'),
-                (int) $request->getAttribute('id'),
-                $request->body()
-            ));
+                $id,
+                $body
+            );
+            $sub = $response['data'] ?? [];
+            $enableRequested = array_key_exists('portal_login_enabled', $body)
+                && (bool) $body['portal_login_enabled'];
+            $passwordProvided = array_key_exists('portal_password', $body)
+                && trim((string) $body['portal_password']) !== '';
+            $shouldSendSetup = $enableRequested
+                && !$passwordProvided
+                && !$before->portal_login_enabled
+                && !empty($sub['portal_login_enabled'])
+                && empty($sub['portal_password_set']);
+            if ($shouldSendSetup) {
+                $response['portal_setup'] = $setupService->sendSetupLink(
+                    $actor,
+                    (int) $sub['id'],
+                    $baseUrlResolver($request),
+                    $shopNameResolver(),
+                );
+                $response['portal_setup_email_sent'] = $response['portal_setup']['email_sent'];
+                $response['portal_setup_email_error'] = $response['portal_setup']['email_error'];
+            }
+            return Response::json($response);
         });
+
+        $router->post(
+            '/api/subcontractors/{id}/portal-password-setup',
+            function (Request $request) use ($setupService, $baseUrlResolver, $shopNameResolver) {
+                return Response::created([
+                    'data' => $setupService->sendSetupLink(
+                        $request->getAttribute('user'),
+                        (int) $request->getAttribute('id'),
+                        $baseUrlResolver($request),
+                        $shopNameResolver(),
+                    ),
+                ]);
+            }
+        );
 
         $router->delete('/api/subcontractors/{id}', function (Request $request) use ($controller) {
             $controller->deleteSubcontractor(

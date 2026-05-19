@@ -75,6 +75,18 @@ const subPortalService = {
     return result
   },
 
+  inspectPasswordSetup(token) {
+    return unwrap(client.get('/sub-portal/password-setup', { params: { token } }))
+  },
+
+  async completePasswordSetup(token, password, passwordConfirmation) {
+    const payload = { token, password, password_confirmation: passwordConfirmation }
+    const result = await unwrap(client.post('/sub-portal/password-setup', payload))
+    const accessToken = result?.data?.access_token || result?.access_token || ''
+    if (accessToken) setToken(accessToken)
+    return result
+  },
+
   me() {
     return unwrap(client.get('/sub-portal/me'))
   },
