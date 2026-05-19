@@ -7,6 +7,7 @@ class PmPlan extends BaseModel
     public int $id = 0;
     public ?int $company_id = null;
     public ?int $division_id = null;
+    public string $target_kind = 'site_asset';
     public string $title = '';
     public ?string $description = null;
     public string $default_priority = 'p3_normal';

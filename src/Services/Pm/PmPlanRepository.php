@@ -14,8 +14,9 @@ use RuntimeException;
 class PmPlanRepository
 {
     public const PRIORITIES = ['p1_critical', 'p2_high', 'p3_normal', 'p4_low'];
+    public const TARGET_KINDS = ['site_asset', 'fleet_unit'];
 
-    private const COLUMNS = 'id, company_id, division_id, title, description,
+    private const COLUMNS = 'id, company_id, division_id, target_kind, title, description,
         default_priority, estimated_duration_minutes, checklist_json,
         default_category_id, default_queue_id, default_assigned_user_id,
         is_active, created_by_user_id, created_at, updated_at';
@@ -43,6 +44,10 @@ class PmPlanRepository
         if (isset($filters['is_active'])) {
             $where[] = 'is_active = :is_active';
             $params['is_active'] = (int) (bool) $filters['is_active'];
+        }
+        if (!empty($filters['target_kind'])) {
+            $where[] = 'target_kind = :target_kind';
+            $params['target_kind'] = (string) $filters['target_kind'];
         }
         if (!empty($filters['query'])) {
             $where[] = '(title LIKE :q OR description LIKE :q)';
@@ -76,12 +81,12 @@ class PmPlanRepository
     {
         $stmt = $this->connection->pdo()->prepare(
             'INSERT INTO pm_plans (
-                company_id, division_id, title, description, default_priority,
+                company_id, division_id, target_kind, title, description, default_priority,
                 estimated_duration_minutes, checklist_json, default_category_id,
                 default_queue_id, default_assigned_user_id, is_active,
                 created_by_user_id
             ) VALUES (
-                :company_id, :division_id, :title, :description, :default_priority,
+                :company_id, :division_id, :target_kind, :title, :description, :default_priority,
                 :estimated_duration_minutes, :checklist_json, :default_category_id,
                 :default_queue_id, :default_assigned_user_id, :is_active,
                 :created_by_user_id
@@ -90,6 +95,7 @@ class PmPlanRepository
         $stmt->execute([
             'company_id' => $data['company_id'] ?? null,
             'division_id' => $data['division_id'] ?? null,
+            'target_kind' => $data['target_kind'] ?? 'site_asset',
             'title' => (string) $data['title'],
             'description' => $data['description'] ?? null,
             'default_priority' => $data['default_priority'] ?? 'p3_normal',
@@ -119,7 +125,7 @@ class PmPlanRepository
     public function update(int $id, array $data): PmPlan
     {
         $writable = [
-            'company_id', 'division_id', 'title', 'description',
+            'company_id', 'division_id', 'target_kind', 'title', 'description',
             'default_priority', 'estimated_duration_minutes',
             'default_category_id', 'default_queue_id',
             'default_assigned_user_id',

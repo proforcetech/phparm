@@ -291,6 +291,28 @@ pmCheck(function () use ($env) {
     }
 }, 'createPlan persists and audits');
 
+// 4b. createPlan — accepts UI aliases name/task_definitions and target_kind.
+$env = pmEnv();
+pmCheck(function () use ($env) {
+    $out = $env['controller']->createPlan(pmUser(), [
+        'name' => 'Quarterly HVAC',
+        'target_kind' => 'fleet_unit',
+        'task_definitions' => [
+            ['name' => 'Replace filter', 'estimate_minutes' => 15],
+            ['name' => 'Inspect belts', 'estimate_minutes' => 10],
+        ],
+    ]);
+    if ($out['data']['title'] !== 'Quarterly HVAC' || $out['data']['name'] !== 'Quarterly HVAC') {
+        throw new RuntimeException('name alias did not become title');
+    }
+    if ($out['data']['target_kind'] !== 'fleet_unit') {
+        throw new RuntimeException('target kind not persisted');
+    }
+    if (count($out['data']['checklist_json']) !== 2 || count($out['data']['task_definitions']) !== 2) {
+        throw new RuntimeException('task definitions alias not persisted');
+    }
+}, 'createPlan accepts UI aliases');
+
 // 5. updatePlan — missing plan throws.
 $env = pmEnv();
 pmExpectThrow(
