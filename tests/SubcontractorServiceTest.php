@@ -67,6 +67,11 @@ function subSetUpDatabase(): PDO
         status TEXT NOT NULL DEFAULT 'active',
         insurance_expires_at TEXT NULL,
         notes TEXT NULL,
+        portal_login_enabled INTEGER NOT NULL DEFAULT 0,
+        portal_password_hash TEXT NULL,
+        portal_password_updated_at TEXT NULL,
+        portal_last_login_at TEXT NULL,
+        portal_last_login_ip TEXT NULL,
         created_at TEXT NULL,
         updated_at TEXT NULL
     )");
@@ -305,6 +310,28 @@ $tests['service_create_rejects_invalid_email'] = function () {
     subAssertThrows(
         fn() => $f['service']->createSubcontractor(makeSubUser(), [
             'company_name' => 'X', 'email' => 'not-an-email',
+        ]),
+        InvalidArgumentException::class
+    );
+};
+
+$tests['service_create_allows_portal_login_without_staff_entered_password'] = function () {
+    $f = makeSubFixture();
+    $sub = $f['service']->createSubcontractor(makeSubUser(), [
+        'company_name' => 'Portal Ready',
+        'email' => 'sub@example.test',
+        'portal_login_enabled' => true,
+    ]);
+    subAssertTrue($sub->portal_login_enabled, 'portal enabled');
+    subAssertTrue(!$sub->portal_password_set, 'password remains unset until setup link is used');
+};
+
+$tests['service_create_requires_email_for_portal_login'] = function () {
+    $f = makeSubFixture();
+    subAssertThrows(
+        fn() => $f['service']->createSubcontractor(makeSubUser(), [
+            'company_name' => 'No Email',
+            'portal_login_enabled' => true,
         ]),
         InvalidArgumentException::class
     );

@@ -40,7 +40,7 @@ export default function EstimateForm() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { success, error } = useToast()
-  const { currentServiceLineId } = useAuthStore()
+  const { currentServiceLineId, serviceLines } = useAuthStore()
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -78,6 +78,7 @@ export default function EstimateForm() {
   const isEditing = Boolean(id)
   const today = new Date().toISOString().substring(0, 10)
   const selectedServiceLineId = form.service_line_id ?? currentServiceLineId ?? null
+  const serviceLineOptions = Array.isArray(serviceLines) ? serviceLines : []
 
   const createEmptyLineItem = useCallback(() => ({
     type: 'LABOR',
@@ -478,6 +479,16 @@ export default function EstimateForm() {
     }))
   }
 
+  const handleServiceLineChange = (event) => {
+    const nextId = event.target.value ? Number(event.target.value) : null
+    setForm((prev) => ({
+      ...prev,
+      service_line_id: nextId,
+      vehicle_id: null,
+      site_asset_id: null,
+    }))
+  }
+
   const getUnitPriceLabel = (item) => {
     if (item.type === 'LABOR') return 'Hourly Rate'
     if (item.type === 'PART') return 'Cost'
@@ -514,6 +525,21 @@ export default function EstimateForm() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <Card>
+                {serviceLineOptions.length > 0 ? (
+                  <div className="mb-5 max-w-xl">
+                    <label className="block text-sm font-medium text-gray-700">Service Line</label>
+                    <Select
+                      value={form.service_line_id ?? currentServiceLineId ?? ''}
+                      onChange={handleServiceLineChange}
+                      disabled={serviceLineOptions.length <= 1}
+                      options={serviceLineOptions.map((line) => ({
+                        value: line.id,
+                        label: `${line.icon ? line.icon + ' ' : ''}${line.name}`,
+                      }))}
+                    />
+                  </div>
+                ) : null}
+
                 <div className="mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Customer Information</h3>
                 </div>
@@ -539,6 +565,7 @@ export default function EstimateForm() {
                       vehicleId={form.vehicle_id}
                       siteAssetId={form.site_asset_id}
                       customerId={form.customer_id}
+                      showServiceLineSelector={false}
                       onChange={(next) => setForm((prev) => ({
                         ...prev,
                         service_line_id: next.service_line_id,

@@ -111,6 +111,7 @@ const publicRoutes = [
   // the authed /cp/* surface instead. Removed 2026-05-13. A future
   // public customer summary should be designed with a token-gated
   // trust model (see UIG-7 disposition) before re-introducing.
+  { path: '/sub-portal/setup-password', name: 'SubPortalPasswordSetup', auth: 'public', element: lazyElement(() => import('../views/sub-portal/SubPortalPasswordSetup')) },
   { path: '/sub-portal/:token', name: 'SubPortalToken', auth: 'public', element: lazyElement(() => import('../views/sub-portal/SubPortal')) },
   { path: '/sub-portal', name: 'SubPortal', auth: 'public', element: lazyElement(() => import('../views/sub-portal/SubPortal')) },
   { path: '/vendor-portal/:token', name: 'VendorPortalToken', auth: 'public', element: lazyElement(() => import('../views/vendor-portal/VendorPortal')) },

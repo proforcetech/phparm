@@ -71,6 +71,7 @@ export default function SubcontractorDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [setupBusy, setSetupBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -100,7 +101,6 @@ export default function SubcontractorDetail() {
             notes: data.notes || '',
             status: data.status || 'active',
             portal_login_enabled: !!data.portal_login_enabled,
-            portal_password: '',
           })
         }
       })
@@ -134,6 +134,10 @@ export default function SubcontractorDetail() {
       toast.error('Name is required')
       return
     }
+    if (form.portal_login_enabled && !form.contact_email.trim()) {
+      toast.error('Contact email is required for portal access')
+      return
+    }
     setSaving(true)
     const trades = parseTrades(form.trades)
     const payload = {
@@ -147,15 +151,36 @@ export default function SubcontractorDetail() {
       status: form.status || 'active',
       portal_login_enabled: !!form.portal_login_enabled,
     }
-    if (form.portal_password.trim()) payload.portal_password = form.portal_password
     try {
-      await subcontractorsService.update(id, payload)
-      toast.success('Subcontractor updated')
+      const res = await subcontractorsService.update(id, payload)
+      if (form.portal_login_enabled && res?.portal_setup_email_sent === false) {
+        toast.error('Subcontractor updated, but the setup email was not sent')
+      } else if (res?.portal_setup_email_sent) {
+        toast.success('Subcontractor updated and setup link sent')
+      } else {
+        toast.success('Subcontractor updated')
+      }
       load()
     } catch (e) {
       toast.error(e?.response?.data?.message || e?.message || 'Update failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const sendSetupLink = async () => {
+    setSetupBusy(true)
+    try {
+      const res = await subcontractorsService.sendPortalPasswordSetup(id)
+      if (res?.data?.email_sent) {
+        toast.success('Setup link sent')
+      } else {
+        toast.error(res?.data?.email_error || 'Setup link was created, but the email was not sent')
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e?.message || 'Could not send setup link')
+    } finally {
+      setSetupBusy(false)
     }
   }
 
@@ -251,6 +276,7 @@ export default function SubcontractorDetail() {
               <Input
                 label="Contact email"
                 type="email"
+                required={!!form.portal_login_enabled}
                 value={form.contact_email}
                 onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
               />
@@ -300,17 +326,19 @@ export default function SubcontractorDetail() {
                 </Badge>
               </div>
               {form.portal_login_enabled && (
-                <Input
-                  label="New portal password"
-                  type="password"
-                  value={form.portal_password}
-                  onChange={(e) => setForm((f) => ({ ...f, portal_password: e.target.value }))}
-                  required={!sub.portal_password_set}
-                  autocomplete="new-password"
-                  helperText={sub.portal_password_set
-                    ? 'Leave blank to keep the existing password.'
-                    : 'At least 8 characters.'}
-                />
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm text-gray-500">
+                    Send a secure password setup link to {sub.email || 'the contact email'}.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    onClick={sendSetupLink}
+                    loading={setupBusy}
+                    disabled={setupBusy || !sub.portal_login_enabled || !sub.email}
+                  >
+                    {sub.portal_password_set ? 'Send reset link' : 'Send setup link'}
+                  </Button>
+                </div>
               )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
