@@ -83,6 +83,7 @@ function pmFleetSetUpDatabase(): PDO
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             company_id INTEGER NULL,
             division_id INTEGER NULL,
+            target_kind TEXT NOT NULL DEFAULT "site_asset",
             title TEXT NOT NULL,
             description TEXT NULL,
             default_priority TEXT NOT NULL DEFAULT "p3_normal",

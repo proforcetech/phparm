@@ -124,7 +124,7 @@ class PmController
         $this->gate->assert($user, 'pm.view');
         $rows = $this->plans->search($filters);
         return [
-            'data' => array_map(fn(PmPlan $p) => $p->toArray(), $rows),
+            'data' => array_map(fn(PmPlan $p) => $this->serializePlan($p), $rows),
         ];
     }
 
@@ -138,7 +138,7 @@ class PmController
         if ($plan === null) {
             throw new InvalidArgumentException("pm_plan {$id} not found");
         }
-        return ['data' => $plan->toArray()];
+        return ['data' => $this->serializePlan($plan)];
     }
 
     /**
@@ -148,6 +148,7 @@ class PmController
     public function createPlan(User $user, array $body): array
     {
         $this->gate->assert($user, 'pm.manage');
+        $body = $this->normalizePlanPayload($body);
         $this->assertPlanFields($body, true);
         $plan = $this->plans->create($body + ['created_by_user_id' => $user->id ?? null]);
         $this->audit->log(new AuditEntry(
@@ -157,7 +158,7 @@ class PmController
             $user->id ?? null,
             ['title' => $plan->title]
         ));
-        return ['data' => $plan->toArray()];
+        return ['data' => $this->serializePlan($plan)];
     }
 
     /**
@@ -171,6 +172,7 @@ class PmController
         if ($existing === null) {
             throw new InvalidArgumentException("pm_plan {$id} not found");
         }
+        $body = $this->normalizePlanPayload($body);
         $this->assertPlanFields($body, false);
         $plan = $this->plans->update($id, $body);
         $this->audit->log(new AuditEntry(
@@ -180,7 +182,7 @@ class PmController
             $user->id ?? null,
             ['changed_keys' => array_keys($body)]
         ));
-        return ['data' => $plan->toArray()];
+        return ['data' => $this->serializePlan($plan)];
     }
 
     public function deletePlan(User $user, int $id): void
@@ -337,12 +339,61 @@ class PmController
                 "default_priority must be one of: " . implode(',', PmPlanRepository::PRIORITIES)
             );
         }
+        if (array_key_exists('target_kind', $body)
+            && !in_array($body['target_kind'], PmPlanRepository::TARGET_KINDS, true)
+        ) {
+            throw new InvalidArgumentException(
+                "target_kind must be one of: " . implode(',', PmPlanRepository::TARGET_KINDS)
+            );
+        }
         if (array_key_exists('estimated_duration_minutes', $body)
             && $body['estimated_duration_minutes'] !== null
             && (int) $body['estimated_duration_minutes'] < 0
         ) {
             throw new InvalidArgumentException('estimated_duration_minutes must be non-negative');
         }
+    }
+
+    /**
+     * The React PM plan form historically posted name/task_definitions while
+     * the database-backed PM model uses title/checklist_json. Accept both
+     * shapes so older clients and the current UI land on one canonical payload.
+     *
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function normalizePlanPayload(array $body): array
+    {
+        if (!array_key_exists('title', $body) && array_key_exists('name', $body)) {
+            $body['title'] = $body['name'];
+        }
+        unset($body['name']);
+
+        if (!array_key_exists('checklist_json', $body)) {
+            if (array_key_exists('task_definitions', $body)) {
+                $body['checklist_json'] = $body['task_definitions'];
+            } elseif (array_key_exists('tasks', $body)) {
+                $body['checklist_json'] = $body['tasks'];
+            }
+        }
+        unset($body['task_definitions'], $body['tasks']);
+
+        if (array_key_exists('target_kind', $body) && is_string($body['target_kind'])) {
+            $body['target_kind'] = strtolower(trim($body['target_kind']));
+        }
+
+        return $body;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializePlan(PmPlan $plan): array
+    {
+        $data = $plan->toArray();
+        $data['name'] = $plan->title;
+        $data['task_definitions'] = $plan->checklist_json;
+        return $data;
     }
 
     /**
