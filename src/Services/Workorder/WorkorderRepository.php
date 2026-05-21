@@ -19,6 +19,8 @@ class WorkorderRepository
     private Connection $connection;
     private ?AuditLogger $audit;
     private ?bool $hasInternalNotesTable = null;
+    private ?bool $hasStatusHistoryTable = null;
+    private ?bool $hasStatusHistoryClientEventIdColumn = null;
 
     public function __construct(Connection $connection, ?AuditLogger $audit = null)
     {
@@ -854,14 +856,7 @@ class WorkorderRepository
             return $this->hasInternalNotesTable;
         }
 
-        $stmt = $this->connection->pdo()->prepare(<<<SQL
-            SELECT COUNT(*)
-            FROM information_schema.tables
-            WHERE table_schema = DATABASE()
-              AND table_name = 'workorder_internal_notes'
-        SQL);
-        $stmt->execute();
-        $this->hasInternalNotesTable = (int) $stmt->fetchColumn() > 0;
+        $this->hasInternalNotesTable = $this->tableExists('workorder_internal_notes');
 
         return $this->hasInternalNotesTable;
     }
@@ -875,39 +870,56 @@ class WorkorderRepository
         ?string $clientEventId = null
     ): void
     {
-        $stmt = $this->connection->pdo()->prepare(<<<SQL
-            INSERT INTO workorder_status_history (
-                workorder_id,
-                from_status,
-                to_status,
-                changed_by,
-                notes,
-                client_event_id,
-                created_at
-            )
-            VALUES (
-                :workorder_id,
-                :from_status,
-                :to_status,
-                :changed_by,
-                :notes,
-                :client_event_id,
-                NOW()
-            )
-        SQL);
+        if (!$this->statusHistoryTableExists()) {
+            return;
+        }
 
-        $stmt->execute([
+        $columns = [
+            'workorder_id',
+            'from_status',
+            'to_status',
+            'changed_by',
+            'notes',
+        ];
+        $values = [
+            ':workorder_id',
+            ':from_status',
+            ':to_status',
+            ':changed_by',
+            ':notes',
+        ];
+        $params = [
             'workorder_id' => $workorderId,
             'from_status' => $fromStatus,
             'to_status' => $toStatus,
             'changed_by' => $changedBy,
             'notes' => $notes,
-            'client_event_id' => $clientEventId,
-        ]);
+        ];
+
+        if ($this->statusHistoryClientEventIdColumnExists()) {
+            $columns[] = 'client_event_id';
+            $values[] = ':client_event_id';
+            $params['client_event_id'] = $clientEventId;
+        }
+
+        $columns[] = 'created_at';
+        $values[] = 'NOW()';
+
+        $stmt = $this->connection->pdo()->prepare(sprintf(
+            'INSERT INTO workorder_status_history (%s) VALUES (%s)',
+            implode(', ', $columns),
+            implode(', ', $values)
+        ));
+
+        $stmt->execute($params);
     }
 
     private function statusEventExists(int $workorderId, string $clientEventId): bool
     {
+        if (!$this->statusHistoryClientEventIdColumnExists()) {
+            return false;
+        }
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             SELECT 1
             FROM workorder_status_history
@@ -920,6 +932,90 @@ class WorkorderRepository
         ]);
 
         return (bool) $stmt->fetchColumn();
+    }
+
+    private function statusHistoryTableExists(): bool
+    {
+        if ($this->hasStatusHistoryTable !== null) {
+            return $this->hasStatusHistoryTable;
+        }
+
+        $this->hasStatusHistoryTable = $this->tableExists('workorder_status_history');
+
+        return $this->hasStatusHistoryTable;
+    }
+
+    private function statusHistoryClientEventIdColumnExists(): bool
+    {
+        if ($this->hasStatusHistoryClientEventIdColumn !== null) {
+            return $this->hasStatusHistoryClientEventIdColumn;
+        }
+
+        if (!$this->statusHistoryTableExists()) {
+            $this->hasStatusHistoryClientEventIdColumn = false;
+            return false;
+        }
+
+        $this->hasStatusHistoryClientEventIdColumn = $this->columnExists(
+            'workorder_status_history',
+            'client_event_id'
+        );
+
+        return $this->hasStatusHistoryClientEventIdColumn;
+    }
+
+    private function tableExists(string $tableName): bool
+    {
+        $pdo = $this->connection->pdo();
+        $driver = (string) $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = :table_name"
+            );
+            $stmt->execute(['table_name' => $tableName]);
+            return (int) $stmt->fetchColumn() > 0;
+        }
+
+        $stmt = $pdo->prepare(<<<SQL
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = :table_name
+        SQL);
+        $stmt->execute(['table_name' => $tableName]);
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
+    private function columnExists(string $tableName, string $columnName): bool
+    {
+        $pdo = $this->connection->pdo();
+        $driver = (string) $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->query('PRAGMA table_info(' . $tableName . ')');
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                if (($row['name'] ?? null) === $columnName) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        $stmt = $pdo->prepare(<<<SQL
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = :table_name
+              AND column_name = :column_name
+        SQL);
+        $stmt->execute([
+            'table_name' => $tableName,
+            'column_name' => $columnName,
+        ]);
+
+        return (int) $stmt->fetchColumn() > 0;
     }
 
     private function mapWorkorder(array $row): Workorder

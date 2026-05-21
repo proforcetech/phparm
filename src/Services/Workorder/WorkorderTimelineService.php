@@ -9,7 +9,8 @@ use PDO;
 class WorkorderTimelineService
 {
     private Connection $connection;
-    private ?bool $hasInternalNotesTable = null;
+    /** @var array<string, bool> */
+    private array $tableExistsCache = [];
 
     public function __construct(Connection $connection)
     {
@@ -52,6 +53,10 @@ class WorkorderTimelineService
      */
     private function fetchEstimates(int $workorderId): array
     {
+        if (!$this->tableExists('estimates')) {
+            return [];
+        }
+
         $pdo = $this->connection->pdo();
         $estimates = [];
 
@@ -95,6 +100,10 @@ class WorkorderTimelineService
      */
     private function buildStatusEvents(int $workorderId, bool $isCustomerView): array
     {
+        if (!$this->tableExists('workorder_status_history')) {
+            return [];
+        }
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             SELECT wsh.id,
                    wsh.from_status,
@@ -141,6 +150,10 @@ class WorkorderTimelineService
      */
     private function buildMessageEvents(int $workorderId): array
     {
+        if (!$this->tableExists('masked_sms_messages') || !$this->tableExists('masked_sms_sessions')) {
+            return [];
+        }
+
         $stmt = $this->connection->pdo()->prepare(<<<SQL
             SELECT msm.id,
                    msm.body,
@@ -195,7 +208,8 @@ class WorkorderTimelineService
         $events = [];
         $pdo = $this->connection->pdo();
 
-        $damageStmt = $pdo->prepare(<<<SQL
+        if ($this->tableExists('job_damage_media')) {
+            $damageStmt = $pdo->prepare(<<<SQL
             SELECT jdm.id,
                    jdm.file_path,
                    jdm.created_at,
@@ -208,25 +222,27 @@ class WorkorderTimelineService
              WHERE wj.workorder_id = :workorder_id
           ORDER BY jdm.created_at ASC
         SQL);
-        $damageStmt->execute(['workorder_id' => $workorderId]);
+            $damageStmt->execute(['workorder_id' => $workorderId]);
 
-        foreach ($damageStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $events[] = [
-                'id' => 'damage-photo-' . $row['id'],
-                'type' => 'photo',
-                'title' => 'Damage photo added',
-                'description' => $row['job_title'] ?: 'Damage evidence photo',
-                'created_at' => $row['created_at'],
-                'meta' => [
-                    'file_path' => $row['file_path'],
-                    'job_title' => $row['job_title'],
-                    'uploader_name' => $row['uploader_name'],
-                    'category' => 'damage',
-                ],
-            ];
+            foreach ($damageStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $events[] = [
+                    'id' => 'damage-photo-' . $row['id'],
+                    'type' => 'photo',
+                    'title' => 'Damage photo added',
+                    'description' => $row['job_title'] ?: 'Damage evidence photo',
+                    'created_at' => $row['created_at'],
+                    'meta' => [
+                        'file_path' => $row['file_path'],
+                        'job_title' => $row['job_title'],
+                        'uploader_name' => $row['uploader_name'],
+                        'category' => 'damage',
+                    ],
+                ];
+            }
         }
 
-        $checkpointStmt = $pdo->prepare(<<<SQL
+        if ($this->tableExists('job_checkpoint_media')) {
+            $checkpointStmt = $pdo->prepare(<<<SQL
             SELECT jcm.id,
                    jcm.checkpoint_type,
                    jcm.file_path,
@@ -240,23 +256,24 @@ class WorkorderTimelineService
              WHERE wj.workorder_id = :workorder_id
           ORDER BY jcm.created_at ASC
         SQL);
-        $checkpointStmt->execute(['workorder_id' => $workorderId]);
+            $checkpointStmt->execute(['workorder_id' => $workorderId]);
 
-        foreach ($checkpointStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $events[] = [
-                'id' => 'checkpoint-photo-' . $row['id'],
-                'type' => 'photo',
-                'title' => 'Checkpoint photo added (' . $this->formatCheckpoint((string) $row['checkpoint_type']) . ')',
-                'description' => $row['job_title'] ?: 'Checkpoint photo',
-                'created_at' => $row['created_at'],
-                'meta' => [
-                    'file_path' => $row['file_path'],
-                    'job_title' => $row['job_title'],
-                    'checkpoint_type' => $row['checkpoint_type'],
-                    'uploader_name' => $row['uploader_name'],
-                    'category' => 'checkpoint',
-                ],
-            ];
+            foreach ($checkpointStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $events[] = [
+                    'id' => 'checkpoint-photo-' . $row['id'],
+                    'type' => 'photo',
+                    'title' => 'Checkpoint photo added (' . $this->formatCheckpoint((string) $row['checkpoint_type']) . ')',
+                    'description' => $row['job_title'] ?: 'Checkpoint photo',
+                    'created_at' => $row['created_at'],
+                    'meta' => [
+                        'file_path' => $row['file_path'],
+                        'job_title' => $row['job_title'],
+                        'checkpoint_type' => $row['checkpoint_type'],
+                        'uploader_name' => $row['uploader_name'],
+                        'category' => 'checkpoint',
+                    ],
+                ];
+            }
         }
 
         return $events;
@@ -315,20 +332,7 @@ class WorkorderTimelineService
 
     private function internalNotesTableExists(): bool
     {
-        if ($this->hasInternalNotesTable !== null) {
-            return $this->hasInternalNotesTable;
-        }
-
-        $stmt = $this->connection->pdo()->prepare(<<<SQL
-            SELECT COUNT(*)
-            FROM information_schema.tables
-            WHERE table_schema = DATABASE()
-              AND table_name = 'workorder_internal_notes'
-        SQL);
-        $stmt->execute();
-        $this->hasInternalNotesTable = (int) $stmt->fetchColumn() > 0;
-
-        return $this->hasInternalNotesTable;
+        return $this->tableExists('workorder_internal_notes');
     }
 
     /**
@@ -338,6 +342,10 @@ class WorkorderTimelineService
      */
     private function buildApprovalEvents(array $estimateIds, array $estimates): array
     {
+        if (!$this->tableExists('approval_audit_log')) {
+            return [];
+        }
+
         $placeholders = implode(',', array_fill(0, count($estimateIds), '?'));
         $stmt = $this->connection->pdo()->prepare(
             "SELECT * FROM approval_audit_log WHERE entity_type = 'estimate' AND entity_id IN ($placeholders) ORDER BY created_at ASC"
@@ -375,6 +383,10 @@ class WorkorderTimelineService
      */
     private function buildEstimateAuditEvents(array $estimateIds, array $estimates, bool $isCustomerView): array
     {
+        if (!$this->tableExists('audit_logs')) {
+            return [];
+        }
+
         $placeholders = implode(',', array_fill(0, count($estimateIds), '?'));
         $stmt = $this->connection->pdo()->prepare(
             "SELECT id, event, entity_id, actor_id, context, created_at
@@ -548,5 +560,34 @@ class WorkorderTimelineService
         ];
 
         return in_array($event, $allowlist, true);
+    }
+
+    private function tableExists(string $tableName): bool
+    {
+        if (array_key_exists($tableName, $this->tableExistsCache)) {
+            return $this->tableExistsCache[$tableName];
+        }
+
+        $pdo = $this->connection->pdo();
+        $driver = (string) $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = :table_name"
+            );
+            $stmt->execute(['table_name' => $tableName]);
+        } else {
+            $stmt = $pdo->prepare(<<<SQL
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = :table_name
+            SQL);
+            $stmt->execute(['table_name' => $tableName]);
+        }
+
+        $this->tableExistsCache[$tableName] = (int) $stmt->fetchColumn() > 0;
+
+        return $this->tableExistsCache[$tableName];
     }
 }
