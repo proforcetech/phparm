@@ -1046,15 +1046,26 @@ class WorkorderService
             return $this->workorderItemColumns;
         }
 
-        $stmt = $this->connection->pdo()->query(<<<SQL
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = DATABASE()
-              AND table_name = 'workorder_items'
-        SQL);
+        $pdo = $this->connection->pdo();
+        $driver = (string) $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->query('PRAGMA table_info(workorder_items)');
+            $columnRows = array_map(
+                static fn (array $row): string => (string) $row['name'],
+                $stmt->fetchAll(PDO::FETCH_ASSOC)
+            );
+        } else {
+            $stmt = $pdo->query(<<<SQL
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'workorder_items'
+            SQL);
+            $columnRows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        }
 
         $columns = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $column) {
+        foreach ($columnRows as $column) {
             $columns[(string) $column] = true;
         }
 
